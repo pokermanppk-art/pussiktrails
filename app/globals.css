@@ -1,0 +1,253 @@
+/* app/globals.css */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #111827;
+  background-color: #f3f4f6;
+}
+
+/* Mobile First (320px - 768px) */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+  
+  /* Botões maiores no mobile para facilitar toque */
+  button, .button, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+    cursor: pointer;
+  }
+  
+  /* Grid de cards - 1 coluna no mobile */
+  .grid-cards {
+    display: grid;
+    grid-template-columns: 1fr !important;
+    gap: 16px;
+  }
+  
+  /* Container padding reduzido */
+  .container {
+    padding: 16px !important;
+  }
+  
+  /* Cards com margin */
+  .card {
+    margin: 0 0 16px 0;
+  }
+  
+  /* Formulários - fonte maior para evitar zoom */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+  
+  /* Cabeçalho responsivo */
+  .header-responsive {
+    flex-direction: column !important;
+    text-align: center !important;
+    gap: 12px !important;
+  }
+  
+  /* Grupo de botões empilhados */
+  .btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+  
+  .btn-group button {
+    width: 100%;
+  }
+  
+  /* Tabela para cards no mobile */
+  .table-mobile-card {
+    display: block;
+  }
+  
+  .table-mobile-card thead {
+    display: none;
+  }
+  
+  .table-mobile-card tr {
+    display: block;
+    margin-bottom: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    background: white;
+  }
+  
+  .table-mobile-card td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border: none;
+    text-align: right;
+  }
+  
+  .table-mobile-card td:before {
+    content: attr(data-label);
+    font-weight: 600;
+    text-align: left;
+    margin-right: 16px;
+  }
+}
+
+/* Tablet (768px - 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .grid-cards-tablet {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  
+  .container {
+    padding: 24px !important;
+  }
+}
+
+/* Desktop (1024px+) */
+@media (min-width: 1024px) {
+  body {
+    font-size: 14px;
+  }
+  
+  .grid-cards-desktop {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  
+  .container {
+    padding: 32px !important;
+  }
+}
+
+/* Utilitários responsivos */
+.text-center {
+  text-align: center;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-right {
+  text-align: right;
+}
+
+/* Animações */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Scrollbar customizada (opcional) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Classe container padrão */
+.container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+}
+
+/* Classe para esconder em mobile */
+.hide-on-mobile {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .hide-on-mobile {
+    display: none !important;
+  }
+}
+
+/* Classe para esconder em desktop */
+.hide-on-desktop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .hide-on-desktop {
+    display: block !important;
+  }
+}
+
+/* Classe para cards */
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 768px) {
+  .card {
+    padding: 16px;
+  }
+  
+  .card:hover {
+    transform: none;
+  }
+}
