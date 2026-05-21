@@ -19,6 +19,7 @@ export default function PerfilPublicoGuia() {
   const [bio, setBio] = useState('')
   const [avaliacoes, setAvaliacoes] = useState<any[]>([])
 
+  // Medalhas especiais do guia
   const [medalhas, setMedalhas] = useState<any[]>([])
   const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
 
@@ -79,7 +80,7 @@ export default function PerfilPublicoGuia() {
       setGuia(guiaData)
       setBio(guiaData.bio || '')
 
-      const { data: roteiros } = await supabase.from('roteiros').select('id, km').eq('id_guia', id)
+      const { data: roteiros } = await supabase.from('roteiros').select('id, km').eq('id_guia', id).eq('status', 'ativo')
       const totalK = roteiros?.reduce((acc, r) => acc + (r.km || 0), 0) || 0
       setTotalKm(totalK)
       setTotalRoteiros(roteiros?.length || 0)
@@ -103,23 +104,26 @@ export default function PerfilPublicoGuia() {
         setAvaliacaoMedia(media)
       }
 
-      await carregarMedalhas(guiaData.id)
+      // Carregar medalhas especiais do guia
+      await carregarMedalhas()
       setCarregando(false)
     }
     if (id) carregar()
   }, [id])
 
-  const carregarMedalhas = async (guiaId: string) => {
+  const carregarMedalhas = async () => {
     setCarregandoMedalhas(true)
     try {
       const { data: progresso } = await supabase
         .from('usuarios_medalhas')
         .select('progresso_atual, medalha:medalha_id(nome)')
-        .eq('usuario_id', guiaId)
+        .eq('usuario_id', id)
 
       const mapa = new Map()
       progresso?.forEach((item: any) => {
-        if (item.medalha?.nome) mapa.set(item.medalha.nome, item.progresso_atual || 0)
+        if (item.medalha?.nome) {
+          mapa.set(item.medalha.nome, item.progresso_atual || 0)
+        }
       })
 
       const listaMedalhas = [
@@ -137,63 +141,41 @@ export default function PerfilPublicoGuia() {
     } catch (err) { console.error(err) } finally { setCarregandoMedalhas(false) }
   }
 
-  if (carregando) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Carregando...</div>
-  if (!guia) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Guia não encontrado</div>
+  if (carregando) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}><div style={{ fontSize: '40px' }}>🏔️</div><div>Carregando perfil...</div></div>
+      </div>
+    )
+  }
+
+  if (!guia) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ fontSize: '40px' }}>⚠️</div>
+        <div style={{ fontSize: '18px', fontWeight: 'bold' }}>Guia não encontrado</div>
+        <button onClick={() => router.back()} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '8px 24px', borderRadius: '40px', cursor: 'pointer' }}>← Voltar</button>
+      </div>
+    )
+  }
 
   const nivelInfo = getNivelKm(totalKm)
   const proximoMarco = calcularProximoMarco(totalKm)
   const progresso = getProgresso(totalKm)
 
-  // CSS responsivo via media query
-  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768
-
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
       <style jsx global>{`
         @media (min-width: 768px) {
-          .perfil-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 32px 24px;
-          }
-          .perfil-card {
-            display: flex;
-            flex-direction: row !important;
-            align-items: flex-start !important;
-            gap: 32px !important;
-            text-align: left !important;
-          }
-          .perfil-avatar {
-            width: 120px !important;
-            height: 120px !important;
-          }
-          .perfil-avatar span {
-            font-size: 48px !important;
-          }
-          .perfil-stats {
-            justify-content: flex-start !important;
-            gap: 48px !important;
-          }
-          .perfil-stats div {
-            text-align: left !important;
-          }
-          .medalhas-grid {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: wrap !important;
-            gap: 16px !important;
-          }
-          .medalha-card {
-            width: 120px !important;
-            padding: 16px !important;
-          }
-          .conquista-card {
-            width: 100px !important;
-            padding: 12px !important;
-          }
-          .avaliacao-card {
-            padding: 20px !important;
-          }
+          .perfil-container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+          .perfil-card { display: flex !important; flex-direction: row !important; align-items: flex-start !important; text-align: left !important; gap: 32px !important; }
+          .perfil-avatar { width: 120px !important; height: 120px !important; }
+          .perfil-avatar span { font-size: 48px !important; }
+          .perfil-stats { justify-content: flex-start !important; gap: 48px !important; }
+          .perfil-stats div { text-align: left !important; }
+          .medalhas-grid { display: flex !important; flex-wrap: wrap !important; gap: 16px !important; justify-content: flex-start !important; }
+          .medalha-card { width: 120px !important; padding: 16px !important; }
+          .conquista-card { width: 100px !important; padding: 12px !important; }
         }
       `}</style>
 
@@ -213,10 +195,9 @@ export default function PerfilPublicoGuia() {
             <div className="perfil-avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
               {guia.avatar_url ? <img src={guia.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '36px', color: 'white' }}>{guia.nome?.charAt(0).toUpperCase() || 'G'}</span>}
             </div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>{guia.nome || guia.email || 'Guia'}</h2>
+            <div>
+              <h2 style={{ fontSize: '22px', fontWeight: 'bold', margin: 0 }}>{guia.nome || guia.email || 'Guia'}</h2>
               <p style={{ color: '#6b7280', fontSize: '11px', marginTop: '4px' }}>📅 Guia desde {new Date(guia.created_at).getFullYear()}</p>
-              
               <div className="perfil-stats" style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '12px', flexWrap: 'wrap' }}>
                 <div style={{ textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{totalKm}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>KM</div></div>
                 <div style={{ textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{totalRoteiros}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>Roteiros</div></div>
@@ -225,32 +206,32 @@ export default function PerfilPublicoGuia() {
               </div>
             </div>
           </div>
-          {bio && <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '12px', maxHeight: '100px', overflowY: 'auto' }}><p style={{ margin: 0, fontSize: '12px', color: '#4b5563' }}>{bio}</p></div>}
+          {bio && <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '12px', maxHeight: '80px', overflowY: 'auto' }}><p style={{ margin: 0, fontSize: '12px', color: '#4b5563' }}>{bio}</p></div>}
         </div>
 
         {/* BARRA PROGRESSO KM */}
         <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
             <span style={{ fontSize: '32px' }}>{getIconeKm(totalKm)}</span>
             <div><div style={{ fontWeight: 'bold', fontSize: '14px' }}>{nivelInfo}</div><div style={{ fontSize: '10px', color: '#6b7280' }}>{totalKm} km guiados</div></div>
           </div>
           <p style={{ marginBottom: '8px', fontSize: '11px', color: '#4b5563' }}>🎯 Próximo marco: <strong>{proximoMarco} km</strong> (faltam {Math.max(0, proximoMarco - totalKm)} km)</p>
-          <div style={{ backgroundColor: '#e5e7eb', borderRadius: '20px', height: '8px', overflow: 'hidden' }}>
+          <div style={{ backgroundColor: '#e5e7eb', borderRadius: '20px', height: '6px', overflow: 'hidden' }}>
             <div style={{ width: `${progresso}%`, backgroundColor: '#3b82f6', height: '100%', borderRadius: '20px' }} />
           </div>
         </div>
 
         {/* CONQUISTAS POR KM */}
         <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px' }}>🏅 Conquistas por KM</h3>
+          <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>🏅 Conquistas por KM</h3>
           <div className="medalhas-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
             {conquistasKm.map((c, i) => {
               const desbloqueado = totalKm >= c.km
               return (
-                <div key={i} className="conquista-card" style={{ flex: '0 0 auto', width: '65px', backgroundColor: desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', border: desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: desbloqueado ? 1 : 0.6 }}>
+                <div key={i} className="conquista-card" style={{ flex: '0 0 auto', width: '70px', backgroundColor: desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', border: desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: desbloqueado ? 1 : 0.6 }}>
                   <div style={{ fontSize: '24px' }}>{c.icone}</div>
                   <div style={{ fontSize: '8px', fontWeight: 'bold' }}>{c.nome}</div>
-                  <div style={{ fontSize: '7px', color: '#9ca3af' }}>{desbloqueado ? '✅' : `${c.km}km`}</div>
+                  <div style={{ fontSize: '7px', color: desbloqueado ? '#16a34a' : '#9ca3af' }}>{desbloqueado ? '✅' : `${c.km}km`}</div>
                 </div>
               )
             })}
@@ -259,13 +240,13 @@ export default function PerfilPublicoGuia() {
 
         {/* MEDALHAS ESPECIAIS */}
         <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px' }}>🎖️ Medalhas Especiais</h3>
+          <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>🎖️ Medalhas Especiais</h3>
           {carregandoMedalhas ? (
             <div style={{ textAlign: 'center', padding: '16px' }}>Carregando...</div>
           ) : (
             <div className="medalhas-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
               {medalhas.map((m, idx) => (
-                <div key={idx} className="medalha-card" style={{ flex: '0 0 auto', width: '75px', backgroundColor: m.desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '10px 4px', textAlign: 'center', border: m.desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: m.desbloqueado ? 1 : 0.6 }}>
+                <div key={idx} className="medalha-card" style={{ flex: '0 0 auto', width: '80px', backgroundColor: m.desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '10px 4px', textAlign: 'center', border: m.desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: m.desbloqueado ? 1 : 0.6 }}>
                   <div style={{ fontSize: '28px', position: 'relative', display: 'inline-block' }}>
                     {m.icone}
                     {!m.desbloqueado && <span style={{ position: 'absolute', top: '-5px', right: '-8px', fontSize: '10px' }}>🔒</span>}
@@ -280,7 +261,7 @@ export default function PerfilPublicoGuia() {
 
         {/* AVALIAÇÕES */}
         <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px' }}>💬 Avaliações ({totalAvaliacoes})</h3>
+          <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>💬 Avaliações ({totalAvaliacoes})</h3>
           {avaliacoes.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
               <span style={{ fontSize: '32px' }}>💬</span>
@@ -289,7 +270,7 @@ export default function PerfilPublicoGuia() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {avaliacoes.slice(0, 5).map((a) => (
-                <div key={a.id} className="avaliacao-card" style={{ backgroundColor: '#f9fafb', borderRadius: '16px', padding: '12px' }}>
+                <div key={a.id} style={{ backgroundColor: '#f9fafb', borderRadius: '16px', padding: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
                     <div style={{ fontSize: '11px', color: '#f59e0b' }}>{getNotaEstrelas(a.nota)}</div>
                     <div style={{ fontSize: '9px', color: '#9ca3af' }}>{new Date(a.created_at).toLocaleDateString('pt-BR')}</div>
