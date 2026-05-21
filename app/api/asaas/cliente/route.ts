@@ -1,22 +1,21 @@
 import { NextResponse } from 'next/server'
 
 const ASAAS_API_URL = 'https://api-sandbox.asaas.com/v3'
-const ASAAS_API_KEY = process.env.ASAAS_API_KEY
 
 export async function POST(request: Request) {
   try {
     const { email, nome, cpfCnpj } = await request.json()
 
+    const ASAAS_API_KEY = process.env.ASAAS_API_KEY
+
     if (!ASAAS_API_KEY) {
-      console.error('❌ ASAAS_API_KEY não configurada')
+      console.error('❌ ASAAS_API_KEY não configurada no ambiente')
       return NextResponse.json({ error: 'API key não configurada' }, { status: 500 })
     }
 
-    const body: any = {
-      name: nome,
-      email: email,
-    }
+    console.log('🔵 API Key encontrada (primeiros 10 caracteres):', ASAAS_API_KEY.substring(0, 10))
 
+    const body: any = { name: nome, email }
     if (cpfCnpj && cpfCnpj.replace(/\D/g, '').length >= 11) {
       body.cpfCnpj = cpfCnpj.replace(/\D/g, '')
     }
@@ -35,7 +34,7 @@ export async function POST(request: Request) {
     const data = await response.json()
 
     if (!response.ok) {
-      console.error('❌ Erro ao criar cliente:', data)
+      console.error('❌ Erro Asaas:', data)
       return NextResponse.json({ error: data.errors?.[0]?.description || 'Erro ao criar cliente' }, { status: response.status })
     }
 

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 
 const ASAAS_API_URL = 'https://api-sandbox.asaas.com/v3'
-const ASAAS_API_KEY = process.env.ASAAS_API_KEY
 
 export async function POST(request: Request) {
   try {
     const { customerId, valor, descricao, reservaId } = await request.json()
+
+    const ASAAS_API_KEY = process.env.ASAAS_API_KEY
 
     if (!ASAAS_API_KEY) {
       console.error('❌ ASAAS_API_KEY não configurada')
@@ -13,7 +14,6 @@ export async function POST(request: Request) {
     }
 
     if (!customerId) {
-      console.error('❌ customerId não fornecido')
       return NextResponse.json({ error: 'Cliente não identificado' }, { status: 400 })
     }
 
@@ -67,6 +67,6 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('❌ Erro ao criar PIX Asaas:', error)
-    return NextResponse.json({ error: 'Erro interno ao criar PIX' }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
