@@ -12,16 +12,43 @@ export default function LoginPage() {
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
 
+  // Função para formatar CPF visualmente
+  const formatarCPF = (valor: string) => {
+    let numeros = valor.replace(/\D/g, '')
+    if (numeros.length > 11) numeros = numeros.slice(0, 11)
+    
+    if (numeros.length <= 3) return numeros
+    if (numeros.length <= 6) return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
+    if (numeros.length <= 9) return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
+  }
+
+  // Função para extrair apenas os números do CPF
+  const extrairNumerosCPF = (cpfFormatado: string) => {
+    return cpfFormatado.replace(/\D/g, '')
+  }
+
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const valorFormatado = formatarCPF(e.target.value)
+    setCpf(valorFormatado)
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setErro('')
     setCarregando(true)
 
+    // Remove pontos e traço para buscar no banco
+    const cpfLimpo = extrairNumerosCPF(cpf)
+
+    console.log('CPF digitado (com máscara):', cpf)
+    console.log('CPF limpo (para busca):', cpfLimpo)
+
     try {
       const { data: user, error } = await supabase
         .from('users')
         .select('id, nome, email, tipo, status, senha')
-        .eq('cpf', cpf)
+        .eq('cpf', cpfLimpo)
         .maybeSingle()
 
       if (error || !user) {
@@ -77,7 +104,7 @@ export default function LoginPage() {
         }}>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
             <div style={{ fontSize: '56px', marginBottom: '16px' }}>🏔️</div>
-            <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>Prussik Trails</h1>
+            <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
             <p style={{ color: '#6b7280', marginTop: '8px', fontSize: '14px' }}>Acesse sua conta para continuar</p>
           </div>
 
@@ -89,9 +116,10 @@ export default function LoginPage() {
               <input
                 type="text"
                 required
-                placeholder="Digite seu CPF"
+                placeholder="000.000.000-00"
                 value={cpf}
-                onChange={(e) => setCpf(e.target.value)}
+                onChange={handleCpfChange}
+                maxLength={14}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
@@ -183,7 +211,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* LINHA DIVISÓRIA */}
           <div style={{ 
             display: 'flex', 
             alignItems: 'center', 
@@ -196,7 +223,6 @@ export default function LoginPage() {
             <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
           </div>
 
-          {/* BOTÃO CADASTRO */}
           <Link href="/cadastro" style={{ textDecoration: 'none' }}>
             <button
               style={{
@@ -224,7 +250,6 @@ export default function LoginPage() {
             </button>
           </Link>
 
-          {/* INFORMAÇÃO ADICIONAL */}
           <p style={{ 
             textAlign: 'center', 
             fontSize: '11px', 

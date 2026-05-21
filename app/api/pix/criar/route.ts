@@ -2,42 +2,25 @@ import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
   try {
-    const { reservaId, valor, email, nome, descricao } = await request.json()
+    const { reservaId, valor, email, nome } = await request.json()
 
-    const response = await fetch('https://187.45.245.52/transaction/create/', {
-  headers: {
-    'Host': 'api.paghiper.com.br'
-  },
-      body: JSON.stringify({
-        apiKey: process.env.PAGHIPER_API_KEY,
-        token: process.env.PAGHIPER_TOKEN,
-        order_id: reservaId,
-        payer_email: email,
-        payer_name: nome,
-        amount: valor.toFixed(2),
-        days_due_date: 1,
-        type: 'pix',
-        description: descricao || 'Reserva PussikTrails',
-        notification_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/pix/webhook`
-      })
-    })
-
-    const data = await response.json()
-
-    if (data.status !== 'success') {
-      console.error('Erro PagHiper:', data)
-      return NextResponse.json({ error: data.message || 'Erro ao criar cobrança' }, { status: 400 })
-    }
+    // Gerar um QR Code estático de exemplo (usando API pública para teste)
+    // QR Code com o texto: "PIX SIMULADO - Reserva " + reservaId
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PIX%20SIMULADO%20-%20Reserva%20${reservaId}%20-%20Valor%20R$${valor}`
+    
+    // Código PIX simulado
+    const codigoPixSimulado = `00020126580014BR.GOV.BCB.PIX0136${reservaId}5204000053039865404${valor}5802BR5925${nome}6009SAO PAULO62070503***6304E2CA`
 
     return NextResponse.json({
       success: true,
-      qrCode: data.pix_qr_code,
-      codigoPix: data.pix_code,
-      transactionId: data.transaction_id
+      qrCode: qrCodeUrl,
+      codigoPix: codigoPixSimulado,
+      transactionId: `SIM_${reservaId}_${Date.now()}`,
+      simulacao: true
     })
 
   } catch (error) {
-    console.error('Erro ao criar PIX:', error)
+    console.error('Erro ao criar PIX simulado:', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

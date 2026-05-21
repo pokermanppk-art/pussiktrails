@@ -14,25 +14,25 @@ export default function PagamentoPIX() {
   const [codigoPix, setCodigoPix] = useState('')
   const [valor, setValor] = useState(0)
   const [copiado, setCopiado] = useState(false)
-  const [verificando, setVerificando] = useState(false)
+  const [simulacao, setSimulacao] = useState(false)
   const [mensagem, setMensagem] = useState('')
 
   useEffect(() => {
     const carregarPagamento = async () => {
       // Buscar dados da reserva
-      const { data: reserva, error } = await supabase
+      const { data: reserva } = await supabase
         .from('reservas')
         .select('*, roteiro:roteiro_id(titulo, preco)')
         .eq('id', reservaId)
         .single()
 
-      if (error || !reserva) {
+      if (!reserva) {
         setMensagem('Reserva não encontrada')
         setCarregando(false)
         return
       }
 
-      setValor(reserva.valor_total || reserva.roteiro?.preco || 0)
+      setValor(reserva.valor_total)
 
       // Buscar dados do cliente
       const { data: cliente } = await supabase
@@ -41,7 +41,7 @@ export default function PagamentoPIX() {
         .eq('id', reserva.cliente_id)
         .single()
 
-      // Criar cobrança PIX
+      // Criar cobrança PIX (simulada)
       const response = await fetch('/api/pix/criar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -49,20 +49,14 @@ export default function PagamentoPIX() {
           reservaId: reserva.id,
           valor: reserva.valor_total,
           email: cliente?.email,
-          nome: cliente?.nome,
-          descricao: `Reserva - ${reserva.roteiro?.titulo}`
+          nome: cliente?.nome
         })
       })
 
       const data = await response.json()
-
-      if (data.success) {
-        setQrCode(data.qrCode)
-        setCodigoPix(data.codigoPix)
-      } else {
-        setMensagem(data.error || 'Erro ao gerar PIX')
-      }
-
+      setQrCode(data.qrCode)
+      setCodigoPix(data.codigoPix)
+      setSimulacao(data.simulacao || false)
       setCarregando(false)
     }
 
@@ -75,16 +69,26 @@ export default function PagamentoPIX() {
     setTimeout(() => setCopiado(false), 3000)
   }
 
-  const verificarPagamento = async () => {
-    setVerificando(true)
-    setMensagem('Verificando pagamento...')
+  const confirmarPagamento = async () => {
+    setMensagem('Confirmando pagamento...')
     
-    // Aqui você pode chamar uma API para verificar o status
-    // Por enquanto, vamos apenas redirecionar
-    
-    setTimeout(() => {
-      router.push('/cliente/minhas-reservas')
-    }, 2000)
+    // Atualizar status da reserva no banco
+    const { error } = await supabase
+      .from('reservas')
+      .update({ 
+        pagamento_status: 'pago',
+        status: 'confirmada'
+      })
+      .eq('id', reservaId)
+
+    if (error) {
+      setMensagem('Erro ao confirmar pagamento')
+    } else {
+      setMensagem('✅ Pagamento confirmado! Redirecionando...')
+      setTimeout(() => {
+        router.push('/cliente/minhas-reservas')
+      }, 2000)
+    }
   }
 
   if (carregando) {
@@ -92,7 +96,7 @@ export default function PagamentoPIX() {
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏔️</div>
-          <div style={{ color: '#6b7280' }}>Gerando QR Code PIX...</div>
+          <div style={{ color: '#6b7280' }}>Carregando...</div>
         </div>
       </div>
     )
@@ -102,7 +106,6 @@ export default function PagamentoPIX() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '16px' }}>
       <div style={{ maxWidth: '600px', margin: '0 auto' }}>
         
-        {/* CARD PRINCIPAL */}
         <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '24px', marginBottom: '16px', textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>💳</div>
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>Pagamento via PIX</h1>
@@ -114,6 +117,15 @@ export default function PagamentoPIX() {
             R$ {valor.toFixed(2)}
           </div>
         </div>
+
+        {simulacao && (
+          <div style={{ backgroundColor: '#fef3c7', borderRadius: '16px', padding: '12px', marginBottom: '16px', textAlign: 'center' }}>
+            <span style={{ fontSize: '20px' }}>🧪</span>
+            <p style={{ fontSize: '12px', color: '#d97706', marginTop: '4px' }}>
+              Modo de demonstração - PagHiper indisponível
+            </p>
+          </div>
+        )}
 
         {/* QR CODE */}
         {qrCode && (
@@ -134,7 +146,7 @@ export default function PagamentoPIX() {
               backgroundColor: '#f9fafb', 
               padding: '12px', 
               borderRadius: '12px', 
-              fontSize: '12px', 
+              fontSize: '10px', 
               wordBreak: 'break-all',
               fontFamily: 'monospace',
               marginBottom: '12px'
@@ -176,33 +188,30 @@ export default function PagamentoPIX() {
             ← Voltar
           </button>
           <button
-            onClick={verificarPagamento}
-            disabled={verificando}
+            onClick={confirmarPagamento}
             style={{
               flex: 2,
-              backgroundColor: '#3b82f6',
+              backgroundColor: '#16a34a',
               color: 'white',
               border: 'none',
               borderRadius: '40px',
               padding: '12px',
               cursor: 'pointer',
-              fontWeight: 'bold',
-              opacity: verificando ? 0.7 : 1
+              fontWeight: 'bold'
             }}
           >
-            {verificando ? 'Verificando...' : '✅ Já paguei, confirmar reserva'}
+            ✅ Confirmar Pagamento
           </button>
         </div>
 
-        {/* MENSAGEM */}
         {mensagem && (
           <div style={{ 
             padding: '12px', 
             borderRadius: '12px', 
             textAlign: 'center', 
             fontSize: '13px',
-            backgroundColor: mensagem.includes('Erro') ? '#fee2e2' : '#dcfce7',
-            color: mensagem.includes('Erro') ? '#dc2626' : '#16a34a'
+            backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2',
+            color: mensagem.includes('✅') ? '#16a34a' : '#dc2626'
           }}>
             {mensagem}
           </div>
@@ -211,12 +220,12 @@ export default function PagamentoPIX() {
         {/* INSTRUÇÕES */}
         <div style={{ backgroundColor: '#f9fafb', borderRadius: '16px', padding: '16px', marginTop: '16px' }}>
           <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>📌 Como pagar:</p>
-          <ol style={{ fontSize: '12px', color: '#6b7280', paddingLeft: '20px', margin: 0 }}>
+          <ol style={{ fontSize: '11px', color: '#6b7280', paddingLeft: '20px', margin: 0 }}>
             <li>Abra o app do seu banco</li>
             <li>Escolha a opção "Pagar com PIX"</li>
             <li>Escaneie o QR Code ou cole o código</li>
             <li>Confirme o pagamento</li>
-            <li>Clique em "Já paguei" para confirmar sua reserva</li>
+            <li>Clique em "Confirmar Pagamento"</li>
           </ol>
         </div>
       </div>
