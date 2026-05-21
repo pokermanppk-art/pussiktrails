@@ -30,15 +30,71 @@ export default function PerfilGuia() {
   const [usuarioCurtiu, setUsuarioCurtiu] = useState<Record<string, boolean>>({})
   const [usuarioLogado, setUsuarioLogado] = useState<any>(null)
 
+  // Dados das medalhas especiais do guia
+  const [medalhas, setMedalhas] = useState<any[]>([])
+  const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
+
   // Estatísticas do guia
   const [stats, setStats] = useState({
     totalRoteiros: 0,
     totalReservas: 0,
     totalClientes: 0,
+    totalKm: 0,
     avaliacaoMedia: 0,
     totalAvaliacoes: 0,
     medalhaNivel: 'bronze'
   })
+
+  // ==================== METAS DE KM PARA O GUIA (10 ANOS) ====================
+  const metasKmGuia = [
+    { km: 32, nome: '🥉 Bronze' },
+    { km: 96, nome: '🥈 Prata' },
+    { km: 192, nome: '🥇 Ouro' },
+    { km: 384, nome: '💎 Platina' },
+    { km: 768, nome: '⚡ Elite' },
+    { km: 1152, nome: '👑 Master' },
+    { km: 1920, nome: '🌟 Lenda' },
+    { km: 3840, nome: '🔥 Lenda Absoluta' },
+  ]
+
+  const getNivelPorKm = (km: number) => {
+    for (let i = metasKmGuia.length - 1; i >= 0; i--) {
+      if (km >= metasKmGuia[i].km) return metasKmGuia[i].nome
+    }
+    return '🥉 Bronze'
+  }
+
+  const getIconePorKm = (km: number) => {
+    for (let i = metasKmGuia.length - 1; i >= 0; i--) {
+      if (km >= metasKmGuia[i].km) return metasKmGuia[i].nome.split(' ')[0]
+    }
+    return '🥉'
+  }
+
+  const calcularProximoMarcoKm = (km: number) => {
+    for (const meta of metasKmGuia) {
+      if (km < meta.km) return meta.km
+    }
+    return metasKmGuia[metasKmGuia.length - 1].km
+  }
+
+  const calcularProgressoKm = (km: number) => {
+    const proximo = calcularProximoMarcoKm(km)
+    const anterior = metasKmGuia.find(m => m.km < proximo)?.km || 0
+    if (proximo === anterior) return 100
+    return Math.min(((km - anterior) / (proximo - anterior)) * 100, 100)
+  }
+
+  // ==================== CONQUISTAS POR KM ====================
+  const conquistasKm = [
+    { nome: 'Primeira Trilha', icone: '🥾', kmNecessario: 0, desbloqueado: stats.totalKm >= 0 },
+    { nome: 'Explorador Iniciante', icone: '🌱', kmNecessario: 32, desbloqueado: stats.totalKm >= 32 },
+    { nome: 'Caminhante', icone: '🚶', kmNecessario: 96, desbloqueado: stats.totalKm >= 96 },
+    { nome: 'Aventureiro', icone: '🏔️', kmNecessario: 384, desbloqueado: stats.totalKm >= 384 },
+    { nome: 'Mestre das Trilhas', icone: '👑', kmNecessario: 1152, desbloqueado: stats.totalKm >= 1152 },
+    { nome: 'Lenda Viva', icone: '🌟', kmNecessario: 1920, desbloqueado: stats.totalKm >= 1920 },
+    { nome: 'Lenda Absoluta', icone: '🔥', kmNecessario: 3840, desbloqueado: stats.totalKm >= 3840 },
+  ]
 
   useEffect(() => {
     const userData = localStorage.getItem('user')
@@ -72,13 +128,14 @@ export default function PerfilGuia() {
         if (guiaData.avatar_url) setAvatarPreview(guiaData.avatar_url)
       }
 
-      // Roteiros do guia
+      // Roteiros do guia (com KM)
       const { data: roteiros } = await supabase
         .from('roteiros')
-        .select('id')
+        .select('id, km')
         .eq('id_guia', guiaId)
 
       const totalRoteiros = roteiros?.length || 0
+      const totalKm = roteiros?.reduce((acc, r) => acc + (r.km || 0), 0) || 0
       const roteirosIds = roteiros?.map(r => r.id) || []
 
       // Reservas dos roteiros
@@ -87,7 +144,7 @@ export default function PerfilGuia() {
       if (roteirosIds.length > 0) {
         const { data: reservas } = await supabase
           .from('reservas')
-          .select('cliente_id')
+          .select('cliente_id, quantidade_pessoas')
           .in('roteiro_id', roteirosIds)
         
         totalReservas = reservas?.length || 0
@@ -163,10 +220,14 @@ export default function PerfilGuia() {
         totalRoteiros,
         totalReservas,
         totalClientes: clientesUnicos.size,
+        totalKm,
         avaliacaoMedia: media,
         totalAvaliacoes: avaliacoesFormatadas.length,
         medalhaNivel: medalha
       })
+
+      // Carregar medalhas especiais do guia
+      await carregarMedalhas(guiaId)
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
     } finally {
@@ -174,20 +235,30 @@ export default function PerfilGuia() {
     }
   }
 
+  const carregarMedalhas = async (guiaId: string) => {
+    setCarregandoMedalhas(true)
+    try {
+      const listaPadrao = [
+        { nome: 'KM Guiados', icone: '👣', meta: 32, progresso: stats.totalKm || 0 },
+        { nome: 'Guias Avaliados', icone: '⭐', meta: 5, progresso: stats.totalAvaliacoes || 0 },
+        { nome: 'Trilhas Guiadas', icone: '🥾', meta: 1, progresso: stats.totalRoteiros || 0 },
+        { nome: 'Clientes Atendidos', icone: '👥', meta: 5, progresso: stats.totalClientes || 0 }
+      ]
+      setMedalhas(listaPadrao)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setCarregandoMedalhas(false)
+    }
+  }
+
   const carregarBio = async (userId: string) => {
     try {
       const response = await fetch(`/api/guia/bio?userId=${userId}`)
       const result = await response.json()
-      
-      if (result.success) {
-        setBio(result.bio || '')
-      } else {
-        console.error('Erro ao carregar bio:', result.error)
-        setBio('')
-      }
+      if (result.success) setBio(result.bio || '')
     } catch (error) {
       console.error('Erro ao carregar bio:', error)
-      setBio('')
     }
   }
 
@@ -224,7 +295,6 @@ export default function PerfilGuia() {
     }
   }
 
-  // ✅ SALVAR BIO VIA API (corrigido)
   const salvarBio = async () => {
     if (!user?.id) {
       setMensagem('❌ Usuário não identificado')
@@ -237,13 +307,8 @@ export default function PerfilGuia() {
     try {
       const response = await fetch('/api/guia/bio', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: user.id,
-          bio: bio
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, bio: bio })
       })
 
       const result = await response.json()
@@ -325,6 +390,9 @@ export default function PerfilGuia() {
     return estrelasCheias + estrelasVazias
   }
 
+  const proximoMarcoKm = calcularProximoMarcoKm(stats.totalKm)
+  const progressoKm = calcularProgressoKm(stats.totalKm)
+
   if (!user || !guia) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
@@ -372,7 +440,7 @@ export default function PerfilGuia() {
 
             {/* Informações */}
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: '32px', fontWeight: 'bold', margin: 0, color: '#111827' }}>{guia.nome || 'Navegador'}</h2>
+              <h2 style={{ fontSize: '32px', fontWeight: 'bold', margin: 0, color: '#111827' }}>{guia.nome || guia.email || 'Navegador'}</h2>
               <p style={{ color: '#6b7280', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span>📧 {guia.email}</span>
                 <span style={{ width: '4px', height: '4px', backgroundColor: '#d1d5db', borderRadius: '50%' }}></span>
@@ -381,13 +449,13 @@ export default function PerfilGuia() {
 
               {/* Estatísticas rápidas */}
               <div style={{ display: 'flex', gap: '24px', marginTop: '20px', flexWrap: 'wrap' }}>
+                <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalKm}</span> <span style={{ color: '#6b7280' }}>KM guiados</span></div>
                 <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalRoteiros}</span> <span style={{ color: '#6b7280' }}>Roteiros</span></div>
-                <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalReservas}</span> <span style={{ color: '#6b7280' }}>Reservas</span></div>
                 <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalClientes}</span> <span style={{ color: '#6b7280' }}>Clientes</span></div>
                 <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#f59e0b' }}>{stats.avaliacaoMedia.toFixed(1)}</span> <span style={{ color: '#6b7280' }}>⭐ Avaliação</span></div>
               </div>
 
-              {/* Bio editável - CORRIGIDA COM API */}
+              {/* Bio editável */}
               <div style={{ marginTop: '20px' }}>
                 {editandoBio ? (
                   <div>
@@ -414,7 +482,44 @@ export default function PerfilGuia() {
           </div>
         </div>
 
-        {/* 🏅 EVOLUÇÃO DO GUIA */}
+        {/* 🏅 BARRA DE PROGRESSO KM DO GUIA */}
+        <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap', marginBottom: '24px' }}>
+            <div style={{ fontSize: '48px' }}>{getIconePorKm(stats.totalKm)}</div>
+            <div>
+              <div style={{ fontWeight: 'bold', fontSize: '22px' }}>{getNivelPorKm(stats.totalKm)}</div>
+              <div style={{ fontSize: '13px', color: '#6b7280' }}>{stats.totalKm} km guiados como líder de trilhas</div>
+            </div>
+          </div>
+          <p style={{ marginBottom: '12px', fontSize: '14px', color: '#4b5563' }}>
+            🎯 Próximo marco: <strong>{proximoMarcoKm} km</strong> (faltam {Math.max(0, proximoMarcoKm - stats.totalKm)} km)
+          </p>
+          <div style={{ backgroundColor: '#e5e7eb', borderRadius: '20px', height: '12px', overflow: 'hidden' }}>
+            <div style={{ width: `${progressoKm}%`, backgroundColor: '#3b82f6', height: '100%', borderRadius: '20px' }} />
+          </div>
+        </div>
+
+        {/* 🏅 CONQUISTAS POR KM */}
+        <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+            <span style={{ fontSize: '28px' }}>🏅</span>
+            <div>
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#111827' }}>Conquistas por KM</h3>
+              <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Sua evolução em quilômetros</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }}>
+            {conquistasKm.map((m, i) => (
+              <div key={i} style={{ flex: '0 0 auto', width: '100px', backgroundColor: m.desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '16px', padding: '12px', textAlign: 'center', border: m.desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: m.desbloqueado ? 1 : 0.6 }}>
+                <div style={{ fontSize: '32px' }}>{m.icone}</div>
+                <p style={{ fontWeight: 'bold', fontSize: '10px', marginTop: '8px', marginBottom: 0 }}>{m.nome}</p>
+                <div style={{ fontSize: '9px', color: '#6b7280', marginTop: '4px' }}>{m.kmNecessario} km</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 🏅 EVOLUÇÃO DO GUIA (MEDALHA POR ROTEIROS) */}
         <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
             <span style={{ fontSize: '28px' }}>🏅</span>
@@ -441,38 +546,47 @@ export default function PerfilGuia() {
           </div>
         </div>
 
-        {/* 🏅 CONQUISTAS DO GUIA */}
+        {/* 🎖️ MEDALHAS ESPECIAIS DO GUIA */}
         <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <span style={{ fontSize: '28px' }}>🏅</span>
+            <span style={{ fontSize: '28px' }}>🎖️</span>
             <div>
-              <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#111827' }}>Conquistas do Guia</h3>
-              <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Metas alcançadas</p>
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#111827' }}>Medalhas do Guia</h3>
+              <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Conquistas especiais por categoria</p>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
-            <div style={{ backgroundColor: stats.totalRoteiros >= 1 ? '#dcfce7' : '#f9fafb', borderRadius: '16px', padding: '16px', textAlign: 'center', border: stats.totalRoteiros >= 1 ? '1px solid #bbf7d0' : '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '32px', marginBottom: '8px' }}>🗺️</div>
-              <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#111827' }}>Primeiro Roteiro</div>
-              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{stats.totalRoteiros >= 1 ? '✅ Desbloqueado' : 'Crie seu primeiro roteiro'}</div>
+          {carregandoMedalhas ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>Carregando medalhas...</div>
+          ) : (
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', gap: '16px', minWidth: 'min-content' }}>
+                {medalhas.map((medalha) => {
+                  const desbloqueado = medalha.progresso >= medalha.meta
+                  return (
+                    <div key={medalha.nome} style={{
+                      flex: '0 0 auto',
+                      width: '120px',
+                      backgroundColor: desbloqueado ? '#dcfce7' : '#f9fafb',
+                      borderRadius: '16px',
+                      padding: '16px 12px',
+                      textAlign: 'center',
+                      border: desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb'
+                    }}>
+                      <div style={{ fontSize: '40px', position: 'relative', display: 'inline-block' }}>
+                        {medalha.icone}
+                        {!desbloqueado && <span style={{ position: 'absolute', top: '-5px', right: '-10px', fontSize: '16px' }}>🔒</span>}
+                      </div>
+                      <div style={{ fontWeight: 'bold', fontSize: '12px', marginTop: '8px' }}>{medalha.nome}</div>
+                      <div style={{ fontSize: '10px', color: desbloqueado ? '#16a34a' : '#9ca3af', marginTop: '4px' }}>
+                        {desbloqueado ? `✅ ${medalha.progresso}/${medalha.meta}` : `🔒 ${medalha.progresso}/${medalha.meta}`}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-            <div style={{ backgroundColor: stats.totalReservas >= 1 ? '#dcfce7' : '#f9fafb', borderRadius: '16px', padding: '16px', textAlign: 'center', border: stats.totalReservas >= 1 ? '1px solid #bbf7d0' : '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '32px', marginBottom: '8px' }}>📅</div>
-              <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#111827' }}>Primeira Reserva</div>
-              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{stats.totalReservas >= 1 ? '✅ Desbloqueado' : 'Aguardando primeira reserva'}</div>
-            </div>
-            <div style={{ backgroundColor: stats.totalAvaliacoes >= 5 ? '#dcfce7' : '#f9fafb', borderRadius: '16px', padding: '16px', textAlign: 'center', border: stats.totalAvaliacoes >= 5 ? '1px solid #bbf7d0' : '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '32px', marginBottom: '8px' }}>⭐</div>
-              <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#111827' }}>5 Avaliações</div>
-              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{stats.totalAvaliacoes >= 5 ? '✅ Desbloqueado' : `${stats.totalAvaliacoes}/5 avaliações`}</div>
-            </div>
-            <div style={{ backgroundColor: stats.totalClientes >= 10 ? '#dcfce7' : '#f9fafb', borderRadius: '16px', padding: '16px', textAlign: 'center', border: stats.totalClientes >= 10 ? '1px solid #bbf7d0' : '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: '32px', marginBottom: '8px' }}>👥</div>
-              <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#111827' }}>10 Clientes</div>
-              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{stats.totalClientes >= 10 ? '✅ Desbloqueado' : `${stats.totalClientes}/10 clientes`}</div>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* 💬 AVALIAÇÕES DOS CLIENTES */}

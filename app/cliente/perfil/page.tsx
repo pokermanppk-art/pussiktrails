@@ -25,16 +25,16 @@ export default function PerfilCliente() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [modalAberto, setModalAberto] = useState(false)
 
+  // ==================== METAS DE FOTOS (10 ANOS / 3.840 KM) ====================
   const metasFotos = [
-    { km: 10, fotos: 3 },
-    { km: 50, fotos: 5 },
-    { km: 75, fotos: 10 },
-    { km: 100, fotos: 15 },
-    { km: 250, fotos: 25 },
-    { km: 500, fotos: 50 },
-    { km: 1000, fotos: 100 },
-    { km: 5000, fotos: 500 },
-    { km: 10000, fotos: 1000 },
+    { km: 32, fotos: 5 },      // Bronze - 1 mês
+    { km: 96, fotos: 15 },     // Prata - 3 meses
+    { km: 192, fotos: 30 },    // Ouro - 6 meses
+    { km: 384, fotos: 60 },    // Platina - 1 ano
+    { km: 768, fotos: 120 },   // Elite - 2 anos
+    { km: 1152, fotos: 200 },  // Master - 3 anos
+    { km: 1920, fotos: 400 },  // Lenda - 5 anos
+    { km: 3840, fotos: 1000 }, // Absoluta - 10 anos
   ]
 
   const calcularFotosLiberadas = (km: number) => {
@@ -56,13 +56,15 @@ export default function PerfilCliente() {
   const proximoMarco = calcularProximoMarco(totalKm)
   const progressoParaProximoMarco = totalKm >= proximoMarco ? 100 : (totalKm / proximoMarco) * 100
 
+  // ==================== CONQUISTAS POR KM (10 ANOS) ====================
   const conquistasKm = [
     { nome: 'Primeira Trilha', icone: '🥾', kmNecessario: 0, desbloqueado: totalKm >= 0 },
-    { nome: 'Explorador Iniciante', icone: '🌱', kmNecessario: 10, desbloqueado: totalKm >= 10 },
-    { nome: 'Caminhante', icone: '🚶', kmNecessario: 30, desbloqueado: totalKm >= 30 },
-    { nome: 'Aventureiro', icone: '🏔️', kmNecessario: 50, desbloqueado: totalKm >= 50 },
-    { nome: 'Mestre das Trilhas', icone: '👑', kmNecessario: 100, desbloqueado: totalKm >= 100 },
-    { nome: 'Lenda Viva', icone: '🌟', kmNecessario: 500, desbloqueado: totalKm >= 500 },
+    { nome: 'Explorador Iniciante', icone: '🌱', kmNecessario: 32, desbloqueado: totalKm >= 32 },
+    { nome: 'Caminhante', icone: '🚶', kmNecessario: 96, desbloqueado: totalKm >= 96 },
+    { nome: 'Aventureiro', icone: '🏔️', kmNecessario: 384, desbloqueado: totalKm >= 384 },
+    { nome: 'Mestre das Trilhas', icone: '👑', kmNecessario: 1152, desbloqueado: totalKm >= 1152 },
+    { nome: 'Lenda Viva', icone: '🌟', kmNecessario: 1920, desbloqueado: totalKm >= 1920 },
+    { nome: 'Lenda Absoluta', icone: '🔥', kmNecessario: 3840, desbloqueado: totalKm >= 3840 },
   ]
 
   useEffect(() => {
@@ -90,15 +92,17 @@ export default function PerfilCliente() {
     ])
   }
 
+  // ==================== MEDALHAS ESPECIAIS (VALORES ATUALIZADOS) ====================
   const carregarMedalhas = async (userId: string) => {
     setCarregandoMedalhas(true)
     try {
+      // Novas metas baseadas em 10 anos (384 km/ano)
       const listaPadrao = [
-        { nome: 'Trilhas Concluídas', icone: '🥾', meta: 1, progresso: 0 },
-        { nome: 'KM Percorridos', icone: '👣', meta: 10, progresso: 0 },
+        { nome: 'Trilhas Concluídas', icone: '🥾', meta: 2, progresso: 0 },
+        { nome: 'KM Percorridos', icone: '👣', meta: 32, progresso: 0 },
         { nome: 'Fotógrafo da Natureza', icone: '📸', meta: 3, progresso: 0 },
-        { nome: 'Avaliações', icone: '⭐', meta: 1, progresso: 0 },
-        { nome: 'Reservas Realizadas', icone: '💳', meta: 1, progresso: 0 }
+        { nome: 'Avaliações', icone: '⭐', meta: 5, progresso: 0 },
+        { nome: 'Reservas Realizadas', icone: '💳', meta: 2, progresso: 0 }
       ]
 
       const { data: progresso } = await supabase
@@ -125,11 +129,11 @@ export default function PerfilCliente() {
     } catch (err) {
       console.error('Erro ao carregar medalhas:', err)
       setMedalhas([
-        { nome: 'Trilhas Concluídas', icone: '🥾', meta: 1, progresso: 0 },
-        { nome: 'KM Percorridos', icone: '👣', meta: 10, progresso: 0 },
+        { nome: 'Trilhas Concluídas', icone: '🥾', meta: 2, progresso: 0 },
+        { nome: 'KM Percorridos', icone: '👣', meta: 32, progresso: 0 },
         { nome: 'Fotógrafo da Natureza', icone: '📸', meta: 3, progresso: 0 },
-        { nome: 'Avaliações', icone: '⭐', meta: 1, progresso: 0 },
-        { nome: 'Reservas Realizadas', icone: '💳', meta: 1, progresso: 0 }
+        { nome: 'Avaliações', icone: '⭐', meta: 5, progresso: 0 },
+        { nome: 'Reservas Realizadas', icone: '💳', meta: 2, progresso: 0 }
       ])
     } finally {
       setCarregandoMedalhas(false)
@@ -283,7 +287,7 @@ export default function PerfilCliente() {
         <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>🏔️ PussikTrails</h1>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ color: '#4b5563' }}>{user.email}</span>
+            <span style={{ color: '#4b5563' }}>{user.nome || user.email}</span>
             <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#16a34a', color: 'white', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Dashboard</button>
             <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Sair</button>
           </div>
@@ -296,11 +300,11 @@ export default function PerfilCliente() {
         {/* CARD PRINCIPAL */}
         <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', marginBottom: '32px', display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'flex-start', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
           <button onClick={() => setModalAberto(true)} style={{ width: '100px', height: '100px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-            {avatarPreview ? <img src={avatarPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '48px', color: 'white' }}>{user.email?.charAt(0).toUpperCase() || 'A'}</span>}
+            {avatarPreview ? <img src={avatarPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '48px', color: 'white' }}>{(user.nome || user.email)?.charAt(0).toUpperCase() || 'A'}</span>}
           </button>
           
           <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: '28px', fontWeight: 'bold', margin: 0 }}>{user.email}</h2>
+            <h2 style={{ fontSize: '28px', fontWeight: 'bold', margin: 0 }}>{user.nome || user.email}</h2>
             <p style={{ color: '#6b7280', marginTop: '4px' }}>Aventureiro desde {new Date().getFullYear()}</p>
             
             <div style={{ display: 'flex', gap: '32px', marginTop: '16px', marginBottom: '16px', flexWrap: 'wrap' }}>
@@ -335,7 +339,7 @@ export default function PerfilCliente() {
           </div>
         </div>
 
-        {/* CONQUISTAS POR KM */}
+        {/* CONQUISTAS POR KM (ATUALIZADA) */}
         <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', marginBottom: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
           <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px' }}>🏅 Conquistas por KM</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }}>
@@ -343,12 +347,13 @@ export default function PerfilCliente() {
               <div key={i} style={{ flex: '0 0 auto', width: '100px', backgroundColor: m.desbloqueado ? '#f0fdf4' : '#f3f4f6', borderRadius: '12px', padding: '12px', textAlign: 'center', border: m.desbloqueado ? '1px solid #16a34a' : '1px solid #e5e7eb', opacity: m.desbloqueado ? 1 : 0.5 }}>
                 <div style={{ fontSize: '32px' }}>{m.icone}</div>
                 <p style={{ fontWeight: 'bold', fontSize: '10px', marginTop: '8px', marginBottom: 0 }}>{m.nome}</p>
+                <div style={{ fontSize: '8px', color: '#6b7280', marginTop: '4px' }}>{m.kmNecessario} km</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* MEDALHAS ESPECIAIS - HORIZONTAL COM SCROLL NO MOBILE */}
+        {/* MEDALHAS ESPECIAIS */}
         <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', marginBottom: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
           <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', textAlign: 'center' }}>🎖️ Medalhas Especiais</h3>
           
