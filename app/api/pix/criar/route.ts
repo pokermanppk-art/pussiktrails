@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
-// Função CRC16 (mesma de antes)
+// ========== FUNÇÕES AUXILIARES ==========
+
 function calcularCRC16(payload: string): string {
   let crc = 0xFFFF
   for (let i = 0; i < payload.length; i++) {
@@ -12,14 +13,7 @@ function calcularCRC16(payload: string): string {
   return (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, '0')
 }
 
-function gerarPayloadPIX(dados: {
-  chave: string
-  nome: string
-  cidade: string
-  valor: number
-  txid: string
-}) {
-  const { chave, nome, cidade, valor, txid } = dados
+function gerarPayloadManual(chave: string, nome: string, cidade: string, valor: number, txid: string): string {
   let payload = '000201'
   const gui = '0014BR.GOV.BCB.PIX'
   const guiLength = gui.length.toString().padStart(2, '0')
@@ -45,43 +39,142 @@ function gerarPayloadPIX(dados: {
   return payload
 }
 
+// ========== INTEGRAÇÃO PAGHIPER ==========
+async function gerarPixPagHiper(
+  reservaId: string,
+  valor: number,
+  email: string,
+  nome: string,
+  descricao: string
+) {
+  const url = 'https://api.paghiper.com.br/transaction/create/'
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      apiKey: process.env.PAGHIPER_API_KEY,
+      token: process.env.PAGHIPER_TOKEN,
+      order_id: reservaId,
+      payer_email: email,
+      payer_name: nome,
+      amount: Number(valor).toFixed(2),
+      days_due_date: 1,
+      type: 'pix',
+      description: descricao,
+      notification_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook/paghiper`,
+    }),
+  })
+  const data = await response.json()
+  if (data.status === 'success' && data.pix_qr_code && data.pix_code) {
+    return { success: true, qrCode: data.pix_qr_code, codigoPix: data.pix_code, provider: 'PagHiper' }
+  }
+  throw new Error(data.message || 'Erro PagHiper')
+}
+
+// ========== INTEGRAÇÃO ASAAS ==========
+async function gerarPixAsaas(
+  reservaId: string,
+  valor: number,
+  email: string,
+  nome: string,
+  cpfCnpj?: string
+) {
+  const ASAAS_API_URL = 'https://api-sandbox.asaas.com/v3'
+  const ASAAS_API_KEY = process.env.ASAAS_API_KEY
+
+  // Criar cliente
+  const customerBody: any = { name: nome, email }
+  if (cpfCnpj && cpfCnpj.replace(/\D/g, '').length >= 11) {
+    customerBody.cpfCnpj = cpfCnpj.replace(/\D/g, '')
+  }
+  const customerRes = await fetch(`${ASAAS_API_URL}/customers`, {
+    method: 'POST',
+    headers: { access_token: ASAAS_API_KEY!, 'Content-Type': 'application/json' },
+    body: JSON.stringify(customerBody),
+  })
+  const customer = await customerRes.json()
+  if (!customerRes.ok) throw new Error(customer.errors?.[0]?.description)
+
+  // Criar cobrança
+  const paymentRes = await fetch(`${ASAAS_API_URL}/payments`, {
+    method: 'POST',
+    headers: { access_token: ASAAS_API_KEY!, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customer: customer.id,
+      billingType: 'PIX',
+      value: Number(valor).toFixed(2),
+      dueDate: new Date().toISOString().split('T')[0],
+      description: `Reserva ${reservaId}`,
+      externalReference: reservaId,
+    }),
+  })
+  const payment = await paymentRes.json()
+  if (!paymentRes.ok) throw new Error(payment.errors?.[0]?.description)
+
+  // Buscar QR Code
+  const qrRes = await fetch(`${ASAAS_API_URL}/payments/${payment.id}/pixQrCode`, {
+    headers: { access_token: ASAAS_API_KEY! },
+  })
+  const qrData = await qrRes.json()
+  if (!qrRes.ok) throw new Error('Erro ao gerar QR Code')
+
+  return {
+    success: true,
+    qrCode: qrData.encodedImage,
+    codigoPix: qrData.payload,
+    provider: 'Asaas',
+    expiresDate: qrData.expirationDate,
+  }
+}
+
+// ========== FALLBACK MANUAL ==========
+function gerarPixManual(reservaId: string, valor: number, nome: string) {
+  const chavePix = process.env.PIX_KEY || 'chave-pix-nao-configurada@exemplo.com'
+  const txid = reservaId.replace(/-/g, '').slice(0, 25)
+  const payload = gerarPayloadManual(chavePix, 'PussikTrails', 'SAO PAULO', valor, txid)
+  const qrCodeUrl = `https://quickchart.io/qr?text=${encodeURIComponent(payload)}&size=250`
+  return {
+    success: true,
+    qrCode: qrCodeUrl,
+    codigoPix: payload,
+    provider: 'Manual',
+    expiresDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  }
+}
+
+// ========== ENDPOINT PRINCIPAL ==========
 export async function POST(request: Request) {
   try {
-    const { reservaId, valor, nome } = await request.json()
+    const { reservaId, valor, email, nome, cpfCnpj, descricao } = await request.json()
 
-    // Verifica se a chave PIX está configurada
-    const chavePix = process.env.PIX_KEY
-    if (!chavePix) {
-      console.error('❌ PIX_KEY não definida no .env.local')
-      return NextResponse.json(
-        { error: 'Chave PIX não configurada. Defina PIX_KEY no ambiente.' },
-        { status: 500 }
-      )
+    // 1. Tentar PagHiper
+    try {
+      if (!process.env.PAGHIPER_API_KEY || !process.env.PAGHIPER_TOKEN) {
+        throw new Error('PagHiper não configurado')
+      }
+      const result = await gerarPixPagHiper(reservaId, valor, email, nome, descricao)
+      return NextResponse.json(result)
+    } catch (err: any) {
+      console.warn('⚠️ PagHiper falhou:', err.message)
     }
 
-    const txid = reservaId.replace(/-/g, '').slice(0, 25)
-    const payload = gerarPayloadPIX({
-      chave: chavePix,
-      nome: 'PussikTrails',
-      cidade: 'SAO PAULO',
-      valor: valor,
-      txid: txid,
-    })
+    // 2. Tentar Asaas
+    try {
+      if (!process.env.ASAAS_API_KEY) {
+        throw new Error('Asaas não configurado')
+      }
+      const result = await gerarPixAsaas(reservaId, valor, email, nome, cpfCnpj)
+      return NextResponse.json(result)
+    } catch (err: any) {
+      console.warn('⚠️ Asaas falhou:', err.message)
+    }
 
-    const qrCodeUrl = `https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl=${encodeURIComponent(payload)}&choe=UTF-8`
-
-    return NextResponse.json({
-      success: true,
-      qrCode: qrCodeUrl,
-      codigoPix: payload,
-      transactionId: reservaId,
-      expiresDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    })
+    // 3. Fallback Manual
+    console.log('🔄 Usando fallback manual')
+    const fallback = gerarPixManual(reservaId, valor, nome)
+    return NextResponse.json(fallback)
   } catch (error: any) {
-    console.error('❌ Erro ao criar PIX:', error)
-    return NextResponse.json(
-      { error: 'Erro interno ao criar PIX', details: error?.message },
-      { status: 500 }
-    )
+    console.error('❌ Erro fatal:', error)
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
