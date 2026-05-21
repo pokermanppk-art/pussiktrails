@@ -38,20 +38,34 @@ export default function LoginPage() {
     setErro('')
     setCarregando(true)
 
-    // Remove pontos e traço para buscar no banco
     const cpfLimpo = extrairNumerosCPF(cpf)
 
-    console.log('CPF digitado (com máscara):', cpf)
-    console.log('CPF limpo (para busca):', cpfLimpo)
-
     try {
-      const { data: user, error } = await supabase
+      // Buscar todos os usuários e filtrar no JavaScript para comparar CPF sem formatação
+      const { data: users, error } = await supabase
         .from('users')
-        .select('id, nome, email, tipo, status, senha')
-        .eq('cpf', cpfLimpo)
-        .maybeSingle()
+        .select('id, nome, email, tipo, status, senha, cpf')
 
-      if (error || !user) {
+      if (error) {
+        console.error('Erro ao buscar usuários:', error)
+        setErro('Erro ao fazer login')
+        setCarregando(false)
+        return
+      }
+
+      if (!users || users.length === 0) {
+        setErro('CPF não encontrado')
+        setCarregando(false)
+        return
+      }
+
+      // Encontrar o usuário comparando CPF sem pontos e traço
+      const user = users.find(u => {
+        const cpfUsuario = u.cpf?.replace(/\D/g, '') || ''
+        return cpfUsuario === cpfLimpo
+      })
+
+      if (!user) {
         setErro('CPF não encontrado')
         setCarregando(false)
         return
@@ -85,6 +99,7 @@ export default function LoginPage() {
       }
 
     } catch (err) {
+      console.error('Erro no login:', err)
       setErro('Erro ao fazer login')
     } finally {
       setCarregando(false)

@@ -25,6 +25,7 @@ export default function ListaRoteiros() {
   const [userLng, setUserLng] = useState<number | null>(null)
   const [usandoLocalizacao, setUsandoLocalizacao] = useState(false)
 
+  // Função para calcular distância entre dois pontos (Haversine formula)
   const calcularDistancia = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371
     const dLat = (lat2 - lat1) * Math.PI / 180
@@ -36,6 +37,7 @@ export default function ListaRoteiros() {
     return R * c
   }
 
+  // Obter localização do usuário
   const obterLocalizacao = () => {
     if (!navigator.geolocation) {
       alert('Geolocalização não suportada pelo seu navegador')
@@ -57,23 +59,15 @@ export default function ListaRoteiros() {
     )
   }
 
-  useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
-    }
-    const parsedUser = JSON.parse(userData)
-    setUser(parsedUser)
-    carregarRoteiros()
-  }, [busca, localizacao, raioKm, kmMin, kmMax, dificuldade, precoMin, precoMax, userLat, userLng])
-
   const carregarRoteiros = async () => {
     setCarregando(true)
     try {
+      console.log('🔵 Iniciando carregamento de roteiros...')
+      
+      // Buscar roteiros
       let query = supabase
         .from('roteiros')
-        .select('*, guia:users(id, nome, avatar_url)')
+        .select('*')
         .eq('status', 'ativo')
 
       if (busca) query = query.ilike('titulo', `%${busca}%`)
@@ -84,22 +78,48 @@ export default function ListaRoteiros() {
       if (precoMax < 1000) query = query.lte('preco', precoMax)
       if (dificuldade) query = query.eq('dificuldade', dificuldade)
 
-      const { data, error } = await query.order('created_at', { ascending: false })
-      if (error) throw error
+      const { data: roteirosData, error } = await query.order('created_at', { ascending: false })
 
-      let roteirosFiltrados = data || []
+      if (error) {
+        console.error('❌ Erro ao buscar roteiros:', error)
+        throw error
+      }
 
+      console.log('📊 Roteiros encontrados:', roteirosData?.length || 0)
+
+      // Buscar guias separadamente
+      const guiaIds = [...new Set(roteirosData?.map(r => r.id_guia).filter(Boolean) || [])]
+      let guiasMap = new Map()
+      
+      if (guiaIds.length > 0) {
+        const { data: guias } = await supabase
+          .from('users')
+          .select('id, nome, avatar_url')
+          .in('id', guiaIds)
+        
+        guias?.forEach(g => guiasMap.set(g.id, g))
+        console.log('👤 Guias encontrados:', guias?.length || 0)
+      }
+
+      // Combinar roteiros com guias
+      let roteirosCompletos = roteirosData?.map(roteiro => ({
+        ...roteiro,
+        guia: roteiro.id_guia ? guiasMap.get(roteiro.id_guia) : null
+      })) || []
+
+      // Filtro por distância (se tiver localização do usuário)
       if (userLat && userLng && raioKm < 500) {
-        roteirosFiltrados = roteirosFiltrados.filter((roteiro: any) => {
+        roteirosCompletos = roteirosCompletos.filter((roteiro: any) => {
           if (!roteiro.latitude || !roteiro.longitude) return true
           const distancia = calcularDistancia(userLat, userLng, roteiro.latitude, roteiro.longitude)
           return distancia <= raioKm
         })
+        console.log('📍 Após filtro de distância:', roteirosCompletos.length)
       }
 
-      setRoteiros(roteirosFiltrados)
+      setRoteiros(roteirosCompletos)
     } catch (err) {
-      console.error('Erro ao carregar roteiros:', err)
+      console.error('❌ Erro ao carregar roteiros:', err)
     } finally {
       setCarregando(false)
     }
@@ -117,6 +137,21 @@ export default function ListaRoteiros() {
     setUserLat(null)
     setUserLng(null)
   }
+
+  useEffect(() => {
+    const userData = localStorage.getItem('user')
+    if (!userData) {
+      router.push('/login')
+      return
+    }
+    const parsedUser = JSON.parse(userData)
+    if (parsedUser.tipo !== 'cliente') {
+      router.push('/')
+      return
+    }
+    setUser(parsedUser)
+    carregarRoteiros()
+  }, [busca, localizacao, raioKm, kmMin, kmMax, dificuldade, precoMin, precoMax, userLat, userLng])
 
   const getDificuldadeCor = (dificuldade: string) => {
     switch (dificuldade?.toLowerCase()) {
@@ -159,7 +194,7 @@ export default function ListaRoteiros() {
       <style jsx global>{`
         @media (min-width: 768px) {
           .roteiros-container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
-          .filtros-grid { grid-template-columns: repeat(3, 1fr) !important; }
+          .filtros-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 16px !important; }
           .filtros-avancados { flex-direction: row !important; flex-wrap: wrap !important; gap: 20px !important; }
           .roteiros-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 24px !important; }
         }
@@ -168,7 +203,7 @@ export default function ListaRoteiros() {
       {/* HEADER */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PussikTrails</h1>
+          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Dashboard</button>
             <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Sair</button>
@@ -184,7 +219,7 @@ export default function ListaRoteiros() {
           <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Descubra novas aventuras e trilhas incríveis</p>
         </div>
 
-        {/* CARD DE FILTROS FIXO */}
+        {/* CARD DE FILTROS */}
         <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
           
           {/* LINHA 1 - Busca por nome */}
@@ -196,7 +231,7 @@ export default function ListaRoteiros() {
             style={{ width: '100%', padding: '10px 16px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '14px', outline: 'none', marginBottom: '16px' }}
           />
 
-          {/* LINHA 2 - Localização + Raio (lado a lado) */}
+          {/* LINHA 2 - Localização + Raio */}
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
             <input
               type="text"
@@ -220,8 +255,7 @@ export default function ListaRoteiros() {
                   fontSize: '12px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px',
-                  whiteSpace: 'nowrap'
+                  gap: '4px'
                 }}
               >
                 📍 {userLat ? 'Ativa' : (usandoLocalizacao ? '...' : 'Usar localização')}
@@ -244,8 +278,8 @@ export default function ListaRoteiros() {
             </div>
           </div>
 
-          {/* LINHA 3 - Filtros avançados (KM, Preço, Dificuldade) */}
-          <div className="filtros-avancados" style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+          {/* LINHA 3 - Filtros avançados */}
+          <div className="filtros-avancados" style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
             
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '35px' }}>🥾 KM:</span>
@@ -301,7 +335,7 @@ export default function ListaRoteiros() {
             </div>
           </div>
 
-          {/* LINHA 4 - BOTÕES */}
+          {/* BOTÕES */}
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button
               onClick={limparFiltros}

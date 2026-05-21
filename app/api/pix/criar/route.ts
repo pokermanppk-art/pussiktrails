@@ -2,25 +2,57 @@ import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
   try {
-    const { reservaId, valor, email, nome } = await request.json()
+    const { reservaId, valor, email, nome, descricao } = await request.json()
 
-    // Gerar um QR Code estático de exemplo (usando API pública para teste)
-    // QR Code com o texto: "PIX SIMULADO - Reserva " + reservaId
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PIX%20SIMULADO%20-%20Reserva%20${reservaId}%20-%20Valor%20R$${valor}`
+    console.log('🔵 Criando cobrança PIX na PagHiper para:', { reservaId, valor, email, nome })
+
+    // URL da API PagHiper (usando IP direto para evitar DNS)
+    const url = 'https://187.45.245.52/transaction/create/'
     
-    // Código PIX simulado
-    const codigoPixSimulado = `00020126580014BR.GOV.BCB.PIX0136${reservaId}5204000053039865404${valor}5802BR5925${nome}6009SAO PAULO62070503***6304E2CA`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Host': 'api.paghiper.com.br'
+      },
+      body: JSON.stringify({
+        apiKey: process.env.PAGHIPER_API_KEY,
+        token: process.env.PAGHIPER_TOKEN,
+        order_id: reservaId,
+        payer_email: email,
+        payer_name: nome,
+        amount: valor.toFixed(2),
+        days_due_date: 1,
+        type: 'pix',
+        description: descricao || `Reserva PussikTrails - ${reservaId.slice(0, 8)}`,
+        notification_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/pix/webhook`
+      })
+    })
+
+    const data = await response.json()
+    console.log('🟢 Resposta PagHiper:', JSON.stringify(data, null, 2))
+
+    if (data.status !== 'success') {
+      console.error('❌ Erro PagHiper:', data)
+      return NextResponse.json({ 
+        error: data.message || 'Erro ao criar cobrança',
+        details: data 
+      }, { status: 400 })
+    }
 
     return NextResponse.json({
       success: true,
-      qrCode: qrCodeUrl,
-      codigoPix: codigoPixSimulado,
-      transactionId: `SIM_${reservaId}_${Date.now()}`,
-      simulacao: true
+      qrCode: data.pix_qr_code,
+      codigoPix: data.pix_code,
+      transactionId: data.transaction_id,
+      expiresDate: data.expires_date
     })
 
-  } catch (error) {
-    console.error('Erro ao criar PIX simulado:', error)
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+  } catch (error: any) {
+    console.error('❌ Erro ao criar PIX:', error)
+    return NextResponse.json({ 
+      error: 'Erro interno ao criar PIX',
+      details: error?.message || 'Erro desconhecido'
+    }, { status: 500 })
   }
 }
