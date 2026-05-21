@@ -1,116 +1,242 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+import { v4 as uuidv4 } from 'uuid'
 
-export default function ClienteReservar() {
+export default function PagamentoPIX() {
   const params = useParams()
-  const searchParams = useSearchParams()
   const router = useRouter()
-  const roteiroId = params.id as string
-  const quantidadePessoas = Number(searchParams.get('pessoas')) || 1
+  const reservaId = params.reservaId as string
 
-  const [roteiro, setRoteiro] = useState<any>(null)
   const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState('')
-  const [processando, setProcessando] = useState(false)
+  const [qrCode, setQrCode] = useState('')
+  const [codigoPix, setCodigoPix] = useState('')
+  const [valor, setValor] = useState(0)
+  const [roteiroTitulo, setRoteiroTitulo] = useState('')
+  const [expiraEm, setExpiraEm] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [usandoFallback, setUsandoFallback] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+  const [arquivo, setArquivo] = useState<File | null>(null)
+  const [comprovanteStatus, setComprovanteStatus] = useState('nao_enviado')
 
   useEffect(() => {
-    const carregarRoteiro = async () => {
-      const { data, error } = await supabase
-        .from('roteiros')
-        .select('id, titulo, preco, embarque_data, retorno_data')
-        .eq('id', roteiroId)
-        .single()
+    const carregarPagamento = async () => {
+      try {
+        // 1. Buscar reserva
+        const { data: reserva, error: reservaError } = await supabase
+          .from('reservas')
+          .select('*, roteiro:roteiro_id(titulo, preco), comprovante_status, cliente_id')
+          .eq('id', reservaId)
+          .single()
 
-      if (error || !data) {
-        setErro('Roteiro não encontrado')
+        if (reservaError || !reserva) {
+          setMensagem('Reserva não encontrada')
+          setCarregando(false)
+          return
+        }
+
+        setValor(reserva.valor_total)
+        setRoteiroTitulo(reserva.roteiro?.titulo || 'Reserva')
+        setComprovanteStatus(reserva.comprovante_status || 'nao_enviado')
+
+        if (reserva.comprovante_status === 'aprovado' || reserva.pagamento_status === 'pago') {
+          router.push('/cliente/minhas-reservas')
+          return
+        }
+
+        if (reserva.comprovante_status === 'enviado') {
+          setCarregando(false)
+          return
+        }
+
+        // 2. Buscar cliente
+        const { data: cliente, error: clienteError } = await supabase
+          .from('users')
+          .select('nome, email, cpf')
+          .eq('id', reserva.cliente_id)
+          .single()
+
+        if (clienteError || !cliente) {
+          setMensagem('Dados do cliente não encontrados')
+          setCarregando(false)
+          return
+        }
+
+        // 3. Tentar criar cliente no Asaas
+        let asaasCustomerId = null
+        let asaasSuccess = false
+
+        try {
+          const customerRes = await fetch('/api/asaas/cliente', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: cliente.email,
+              nome: cliente.nome,
+              cpfCnpj: cliente.cpf?.replace(/\D/g, ''),
+            }),
+          })
+          const customerData = await customerRes.json()
+          if (customerRes.ok && customerData.customerId) {
+            asaasCustomerId = customerData.customerId
+          }
+        } catch (err) {
+          console.warn('Erro ao criar cliente Asaas:', err)
+        }
+
+        // 4. Tentar gerar PIX via Asaas
+        let pixResponse = null
+        if (asaasCustomerId) {
+          try {
+            const pixRes = await fetch('/api/asaas/pix/criar', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                customerId: asaasCustomerId,
+                valor: reserva.valor_total,
+                descricao: `Reserva - ${reserva.roteiro?.titulo}`,
+                reservaId: reserva.id,
+              }),
+            })
+            pixResponse = await pixRes.json()
+            if (pixResponse.success) asaasSuccess = true
+          } catch (err) {
+            console.warn('Erro ao gerar PIX Asaas:', err)
+          }
+        }
+
+        // 5. Se Asaas falhou, usa fallback manual
+        if (!asaasSuccess) {
+          console.log('🔄 Usando fallback manual para gerar PIX')
+          setUsandoFallback(true)
+          const fallbackRes = await fetch('/api/pix/criar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              reservaId: reserva.id,
+              valor: reserva.valor_total,
+              nome: cliente.nome || 'Cliente',
+            }),
+          })
+          pixResponse = await fallbackRes.json()
+        }
+
+        if (pixResponse?.success) {
+          setQrCode(pixResponse.qrCode)
+          setCodigoPix(pixResponse.codigoPix)
+          if (pixResponse.expiresDate) {
+            const expira = new Date(pixResponse.expiresDate)
+            setExpiraEm(expira.toLocaleDateString('pt-BR') + ' ' + expira.toLocaleTimeString('pt-BR'))
+          }
+        } else {
+          setMensagem(pixResponse?.error || 'Erro ao gerar PIX')
+        }
+      } catch (err) {
+        console.error('Erro ao carregar pagamento:', err)
+        setMensagem('Erro inesperado')
+      } finally {
         setCarregando(false)
-        return
       }
-      setRoteiro(data)
-      setCarregando(false)
-    }
-    if (roteiroId) carregarRoteiro()
-  }, [roteiroId])
-
-  const handleConfirmarReserva = async () => {
-    setProcessando(true)
-    setErro('')
-
-    const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
-    }
-    const user = JSON.parse(userData)
-
-    const valorTotal = roteiro.preco * quantidadePessoas
-
-    const { error } = await supabase
-      .from('reservas')
-      .insert({
-        cliente_id: user.id,
-        roteiro_id: roteiroId,
-        quantidade_pessoas: quantidadePessoas,
-        valor_total: valorTotal,
-        data_trilha: roteiro.embarque_data || new Date().toISOString(),
-        status: 'pendente',
-        pagamento_status: 'aguardando'
-      })
-
-    if (error) {
-      setErro('Erro ao criar reserva: ' + error.message)
-      setProcessando(false)
-      return
     }
 
-    // Redireciona para minhas reservas
-    router.push('/cliente/minhas-reservas')
+    if (reservaId) carregarPagamento()
+  }, [reservaId, router])
+
+  const copiarCodigo = () => {
+    navigator.clipboard.writeText(codigoPix)
+    alert('✅ Código PIX copiado!')
   }
 
-  if (carregando) {
-    return <div style={{ padding: '32px', textAlign: 'center' }}>Carregando dados da reserva...</div>
+  const handleUpload = async () => {
+    if (!arquivo) {
+      setMensagem('Selecione um comprovante')
+      return
+    }
+    setEnviando(true)
+    setMensagem('')
+
+    try {
+      const fileExt = arquivo.name.split('.').pop()
+      const fileName = `${reservaId}_${uuidv4()}.${fileExt}`
+      const filePath = `comprovantes/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('comprovantes')
+        .upload(filePath, arquivo)
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('comprovantes')
+        .getPublicUrl(filePath)
+
+      await supabase
+        .from('reservas')
+        .update({
+          comprovante_url: publicUrl,
+          comprovante_status: 'enviado',
+          comprovante_enviado_em: new Date().toISOString(),
+        })
+        .eq('id', reservaId)
+
+      setMensagem('✅ Comprovante enviado! Aguarde análise.')
+      setComprovanteStatus('enviado')
+      setArquivo(null)
+    } catch (err: any) {
+      setMensagem('❌ Erro ao enviar comprovante: ' + err.message)
+    } finally {
+      setEnviando(false)
+    }
   }
 
-  if (erro) {
+  if (carregando) return <div style={{ textAlign: 'center', padding: '50px' }}>Carregando...</div>
+  if (comprovanteStatus === 'enviado') {
     return (
-      <div style={{ padding: '32px', textAlign: 'center' }}>
-        <p style={{ color: '#dc2626' }}>{erro}</p>
-        <button onClick={() => router.back()} style={{ marginTop: '16px', backgroundColor: '#16a34a', color: 'white', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Voltar</button>
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: 20, textAlign: 'center' }}>
+        <h2>✅ Comprovante enviado!</h2>
+        <p>Em análise. Você receberá notificação.</p>
+        <button onClick={() => router.push('/cliente/minhas-reservas')}>Voltar</button>
       </div>
     )
   }
 
-  const total = roteiro.preco * quantidadePessoas
-
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '32px 24px' }}>
-      <div style={{ maxWidth: '600px', margin: '0 auto', backgroundColor: 'white', borderRadius: '24px', padding: '32px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' }}>Confirmar Reserva</h1>
-        <p><strong>Roteiro:</strong> {roteiro.titulo}</p>
-        <p><strong>Quantidade de pessoas:</strong> {quantidadePessoas}</p>
-        <p><strong>Valor total:</strong> R$ {total.toFixed(2)}</p>
-        <p><strong>Data da trilha:</strong> {roteiro.embarque_data ? new Date(roteiro.embarque_data).toLocaleDateString() : 'A combinar com o guia'}</p>
+    <div style={{ maxWidth: 600, margin: '0 auto', padding: 20 }}>
+      <h2>Pagamento via PIX</h2>
+      {usandoFallback && (
+        <p style={{ color: '#d97706', background: '#fef3c7', padding: 8, borderRadius: 8 }}>
+          ⚠️ Modo alternativo ativado. O QR Code é válido, mas a confirmação é manual.
+        </p>
+      )}
+      <p><strong>Valor:</strong> R$ {valor.toFixed(2)}</p>
+      <p><strong>Roteiro:</strong> {roteiroTitulo}</p>
+      {expiraEm && <p>⏰ Válido até: {expiraEm}</p>}
 
-        <div style={{ marginTop: '24px', display: 'flex', gap: '16px', justifyContent: 'flex-end' }}>
-          <button
-            onClick={() => router.back()}
-            style={{ backgroundColor: '#e5e7eb', color: '#374151', padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleConfirmarReserva}
-            disabled={processando}
-            style={{ backgroundColor: '#16a34a', color: 'white', padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', opacity: processando ? 0.7 : 1 }}
-          >
-            {processando ? 'Confirmando...' : 'Confirmar Reserva'}
-          </button>
+      {qrCode && (
+        <div style={{ textAlign: 'center', margin: '20px 0' }}>
+          <img src={qrCode} alt="QR Code PIX" style={{ width: 250, height: 250 }} />
         </div>
-        {erro && <p style={{ marginTop: '16px', color: '#dc2626', fontSize: '14px' }}>{erro}</p>}
-      </div>
+      )}
+
+      {codigoPix && (
+        <div>
+          <label>Código PIX (copie e cole no app do banco):</label>
+          <textarea readOnly value={codigoPix} rows={3} style={{ width: '100%', marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} />
+          <button onClick={copiarCodigo} style={{ marginTop: 8 }}>📋 Copiar código</button>
+        </div>
+      )}
+
+      <hr style={{ margin: '20px 0' }} />
+      <h3>📎 Envio do comprovante</h3>
+      <p>Após pagar, anexe o comprovante (print, foto ou PDF).</p>
+      <input type="file" accept="image/*,application/pdf" onChange={(e) => setArquivo(e.target.files?.[0] || null)} disabled={enviando} />
+      <button onClick={handleUpload} disabled={enviando || !arquivo} style={{ marginTop: 10 }}>
+        {enviando ? 'Enviando...' : '📤 Enviar comprovante'}
+      </button>
+      {mensagem && <p style={{ marginTop: 16, color: mensagem.includes('✅') ? 'green' : 'red' }}>{mensagem}</p>}
     </div>
   )
 }

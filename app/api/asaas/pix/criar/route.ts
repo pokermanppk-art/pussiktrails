@@ -7,13 +7,13 @@ export async function POST(request: Request) {
   try {
     const { customerId, valor, descricao, reservaId } = await request.json()
 
-    // 1. Criar a cobrança
-    const paymentResponse = await fetch(`${ASAAS_API_URL}/payments`, {
+    if (!ASAAS_API_KEY) return NextResponse.json({ error: 'API key não configurada' }, { status: 500 })
+    if (!customerId) return NextResponse.json({ error: 'Cliente não identificado' }, { status: 400 })
+
+    // Criar cobrança
+    const paymentRes = await fetch(`${ASAAS_API_URL}/payments`, {
       method: 'POST',
-      headers: {
-        'access_token': ASAAS_API_KEY!,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         customer: customerId,
         billingType: 'PIX',
@@ -24,18 +24,15 @@ export async function POST(request: Request) {
       }),
     })
 
-    const payment = await paymentResponse.json()
+    const payment = await paymentRes.json()
+    if (!paymentRes.ok) return NextResponse.json({ error: payment.errors?.[0]?.description }, { status: paymentRes.status })
 
-    if (!paymentResponse.ok) {
-      return NextResponse.json({ error: payment.errors?.[0]?.description || 'Erro ao criar cobrança' }, { status: paymentResponse.status })
-    }
-
-    // 2. Buscar QR Code da cobrança
-    const qrResponse = await fetch(`${ASAAS_API_URL}/payments/${payment.id}/pixQrCode`, {
-      headers: { 'access_token': ASAAS_API_KEY! },
+    // Buscar QR Code
+    const qrRes = await fetch(`${ASAAS_API_URL}/payments/${payment.id}/pixQrCode`, {
+      headers: { 'access_token': ASAAS_API_KEY },
     })
-
-    const qrData = await qrResponse.json()
+    const qrData = await qrRes.json()
+    if (!qrRes.ok) return NextResponse.json({ error: 'Erro ao gerar QR Code' }, { status: qrRes.status })
 
     return NextResponse.json({
       success: true,
@@ -44,9 +41,7 @@ export async function POST(request: Request) {
       paymentId: payment.id,
       expiresDate: qrData.expirationDate,
     })
-
   } catch (error) {
-    console.error('Erro ao criar PIX Asaas:', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
