@@ -4,54 +4,44 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
-type Roteiro = {
-  id: string
-  titulo: string
-  descricao: string
-  preco: number
-  duracao_horas: number
-  km: number
-  dificuldade: string
-  localizacao: string
-  foto_capa?: string
-  guia_nome?: string
-  guia_id?: string
-}
-
-export default function RoteirosPublicosPage() {
+export default function ListaRoteiros() {
   const router = useRouter()
-  const [roteiros, setRoteiros] = useState<Roteiro[]>([])
+  const [user, setUser] = useState<any>(null)
+  const [roteiros, setRoteiros] = useState<any[]>([])
   const [carregando, setCarregando] = useState(true)
-  const [busca, setBusca] = useState('')
-  const [filtroDificuldade, setFiltroDificuldade] = useState('todas')
-  const [usuarioLogado, setUsuarioLogado] = useState<any>(null)
+  const [filtro, setFiltro] = useState('')
+  const [dificuldade, setDificuldade] = useState('')
 
   useEffect(() => {
     const userData = localStorage.getItem('user')
-    if (userData) {
-      setUsuarioLogado(JSON.parse(userData))
+    if (!userData) {
+      router.push('/login')
+      return
     }
+    const parsedUser = JSON.parse(userData)
+    setUser(parsedUser)
     carregarRoteiros()
   }, [])
 
   const carregarRoteiros = async () => {
     setCarregando(true)
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('roteiros')
-        .select('*, guia:users(nome)')
+        .select('*, guia:users(id, nome, avatar_url)')
         .eq('status', 'ativo')
-        .order('created_at', { ascending: false })
+
+      if (filtro) {
+        query = query.ilike('titulo', `%${filtro}%`)
+      }
+      if (dificuldade) {
+        query = query.eq('dificuldade', dificuldade)
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false })
 
       if (error) throw error
-
-      const roteirosFormatados = (data || []).map((roteiro: any) => ({
-        ...roteiro,
-        guia_nome: roteiro.guia?.nome || 'Guia',
-        guia_id: roteiro.id_guia
-      }))
-
-      setRoteiros(roteirosFormatados)
+      setRoteiros(data || [])
     } catch (err) {
       console.error('Erro ao carregar roteiros:', err)
     } finally {
@@ -59,274 +49,156 @@ export default function RoteirosPublicosPage() {
     }
   }
 
-  const handleVerDetalhes = (roteiroId: string) => {
-    router.push(`/roteiros/${roteiroId}`)
-  }
+  useEffect(() => {
+    carregarRoteiros()
+  }, [filtro, dificuldade])
 
-  const handleReservar = (roteiroId: string) => {
-    if (!usuarioLogado) {
-      // Salvar roteiro que queria reservar para redirecionar depois
-      localStorage.setItem('redirectAfterLogin', `/roteiros/${roteiroId}`)
-      router.push('/login')
-      return
-    }
-    router.push(`/cliente/roteiros/${roteiroId}`)
-  }
-
-  const getDificuldadeInfo = (dificuldade: string) => {
+  const getDificuldadeCor = (dificuldade: string) => {
     switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return { bg: '#dcfce7', text: '#16a34a', label: '🟢 Fácil' }
-      case 'médio': return { bg: '#fef3c7', text: '#f59e0b', label: '🟡 Médio' }
-      case 'difícil': return { bg: '#fee2e2', text: '#dc2626', label: '🔴 Difícil' }
-      default: return { bg: '#f3f4f6', text: '#6b7280', label: '⚪ Não definido' }
+      case 'fácil': return '#10b981'
+      case 'médio': return '#f59e0b'
+      case 'difícil': return '#ef4444'
+      case 'extremo': return '#8b5cf6'
+      default: return '#6b7280'
     }
   }
 
-  const roteirosFiltrados = roteiros.filter((roteiro) => {
-    const matchBusca = roteiro.titulo?.toLowerCase().includes(busca.toLowerCase()) ||
-      roteiro.descricao?.toLowerCase().includes(busca.toLowerCase()) ||
-      roteiro.localizacao?.toLowerCase().includes(busca.toLowerCase())
-    
-    const matchDificuldade = filtroDificuldade === 'todas' || 
-      roteiro.dificuldade?.toLowerCase() === filtroDificuldade.toLowerCase()
-    
-    return matchBusca && matchDificuldade
-  })
+  const getDificuldadeIcone = (dificuldade: string) => {
+    switch (dificuldade?.toLowerCase()) {
+      case 'fácil': return '🥾'
+      case 'médio': return '⛰️'
+      case 'difícil': return '🏔️'
+      case 'extremo': return '⚠️'
+      default: return '🥾'
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('user')
+    router.push('/login')
+  }
+
+  if (carregando) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏔️</div>
+          <div style={{ color: '#6b7280' }}>Carregando roteiros...</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      
-      {/* CABEÇALHO */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => router.push('/')}>
-            <span style={{ fontSize: '24px' }}>🏔️</span>
-            <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>Prussik Trails</h1>
-          </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            {usuarioLogado ? (
-              <>
-                <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Dashboard</button>
-                <button onClick={() => router.push('/cliente/perfil')} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Perfil</button>
-              </>
-            ) : (
-              <>
-                <button onClick={() => router.push('/login')} style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Entrar</button>
-                <button onClick={() => router.push('/cadastro')} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cadastrar</button>
-              </>
-            )}
+      <style jsx global>{`
+        @media (min-width: 768px) {
+          .roteiros-container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+          .filtros-container { flex-direction: row !important; justify-content: space-between !important; align-items: center !important; }
+          .roteiros-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 24px !important; }
+        }
+      `}</style>
+
+      {/* HEADER */}
+      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PussikTrails</h1>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Dashboard</button>
+            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Sair</button>
           </div>
         </div>
       </div>
 
-      {/* CONTEÚDO */}
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px' }}>
+      <div className="roteiros-container" style={{ padding: '16px' }}>
         
         {/* TÍTULO */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#111827', margin: 0 }}>🗺️ Explorar Roteiros</h1>
-          <p style={{ color: '#6b7280', marginTop: '8px', fontSize: '14px' }}>
-            Descubra as melhores trilhas e aventure-se com os melhores guias
-          </p>
+        <div style={{ marginBottom: '20px' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 'bold', margin: 0, color: '#111827' }}>🌄 Explorar Roteiros</h2>
+          <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Descubra novas aventuras e trilhas incríveis</p>
         </div>
 
         {/* FILTROS */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
-            <div style={{ flex: 2, minWidth: '200px' }}>
-              <input
-                type="text"
-                placeholder="🔍 Buscar por título, descrição ou localização..."
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  borderRadius: '40px',
-                  border: '1px solid #e5e7eb',
-                  fontSize: '14px',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#16a34a'
-                  e.target.style.boxShadow = '0 0 0 3px rgba(22,163,74,0.1)'
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#e5e7eb'
-                  e.target.style.boxShadow = 'none'
-                }}
-              />
-            </div>
-            <div style={{ minWidth: '140px' }}>
-              <select
-                value={filtroDificuldade}
-                onChange={(e) => setFiltroDificuldade(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  borderRadius: '40px',
-                  border: '1px solid #e5e7eb',
-                  fontSize: '14px',
-                  backgroundColor: 'white',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="todas">Todas as dificuldades</option>
-                <option value="fácil">Fácil</option>
-                <option value="médio">Médio</option>
-                <option value="difícil">Difícil</option>
-              </select>
-            </div>
-            {(busca || filtroDificuldade !== 'todas') && (
-              <button
-                onClick={() => { setBusca(''); setFiltroDificuldade('todas') }}
-                style={{
-                  backgroundColor: '#f3f4f6',
-                  border: 'none',
-                  borderRadius: '40px',
-                  padding: '10px 20px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  color: '#6b7280'
-                }}
-              >
-                Limpar filtros
-              </button>
-            )}
-          </div>
+        <div className="filtros-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+          <input
+            type="text"
+            placeholder="🔍 Buscar roteiro..."
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            style={{ flex: 1, padding: '10px 16px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '14px', outline: 'none' }}
+          />
+          <select
+            value={dificuldade}
+            onChange={(e) => setDificuldade(e.target.value)}
+            style={{ padding: '10px 16px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '14px', backgroundColor: 'white', cursor: 'pointer' }}
+          >
+            <option value="">Todas as dificuldades</option>
+            <option value="fácil">🥾 Fácil</option>
+            <option value="médio">⛰️ Médio</option>
+            <option value="difícil">🏔️ Difícil</option>
+            <option value="extremo">⚠️ Extremo</option>
+          </select>
         </div>
 
-        {/* LISTA DE ROTEIROS */}
-        {carregando ? (
-          <div style={{ textAlign: 'center', padding: '60px', color: '#6b7280' }}>
-            <div style={{ width: '40px', height: '40px', border: '3px solid #e5e7eb', borderTopColor: '#16a34a', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-            Carregando roteiros...
-          </div>
-        ) : roteirosFiltrados.length === 0 ? (
-          <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '60px', textAlign: 'center' }}>
-            <div style={{ fontSize: '48px', marginBottom: '12px' }}>🗺️</div>
-            <div style={{ fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Nenhum roteiro encontrado</div>
-            <div style={{ fontSize: '13px', color: '#6b7280' }}>Tente ajustar os filtros ou volte mais tarde</div>
+        {/* GRID DE ROTEIROS */}
+        {roteiros.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px', backgroundColor: 'white', borderRadius: '20px' }}>
+            <span style={{ fontSize: '48px' }}>🗺️</span>
+            <p style={{ marginTop: '12px', color: '#6b7280' }}>Nenhum roteiro encontrado</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
-            {roteirosFiltrados.map((roteiro) => {
-              const dificuldadeInfo = getDificuldadeInfo(roteiro.dificuldade)
-              return (
-                <div
-                  key={roteiro.id}
-                  style={{
-                    backgroundColor: 'white',
-                    borderRadius: '20px',
-                    overflow: 'hidden',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                    transition: 'all 0.3s ease',
-                    cursor: 'pointer'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-6px)'
-                    e.currentTarget.style.boxShadow = '0 20px 30px rgba(0,0,0,0.1)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)'
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)'
-                  }}
-                >
+          <div className="roteiros-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+            {roteiros.map((roteiro) => (
+              <div
+                key={roteiro.id}
+                onClick={() => router.push(`/roteiros/${roteiro.id}`)}
+                style={{
+                  backgroundColor: 'white',
+                  borderRadius: '20px',
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-4px)'
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)'
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'
+                }}
+              >
+                <div style={{ height: '160px', backgroundColor: '#e5e7eb', overflow: 'hidden', position: 'relative' }}>
                   {roteiro.foto_capa ? (
-                    <img src={roteiro.foto_capa} alt={roteiro.titulo} style={{ width: '100%', height: '160px', objectFit: 'cover' }} />
+                    <img src={roteiro.foto_capa} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
-                    <div style={{ height: '120px', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: '48px' }}>🏔️</span>
-                    </div>
+                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px' }}>🏔️</div>
                   )}
-
-                  <div style={{ padding: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#111827' }}>{roteiro.titulo}</h3>
-                      <span style={{ backgroundColor: dificuldadeInfo.bg, color: dificuldadeInfo.text, padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' }}>
-                        {dificuldadeInfo.label}
-                      </span>
-                    </div>
-
-                    <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px', lineHeight: 1.5 }}>
-                      {roteiro.descricao?.length > 100 ? `${roteiro.descricao.substring(0, 100)}...` : roteiro.descricao}
-                    </p>
-
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f3f4f6', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', color: '#4b5563' }}>
-                        📍 {roteiro.localizacao}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f3f4f6', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', color: '#4b5563' }}>
-                        🥾 {roteiro.km} km
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f3f4f6', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>
-                        R$ {roteiro.preco}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleVerDetalhes(roteiro.id)
-                        }}
-                        style={{
-                          flex: 1,
-                          backgroundColor: '#f3f4f6',
-                          border: 'none',
-                          borderRadius: '40px',
-                          padding: '10px',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          color: '#374151'
-                        }}
-                      >
-                        Ver detalhes
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleReservar(roteiro.id)
-                        }}
-                        style={{
-                          flex: 1,
-                          backgroundColor: '#dc2626',
-                          border: 'none',
-                          borderRadius: '40px',
-                          padding: '10px',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          fontWeight: '600',
-                          color: 'white',
-                          transition: 'background-color 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#b91c1c'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
-                      >
-                        {usuarioLogado ? 'Reservar' : '🔒 Login para reservar'}
-                      </button>
-                    </div>
-
-                    {!usuarioLogado && (
-                      <div style={{ marginTop: '12px', fontSize: '11px', color: '#9ca3af', textAlign: 'center' }}>
-                        Faça login para fazer sua reserva
-                      </div>
-                    )}
+                  <div style={{ position: 'absolute', bottom: '8px', right: '8px', backgroundColor: 'rgba(0,0,0,0.7)', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', color: 'white' }}>
+                    {getDificuldadeIcone(roteiro.dificuldade)} {roteiro.dificuldade}
                   </div>
                 </div>
-              )
-            })}
+                <div style={{ padding: '16px' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>{roteiro.titulo}</div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>📍 {roteiro.localizacao}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: 'white' }}>
+                        {roteiro.guia?.nome?.charAt(0).toUpperCase() || 'G'}
+                      </div>
+                      <span style={{ fontSize: '11px', color: '#6b7280' }}>{roteiro.guia?.nome || 'Guia'}</span>
+                    </div>
+                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#16a34a' }}>
+                      R$ {roteiro.preco}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
-
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   )
 }

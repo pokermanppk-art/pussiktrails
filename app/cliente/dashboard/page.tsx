@@ -72,7 +72,7 @@ export default function ClienteDashboard() {
         .select('*', { count: 'exact', head: true })
         .eq('usuario_id', userId)
 
-      // 4. Última atividade (última reserva realizada)
+      // 4. Última atividade
       const { data: ultimaReserva } = await supabase
         .from('reservas')
         .select('created_at')
@@ -81,7 +81,7 @@ export default function ClienteDashboard() {
         .limit(1)
         .single()
 
-      // 5. Próximas reservas (confirmadas e pendentes com data futura)
+      // 5. Próximas reservas
       const { data: proximas } = await supabase
         .from('reservas')
         .select('*, roteiro:roteiro_id(titulo, foto_capa)')
@@ -93,10 +93,10 @@ export default function ClienteDashboard() {
 
       setProximasReservas(proximas || [])
 
-      // 6. Roteiros recomendados (baseados em dificuldade e localização - simplificado)
+      // 6. Roteiros recomendados (apenas ativos)
       const { data: recomendados } = await supabase
         .from('roteiros')
-        .select('id, titulo, foto_capa, preco, duracao_horas, km, dificuldade, localizacao')
+        .select('id, titulo, foto_capa, preco, duracao_horas, km, dificuldade, localizacao, status')
         .eq('status', 'ativo')
         .order('created_at', { ascending: false })
         .limit(6)
@@ -198,22 +198,46 @@ export default function ClienteDashboard() {
 
         {/* STATS CARDS */}
         <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '16px' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '16px', textAlign: 'center' }}>
+          
+          <div 
+            onClick={() => router.push('/cliente/minhas-reservas')}
+            style={{ backgroundColor: 'white', borderRadius: '16px', padding: '16px', textAlign: 'center', cursor: 'pointer', transition: 'transform 0.2s' }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
             <div style={{ fontSize: '28px', marginBottom: '8px' }}>🥾</div>
             <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalTrilhas}</div>
             <div style={{ fontSize: '11px', color: '#6b7280' }}>Trilhas realizadas</div>
           </div>
-          <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '16px', textAlign: 'center' }}>
+
+          <div 
+            onClick={() => router.push('/cliente/perfil')}
+            style={{ backgroundColor: 'white', borderRadius: '16px', padding: '16px', textAlign: 'center', cursor: 'pointer', transition: 'transform 0.2s' }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
             <div style={{ fontSize: '28px', marginBottom: '8px' }}>🏅</div>
             <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalMedalhas}</div>
             <div style={{ fontSize: '11px', color: '#6b7280' }}>Medalhas conquistadas</div>
           </div>
-          <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '16px', textAlign: 'center' }}>
+
+          <div 
+            onClick={() => router.push('/cliente/minhas-reservas')}
+            style={{ backgroundColor: 'white', borderRadius: '16px', padding: '16px', textAlign: 'center', cursor: 'pointer', transition: 'transform 0.2s' }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
             <div style={{ fontSize: '28px', marginBottom: '8px' }}>⏳</div>
             <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f59e0b' }}>{stats.reservasPendentes + stats.reservasConfirmadas}</div>
             <div style={{ fontSize: '11px', color: '#6b7280' }}>Próximas aventuras</div>
           </div>
-          <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '16px', textAlign: 'center' }}>
+
+          <div 
+            onClick={() => router.push('/cliente/minhas-reservas')}
+            style={{ backgroundColor: 'white', borderRadius: '16px', padding: '16px', textAlign: 'center', cursor: 'pointer', transition: 'transform 0.2s' }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
             <div style={{ fontSize: '28px', marginBottom: '8px' }}>⭐</div>
             <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.reservasRealizadas}</div>
             <div style={{ fontSize: '11px', color: '#6b7280' }}>Aventuras completas</div>
@@ -229,7 +253,11 @@ export default function ClienteDashboard() {
             </div>
             <div className="reservas-grid" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {proximasReservas.map((reserva) => (
-                <div key={reserva.id} style={{ backgroundColor: '#f9fafb', borderRadius: '16px', padding: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                <div 
+                  key={reserva.id} 
+                  onClick={() => router.push('/cliente/minhas-reservas')}
+                  style={{ backgroundColor: '#f9fafb', borderRadius: '16px', padding: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'space-between', cursor: 'pointer' }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ width: '50px', height: '50px', borderRadius: '12px', backgroundColor: '#e5e7eb', overflow: 'hidden' }}>
                       {reserva.roteiro?.foto_capa ? (
@@ -240,9 +268,7 @@ export default function ClienteDashboard() {
                     </div>
                     <div>
                       <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{reserva.roteiro?.titulo || 'Roteiro'}</div>
-                      <div style={{ fontSize: '10px', color: '#6b7280' }}>
-                        📅 {new Date(reserva.data_trilha).toLocaleDateString('pt-BR')}
-                      </div>
+                      <div style={{ fontSize: '10px', color: '#6b7280' }}>📅 {new Date(reserva.data_trilha).toLocaleDateString('pt-BR')}</div>
                     </div>
                   </div>
                   <span style={{ backgroundColor: reserva.status === 'confirmada' ? '#dcfce7' : '#fef3c7', color: reserva.status === 'confirmada' ? '#16a34a' : '#d97706', padding: '4px 10px', borderRadius: '20px', fontSize: '10px', fontWeight: 'bold' }}>
@@ -257,7 +283,7 @@ export default function ClienteDashboard() {
           </div>
         )}
 
-        {/* ROTEIROS RECOMENDADOS */}
+        {/* ROTEIROS RECOMENDADOS - CORRIGIDO */}
         <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
             <span style={{ fontSize: '20px' }}>🔥</span>
@@ -267,7 +293,10 @@ export default function ClienteDashboard() {
             {roteirosRecomendados.map((roteiro) => (
               <div 
                 key={roteiro.id} 
-                onClick={() => router.push(`/roteiros/${roteiro.id}`)}
+                onClick={() => {
+                  console.log('Clicou no roteiro:', roteiro.id)
+                  router.push(`/roteiros/${roteiro.id}`)
+                }}
                 style={{ 
                   backgroundColor: '#f9fafb', 
                   borderRadius: '16px', 
