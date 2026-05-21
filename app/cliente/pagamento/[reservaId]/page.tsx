@@ -11,8 +11,8 @@ export default function PagamentoPIX() {
   const reservaId = params.reservaId as string
 
   const [carregando, setCarregando] = useState(true)
+  const [qrCode, setQrCode] = useState('')
   const [codigoPix, setCodigoPix] = useState('')
-  const [provider, setProvider] = useState('')
   const [valor, setValor] = useState(0)
   const [roteiroTitulo, setRoteiroTitulo] = useState('')
   const [expiraEm, setExpiraEm] = useState('')
@@ -25,6 +25,7 @@ export default function PagamentoPIX() {
   useEffect(() => {
     const carregar = async () => {
       try {
+        // Buscar reserva
         const { data: reserva } = await supabase
           .from('reservas')
           .select('*, roteiro:roteiro_id(titulo, preco), comprovante_status, pagamento_status, cliente_id')
@@ -45,43 +46,55 @@ export default function PagamentoPIX() {
           router.push('/cliente/minhas-reservas')
           return
         }
+
         if (reserva.comprovante_status === 'enviado') {
           setCarregando(false)
           return
         }
 
+        // Buscar cliente
         const { data: cliente } = await supabase
           .from('users')
           .select('nome, email, cpf')
           .eq('id', reserva.cliente_id)
           .single()
 
-        const response = await fetch('/api/pix/criar', {
+        // Criar cliente no Asaas
+        const customerRes = await fetch('/api/asaas/cliente', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            reservaId: reserva.id,
-            valor: reserva.valor_total,
             email: cliente?.email,
             nome: cliente?.nome || 'Cliente',
             cpfCnpj: cliente?.cpf,
-            descricao: `Reserva - ${reserva.roteiro?.titulo}`
-          })
+          }),
         })
+        const customerData = await customerRes.json()
+        if (!customerRes.ok) throw new Error(customerData.error)
 
-        const data = await response.json()
-        if (data.success) {
-          setCodigoPix(data.codigoPix)
-          setProvider(data.provider)
-          if (data.expiresDate) {
-            const expira = new Date(data.expiresDate)
-            setExpiraEm(expira.toLocaleDateString('pt-BR') + ' ' + expira.toLocaleTimeString('pt-BR'))
-          }
-        } else {
-          setMensagem(data.error || 'Erro ao gerar PIX')
+        // Gerar PIX
+        const pixRes = await fetch('/api/asaas/pix/criar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerId: customerData.customerId,
+            valor: reserva.valor_total,
+            descricao: `Reserva - ${reserva.roteiro?.titulo}`,
+            reservaId: reserva.id,
+          }),
+        })
+        const pixData = await pixRes.json()
+        if (!pixRes.ok) throw new Error(pixData.error)
+
+        setQrCode(pixData.qrCode)
+        setCodigoPix(pixData.codigoPix)
+        if (pixData.expiresDate) {
+          const expira = new Date(pixData.expiresDate)
+          setExpiraEm(expira.toLocaleDateString('pt-BR') + ' ' + expira.toLocaleTimeString('pt-BR'))
         }
-      } catch (err) {
-        setMensagem('Erro ao carregar')
+      } catch (err: any) {
+        console.error(err)
+        setMensagem(err.message || 'Erro ao gerar PIX')
       } finally {
         setCarregando(false)
       }
@@ -167,7 +180,7 @@ export default function PagamentoPIX() {
       {/* CABEÇALHO */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: '600px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button onClick={() => router.back()} style={{ background: 'none', border: 'none', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>← Voltar</button>
+          <button onClick={() => router.back()} style={{ background: 'none', border: 'none', fontSize: '16px', cursor: 'pointer' }}>← Voltar</button>
           <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Pagamento PIX</h1>
           <div style={{ width: '50px' }}></div>
         </div>
@@ -175,60 +188,49 @@ export default function PagamentoPIX() {
 
       <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
         {/* CARD DE VALOR */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '20px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>Valor a pagar</p>
-          <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#111827' }}>R$ {valor.toFixed(2)}</p>
-          <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>{roteiroTitulo}</p>
-          {provider && <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '8px' }}>Processado via: {provider}</p>}
-          {expiraEm && <p style={{ fontSize: '12px', color: '#dc2626', marginTop: '8px' }}>⏰ Expira em: {expiraEm}</p>}
+        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '20px', textAlign: 'center' }}>
+          <p style={{ fontSize: '14px', color: '#6b7280' }}>Valor a pagar</p>
+          <p style={{ fontSize: '32px', fontWeight: 'bold' }}>R$ {valor.toFixed(2)}</p>
+          <p style={{ fontSize: '13px', color: '#6b7280' }}>{roteiroTitulo}</p>
+          {expiraEm && <p style={{ fontSize: '12px', color: '#dc2626' }}>⏰ Expira em: {expiraEm}</p>}
         </div>
 
-        {/* CÓDIGO PIX (SEM QR CODE) */}
+        {/* QR CODE */}
+        {qrCode && (
+          <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '20px', textAlign: 'center' }}>
+            <img src={qrCode} alt="QR Code PIX" style={{ width: '200px', height: '200px', margin: '0 auto', display: 'block' }} />
+            <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '8px' }}>Escaneie o QR Code com o app do seu banco</p>
+          </div>
+        )}
+
+        {/* CÓDIGO PIX */}
         {codigoPix && (
-          <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <p style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '8px' }}>📋 Código PIX para copiar</p>
-            <div style={{ backgroundColor: '#f9fafb', padding: '12px', borderRadius: '12px', marginBottom: '12px', wordBreak: 'break-all', maxHeight: '120px', overflow: 'auto' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '20px' }}>
+            <p style={{ fontSize: '14px', fontWeight: 'bold' }}>📋 Código PIX para copiar</p>
+            <div style={{ backgroundColor: '#f9fafb', padding: '12px', borderRadius: '12px', marginBottom: '12px', wordBreak: 'break-all' }}>
               <code style={{ fontSize: '11px', fontFamily: 'monospace' }}>{codigoPix}</code>
             </div>
-            <button 
-              onClick={copiarCodigo}
-              style={{ width: '100%', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '12px', cursor: 'pointer', fontWeight: 'bold' }}
-            >
+            <button onClick={copiarCodigo} style={{ width: '100%', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
               {copiado ? '✅ Copiado!' : '📋 Copiar código PIX'}
             </button>
-            <p style={{ fontSize: '11px', color: '#6b7280', textAlign: 'center', marginTop: '12px' }}>
-              Cole o código no app do seu banco para pagar
-            </p>
           </div>
         )}
 
         {/* ENVIO DE COMPROVANTE */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>📎 Envio do comprovante</h3>
-          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px' }}>Após pagar, anexe o comprovante (print, foto ou PDF).</p>
-          
-          <div style={{ border: '2px dashed #e5e7eb', borderRadius: '16px', padding: '20px', textAlign: 'center', marginBottom: '16px' }}>
-            <input type="file" id="comprovante" accept="image/*,application/pdf" onChange={(e) => setArquivo(e.target.files?.[0] || null)} style={{ display: 'none' }} />
-            <label htmlFor="comprovante" style={{ cursor: 'pointer', color: '#16a34a', fontWeight: '500' }}>📁 Selecionar comprovante</label>
-            {arquivo && <p style={{ fontSize: '12px', color: '#16a34a', marginTop: '12px' }}>✓ {arquivo.name}</p>}
-          </div>
-
-          <button 
-            onClick={handleUpload}
-            disabled={enviando || !arquivo}
-            style={{ width: '100%', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '12px', cursor: enviando || !arquivo ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: enviando || !arquivo ? 0.6 : 1 }}
-          >
+        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 'bold' }}>📎 Envio do comprovante</h3>
+          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px' }}>Após pagar, anexe o comprovante.</p>
+          <input type="file" accept="image/*,application/pdf" onChange={(e) => setArquivo(e.target.files?.[0] || null)} style={{ marginBottom: '12px', display: 'block' }} />
+          <button onClick={handleUpload} disabled={enviando || !arquivo} style={{ width: '100%', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '12px', cursor: 'pointer', opacity: enviando || !arquivo ? 0.6 : 1 }}>
             {enviando ? 'Enviando...' : '📤 Enviar comprovante'}
           </button>
         </div>
 
         {mensagem && (
-          <div style={{ padding: '12px', borderRadius: '12px', textAlign: 'center', fontSize: '13px', marginTop: '20px', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626' }}>
+          <div style={{ padding: '12px', borderRadius: '12px', textAlign: 'center', marginTop: '20px', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626' }}>
             {mensagem}
           </div>
         )}
-
-        <p style={{ fontSize: '11px', color: '#9ca3af', textAlign: 'center', marginTop: '24px' }}>🔒 Ambiente seguro • Pagamento processado via PIX</p>
       </div>
     </div>
   )

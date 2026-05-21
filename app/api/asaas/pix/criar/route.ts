@@ -7,13 +7,25 @@ export async function POST(request: Request) {
   try {
     const { customerId, valor, descricao, reservaId } = await request.json()
 
-    if (!ASAAS_API_KEY) return NextResponse.json({ error: 'API key não configurada' }, { status: 500 })
-    if (!customerId) return NextResponse.json({ error: 'Cliente não identificado' }, { status: 400 })
+    if (!ASAAS_API_KEY) {
+      console.error('❌ ASAAS_API_KEY não configurada')
+      return NextResponse.json({ error: 'API key não configurada' }, { status: 500 })
+    }
 
-    // Criar cobrança
-    const paymentRes = await fetch(`${ASAAS_API_URL}/payments`, {
+    if (!customerId) {
+      console.error('❌ customerId não fornecido')
+      return NextResponse.json({ error: 'Cliente não identificado' }, { status: 400 })
+    }
+
+    console.log('🔵 Criando cobrança PIX para cliente:', customerId)
+
+    // 1. Criar a cobrança
+    const paymentResponse = await fetch(`${ASAAS_API_URL}/payments`, {
       method: 'POST',
-      headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+      headers: {
+        'access_token': ASAAS_API_KEY,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         customer: customerId,
         billingType: 'PIX',
@@ -24,15 +36,26 @@ export async function POST(request: Request) {
       }),
     })
 
-    const payment = await paymentRes.json()
-    if (!paymentRes.ok) return NextResponse.json({ error: payment.errors?.[0]?.description }, { status: paymentRes.status })
+    const payment = await paymentResponse.json()
 
-    // Buscar QR Code
-    const qrRes = await fetch(`${ASAAS_API_URL}/payments/${payment.id}/pixQrCode`, {
+    if (!paymentResponse.ok) {
+      console.error('❌ Erro ao criar cobrança:', payment)
+      return NextResponse.json({ error: payment.errors?.[0]?.description || 'Erro ao criar cobrança' }, { status: paymentResponse.status })
+    }
+
+    console.log('✅ Cobrança criada:', payment.id)
+
+    // 2. Buscar QR Code
+    const qrResponse = await fetch(`${ASAAS_API_URL}/payments/${payment.id}/pixQrCode`, {
       headers: { 'access_token': ASAAS_API_KEY },
     })
-    const qrData = await qrRes.json()
-    if (!qrRes.ok) return NextResponse.json({ error: 'Erro ao gerar QR Code' }, { status: qrRes.status })
+
+    const qrData = await qrResponse.json()
+
+    if (!qrResponse.ok) {
+      console.error('❌ Erro ao buscar QR Code:', qrData)
+      return NextResponse.json({ error: 'Erro ao gerar QR Code' }, { status: qrResponse.status })
+    }
 
     return NextResponse.json({
       success: true,
@@ -41,7 +64,9 @@ export async function POST(request: Request) {
       paymentId: payment.id,
       expiresDate: qrData.expirationDate,
     })
-  } catch (error) {
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+
+  } catch (error: any) {
+    console.error('❌ Erro ao criar PIX Asaas:', error)
+    return NextResponse.json({ error: 'Erro interno ao criar PIX' }, { status: 500 })
   }
 }
