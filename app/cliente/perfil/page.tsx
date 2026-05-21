@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import UploadAvatarModal from '@/components/UploadAvatarModal'
@@ -20,6 +20,16 @@ export default function PerfilCliente() {
   const [mensagem, setMensagem] = useState('')
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [modalAberto, setModalAberto] = useState(false)
+
+  // Lightbox state
+  const [lightboxAberto, setLightboxAberto] = useState(false)
+  const [fotoAtual, setFotoAtual] = useState(0)
+
+  // Justified Grid state
+  const [linhas, setLinhas] = useState<any[][]>([])
+  const [carregandoFotos, setCarregandoFotos] = useState(true)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const ALTURA_TARGET = 200
 
   const [medalhas, setMedalhas] = useState<any[]>([])
   const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
@@ -55,6 +65,46 @@ export default function PerfilCliente() {
     { nome: 'Lenda Absoluta', icone: '🔥', km: 3840, desbloqueado: totalKm >= 3840 },
   ]
 
+  const abrirLightbox = (index: number) => {
+    setFotoAtual(index)
+    setLightboxAberto(true)
+  }
+
+  const proximaFoto = () => {
+    setFotoAtual((prev) => (prev + 1) % fotos.length)
+  }
+
+  const fotoAnterior = () => {
+    setFotoAtual((prev) => (prev - 1 + fotos.length) % fotos.length)
+  }
+
+  // Função que calcula o layout justificado (estilo Flickr)
+  const calcularLayoutJustificado = (imagens: any[], alturaAlvo: number) => {
+    const linhasCalc: any[][] = []
+    let linhaAtual: any[] = []
+    let somaProporcoes = 0
+
+    for (const img of imagens) {
+      const proporcao = img.width / img.height
+      linhaAtual.push({ ...img, proporcao })
+      somaProporcoes += proporcao
+
+      const larguraEstimada = somaProporcoes * alturaAlvo
+
+      if (linhaAtual.length >= 2 && larguraEstimada > 400 && larguraEstimada < 1200) {
+        linhasCalc.push([...linhaAtual])
+        linhaAtual = []
+        somaProporcoes = 0
+      }
+    }
+
+    if (linhaAtual.length > 0) {
+      linhasCalc.push(linhaAtual)
+    }
+
+    return linhasCalc
+  }
+
   useEffect(() => {
     const userData = localStorage.getItem('user')
     if (!userData) { router.push('/login'); return }
@@ -62,10 +112,10 @@ export default function PerfilCliente() {
     if (parsedUser.tipo !== 'cliente') { router.push('/'); return }
     setUser(parsedUser)
     setNome(parsedUser.nome || '')
-    carregarDatos(parsedUser.id)
+    carregarDados(parsedUser.id)
   }, [])
 
-  const carregarDatos = async (userId: string) => {
+  const carregarDados = async (userId: string) => {
     await Promise.all([
       carregarFotos(userId), carregarAvatar(userId), carregarEstatisticas(userId),
       carregarBio(userId), carregarMedalhas(userId), carregarNome(userId)
@@ -126,8 +176,42 @@ export default function PerfilCliente() {
 
   const carregarFotos = async (userId: string) => {
     const { data } = await supabase.from('users').select('fotos_aventuras').eq('id', userId).single()
-    if (data?.fotos_aventuras) setFotos(data.fotos_aventuras)
+    if (data?.fotos_aventuras) {
+      setFotos(data.fotos_aventuras)
+      await carregarLayoutJustificado(data.fotos_aventuras)
+    } else {
+      setFotos([])
+      setCarregandoFotos(false)
+    }
   }
+
+  const carregarLayoutJustificado = async (urls: string[]) => {
+    if (urls.length === 0) {
+      setLinhas([])
+      setCarregandoFotos(false)
+      return
+    }
+
+    setCarregandoFotos(true)
+    const imagensComDimensoes = await Promise.all(
+      urls.map(async (url, idx) => {
+        return new Promise<{ url: string; width: number; height: number; index: number }>((resolve) => {
+          const img = new Image()
+          img.onload = () => {
+            resolve({ url, width: img.width, height: img.height, index: idx })
+          }
+          img.onerror = () => {
+            resolve({ url, width: 1200, height: 800, index: idx })
+          }
+          img.src = url
+        })
+      })
+    )
+    const linhasCalc = calcularLayoutJustificado(imagensComDimensoes, ALTURA_TARGET)
+    setLinhas(linhasCalc)
+    setCarregandoFotos(false)
+  }
+
   const carregarAvatar = async (userId: string) => {
     const { data } = await supabase.from('users').select('avatar_url').eq('id', userId).single()
     if (data?.avatar_url) setAvatarPreview(data.avatar_url)
@@ -176,6 +260,7 @@ export default function PerfilCliente() {
     const novasFotos = [...fotos, ...novasUrls]
     await supabase.from('users').update({ fotos_aventuras: novasFotos }).eq('id', user.id)
     setFotos(novasFotos)
+    await carregarLayoutJustificado(novasFotos)
     setMensagem(`✅ ${novasUrls.length} foto(s) adicionada(s)!`)
     setUploading(false)
     setTimeout(() => setMensagem(''), 3000)
@@ -186,6 +271,7 @@ export default function PerfilCliente() {
     const novasFotos = fotos.filter((_, i) => i !== index)
     await supabase.from('users').update({ fotos_aventuras: novasFotos }).eq('id', user.id)
     setFotos(novasFotos)
+    await carregarLayoutJustificado(novasFotos)
     setMensagem('✅ Foto removida!')
     setTimeout(() => setMensagem(''), 3000)
   }
@@ -201,54 +287,16 @@ export default function PerfilCliente() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
       <style jsx global>{`
         @media (min-width: 768px) {
-          .perfil-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 32px 24px;
-          }
-          .perfil-card {
-            display: flex !important;
-            flex-direction: row !important;
-            align-items: flex-start !important;
-            text-align: left !important;
-            gap: 32px !important;
-          }
-          .perfil-avatar {
-            width: 120px !important;
-            height: 120px !important;
-          }
-          .perfil-avatar span {
-            font-size: 48px !important;
-          }
-          .perfil-stats {
-            justify-content: flex-start !important;
-            gap: 48px !important;
-          }
-          .perfil-stats div {
-            text-align: left !important;
-          }
-          .medalhas-grid {
-            display: flex !important;
-            flex-wrap: wrap !important;
-            gap: 16px !important;
-            justify-content: flex-start !important;
-          }
-          .medalha-card {
-            width: 100px !important;
-            padding: 12px !important;
-          }
-          .conquista-card {
-            width: 90px !important;
-            padding: 12px !important;
-          }
-          .fotos-grid {
-            grid-template-columns: repeat(4, 1fr) !important;
-            gap: 16px !important;
-          }
-          .foto-meta {
-            flex-wrap: wrap !important;
-            gap: 12px !important;
-          }
+          .perfil-container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+          .perfil-card { display: flex !important; flex-direction: row !important; align-items: flex-start !important; text-align: left !important; gap: 32px !important; }
+          .perfil-avatar { width: 120px !important; height: 120px !important; }
+          .perfil-avatar span { font-size: 48px !important; }
+          .perfil-stats { justify-content: flex-start !important; gap: 48px !important; }
+          .perfil-stats div { text-align: left !important; }
+          .medalhas-grid { display: flex !important; flex-wrap: wrap !important; gap: 16px !important; justify-content: flex-start !important; }
+          .medalha-card { width: 100px !important; padding: 12px !important; }
+          .conquista-card { width: 90px !important; padding: 12px !important; }
+          .foto-meta { flex-wrap: wrap !important; gap: 12px !important; }
         }
       `}</style>
 
@@ -353,10 +401,10 @@ export default function PerfilCliente() {
           </div>
         </div>
 
-        {/* FOTOS */}
+        {/* FOTOS COM JUSTIFIED GRID (FLICKR STYLE) */}
         <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0 }}>📸 Fotos</h3>
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0 }}>📸 Fotos das Aventuras</h3>
             <p style={{ fontSize: '11px', color: '#6b7280' }}>{fotos.length}/{fotosLiberadas}</p>
           </div>
           
@@ -371,23 +419,208 @@ export default function PerfilCliente() {
             ))}
           </div>
 
-          {fotos.length === 0 ? (
+          {carregandoFotos ? (
+            <div style={{ textAlign: 'center', padding: '32px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
+              <span style={{ fontSize: '32px' }}>⏳</span>
+              <p style={{ marginTop: '8px', color: '#6b7280' }}>Carregando fotos...</p>
+            </div>
+          ) : fotos.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '30px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
               <span style={{ fontSize: '32px' }}>🏞️</span>
               <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Envie suas aventuras!</p>
             </div>
           ) : (
-            <div className="fotos-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-              {fotos.slice(0, 12).map((url, idx) => (
-                <div key={idx} style={{ position: 'relative', aspectRatio: '1/1', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#f1f5f9' }}>
-                  <img src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <button onClick={() => removerFoto(idx)} style={{ position: 'absolute', top: '4px', right: '4px', backgroundColor: '#dc2626', color: 'white', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', fontSize: '12px' }}>×</button>
-                </div>
-              ))}
+            <div ref={containerRef} style={{ width: '100%' }}>
+              {linhas.map((linha, linhaIndex) => {
+                const somaProporcoes = linha.reduce((acc, img) => acc + img.proporcao, 0)
+                const alturaReal = ALTURA_TARGET
+                
+                return (
+                  <div
+                    key={linhaIndex}
+                    style={{
+                      display: 'flex',
+                      gap: '8px',
+                      marginBottom: '8px',
+                      width: '100%',
+                    }}
+                  >
+                    {linha.map((img, imgIndex) => {
+                      const largura = (img.proporcao / somaProporcoes) * 100
+                      return (
+                        <div
+                          key={imgIndex}
+                          onClick={() => abrirLightbox(img.index)}
+                          style={{
+                            position: 'relative',
+                            width: `${largura}%`,
+                            cursor: 'pointer',
+                            overflow: 'hidden',
+                            borderRadius: '12px',
+                            backgroundColor: '#f1f5f9',
+                          }}
+                        >
+                          <img
+                            src={img.url}
+                            alt={`Foto ${img.index + 1}`}
+                            style={{
+                              width: '100%',
+                              height: `${alturaReal}px`,
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
+                          />
+                          
+                          {/* Botão de remover */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removerFoto(img.index)
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: '8px',
+                              right: '8px',
+                              backgroundColor: '#dc2626',
+                              color: 'white',
+                              borderRadius: '50%',
+                              width: '28px',
+                              height: '28px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: 'none',
+                              cursor: 'pointer',
+                              fontSize: '16px',
+                              zIndex: 10,
+                              fontWeight: 'bold'
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
       </div>
+
+      {/* LIGHTBOX / MODAL DE FOTOS */}
+      {lightboxAberto && (
+        <div 
+          onClick={() => setLightboxAberto(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.9)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer'
+          }}
+        >
+          <button
+            onClick={() => setLightboxAberto(false)}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              fontSize: '32px',
+              cursor: 'pointer'
+            }}
+          >
+            ✕
+          </button>
+          
+          {fotos.length > 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                fotoAnterior()
+              }}
+              style={{
+                position: 'absolute',
+                left: '20px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'rgba(0,0,0,0.5)',
+                border: 'none',
+                color: 'white',
+                fontSize: '40px',
+                cursor: 'pointer',
+                padding: '10px 15px',
+                borderRadius: '50%'
+              }}
+            >
+              ‹
+            </button>
+          )}
+          
+          <img
+            src={fotos[fotoAtual]}
+            alt="Foto"
+            style={{
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              objectFit: 'contain',
+              cursor: 'default'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          
+          {fotos.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  proximaFoto()
+                }}
+                style={{
+                  position: 'absolute',
+                  right: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(0,0,0,0.5)',
+                  border: 'none',
+                  color: 'white',
+                  fontSize: '40px',
+                  cursor: 'pointer',
+                  padding: '10px 15px',
+                  borderRadius: '50%'
+                }}
+              >
+                ›
+              </button>
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '20px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: 'rgba(0,0,0,0.6)',
+                  color: 'white',
+                  padding: '5px 12px',
+                  borderRadius: '20px',
+                  fontSize: '14px'
+                }}
+              >
+                {fotoAtual + 1} / {fotos.length}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
