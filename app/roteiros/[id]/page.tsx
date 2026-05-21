@@ -33,7 +33,6 @@ export default function ClienteRoteiroDetalhe() {
   const router = useRouter()
   const params = useParams()
   const id = params.id as string
-  const [user, setUser] = useState<any>(null)
   const [usuarioLogado, setUsuarioLogado] = useState<any>(null)
   const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -47,11 +46,7 @@ export default function ClienteRoteiroDetalhe() {
   useEffect(() => {
     const userData = localStorage.getItem('user')
     if (userData) {
-      const parsedUser = JSON.parse(userData)
-      setUsuarioLogado(parsedUser)
-      if (parsedUser.tipo === 'cliente') {
-        setUser(parsedUser)
-      }
+      setUsuarioLogado(JSON.parse(userData))
     }
     carregarRoteiro()
   }, [id])
@@ -121,14 +116,12 @@ export default function ClienteRoteiroDetalhe() {
   }
 
   const handleReservar = async () => {
-    // VERIFICAÇÃO: Se não estiver logado, redireciona
     if (!usuarioLogado) {
-      localStorage.setItem('redirectAfterLogin', `/cliente/roteiros/${id}`)
+      localStorage.setItem('redirectAfterLogin', `/roteiros/${id}`)
       router.push('/login')
       return
     }
 
-    // Se for guia, não pode reservar
     if (usuarioLogado.tipo !== 'cliente') {
       setMensagem('⚠️ Apenas aventureiros podem fazer reservas')
       return
@@ -151,10 +144,9 @@ export default function ClienteRoteiroDetalhe() {
         status: 'pendente'
       }
 
-      const { data: reserva, error } = await supabase
+      const { error } = await supabase
         .from('reservas')
         .insert(reservaData)
-        .select()
 
       if (error) throw error
 
@@ -181,11 +173,11 @@ export default function ClienteRoteiroDetalhe() {
   }
 
   const formatarData = (dataHora: string) => {
-    if (!dataHora) return { data: 'Data não informada', hora: 'Horário não informado' }
+    if (!dataHora) return { data: 'Não informada', hora: 'Não informado' }
     try {
       const data = new Date(dataHora)
       if (isNaN(data.getTime())) {
-        return { data: 'Data não informada', hora: 'Horário não informado' }
+        return { data: 'Data inválida', hora: 'Horário inválido' }
       }
       return {
         data: data.toLocaleDateString('pt-BR', {
@@ -199,7 +191,7 @@ export default function ClienteRoteiroDetalhe() {
         })
       }
     } catch {
-      return { data: 'Data não informada', hora: 'Horário não informado' }
+      return { data: 'Erro', hora: 'Erro' }
     }
   }
 
@@ -251,7 +243,7 @@ export default function ClienteRoteiroDetalhe() {
       <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
         <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px' }}>
           <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PrussikTrails</h1>
+            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PussikTrails</h1>
             <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 16px', cursor: 'pointer' }}>Sair</button>
           </div>
         </div>
@@ -276,11 +268,11 @@ export default function ClienteRoteiroDetalhe() {
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px', position: 'sticky', top: 0, zIndex: 50 }}>
         <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PrussikTrails</h1>
+            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PussikTrails</h1>
             <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>Detalhes da aventura</p>
           </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button onClick={() => router.push('/roteiros')} style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', color: '#374151', fontWeight: '600', fontSize: '13px' }}>← Roteiros</button>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button onClick={() => router.push('/cliente/roteiros')} style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', color: '#374151', fontWeight: '600', fontSize: '13px' }}>← Roteiros</button>
             {usuarioLogado && usuarioLogado.tipo === 'cliente' && (
               <button onClick={() => router.push('/cliente/perfil')} style={{ backgroundColor: '#111827', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Perfil</button>
             )}
@@ -294,12 +286,13 @@ export default function ClienteRoteiroDetalhe() {
         </div>
       </div>
 
-      {/* CONTEÚDO - (mantenha o resto do layout igual) */}
+      {/* CONTEÚDO - LAYOUT RESPONSIVO */}
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px' }}>
+        
         {/* GALERIA DE FOTOS */}
         {todasFotos.length > 0 && (
           <div style={{ marginBottom: '32px' }}>
-            <div style={{ borderRadius: '24px', overflow: 'hidden', height: '420px', position: 'relative', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', marginBottom: '16px', backgroundColor: '#1f2937' }}>
+            <div style={{ borderRadius: '24px', overflow: 'hidden', height: '320px', position: 'relative', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', marginBottom: '16px', backgroundColor: '#1f2937' }}>
               <img key={todasFotos[fotoSelecionada]} src={todasFotos[fotoSelecionada]} alt={roteiro.titulo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               <div style={{ position: 'absolute', bottom: '20px', left: '20px', backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)', padding: '8px 20px', borderRadius: '40px' }}>
                 <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>
@@ -311,7 +304,7 @@ export default function ClienteRoteiroDetalhe() {
               <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', justifyContent: 'center' }}>
                 {todasFotos.map((foto: string, index: number) => (
                   <button key={index} onClick={() => setFotoSelecionada(index)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, borderRadius: '12px', overflow: 'hidden', flexShrink: 0 }}>
-                    <img src={foto} alt={`Foto ${index + 1}`} style={{ width: '100px', height: '70px', objectFit: 'cover', borderRadius: '12px', border: fotoSelecionada === index ? '2px solid #dc2626' : '2px solid transparent' }} />
+                    <img src={foto} alt={`Foto ${index + 1}`} style={{ width: '80px', height: '60px', objectFit: 'cover', borderRadius: '12px', border: fotoSelecionada === index ? '2px solid #dc2626' : '2px solid transparent' }} />
                   </button>
                 ))}
               </div>
@@ -319,11 +312,15 @@ export default function ClienteRoteiroDetalhe() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '32px' }}>
-          {/* COLUNA ESQUERDA */}
-          <div>
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#111827', margin: '0 0 12px 0' }}>{roteiro.titulo}</h1>
+        {/* LAYOUT FLEX RESPONSIVO - EMPILHA NO MOBILE */}
+        <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '32px' }}>
+          
+          {/* COLUNA ESQUERDA - INFORMAÇÕES */}
+          <div style={{ flex: '2', minWidth: '280px' }}>
+            
+            {/* TÍTULO E DESCRIÇÃO */}
+            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '24px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+              <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: '0 0 12px 0' }}>{roteiro.titulo}</h1>
               <p style={{ color: '#6b7280', fontSize: '14px', marginBottom: '16px', lineHeight: 1.6 }}>{roteiro.descricao}</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
                 <span style={{ fontSize: '20px' }}>📍</span>
@@ -331,38 +328,42 @@ export default function ClienteRoteiroDetalhe() {
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            {/* CARACTERÍSTICAS DA TRILHA */}
+            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '24px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
               <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Características da Trilha</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
                   <div style={{ fontSize: '28px', marginBottom: '8px' }}>🥾</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827' }}>{roteiro.km}</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>KM de trilha</div>
+                  <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827' }}>{roteiro.km}</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280' }}>KM de trilha</div>
                 </div>
-                <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
+                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
                   <div style={{ fontSize: '28px', marginBottom: '8px' }}>⏱️</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827' }}>{roteiro.duracao_horas}</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>Horas de duração</div>
+                  <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827' }}>{roteiro.duracao_horas}</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280' }}>Horas de duração</div>
                 </div>
-                <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
+                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
                   <div style={{ fontSize: '28px', marginBottom: '8px' }}>{getDificuldadeIcone(roteiro.dificuldade)}</div>
-                  <div style={{ fontSize: '20px', fontWeight: 'bold', color: getDificuldadeCor(roteiro.dificuldade) }}>{roteiro.dificuldade}</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>Dificuldade</div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: getDificuldadeCor(roteiro.dificuldade) }}>{roteiro.dificuldade}</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280' }}>Dificuldade</div>
                 </div>
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            {/* LOGÍSTICA DA AVENTURA (EMBARQUE/RETORNO) */}
+            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '24px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
               <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Logística da Aventura</h3>
-              <div style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '20px' }}>
                 <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
                   <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <span style={{ fontSize: '20px' }}>📍</span>
                   </div>
                   <div>
                     <div style={{ fontWeight: '600', color: '#111827' }}>Ponto de Encontro</div>
-                    <div style={{ fontSize: '14px', color: '#374151' }}>{roteiro.embarque_local}</div>
-                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>📅 {embarque.data} • ⏰ {embarque.hora}</div>
+                    <div style={{ fontSize: '14px', color: '#374151' }}>{roteiro.embarque_local || 'Não informado'}</div>
+                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
+                      📅 {embarque.data} • ⏰ {embarque.hora}
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -371,18 +372,20 @@ export default function ClienteRoteiroDetalhe() {
                   </div>
                   <div>
                     <div style={{ fontWeight: '600', color: '#111827' }}>Ponto de Retorno</div>
-                    <div style={{ fontSize: '14px', color: '#374151' }}>{roteiro.retorno_local}</div>
-                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>📅 {retorno.data} • ⏰ {retorno.hora}</div>
+                    <div style={{ fontSize: '14px', color: '#374151' }}>{roteiro.retorno_local || 'Não informado'}</div>
+                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
+                      📅 {retorno.data} • ⏰ {retorno.hora}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* CARD DO GUIA */}
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
               <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Seu Guia</h3>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ width: '60px', height: '60px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                   {roteiro.guia_avatar ? (
                     <img src={roteiro.guia_avatar} alt={roteiro.guia_nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
@@ -395,15 +398,25 @@ export default function ClienteRoteiroDetalhe() {
                       {roteiro.guia_nome}
                     </div>
                   </button>
-                  <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>{roteiro.guia_bio || 'Guia experiente, pronto para te mostrar o melhor da trilha!'}</div>
+                  <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
+                    {roteiro.guia_bio || 'Guia experiente, pronto para te mostrar o melhor da trilha!'}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* COLUNA DIREITA - RESERVA */}
-          <div style={{ position: 'sticky', top: '100px', alignSelf: 'start' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '28px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
+          {/* COLUNA DIREITA - CARD DE RESERVA (NO MOBILE FICA ABAIXO) */}
+          <div style={{ flex: '1', minWidth: '280px' }}>
+            <div style={{ 
+              backgroundColor: 'white', 
+              borderRadius: '24px', 
+              padding: '24px', 
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)', 
+              border: '1px solid #e5e7eb',
+              position: 'sticky',
+              top: '100px'
+            }}>
               <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                 <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#dc2626' }}>
                   R$ {roteiro.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -414,9 +427,21 @@ export default function ClienteRoteiroDetalhe() {
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#374151' }}>Número de pessoas</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#f9fafb', borderRadius: '40px', padding: '4px', border: '1px solid #e5e7eb' }}>
-                  <button type="button" onClick={() => setQuantidadePessoas(Math.max(1, quantidadePessoas - 1))} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: '20px' }}>-</button>
+                  <button 
+                    type="button" 
+                    onClick={() => setQuantidadePessoas(Math.max(1, quantidadePessoas - 1))} 
+                    style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: '20px', fontWeight: 'bold' }}
+                  >
+                    -
+                  </button>
                   <span style={{ fontSize: '18px', fontWeight: '600', flex: 1, textAlign: 'center' }}>{quantidadePessoas}</span>
-                  <button type="button" onClick={() => setQuantidadePessoas(quantidadePessoas + 1)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: '20px' }}>+</button>
+                  <button 
+                    type="button" 
+                    onClick={() => setQuantidadePessoas(quantidadePessoas + 1)} 
+                    style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: '20px', fontWeight: 'bold' }}
+                  >
+                    +
+                  </button>
                 </div>
               </div>
 

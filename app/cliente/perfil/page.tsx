@@ -6,48 +6,25 @@ import { supabase } from '@/lib/supabase/client'
 import UploadAvatarModal from '@/components/UploadAvatarModal'
 import { v4 as uuidv4 } from 'uuid'
 
-type MedalhaEspecial = {
-  id: number
-  nome: string
-  icone: string
-  descricao: string
-  categoria: string
-  meta: number
-  progresso: number
-  tier_atual: string
-  desbloqueado: boolean
-  progresso_percentual: number
-}
-
 export default function PerfilCliente() {
   const router = useRouter()
-
   const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-
   const [totalKm, setTotalKm] = useState(0)
   const [totalTrilhas, setTotalTrilhas] = useState(0)
-  const [avaliacaoMedia, setAvaliacaoMedia] = useState(0)
-
   const [fotos, setFotos] = useState<string[]>([])
   const [bio, setBio] = useState('')
   const [editandoBio, setEditandoBio] = useState(false)
   const [uploading, setUploading] = useState(false)
-
   const [mensagem, setMensagem] = useState('')
-
-  // Curtidas
-  const [curtidas, setCurtidas] = useState<Record<string, number>>({})
-  const [usuarioCurtiu, setUsuarioCurtiu] = useState<Record<string, boolean>>({})
-
+  
+  // Dados das medalhas
+  const [medalhas, setMedalhas] = useState<any[]>([])
+  const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
+  
   // Avatar
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [modalAberto, setModalAberto] = useState(false)
 
-  // Medalhas Especiais
-  const [medalhasEspeciais, setMedalhasEspeciais] = useState<MedalhaEspecial[]>([])
-
-  // Metas de fotos
   const metasFotos = [
     { km: 10, fotos: 3 },
     { km: 50, fotos: 5 },
@@ -56,6 +33,8 @@ export default function PerfilCliente() {
     { km: 250, fotos: 25 },
     { km: 500, fotos: 50 },
     { km: 1000, fotos: 100 },
+    { km: 5000, fotos: 500 },
+    { km: 10000, fotos: 1000 },
   ]
 
   const calcularFotosLiberadas = (km: number) => {
@@ -76,15 +55,14 @@ export default function PerfilCliente() {
   const fotosLiberadas = calcularFotosLiberadas(totalKm)
   const proximoMarco = calcularProximoMarco(totalKm)
   const progressoParaProximoMarco = totalKm >= proximoMarco ? 100 : (totalKm / proximoMarco) * 100
-  const kmFaltando = Math.max(0, proximoMarco - totalKm)
 
-  const medalhas = [
+  const conquistasKm = [
     { nome: 'Primeira Trilha', icone: '🥾', kmNecessario: 0, desbloqueado: totalKm >= 0 },
-    { nome: 'Explorador', icone: '🌿', kmNecessario: 10, desbloqueado: totalKm >= 10 },
+    { nome: 'Explorador Iniciante', icone: '🌱', kmNecessario: 10, desbloqueado: totalKm >= 10 },
     { nome: 'Caminhante', icone: '🚶', kmNecessario: 30, desbloqueado: totalKm >= 30 },
     { nome: 'Aventureiro', icone: '🏔️', kmNecessario: 50, desbloqueado: totalKm >= 50 },
-    { nome: 'Mestre', icone: '👑', kmNecessario: 100, desbloqueado: totalKm >= 100 },
-    { nome: 'Lenda', icone: '🔥', kmNecessario: 500, desbloqueado: totalKm >= 500 },
+    { nome: 'Mestre das Trilhas', icone: '👑', kmNecessario: 100, desbloqueado: totalKm >= 100 },
+    { nome: 'Lenda Viva', icone: '🌟', kmNecessario: 500, desbloqueado: totalKm >= 500 },
   ]
 
   useEffect(() => {
@@ -95,59 +73,76 @@ export default function PerfilCliente() {
     }
     const parsedUser = JSON.parse(userData)
     if (parsedUser.tipo !== 'cliente') {
-      router.push('/login')
+      router.push('/')
       return
     }
     setUser(parsedUser)
-    carregarPerfil(parsedUser.id)
+    carregarDados(parsedUser.id)
   }, [])
 
-  useEffect(() => {
-    if (user && fotos.length >= 0) {
-      carregarCurtidas(user.id)
-    }
-  }, [user, fotos])
+  const carregarDados = async (userId: string) => {
+    await Promise.all([
+      carregarFotos(userId),
+      carregarAvatar(userId),
+      carregarEstatisticas(userId),
+      carregarBio(userId),
+      carregarMedalhas(userId)
+    ])
+  }
 
-  const carregarPerfil = async (userId: string) => {
-    setLoading(true)
+  const carregarMedalhas = async (userId: string) => {
+    setCarregandoMedalhas(true)
     try {
-      await carregarUsuario(userId)
-      
-      const { data: fotosData, error: fotosError } = await supabase
-        .from('users')
-        .select('fotos_aventuras')
-        .eq('id', userId)
-        .single()
-      
-      if (!fotosError && fotosData?.fotos_aventuras) {
-        console.log('📸 Fotos carregadas:', fotosData.fotos_aventuras.length)
-        setFotos(fotosData.fotos_aventuras)
+      const listaPadrao = [
+        { nome: 'Trilhas Concluídas', icone: '🥾', meta: 1, progresso: 0 },
+        { nome: 'KM Percorridos', icone: '👣', meta: 10, progresso: 0 },
+        { nome: 'Fotógrafo da Natureza', icone: '📸', meta: 3, progresso: 0 },
+        { nome: 'Avaliações', icone: '⭐', meta: 1, progresso: 0 },
+        { nome: 'Reservas Realizadas', icone: '💳', meta: 1, progresso: 0 }
+      ]
+
+      const { data: progresso } = await supabase
+        .from('usuarios_medalhas')
+        .select('progresso_atual, medalha:medalha_id(nome)')
+        .eq('usuario_id', userId)
+
+      if (progresso && progresso.length > 0) {
+        const mapa = new Map()
+        progresso.forEach((item: any) => {
+          if (item.medalha?.nome) {
+            mapa.set(item.medalha.nome, item.progresso_atual || 0)
+          }
+        })
+        
+        const listaAtualizada = listaPadrao.map(m => ({
+          ...m,
+          progresso: mapa.get(m.nome) || 0
+        }))
+        setMedalhas(listaAtualizada)
       } else {
-        setFotos([])
+        setMedalhas(listaPadrao)
       }
-      
-      await Promise.all([
-        carregarAvatar(userId),
-        carregarEstatisticas(userId),
-        carregarBio(userId),
-      ])
-      await carregarMedalhasEspeciais(userId)
     } catch (err) {
-      console.error('Erro ao carregar perfil:', err)
+      console.error('Erro ao carregar medalhas:', err)
+      setMedalhas([
+        { nome: 'Trilhas Concluídas', icone: '🥾', meta: 1, progresso: 0 },
+        { nome: 'KM Percorridos', icone: '👣', meta: 10, progresso: 0 },
+        { nome: 'Fotógrafo da Natureza', icone: '📸', meta: 3, progresso: 0 },
+        { nome: 'Avaliações', icone: '⭐', meta: 1, progresso: 0 },
+        { nome: 'Reservas Realizadas', icone: '💳', meta: 1, progresso: 0 }
+      ])
     } finally {
-      setLoading(false)
+      setCarregandoMedalhas(false)
     }
   }
 
-  const carregarUsuario = async (userId: string) => {
-    const { data } = await supabase
+  const carregarFotos = async (userId: string) => {
+    const { data, error } = await supabase
       .from('users')
-      .select('*')
+      .select('fotos_aventuras')
       .eq('id', userId)
       .single()
-    if (data) {
-      setUser((prev: any) => ({ ...prev, ...data }))
-    }
+    if (!error && data?.fotos_aventuras) setFotos(data.fotos_aventuras)
   }
 
   const carregarAvatar = async (userId: string) => {
@@ -156,25 +151,7 @@ export default function PerfilCliente() {
       .select('avatar_url')
       .eq('id', userId)
       .single()
-    if (!error && data?.avatar_url) {
-      setAvatarPreview(data.avatar_url)
-    }
-  }
-
-  const carregarBio = async (userId: string) => {
-    try {
-      const response = await fetch(`/api/usuario/bio?userId=${userId}`)
-      const result = await response.json()
-      
-      if (result.success) {
-        setBio(result.bio || '')
-      } else {
-        setBio('')
-      }
-    } catch (error) {
-      console.error('Erro ao carregar bio:', error)
-      setBio('')
-    }
+    if (!error && data?.avatar_url) setAvatarPreview(data.avatar_url)
   }
 
   const carregarEstatisticas = async (userId: string) => {
@@ -184,312 +161,98 @@ export default function PerfilCliente() {
       .eq('cliente_id', userId)
       .eq('status', 'realizada')
     let km = 0
-    reservas?.forEach((r: any) => {
-      km += r.roteiro?.km || 0
-    })
+    reservas?.forEach(r => { km += r.roteiro?.km || 0 })
     setTotalKm(km)
     setTotalTrilhas(reservas?.length || 0)
-    const { data: userData } = await supabase
+  }
+
+  const carregarBio = async (userId: string) => {
+    const { data, error } = await supabase
       .from('users')
-      .select('avaliacao_media_cliente')
+      .select('bio')
       .eq('id', userId)
       .single()
-    if (userData) {
-      setAvaliacaoMedia(userData.avaliacao_media_cliente || 0)
-    }
-  }
-
-  const carregarCurtidas = async (userId: string) => {
-    const { data: curtidasData } = await supabase
-      .from('curtidas_fotos')
-      .select('foto_url')
-      .eq('dono_id', userId)
-    const map: Record<string, number> = {}
-    curtidasData?.forEach((c: any) => { map[c.foto_url] = (map[c.foto_url] || 0) + 1 })
-    setCurtidas(map)
-    if (fotos.length > 0) {
-      const { data: minhasCurtidas } = await supabase
-        .from('curtidas_fotos')
-        .select('foto_url')
-        .eq('usuario_id', userId)
-        .in('foto_url', fotos)
-      const curtidasMap: Record<string, boolean> = {}
-      minhasCurtidas?.forEach((c: any) => { curtidasMap[c.foto_url] = true })
-      setUsuarioCurtiu(curtidasMap)
-    }
-  }
-
-  // ✅ FUNÇÃO CORRIGIDA - Medalhas Especiais
-  const carregarMedalhasEspeciais = async (userId: string) => {
-    try {
-      console.log('🔄 Buscando medalhas para:', userId)
-      
-      const { data: medalhasUsuario, error: errorUsuario } = await supabase
-        .from('usuarios_medalhas')
-        .select('*')
-        .eq('usuario_id', userId)
-
-      console.log('📊 Medalhas do usuário:', medalhasUsuario)
-
-      if (errorUsuario) {
-        console.error('❌ Erro:', errorUsuario)
-        setMedalhasEspeciais([])
-        return
-      }
-
-      if (!medalhasUsuario || medalhasUsuario.length === 0) {
-        console.log('⚠️ Nenhuma medalha encontrada')
-        setMedalhasEspeciais([])
-        return
-      }
-
-      const medalhaIds = medalhasUsuario.map(um => um.medalha_id)
-      
-      const { data: medalhasDetalhes, error: errorDetalhes } = await supabase
-        .from('medalhas')
-        .select('*')
-        .in('id', medalhaIds)
-
-      console.log('📊 Detalhes:', medalhasDetalhes)
-
-      if (errorDetalhes) {
-        console.error('❌ Erro nos detalhes:', errorDetalhes)
-        setMedalhasEspeciais([])
-        return
-      }
-
-      const medalhasFormatadas = medalhasUsuario
-        .map(um => {
-          const detalhe = medalhasDetalhes?.find(m => m.id === um.medalha_id)
-          if (!detalhe) return null
-          
-          const metaMax = detalhe.meta_onyx || detalhe.meta_platina || detalhe.meta_ouro || 100
-          
-          return {
-            id: detalhe.id,
-            nome: detalhe.nome,
-            icone: detalhe.icone || getIconePorCategoria(detalhe.categoria),
-            descricao: detalhe.descricao,
-            categoria: detalhe.categoria,
-            meta: metaMax,
-            progresso: um.progresso_atual,
-            tier_atual: um.tier_atual,
-            desbloqueado: um.tier_atual !== 'bronze',
-            progresso_percentual: Math.min(100, (um.progresso_atual / metaMax) * 100)
-          }
-        })
-        .filter(Boolean)
-
-      console.log('✅ Medalhas formatadas:', medalhasFormatadas.length)
-      setMedalhasEspeciais(medalhasFormatadas as any)
-      
-    } catch (err) {
-      console.error('❌ Erro fatal:', err)
-      setMedalhasEspeciais([])
-    }
-  }
-
-  const getIconePorCategoria = (categoria: string) => {
-    switch (categoria) {
-      case 'Exploração': return '🏔️'
-      case 'Fotografia': return '📷'
-      case 'Persistência': return '🔥'
-      case 'Comunidade': return '👥'
-      case 'Sustentabilidade': return '🌱'
-      default: return '🎖️'
-    }
-  }
-
-  const getCorPorTier = (tier: string) => {
-    switch (tier?.toLowerCase()) {
-      case 'bronze': return '#cd7f32'
-      case 'prata': return '#c0c0c0'
-      case 'ouro': return '#ffd700'
-      case 'platina': return '#e5e4e2'
-      case 'onyx': return '#111111'
-      default: return '#9ca3af'
-    }
-  }
-
-  const getIconePorTier = (tier: string) => {
-    switch (tier?.toLowerCase()) {
-      case 'bronze': return '🥉'
-      case 'prata': return '🥈'
-      case 'ouro': return '🥇'
-      case 'platina': return '💎'
-      case 'onyx': return '🖤'
-      default: return '🎖️'
-    }
+    if (!error && data?.bio) setBio(data.bio)
   }
 
   const salvarBio = async () => {
-    if (!user?.id) {
-      setMensagem('❌ Usuário não identificado')
-      return
-    }
-
-    setMensagem('')
-    setEditandoBio(false)
-
-    try {
-      const response = await fetch('/api/usuario/bio', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, bio })
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        setMensagem('✅ Biografia atualizada!')
-        setUser((prev: any) => ({ ...prev, bio }))
-      } else {
-        setMensagem(`❌ ${result.error}`)
-        await carregarBio(user.id)
-      }
-    } catch (error) {
-      setMensagem('❌ Erro ao conectar com o servidor')
-      await carregarBio(user.id)
-    }
-
-    setTimeout(() => setMensagem(''), 3000)
-  }
-
-  const cancelarEdicaoBio = () => {
-    setEditandoBio(false)
-  }
-
-  const curtirFoto = async (fotoUrl: string) => {
-    if (!user) return
-    if (usuarioCurtiu[fotoUrl]) {
-      const { error } = await supabase
-        .from('curtidas_fotos')
-        .delete()
-        .eq('foto_url', fotoUrl)
-        .eq('usuario_id', user.id)
-      if (!error) {
-        setUsuarioCurtiu((prev) => ({ ...prev, [fotoUrl]: false }))
-        setCurtidas((prev) => ({ ...prev, [fotoUrl]: Math.max((prev[fotoUrl] || 0) - 1, 0) }))
-      }
+    const { error } = await supabase
+      .from('users')
+      .update({ bio })
+      .eq('id', user.id)
+    if (error) {
+      setMensagem('❌ Erro ao salvar biografia')
     } else {
-      const { error } = await supabase
-        .from('curtidas_fotos')
-        .insert({ foto_url: fotoUrl, dono_id: user.id, usuario_id: user.id })
-      if (!error) {
-        setUsuarioCurtiu((prev) => ({ ...prev, [fotoUrl]: true }))
-        setCurtidas((prev) => ({ ...prev, [fotoUrl]: (prev[fotoUrl] || 0) + 1 }))
-      }
+      setMensagem('✅ Biografia atualizada!')
     }
+    setEditandoBio(false)
+    setTimeout(() => setMensagem(''), 3000)
   }
 
   const handleUploadFotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
     if (files.length === 0) return
-    
+
     if (fotos.length + files.length > fotosLiberadas) {
-      setMensagem(`⚠️ Limite de ${fotosLiberadas} fotos liberadas.`)
+      setMensagem(`⚠️ Limite de ${fotosLiberadas} fotos. Remova algumas antes.`)
       setTimeout(() => setMensagem(''), 4000)
       return
     }
-    
+
     setUploading(true)
-    setMensagem('📤 Enviando fotos...')
-    
+    setMensagem('')
+
     const novasUrls: string[] = []
-    let erros = 0
-    
     for (const file of files) {
-      if (!file.type.startsWith('image/')) {
-        setMensagem(`❌ ${file.name} não é uma imagem`)
-        erros++
-        continue
-      }
-      
-      if (file.size > 5 * 1024 * 1024) {
-        setMensagem(`❌ ${file.name} excede 5MB`)
-        erros++
-        continue
-      }
-      
       const fileExt = file.name.split('.').pop()
       const fileName = `${uuidv4()}.${fileExt}`
       const filePath = `clientes/${user.id}/${fileName}`
-      
-      const { error: uploadError } = await supabase.storage
+
+      const { error } = await supabase.storage
         .from('fotos-aventuras')
         .upload(filePath, file)
-        
-      if (uploadError) {
-        setMensagem(`❌ Erro: ${uploadError.message}`)
-        erros++
+
+      if (error) {
+        console.error(error)
+        setMensagem(`❌ Erro ao enviar: ${error.message}`)
         continue
       }
-      
+
       const { data: { publicUrl } } = supabase.storage
         .from('fotos-aventuras')
         .getPublicUrl(filePath)
-        
       novasUrls.push(publicUrl)
     }
-    
-    if (novasUrls.length > 0) {
-      const novasFotos = [...fotos, ...novasUrls]
-      
-      try {
-        const response = await fetch('/api/usuario/fotos', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id, fotos: novasFotos })
-        })
-        
-        const result = await response.json()
-        
-        if (result.success) {
-          setFotos(novasFotos)
-          setMensagem(`✅ ${novasUrls.length} foto(s) enviada(s)!`)
-          await carregarMedalhasEspeciais(user.id)
-        } else {
-          setMensagem(`❌ ${result.error}`)
-        }
-      } catch (error) {
-        setMensagem('❌ Erro ao salvar')
-      }
+
+    const novasFotos = [...fotos, ...novasUrls]
+    const { error } = await supabase
+      .from('users')
+      .update({ fotos_aventuras: novasFotos })
+      .eq('id', user.id)
+
+    if (error) {
+      setMensagem(`❌ Erro ao salvar: ${error.message}`)
+    } else {
+      setFotos(novasFotos)
+      setMensagem(`✅ ${novasUrls.length} foto(s) adicionada(s)!`)
     }
-    
-    if (erros > 0 && novasUrls.length === 0) {
-      setMensagem(`⚠️ Nenhuma foto foi enviada.`)
-    }
-    
     setUploading(false)
-    setTimeout(() => setMensagem(''), 4000)
-    event.target.value = ''
+    setTimeout(() => setMensagem(''), 3000)
   }
 
   const removerFoto = async (index: number) => {
-    if (!confirm('Remover esta foto?')) return
-    
+    if (!confirm('Remover esta foto permanentemente?')) return
     const novasFotos = fotos.filter((_, i) => i !== index)
-    
-    try {
-      const response = await fetch('/api/usuario/fotos', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, fotos: novasFotos })
-      })
-      
-      const result = await response.json()
-      
-      if (result.success) {
-        setFotos(novasFotos)
-        setMensagem('✅ Foto removida')
-        await carregarMedalhasEspeciais(user.id)
-      } else {
-        setMensagem(`❌ ${result.error}`)
-      }
-    } catch (error) {
-      setMensagem('❌ Erro ao remover')
+    const { error } = await supabase
+      .from('users')
+      .update({ fotos_aventuras: novasFotos })
+      .eq('id', user.id)
+    if (error) {
+      setMensagem(`❌ Erro ao remover: ${error.message}`)
+    } else {
+      setFotos(novasFotos)
+      setMensagem('✅ Foto removida!')
     }
-    
     setTimeout(() => setMensagem(''), 3000)
   }
 
@@ -498,167 +261,170 @@ export default function PerfilCliente() {
     router.push('/login')
   }
 
-  if (loading || !user) {
+  if (!user) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏔️</div>
-          <div style={{ color: '#6b7280' }}>Carregando perfil...</div>
-        </div>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p>Carregando...</p>
       </div>
     )
   }
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      <UploadAvatarModal
-        isOpen={modalAberto}
-        onClose={() => setModalAberto(false)}
-        userId={user.id}
-        onAvatarUpdated={setAvatarPreview}
+      <UploadAvatarModal 
+        isOpen={modalAberto} 
+        onClose={() => setModalAberto(false)} 
+        userId={user.id} 
+        onAvatarUpdated={setAvatarPreview} 
       />
 
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px', position: 'sticky', top: 0, zIndex: 50 }}>
+      {/* CABEÇALHO */}
+      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px' }}>
         <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PrussikTrails</h1>
-            <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>Perfil do Aventureiro</p>
-          </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', color: '#374151', fontWeight: '600', fontSize: '13px' }}>← Voltar</button>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Sair</button>
+          <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>🏔️ PussikTrails</h1>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ color: '#4b5563' }}>{user.email}</span>
+            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#16a34a', color: 'white', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Dashboard</button>
+            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Sair</button>
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 20px' }}>
-        {/* CARD PERFIL */}
-        <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '28px', marginBottom: '32px', display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'flex-start', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-          <button onClick={() => setModalAberto(true)} style={{ width: '120px', height: '120px', borderRadius: '50%', backgroundColor: '#16a34a', overflow: 'hidden', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-            {avatarPreview ? <img src={avatarPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '42px', fontWeight: 'bold' }}>{(user.nome || user.email)?.charAt(0).toUpperCase()}</div>}
+      {/* CONTEÚDO */}
+      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px' }}>
+        
+        {/* CARD PRINCIPAL */}
+        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', marginBottom: '32px', display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'flex-start', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <button onClick={() => setModalAberto(true)} style={{ width: '100px', height: '100px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+            {avatarPreview ? <img src={avatarPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '48px', color: 'white' }}>{user.email?.charAt(0).toUpperCase() || 'A'}</span>}
           </button>
+          
           <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: '32px', fontWeight: 'bold', margin: 0, color: '#111827' }}>{user.nome || 'Aventureiro'}</h2>
-            <p style={{ color: '#6b7280', marginTop: '6px' }}>Explorando novas aventuras 🚀</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginTop: '24px' }}>
-              <div style={{ backgroundColor: '#f9fafb', borderRadius: '18px', padding: '18px' }}><div style={{ fontSize: '14px', color: '#6b7280' }}>KM Percorridos</div><div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '6px', color: '#111827' }}>{totalKm}</div></div>
-              <div style={{ backgroundColor: '#f9fafb', borderRadius: '18px', padding: '18px' }}><div style={{ fontSize: '14px', color: '#6b7280' }}>Trilhas</div><div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '6px', color: '#111827' }}>{totalTrilhas}</div></div>
-              <div style={{ backgroundColor: '#f9fafb', borderRadius: '18px', padding: '18px' }}><div style={{ fontSize: '14px', color: '#6b7280' }}>Avaliação</div><div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '6px', color: '#111827' }}>{avaliacaoMedia > 0 ? avaliacaoMedia.toFixed(1) : 'Novo'}</div></div>
-              <div style={{ backgroundColor: '#f9fafb', borderRadius: '18px', padding: '18px' }}><div style={{ fontSize: '14px', color: '#6b7280' }}>Medalhas</div><div style={{ fontSize: '28px', fontWeight: 'bold', marginTop: '6px', color: '#111827' }}>{medalhas.filter((m) => m.desbloqueado).length}</div></div>
-            </div>
+            <h2 style={{ fontSize: '28px', fontWeight: 'bold', margin: 0 }}>{user.email}</h2>
+            <p style={{ color: '#6b7280', marginTop: '4px' }}>Aventureiro desde {new Date().getFullYear()}</p>
             
-            {/* BIO */}
-            <div style={{ marginTop: '24px' }}>
+            <div style={{ display: 'flex', gap: '32px', marginTop: '16px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{totalKm}</span> <span style={{ color: '#6b7280' }}>KM percorridos</span></div>
+              <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{totalTrilhas}</span> <span style={{ color: '#6b7280' }}>Trilhas</span></div>
+              <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{conquistasKm.filter(m => m.desbloqueado).length}</span> <span style={{ color: '#6b7280' }}>Medalhas</span></div>
+            </div>
+
+            <div style={{ marginTop: '16px' }}>
               {editandoBio ? (
                 <div>
-                  <textarea 
-                    value={bio} 
-                    onChange={(e) => setBio(e.target.value)} 
-                    rows={4} 
-                    placeholder="Conte um pouco sobre você..." 
-                    style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: '14px', padding: '14px', resize: 'none', fontSize: '14px' }} 
-                  />
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                    <button onClick={salvarBio} style={{ backgroundColor: '#16a34a', color: 'white', padding: '10px 20px', borderRadius: '40px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>Salvar</button>
-                    <button onClick={cancelarEdicaoBio} style={{ backgroundColor: '#f3f4f6', color: '#374151', padding: '10px 20px', borderRadius: '40px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>Cancelar</button>
+                  <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={3} placeholder="Escreva algo sobre você..." style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '14px', resize: 'vertical' }} />
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <button onClick={salvarBio} style={{ backgroundColor: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>Salvar</button>
+                    <button onClick={() => { setEditandoBio(false); carregarBio(user.id); }} style={{ backgroundColor: '#e5e7eb', color: '#374151', padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>Cancelar</button>
                   </div>
                 </div>
               ) : (
-                <div onClick={() => setEditandoBio(true)} style={{ backgroundColor: '#f9fafb', borderRadius: '18px', padding: '18px', border: '1px solid #e5e7eb', cursor: 'pointer' }}>
-                  {bio ? <p style={{ margin: 0, color: '#374151' }}>{bio}</p> : <p style={{ margin: 0, color: '#9ca3af' }}>✏️ Clique para adicionar uma biografia...</p>}
+                <div onClick={() => setEditandoBio(true)} style={{ backgroundColor: '#f9fafb', padding: '12px', borderRadius: '8px', border: '1px solid #e5e7eb', cursor: 'pointer' }}>
+                  {bio ? <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{bio}</p> : <p style={{ margin: 0, color: '#9ca3af' }}>Clique para adicionar uma biografia...</p>}
                 </div>
               )}
             </div>
-            {mensagem && <div style={{ marginTop: '12px', padding: '10px', borderRadius: '12px', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626', textAlign: 'center' }}>{mensagem}</div>}
           </div>
         </div>
 
-        {/* MEDALHAS POR KM */}
-        <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '24px', marginBottom: '32px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '22px', color: '#111827' }}>🏆 Conquistas por KM</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
-            {medalhas.map((medalha, idx) => (
-              <div key={idx} style={{ backgroundColor: medalha.desbloqueado ? '#f0fdf4' : '#f9fafb', borderRadius: '18px', padding: '18px', textAlign: 'center', border: medalha.desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: medalha.desbloqueado ? 1 : 0.5 }}>
-                <div style={{ fontSize: '36px' }}>{medalha.icone}</div>
-                <div style={{ marginTop: '10px', fontWeight: 'bold', fontSize: '14px' }}>{medalha.nome}</div>
-                <div style={{ marginTop: '4px', fontSize: '12px', color: '#6b7280' }}>{medalha.kmNecessario} KM</div>
+        {/* BARRA DE PROGRESSO */}
+        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', marginBottom: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <p style={{ marginBottom: '12px', fontSize: '14px', color: '#4b5563' }}>🎯 Próximo marco: <strong>{proximoMarco} km</strong> (faltam {Math.max(0, proximoMarco - totalKm)} km)</p>
+          <div style={{ backgroundColor: '#e5e7eb', borderRadius: '20px', height: '12px', overflow: 'hidden' }}>
+            <div style={{ width: `${progressoParaProximoMarco}%`, backgroundColor: '#3b82f6', height: '100%', borderRadius: '20px' }} />
+          </div>
+        </div>
+
+        {/* CONQUISTAS POR KM */}
+        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', marginBottom: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px' }}>🏅 Conquistas por KM</h3>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }}>
+            {conquistasKm.map((m, i) => (
+              <div key={i} style={{ flex: '0 0 auto', width: '100px', backgroundColor: m.desbloqueado ? '#f0fdf4' : '#f3f4f6', borderRadius: '12px', padding: '12px', textAlign: 'center', border: m.desbloqueado ? '1px solid #16a34a' : '1px solid #e5e7eb', opacity: m.desbloqueado ? 1 : 0.5 }}>
+                <div style={{ fontSize: '32px' }}>{m.icone}</div>
+                <p style={{ fontWeight: 'bold', fontSize: '10px', marginTop: '8px', marginBottom: 0 }}>{m.nome}</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* MEDALHAS ESPECIAIS */}
-        <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '24px', marginBottom: '32px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ margin: 0, fontSize: '22px', color: '#111827' }}>🎖️ Medalhas Especiais</h3>
-            <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#6b7280' }}>Conquistas avançadas</p>
-          </div>
-
-          {medalhasEspeciais.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px', backgroundColor: '#f9fafb', borderRadius: '20px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎖️</div>
-              <div style={{ fontWeight: 'bold', color: '#374151' }}>Nenhuma medalha especial ainda</div>
-              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '6px' }}>Complete mais aventuras para desbloquear!</div>
-            </div>
+        {/* MEDALHAS ESPECIAIS - HORIZONTAL COM SCROLL NO MOBILE */}
+        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', marginBottom: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', textAlign: 'center' }}>🎖️ Medalhas Especiais</h3>
+          
+          {carregandoMedalhas ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>Carregando medalhas...</div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-              {medalhasEspeciais.map((medalha) => {
-                const cor = getCorPorTier(medalha.tier_atual)
-                const iconeTier = getIconePorTier(medalha.tier_atual)
-                return (
-                  <div key={medalha.id} style={{ backgroundColor: medalha.desbloqueado ? '#f0fdf4' : '#f9fafb', borderRadius: '20px', padding: '20px', border: medalha.desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                      <div style={{ fontSize: '40px' }}>{medalha.icone}</div>
-                      <div><div style={{ fontWeight: 'bold', fontSize: '16px', color: '#111827' }}>{medalha.nome}</div><div style={{ fontSize: '11px', color: '#6b7280' }}>{medalha.categoria}</div></div>
-                      <div style={{ marginLeft: 'auto', fontSize: '20px' }}>{iconeTier}</div>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', minWidth: 'min-content' }}>
+                {medalhas.map((medalha) => {
+                  const desbloqueado = medalha.progresso >= medalha.meta
+                  return (
+                    <div key={medalha.nome} style={{
+                      flex: '0 0 auto',
+                      width: '110px',
+                      backgroundColor: desbloqueado ? '#e8f5e9' : '#f5f5f5',
+                      borderRadius: '12px',
+                      padding: '12px 8px',
+                      textAlign: 'center',
+                      border: `1px solid ${desbloqueado ? '#4caf50' : '#e0e0e0'}`
+                    }}>
+                      <div style={{ fontSize: '40px', position: 'relative', display: 'inline-block' }}>
+                        {medalha.icone}
+                        {!desbloqueado && <span style={{ position: 'absolute', top: '-5px', right: '-10px', fontSize: '16px' }}>🔒</span>}
+                      </div>
+                      <div style={{ fontWeight: 'bold', fontSize: '11px', marginTop: '8px' }}>{medalha.nome}</div>
+                      <div style={{ fontSize: '9px', color: desbloqueado ? '#4caf50' : '#999', marginTop: '4px' }}>
+                        {desbloqueado ? `✅ ${medalha.progresso}/${medalha.meta}` : `🔒 ${medalha.progresso}/${medalha.meta}`}
+                      </div>
                     </div>
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}><span>Progresso</span><span style={{ fontWeight: 'bold', color: cor }}>{medalha.progresso} / {medalha.meta}</span></div>
-                      <div style={{ backgroundColor: '#e5e7eb', borderRadius: '10px', height: '6px', overflow: 'hidden' }}><div style={{ backgroundColor: cor, width: `${medalha.progresso_percentual}%`, height: '100%', borderRadius: '10px' }} /></div>
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '12px' }}>{medalha.descricao}</div>
-                    {!medalha.desbloqueado && <div style={{ backgroundColor: '#fef3c7', borderRadius: '12px', padding: '8px', fontSize: '11px', color: '#d97706', textAlign: 'center' }}>🔒 Faltam {medalha.meta - medalha.progresso} para desbloquear</div>}
-                    {medalha.desbloqueado && <div style={{ backgroundColor: '#dcfce7', borderRadius: '12px', padding: '8px', fontSize: '11px', color: '#16a34a', textAlign: 'center' }}>✅ Desbloqueada! Nível {medalha.tier_atual.toUpperCase()}</div>}
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           )}
         </div>
 
-        {/* FOTOS */}
-        <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: '18px' }}>
-            <div><h3 style={{ margin: 0, fontSize: '22px', color: '#111827' }}>📸 Fotos das Aventuras</h3><div style={{ marginTop: '6px', fontSize: '13px', color: '#6b7280' }}>{fotos.length} / {fotosLiberadas} fotos</div></div>
-            <button onClick={() => document.getElementById('upload-fotos-input')?.click()} disabled={uploading} style={{ background: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.5 : 1 }}>
-              {uploading ? 'Enviando...' : '📤 Enviar fotos'}
-            </button>
-            <input id="upload-fotos-input" type="file" multiple accept="image/*" onChange={handleUploadFotos} disabled={uploading} style={{ display: 'none' }} />
+        {/* FOTOS DAS AVENTURAS */}
+        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 'bold' }}>📸 Fotos das Aventuras</h3>
+            <p style={{ color: '#6b7280', fontSize: '14px' }}>{fotos.length} / {fotosLiberadas} fotos</p>
           </div>
-          <div style={{ marginBottom: '22px' }}>
-            <div style={{ width: '100%', height: '8px', backgroundColor: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
-              <div style={{ width: `${progressoParaProximoMarco}%`, height: '100%', backgroundColor: '#3b82f6', borderRadius: '999px' }} />
+
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <label style={{ backgroundColor: '#16a34a', color: 'white', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', display: 'inline-block', opacity: uploading ? 0.5 : 1 }}>
+              {uploading ? 'Enviando...' : '📤 Enviar fotos'}
+              <input type="file" accept="image/*" multiple onChange={handleUploadFotos} disabled={uploading} style={{ display: 'none' }} />
+            </label>
+            <p style={{ fontSize: '12px', marginTop: '8px', color: '#6b7280' }}>Até {fotosLiberadas} fotos (JPG, PNG, GIF)</p>
+          </div>
+
+          {mensagem && (
+            <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '8px', textAlign: 'center', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626' }}>
+              {mensagem}
             </div>
-            <p style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>Faltam {kmFaltando} KM para liberar mais fotos</p>
+          )}
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginBottom: '24px' }}>
+            {metasFotos.map((meta, i) => (
+              <div key={i} style={{ backgroundColor: totalKm >= meta.km ? '#3b82f6' : '#e5e7eb', color: totalKm >= meta.km ? 'white' : '#6b7280', padding: '4px 12px', borderRadius: '20px', fontSize: '12px' }}>
+                {meta.km}km → {meta.fotos} fotos
+              </div>
+            ))}
           </div>
 
           {fotos.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px', backgroundColor: '#f9fafb', borderRadius: '18px' }}>
-              <div style={{ fontSize: '48px' }}>📷</div>
-              <p style={{ color: '#6b7280' }}>Nenhuma foto enviada ainda</p>
+            <div style={{ textAlign: 'center', padding: '40px', backgroundColor: '#f9fafb', borderRadius: '12px' }}>
+              <p style={{ color: '#9ca3af' }}>📸 Nenhuma foto ainda</p>
+              <p style={{ fontSize: '12px', color: '#9ca3af' }}>Envie suas aventuras!</p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px' }}>
               {fotos.map((foto, idx) => (
-                <div key={idx} style={{ position: 'relative', borderRadius: '20px', overflow: 'hidden', aspectRatio: '1/1', backgroundColor: '#f3f4f6' }}>
-                  <img src={foto} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <div style={{ position: 'absolute', bottom: '12px', left: '12px', background: 'rgba(0,0,0,0.55)', borderRadius: '20px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button onClick={() => curtirFoto(foto)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', fontSize: '16px' }}>
-                      {usuarioCurtiu[foto] ? '❤️' : '🤍'}
-                    </button>
-                    <span style={{ fontSize: '12px', color: 'white' }}>{curtidas[foto] || 0}</span>
-                  </div>
-                  <button onClick={() => removerFoto(idx)} style={{ position: 'absolute', top: '12px', right: '12px', width: '32px', height: '32px', borderRadius: '50%', border: 'none', cursor: 'pointer', backgroundColor: 'rgba(0,0,0,0.55)', color: 'white' }}>✕</button>
+                <div key={idx} style={{ position: 'relative', aspectRatio: '1/1', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e5e7eb' }}>
+                  <img src={foto} alt={`Aventura ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <button onClick={() => removerFoto(idx)} style={{ position: 'absolute', top: '4px', right: '4px', backgroundColor: '#dc2626', color: 'white', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}>×</button>
                 </div>
               ))}
             </div>
