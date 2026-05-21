@@ -1,508 +1,564 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { registrarAtividade } from '@/lib/logAtividade'
 
-type Roteiro = {
+type Avaliacao = {
   id: string
-  titulo: string
-  descricao: string
-  preco: number
-  duracao_horas: number
-  km: number
-  dificuldade: string
-  localizacao: string
-  foto_capa: string | null
-  galeria_fotos: string[]
-  embarque_local: string
-  embarque_data_hora: string
-  retorno_local: string
-  retorno_data_hora: string
-  roteiro_detalhado?: string
-  status: string
-  guia_id?: string
-  guia_nome?: string
-  guia_email?: string
-  guia_avatar?: string
-  guia_bio?: string
+  nota: number
+  comentario: string
+  resposta_guia?: string
+  cliente_id: string
+  cliente_nome: string
+  cliente_avatar?: string
+  created_at: string
 }
 
-export default function ClienteRoteiroDetalhe() {
-  const router = useRouter()
+export default function PerfilPublicoGuia() {
   const params = useParams()
+  const router = useRouter()
   const id = params.id as string
-  const [usuarioLogado, setUsuarioLogado] = useState<any>(null)
-  const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
-  const [carregando, setCarregando] = useState(true)
-  const [reservando, setReservando] = useState(false)
-  const [quantidadePessoas, setQuantidadePessoas] = useState(1)
-  const [mensagem, setMensagem] = useState('')
-  const [fotoSelecionada, setFotoSelecionada] = useState(0)
-  const [todasFotos, setTodasFotos] = useState<string[]>([])
 
-  // Carrega usuário logado
+  const [guia, setGuia] = useState<any>(null)
+  const [carregando, setCarregando] = useState(true)
+  const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([])
+  const [curtidas, setCurtidas] = useState<Record<string, number>>({})
+  const [usuarioCurtiu, setUsuarioCurtiu] = useState<Record<string, boolean>>({})
+  const [usuarioLogado, setUsuarioLogado] = useState<any>(null)
+  const [bio, setBio] = useState('')
+
+  // Estatísticas do guia
+  const [stats, setStats] = useState({
+    totalRoteiros: 0,
+    totalReservas: 0,
+    totalClientes: 0,
+    totalKm: 0,
+    avaliacaoMedia: 0,
+    totalAvaliacoes: 0,
+    medalhaNivel: 'bronze'
+  })
+
+  // ==================== METAS DE KM PARA O GUIA (10 ANOS) ====================
+  const metasKmGuia = [
+    { km: 32, nome: '🥉 Bronze', icone: '🥉' },
+    { km: 96, nome: '🥈 Prata', icone: '🥈' },
+    { km: 192, nome: '🥇 Ouro', icone: '🥇' },
+    { km: 384, nome: '💎 Platina', icone: '💎' },
+    { km: 768, nome: '⚡ Elite', icone: '⚡' },
+    { km: 1152, nome: '👑 Master', icone: '👑' },
+    { km: 1920, nome: '🌟 Lenda', icone: '🌟' },
+    { km: 3840, nome: '🔥 Lenda Absoluta', icone: '🔥' },
+  ]
+
+  const getNivelPorKm = (km: number) => {
+    for (let i = metasKmGuia.length - 1; i >= 0; i--) {
+      if (km >= metasKmGuia[i].km) return metasKmGuia[i]
+    }
+    return metasKmGuia[0]
+  }
+
+  const getIconePorKm = (km: number) => {
+    const nivel = getNivelPorKm(km)
+    return nivel.icone
+  }
+
+  const getNomeNivelPorKm = (km: number) => {
+    const nivel = getNivelPorKm(km)
+    return nivel.nome
+  }
+
+  const calcularProximoMarcoKm = (km: number) => {
+    for (const meta of metasKmGuia) {
+      if (km < meta.km) return meta.km
+    }
+    return metasKmGuia[metasKmGuia.length - 1].km
+  }
+
+  const calcularProgressoKm = (km: number) => {
+    const proximo = calcularProximoMarcoKm(km)
+    const anterior = metasKmGuia.find(m => m.km < proximo)?.km || 0
+    if (proximo === anterior) return 100
+    return Math.min(((km - anterior) / (proximo - anterior)) * 100, 100)
+  }
+
+  // ==================== CONQUISTAS POR KM (TODAS AS 7) ====================
+  const conquistasKm = [
+    { nome: 'Primeira Trilha', icone: '🥾', kmNecessario: 0 },
+    { nome: 'Explorador Iniciante', icone: '🌱', kmNecessario: 32 },
+    { nome: 'Caminhante', icone: '🚶', kmNecessario: 96 },
+    { nome: 'Aventureiro', icone: '🏔️', kmNecessario: 384 },
+    { nome: 'Mestre das Trilhas', icone: '👑', kmNecessario: 1152 },
+    { nome: 'Lenda Viva', icone: '🌟', kmNecessario: 1920 },
+    { nome: 'Lenda Absoluta', icone: '🔥', kmNecessario: 3840 },
+  ]
+
+  // ==================== MEDALHAS ESPECIAIS DO GUIA ====================
+  const medalhasEspeciais = [
+    { nome: 'KM Guiados', icone: '👣', meta: 32 },
+    { nome: 'Guias Avaliados', icone: '⭐', meta: 5 },
+    { nome: 'Trilhas Guiadas', icone: '🥾', meta: 1 },
+    { nome: 'Clientes Atendidos', icone: '👥', meta: 5 },
+  ]
+
   useEffect(() => {
     const userData = localStorage.getItem('user')
     if (userData) {
       setUsuarioLogado(JSON.parse(userData))
     }
-    carregarRoteiro()
-  }, [id])
+    if (id) {
+      carregarDados()
+    }
+  }, [id, usuarioLogado])
 
-  const carregarRoteiro = async () => {
+  const carregarDados = async () => {
     setCarregando(true)
     try {
-      const { data, error } = await supabase
-        .from('roteiros')
-        .select('*')
+      // Dados do guia
+      const { data: guiaData } = await supabase
+        .from('users')
+        .select('id, nome, email, avatar_url, bio, created_at, instagram')
         .eq('id', id)
         .single()
 
-      if (error) throw error
-
-      if (data.status !== 'ativo') {
-        setMensagem('Este roteiro não está disponível no momento.')
+      if (!guiaData) {
         setCarregando(false)
         return
       }
 
-      let guiaNome = 'Guia'
-      let guiaEmail = ''
-      let guiaAvatar = null
-      let guiaBio = null
+      setGuia(guiaData)
+      setBio(guiaData.bio || '')
 
-      if (data.id_guia) {
-        const { data: guia } = await supabase
-          .from('users')
-          .select('nome, email, avatar_url, bio')
-          .eq('id', data.id_guia)
-          .single()
-        if (guia) {
-          guiaNome = guia.nome
-          guiaEmail = guia.email
-          guiaAvatar = guia.avatar_url
-          guiaBio = guia.bio
-        }
+      // Roteiros do guia (com KM)
+      const { data: roteiros } = await supabase
+        .from('roteiros')
+        .select('id, km')
+        .eq('id_guia', id)
+        .eq('status', 'ativo')
+
+      const totalRoteiros = roteiros?.length || 0
+      const totalKm = roteiros?.reduce((acc, r) => acc + (r.km || 0), 0) || 0
+      const roteirosIds = roteiros?.map(r => r.id) || []
+
+      // Reservas dos roteiros
+      let totalReservas = 0
+      let clientesUnicos = new Set()
+      if (roteirosIds.length > 0) {
+        const { data: reservas } = await supabase
+          .from('reservas')
+          .select('cliente_id')
+          .in('roteiro_id', roteirosIds)
+        
+        totalReservas = reservas?.length || 0
+        reservas?.forEach(r => clientesUnicos.add(r.cliente_id))
       }
 
-      const fotosArray: string[] = data.galeria_fotos || []
-      const fotosValidas = fotosArray.filter((foto: string) => foto && foto.trim() !== '')
-      
-      let listaFotos: string[] = []
-      if (data.foto_capa) {
-        listaFotos.push(data.foto_capa)
+      // Avaliações do guia (apenas aprovadas)
+      const { data: avaliacoesData } = await supabase
+        .from('avaliacoes')
+        .select(`
+          id,
+          nota,
+          comentario,
+          resposta_guia,
+          created_at,
+          cliente_id,
+          cliente:cliente_id (nome, avatar_url)
+        `)
+        .eq('guia_id', id)
+        .eq('status_moderacao', 'aprovada')
+        .order('created_at', { ascending: false })
+
+      const avaliacoesFormatadas = (avaliacoesData || []).map((a: any) => ({
+        id: a.id,
+        nota: a.nota,
+        comentario: a.comentario,
+        resposta_guia: a.resposta_guia,
+        created_at: a.created_at,
+        cliente_id: a.cliente_id,
+        cliente_nome: a.cliente?.nome || 'Cliente',
+        cliente_avatar: a.cliente?.avatar_url
+      }))
+      setAvaliacoes(avaliacoesFormatadas)
+
+      // Carregar curtidas das avaliações
+      if (avaliacoesFormatadas.length > 0 && usuarioLogado) {
+        const avaliacaoIds = avaliacoesFormatadas.map(a => a.id)
+        const { data: curtidasData } = await supabase
+          .from('curtidas_avaliacoes')
+          .select('avaliacao_id')
+          .in('avaliacao_id', avaliacaoIds)
+        
+        const map: Record<string, number> = {}
+        curtidasData?.forEach((c: any) => {
+          map[c.avaliacao_id] = (map[c.avaliacao_id] || 0) + 1
+        })
+        setCurtidas(map)
+
+        const { data: minhasCurtidas } = await supabase
+          .from('curtidas_avaliacoes')
+          .select('avaliacao_id')
+          .eq('usuario_id', usuarioLogado.id)
+          .in('avaliacao_id', avaliacaoIds)
+        
+        const curtidasMap: Record<string, boolean> = {}
+        minhasCurtidas?.forEach((c: any) => {
+          curtidasMap[c.avaliacao_id] = true
+        })
+        setUsuarioCurtiu(curtidasMap)
       }
-      listaFotos = [...listaFotos, ...fotosValidas.filter((f: string) => f !== data.foto_capa)]
-      
-      setTodasFotos(listaFotos)
-      
-      setRoteiro({
-        ...data,
-        guia_nome: guiaNome,
-        guia_email: guiaEmail,
-        guia_id: data.id_guia,
-        guia_avatar: guiaAvatar,
-        guia_bio: guiaBio,
-        galeria_fotos: fotosValidas
+
+      const media = avaliacoesFormatadas.length
+        ? avaliacoesFormatadas.reduce((acc, a) => acc + a.nota, 0) / avaliacoesFormatadas.length
+        : 0
+
+      // Medalha baseada em roteiros
+      let medalha = 'bronze'
+      if (totalRoteiros >= 10) medalha = 'black'
+      else if (totalRoteiros >= 7) medalha = 'platina'
+      else if (totalRoteiros >= 4) medalha = 'ouro'
+      else if (totalRoteiros >= 2) medalha = 'prata'
+
+      setStats({
+        totalRoteiros,
+        totalReservas,
+        totalClientes: clientesUnicos.size,
+        totalKm,
+        avaliacaoMedia: media,
+        totalAvaliacoes: avaliacoesFormatadas.length,
+        medalhaNivel: medalha
       })
     } catch (err) {
-      console.error('Erro ao carregar roteiro:', err)
-      setMensagem('Erro ao carregar roteiro.')
+      console.error('Erro ao carregar dados:', err)
     } finally {
       setCarregando(false)
     }
   }
 
-  const handleReservar = async () => {
+  const curtirAvaliacao = async (avaliacaoId: string, guiaId: string) => {
     if (!usuarioLogado) {
-      localStorage.setItem('redirectAfterLogin', `/roteiros/${id}`)
       router.push('/login')
       return
     }
 
-    if (usuarioLogado.tipo !== 'cliente') {
-      setMensagem('⚠️ Apenas aventureiros podem fazer reservas')
-      return
-    }
-
-    setReservando(true)
-    setMensagem('')
-
-    try {
-      const dataTrilha = roteiro?.embarque_data_hora 
-        ? new Date(roteiro.embarque_data_hora).toISOString().split('T')[0]
-        : new Date().toISOString().split('T')[0]
-
-      const reservaData = {
-        cliente_id: usuarioLogado.id,
-        roteiro_id: roteiro?.id,
-        data_trilha: dataTrilha,
-        quantidade_pessoas: quantidadePessoas,
-        valor_total: (roteiro?.preco || 0) * quantidadePessoas,
-        status: 'pendente'
-      }
-
+    if (usuarioCurtiu[avaliacaoId]) {
       const { error } = await supabase
-        .from('reservas')
-        .insert(reservaData)
+        .from('curtidas_avaliacoes')
+        .delete()
+        .eq('avaliacao_id', avaliacaoId)
+        .eq('usuario_id', usuarioLogado.id)
 
-      if (error) throw error
-
-      const primeiroNome = usuarioLogado.nome?.split(' ')[0] || usuarioLogado.email?.split('@')[0] || 'Cliente'
-      await registrarAtividade(
-        usuarioLogado.id,
-        'cliente',
-        primeiroNome,
-        'reservou',
-        `${primeiroNome} reservou o roteiro "${roteiro?.titulo}"`,
-        roteiro?.id
-      )
-
-      setMensagem('✅ Reserva solicitada com sucesso! Aguardando confirmação.')
-      setTimeout(() => {
-        router.push('/cliente/minhas-reservas')
-      }, 2000)
-    } catch (err: any) {
-      console.error('Erro ao reservar:', err)
-      setMensagem(`❌ Erro ao realizar reserva: ${err.message || 'Tente novamente.'}`)
-    } finally {
-      setReservando(false)
-    }
-  }
-
-  const formatarData = (dataHora: string) => {
-    if (!dataHora) return { data: 'Não informada', hora: 'Não informado' }
-    try {
-      const data = new Date(dataHora)
-      if (isNaN(data.getTime())) {
-        return { data: 'Data inválida', hora: 'Horário inválido' }
+      if (!error) {
+        setUsuarioCurtiu(prev => ({ ...prev, [avaliacaoId]: false }))
+        setCurtidas(prev => ({ ...prev, [avaliacaoId]: Math.max((prev[avaliacaoId] || 0) - 1, 0) }))
       }
-      return {
-        data: data.toLocaleDateString('pt-BR', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric'
-        }),
-        hora: data.toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit'
+    } else {
+      const { error } = await supabase
+        .from('curtidas_avaliacoes')
+        .insert({
+          avaliacao_id: avaliacaoId,
+          dono_id: guiaId,
+          usuario_id: usuarioLogado.id
         })
+
+      if (!error) {
+        setUsuarioCurtiu(prev => ({ ...prev, [avaliacaoId]: true }))
+        setCurtidas(prev => ({ ...prev, [avaliacaoId]: (prev[avaliacaoId] || 0) + 1 }))
       }
-    } catch {
-      return { data: 'Erro', hora: 'Erro' }
     }
   }
 
-  const getDificuldadeIcone = (dificuldade: string) => {
-    switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return '🥾'
-      case 'médio': return '⛰️'
-      case 'difícil': return '🏔️'
-      case 'extremo': return '⚠️'
-      default: return '🥾'
-    }
+  const getNotaEstrelas = (nota: number) => {
+    const estrelasCheias = '★'.repeat(nota)
+    const estrelasVazias = '☆'.repeat(5 - nota)
+    return estrelasCheias + estrelasVazias
   }
 
-  const getDificuldadeCor = (dificuldade: string) => {
-    switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return '#10b981'
-      case 'médio': return '#f59e0b'
-      case 'difícil': return '#ef4444'
-      case 'extremo': return '#8b5cf6'
-      default: return '#6b7280'
-    }
-  }
-
-  const handleGuiaClick = () => {
-    if (roteiro?.guia_id) {
-      router.push(`/guia/publico/${roteiro.guia_id}`)
-    }
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem('user')
-    router.push('/login')
-  }
+  const proximoMarcoKm = calcularProximoMarcoKm(stats.totalKm)
+  const progressoKm = calcularProgressoKm(stats.totalKm)
+  const nivelAtual = getNivelPorKm(stats.totalKm)
 
   if (carregando) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: '48px', height: '48px', border: '3px solid #e5e7eb', borderTopColor: '#dc2626', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-          <p style={{ color: '#6b7280' }}>Carregando roteiro...</p>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏔️</div>
+          <div style={{ color: '#6b7280' }}>Carregando perfil do guia...</div>
         </div>
       </div>
     )
   }
 
-  if (!roteiro) {
+  if (!guia) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-        <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px' }}>
-          <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PussikTrails</h1>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 16px', cursor: 'pointer' }}>Sair</button>
-          </div>
-        </div>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '64px 24px', textAlign: 'center' }}>
-          <div style={{ fontSize: '64px', marginBottom: '16px' }}>⚠️</div>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>Roteiro não encontrado</h2>
-          <p style={{ color: '#6b7280', marginBottom: '24px' }}>{mensagem || 'O roteiro que você procura não está disponível.'}</p>
-          <button onClick={() => router.push('/cliente/roteiros')} style={{ backgroundColor: '#dc2626', color: 'white', padding: '12px 24px', borderRadius: '40px', border: 'none', cursor: 'pointer', fontWeight: '500' }}>
-            ← Voltar para roteiros
-          </button>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '40px', marginBottom: '12px' }}>⚠️</div>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>Guia não encontrado</div>
+          <div style={{ color: '#6b7280' }}>O perfil que você procura não está disponível.</div>
+          <button onClick={() => router.back()} style={{ marginTop: '20px', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '10px 24px', cursor: 'pointer' }}>← Voltar</button>
         </div>
       </div>
     )
   }
-
-  const embarque = formatarData(roteiro.embarque_data_hora)
-  const retorno = formatarData(roteiro.retorno_data_hora)
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
       {/* CABEÇALHO */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px', position: 'sticky', top: 0, zIndex: 50 }}>
         <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PussikTrails</h1>
-            <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>Detalhes da aventura</p>
-          </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button onClick={() => router.push('/cliente/roteiros')} style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', color: '#374151', fontWeight: '600', fontSize: '13px' }}>← Roteiros</button>
-            {usuarioLogado && usuarioLogado.tipo === 'cliente' && (
-              <button onClick={() => router.push('/cliente/perfil')} style={{ backgroundColor: '#111827', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Perfil</button>
-            )}
-            {usuarioLogado && (
-              <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Sair</button>
-            )}
-            {!usuarioLogado && (
-              <button onClick={() => router.push('/login')} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Entrar</button>
-            )}
-          </div>
+          <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a', margin: 0 }}>🏔️ PussikTrails</h1>
+          <button onClick={() => router.back()} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '8px 20px', borderRadius: '40px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', color: '#374151' }}>← Voltar</button>
         </div>
       </div>
 
-      {/* CONTEÚDO - LAYOUT RESPONSIVO */}
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px' }}>
-        
-        {/* GALERIA DE FOTOS */}
-        {todasFotos.length > 0 && (
-          <div style={{ marginBottom: '32px' }}>
-            <div style={{ borderRadius: '24px', overflow: 'hidden', height: '320px', position: 'relative', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', marginBottom: '16px', backgroundColor: '#1f2937' }}>
-              <img key={todasFotos[fotoSelecionada]} src={todasFotos[fotoSelecionada]} alt={roteiro.titulo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              <div style={{ position: 'absolute', bottom: '20px', left: '20px', backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)', padding: '8px 20px', borderRadius: '40px' }}>
-                <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>
-                  {getDificuldadeIcone(roteiro.dificuldade)} {roteiro.dificuldade?.toUpperCase()}
-                </span>
-              </div>
-            </div>
-            {todasFotos.length > 1 && (
-              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', justifyContent: 'center' }}>
-                {todasFotos.map((foto: string, index: number) => (
-                  <button key={index} onClick={() => setFotoSelecionada(index)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, borderRadius: '12px', overflow: 'hidden', flexShrink: 0 }}>
-                    <img src={foto} alt={`Foto ${index + 1}`} style={{ width: '80px', height: '60px', objectFit: 'cover', borderRadius: '12px', border: fotoSelecionada === index ? '2px solid #dc2626' : '2px solid transparent' }} />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+      {/* CONTEÚDO */}
+      <div style={{ maxWidth: '1080px', margin: '0 auto', padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
 
-        {/* LAYOUT FLEX RESPONSIVO - EMPILHA NO MOBILE */}
-        <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '32px' }}>
-          
-          {/* COLUNA ESQUERDA - INFORMAÇÕES */}
-          <div style={{ flex: '2', minWidth: '280px' }}>
-            
-            {/* TÍTULO E DESCRIÇÃO */}
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '24px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: '0 0 12px 0' }}>{roteiro.titulo}</h1>
-              <p style={{ color: '#6b7280', fontSize: '14px', marginBottom: '16px', lineHeight: 1.6 }}>{roteiro.descricao}</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
-                <span style={{ fontSize: '20px' }}>📍</span>
-                <span style={{ color: '#374151', fontWeight: '500' }}>{roteiro.localizacao}</span>
-              </div>
+        {/* CARD PRINCIPAL DO PERFIL */}
+        <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', gap: '28px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            {/* Avatar */}
+            <div style={{ width: '120px', height: '120px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+              {guia.avatar_url ? (
+                <img src={guia.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <span style={{ fontSize: '48px', color: 'white' }}>{guia.nome?.charAt(0).toUpperCase() || 'G'}</span>
+              )}
             </div>
 
-            {/* CARACTERÍSTICAS DA TRILHA */}
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '24px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Características da Trilha</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>🥾</div>
-                  <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827' }}>{roteiro.km}</div>
-                  <div style={{ fontSize: '11px', color: '#6b7280' }}>KM de trilha</div>
-                </div>
-                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>⏱️</div>
-                  <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827' }}>{roteiro.duracao_horas}</div>
-                  <div style={{ fontSize: '11px', color: '#6b7280' }}>Horas de duração</div>
-                </div>
-                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>{getDificuldadeIcone(roteiro.dificuldade)}</div>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: getDificuldadeCor(roteiro.dificuldade) }}>{roteiro.dificuldade}</div>
-                  <div style={{ fontSize: '11px', color: '#6b7280' }}>Dificuldade</div>
-                </div>
-              </div>
-            </div>
+            {/* Informações */}
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontSize: '32px', fontWeight: 'bold', margin: 0, color: '#111827' }}>{guia.nome || guia.email || 'Guia'}</h2>
+              <p style={{ color: '#6b7280', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>📷 Instagram: {guia.instagram || 'Não informado'}</span>
+                <span style={{ width: '4px', height: '4px', backgroundColor: '#d1d5db', borderRadius: '50%' }}></span>
+                <span>📅 Membro desde {new Date(guia.created_at).getFullYear()}</span>
+              </p>
 
-            {/* LOGÍSTICA DA AVENTURA (EMBARQUE/RETORNO) */}
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '24px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Logística da Aventura</h3>
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '20px' }}>📍</span>
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: '600', color: '#111827' }}>Ponto de Encontro</div>
-                    <div style={{ fontSize: '14px', color: '#374151' }}>{roteiro.embarque_local || 'Não informado'}</div>
-                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
-                      📅 {embarque.data} • ⏰ {embarque.hora}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '20px' }}>🏁</span>
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: '600', color: '#111827' }}>Ponto de Retorno</div>
-                    <div style={{ fontSize: '14px', color: '#374151' }}>{roteiro.retorno_local || 'Não informado'}</div>
-                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
-                      📅 {retorno.data} • ⏰ {retorno.hora}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* CARD DO GUIA */}
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Seu Guia</h3>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <div style={{ width: '60px', height: '60px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                  {roteiro.guia_avatar ? (
-                    <img src={roteiro.guia_avatar} alt={roteiro.guia_nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ fontSize: '28px', color: 'white' }}>{roteiro.guia_nome?.charAt(0).toUpperCase()}</span>
-                  )}
-                </div>
-                <div>
-                  <button onClick={handleGuiaClick} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#111827', textDecoration: 'underline', textDecorationColor: '#dc2626' }}>
-                      {roteiro.guia_nome}
-                    </div>
-                  </button>
-                  <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
-                    {roteiro.guia_bio || 'Guia experiente, pronto para te mostrar o melhor da trilha!'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* COLUNA DIREITA - CARD DE RESERVA (NO MOBILE FICA ABAIXO) */}
-          <div style={{ flex: '1', minWidth: '280px' }}>
-            <div style={{ 
-              backgroundColor: 'white', 
-              borderRadius: '24px', 
-              padding: '24px', 
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)', 
-              border: '1px solid #e5e7eb',
-              position: 'sticky',
-              top: '100px'
-            }}>
-              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#dc2626' }}>
-                  R$ {roteiro.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-                <div style={{ fontSize: '13px', color: '#6b7280' }}>por pessoa</div>
+              {/* Estatísticas rápidas */}
+              <div style={{ display: 'flex', gap: '24px', marginTop: '20px', flexWrap: 'wrap' }}>
+                <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalKm}</span> <span style={{ color: '#6b7280' }}>KM guiados</span></div>
+                <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalRoteiros}</span> <span style={{ color: '#6b7280' }}>Roteiros</span></div>
+                <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalClientes}</span> <span style={{ color: '#6b7280' }}>Clientes</span></div>
+                <div><span style={{ fontSize: '24px', fontWeight: 'bold', color: '#f59e0b' }}>{stats.avaliacaoMedia.toFixed(1)}</span> <span style={{ color: '#6b7280' }}>⭐ Avaliação</span></div>
               </div>
 
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#374151' }}>Número de pessoas</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#f9fafb', borderRadius: '40px', padding: '4px', border: '1px solid #e5e7eb' }}>
-                  <button 
-                    type="button" 
-                    onClick={() => setQuantidadePessoas(Math.max(1, quantidadePessoas - 1))} 
-                    style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: '20px', fontWeight: 'bold' }}
-                  >
-                    -
-                  </button>
-                  <span style={{ fontSize: '18px', fontWeight: '600', flex: 1, textAlign: 'center' }}>{quantidadePessoas}</span>
-                  <button 
-                    type="button" 
-                    onClick={() => setQuantidadePessoas(quantidadePessoas + 1)} 
-                    style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: '20px', fontWeight: 'bold' }}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span style={{ color: '#6b7280' }}>Valor por pessoa</span>
-                  <span style={{ fontWeight: '500' }}>R$ {roteiro.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span style={{ color: '#6b7280' }}>Quantidade</span>
-                  <span style={{ fontWeight: '500' }}>{quantidadePessoas}x</span>
-                </div>
-                <div style={{ borderTop: '1px solid #e5e7eb', margin: '12px 0', paddingTop: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 'bold' }}>Total</span>
-                    <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626' }}>
-                      R$ {(roteiro.preco * quantidadePessoas).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {mensagem && (
-                <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '12px', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626', fontSize: '13px', textAlign: 'center' }}>
-                  {mensagem}
+              {/* Biografia */}
+              {bio && (
+                <div style={{ marginTop: '20px', backgroundColor: '#f9fafb', padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+                  <p style={{ margin: 0, lineHeight: 1.5, color: '#4b5563' }}>{bio}</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
 
-              <button
-                onClick={handleReservar}
-                disabled={reservando}
-                style={{
-                  width: '100%',
-                  backgroundColor: usuarioLogado ? '#dc2626' : '#6b7280',
-                  color: 'white',
-                  padding: '16px',
-                  borderRadius: '40px',
-                  border: 'none',
-                  cursor: reservando ? 'not-allowed' : (usuarioLogado ? 'pointer' : 'pointer'),
-                  fontWeight: 'bold',
-                  fontSize: '16px',
-                  transition: 'background-color 0.2s',
-                  opacity: reservando ? 0.6 : 1
-                }}
-                onMouseEnter={(e) => {
-                  if (!reservando && usuarioLogado) e.currentTarget.style.backgroundColor = '#b91c1c'
-                }}
-                onMouseLeave={(e) => {
-                  if (!reservando && usuarioLogado) e.currentTarget.style.backgroundColor = '#dc2626'
-                }}
-              >
-                {reservando ? 'Processando...' : (usuarioLogado ? '📌 Reservar Agora' : '🔒 Faça login para reservar')}
-              </button>
+        {/* 🏅 BARRA DE PROGRESSO KM DO GUIA */}
+        <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap', marginBottom: '24px' }}>
+            <div style={{ fontSize: '64px' }}>{getIconePorKm(stats.totalKm)}</div>
+            <div>
+              <div style={{ fontWeight: 'bold', fontSize: '24px' }}>{getNomeNivelPorKm(stats.totalKm)}</div>
+              <div style={{ fontSize: '14px', color: '#6b7280' }}>{stats.totalKm} km guiados como líder de trilhas</div>
+            </div>
+          </div>
+          <p style={{ marginBottom: '12px', fontSize: '14px', color: '#4b5563' }}>
+            🎯 Próximo marco: <strong>{proximoMarcoKm} km</strong> (faltam {Math.max(0, proximoMarcoKm - stats.totalKm)} km)
+          </p>
+          <div style={{ backgroundColor: '#e5e7eb', borderRadius: '20px', height: '12px', overflow: 'hidden' }}>
+            <div style={{ width: `${progressoKm}%`, backgroundColor: '#3b82f6', height: '100%', borderRadius: '20px' }} />
+          </div>
+        </div>
 
-              {!usuarioLogado && (
-                <p style={{ marginTop: '16px', textAlign: 'center', fontSize: '12px', color: '#9ca3af' }}>
-                  Crie uma conta ou faça login para garantir sua vaga
+        {/* 🏅 CONQUISTAS POR KM - TODAS AS 7 */}
+        <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+            <span style={{ fontSize: '28px' }}>🏅</span>
+            <div>
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#111827' }}>Conquistas por KM</h3>
+              <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Metas alcançadas por {guia.nome || 'Guia'}</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }}>
+            {conquistasKm.map((m, i) => {
+              const desbloqueado = stats.totalKm >= m.kmNecessario
+              return (
+                <div key={i} style={{ 
+                  flex: '0 0 auto', 
+                  width: '110px', 
+                  backgroundColor: desbloqueado ? '#dcfce7' : '#f9fafb', 
+                  borderRadius: '16px', 
+                  padding: '16px 12px', 
+                  textAlign: 'center', 
+                  border: desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb',
+                  opacity: desbloqueado ? 1 : 0.6
+                }}>
+                  <div style={{ fontSize: '36px' }}>{m.icone}</div>
+                  <p style={{ fontWeight: 'bold', fontSize: '11px', marginTop: '8px', marginBottom: 0 }}>{m.nome}</p>
+                  <div style={{ fontSize: '10px', color: desbloqueado ? '#16a34a' : '#9ca3af', marginTop: '6px' }}>
+                    {desbloqueado ? '✅ Desbloqueado' : `🔒 ${m.kmNecessario} km`}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* 🎖️ MEDALHAS ESPECIAIS DO GUIA */}
+        <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+            <span style={{ fontSize: '28px' }}>🎖️</span>
+            <div>
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#111827' }}>Medalhas Especiais</h3>
+              <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Conquistas especiais por categoria</p>
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', gap: '16px', minWidth: 'min-content' }}>
+              {medalhasEspeciais.map((medalha) => {
+                let progresso = 0
+                if (medalha.nome === 'KM Guiados') progresso = stats.totalKm
+                else if (medalha.nome === 'Guias Avaliados') progresso = stats.totalAvaliacoes
+                else if (medalha.nome === 'Trilhas Guiadas') progresso = stats.totalRoteiros
+                else if (medalha.nome === 'Clientes Atendidos') progresso = stats.totalClientes
+                
+                const desbloqueado = progresso >= medalha.meta
+                return (
+                  <div key={medalha.nome} style={{
+                    flex: '0 0 auto',
+                    width: '130px',
+                    backgroundColor: desbloqueado ? '#dcfce7' : '#f9fafb',
+                    borderRadius: '16px',
+                    padding: '16px 12px',
+                    textAlign: 'center',
+                    border: desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb'
+                  }}>
+                    <div style={{ fontSize: '40px', position: 'relative', display: 'inline-block' }}>
+                      {medalha.icone}
+                      {!desbloqueado && <span style={{ position: 'absolute', top: '-5px', right: '-10px', fontSize: '16px' }}>🔒</span>}
+                    </div>
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', marginTop: '8px' }}>{medalha.nome}</div>
+                    <div style={{ fontSize: '10px', color: desbloqueado ? '#16a34a' : '#9ca3af', marginTop: '6px' }}>
+                      {desbloqueado 
+                        ? `✅ ${progresso}/${medalha.meta}` 
+                        : `🔒 ${progresso}/${medalha.meta}`}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* 🏅 EVOLUÇÃO DO GUIA (MEDALHA POR ROTEIROS) */}
+        <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+            <span style={{ fontSize: '28px' }}>🏅</span>
+            <div>
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#111827' }}>Evolução do Guia</h3>
+              <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Progresso baseado em roteiros criados</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+            <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `3px solid ${stats.medalhaNivel === 'bronze' ? '#cd7f32' : stats.medalhaNivel === 'prata' ? '#c0c0c0' : stats.medalhaNivel === 'ouro' ? '#ffd700' : stats.medalhaNivel === 'platina' ? '#e5e4e2' : '#111111'}` }}>
+              <span style={{ fontSize: '40px' }}>
+                {stats.medalhaNivel === 'bronze' ? '🥉' : stats.medalhaNivel === 'prata' ? '🥈' : stats.medalhaNivel === 'ouro' ? '🥇' : stats.medalhaNivel === 'platina' ? '💎' : '🖤'}
+              </span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '20px', fontWeight: 'bold', color: stats.medalhaNivel === 'bronze' ? '#cd7f32' : stats.medalhaNivel === 'prata' ? '#c0c0c0' : stats.medalhaNivel === 'ouro' ? '#ffd700' : stats.medalhaNivel === 'platina' ? '#e5e4e2' : '#111111' }}>
+                {stats.medalhaNivel === 'bronze' ? 'Bronze' : stats.medalhaNivel === 'prata' ? 'Prata' : stats.medalhaNivel === 'ouro' ? 'Ouro' : stats.medalhaNivel === 'platina' ? 'Platina' : 'Black'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
+                🎯 {stats.totalRoteiros} roteiro(s) criado(s)
+              </div>
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>
+                  <span>Progresso para próximo nível</span>
+                  <span>{Math.min(100, (stats.totalRoteiros / 2) * 100)}%</span>
+                </div>
+                <div style={{ backgroundColor: '#e5e7eb', borderRadius: '10px', height: '8px', overflow: 'hidden' }}>
+                  <div style={{ 
+                    backgroundColor: stats.medalhaNivel === 'bronze' ? '#cd7f32' : stats.medalhaNivel === 'prata' ? '#c0c0c0' : stats.medalhaNivel === 'ouro' ? '#ffd700' : stats.medalhaNivel === 'platina' ? '#e5e4e2' : '#111111', 
+                    width: `${Math.min(100, (stats.totalRoteiros / 2) * 100)}%`, 
+                    height: '100%', 
+                    borderRadius: '10px' 
+                  }} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 💬 AVALIAÇÕES DOS CLIENTES */}
+        <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+            <span style={{ fontSize: '28px' }}>💬</span>
+            <div>
+              <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, color: '#111827' }}>Avaliações dos Clientes</h3>
+              <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>O que estão falando sobre {guia.nome || 'este guia'}</p>
+            </div>
+          </div>
+
+          {stats.totalAvaliacoes === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px', backgroundColor: '#f9fafb', borderRadius: '20px' }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>💬</div>
+              <div style={{ fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Nenhuma avaliação ainda</div>
+              <div style={{ fontSize: '13px', color: '#6b7280' }}>As avaliações dos clientes aparecerão aqui.</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {avaliacoes.slice(0, 10).map((avaliacao) => (
+                <div key={avaliacao.id} style={{ backgroundColor: '#f9fafb', borderRadius: '20px', padding: '20px', border: '1px solid #e5e7eb' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <div 
+                      onClick={() => router.push(`/cliente/publico/${avaliacao.cliente_id}`)} 
+                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}
+                    >
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+                        {avaliacao.cliente_nome?.charAt(0).toUpperCase() || 'C'}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#111827' }}>{avaliacao.cliente_nome}</div>
+                        <div style={{ fontSize: '12px', color: '#f59e0b' }}>{getNotaEstrelas(avaliacao.nota)}</div>
+                      </div>
+                    </div>
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ fontSize: '11px', color: '#9ca3af' }}>{new Date(avaliacao.created_at).toLocaleDateString('pt-BR')}</div>
+                      {usuarioLogado && (
+                        <>
+                          <button
+                            onClick={() => curtirAvaliacao(avaliacao.id, guia.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px' }}
+                          >
+                            {usuarioCurtiu[avaliacao.id] ? '❤️' : '🤍'}
+                          </button>
+                          <span style={{ fontSize: '12px', color: '#6b7280' }}>{curtidas[avaliacao.id] || 0}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {avaliacao.comentario && (
+                    <p style={{ margin: '12px 0 0 0', fontSize: '14px', color: '#4b5563', lineHeight: 1.5 }}>
+                      “{avaliacao.comentario}”
+                    </p>
+                  )}
+                  {avaliacao.resposta_guia && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
+                      <p style={{ fontSize: '12px', fontWeight: 'bold', color: '#16a34a', margin: 0 }}>Resposta do guia:</p>
+                      <p style={{ fontSize: '13px', color: '#4b5563', marginTop: '4px' }}>{avaliacao.resposta_guia}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {stats.totalAvaliacoes > 10 && (
+                <p style={{ textAlign: 'center', fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
+                  + outras {stats.totalAvaliacoes - 10} avaliações
                 </p>
               )}
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
