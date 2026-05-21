@@ -1,18 +1,26 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase/client'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    console.log('🔔 Webhook recebido:', JSON.stringify(body, null, 2))
+    console.log('🔔 Webhook recebido da PagHiper:', JSON.stringify(body, null, 2))
 
-    const { transaction_id, status } = body
+    // PagHiper envia o status no campo 'status' ou 'transaction_status'
+    const transactionId = body.transaction_id || body.id
+    const status = body.status || body.transaction_status
 
-    if (status === 'paid' || status === 'confirmado') {
+    if (status === 'paid' || status === 'confirmed' || status === 'pago') {
+      // Buscar reserva pelo transaction_id (que é o order_id)
       const { data: reserva } = await supabase
         .from('reservas')
         .select('id')
-        .eq('id', transaction_id)
+        .eq('id', transactionId)
         .single()
 
       if (reserva) {
@@ -32,9 +40,6 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('❌ Erro no webhook:', error)
-    return NextResponse.json({ 
-      error: 'Erro interno',
-      details: error?.message || 'Erro desconhecido'
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

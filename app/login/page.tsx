@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
@@ -11,6 +11,24 @@ export default function LoginPage() {
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
+
+  // Testar conexão com Supabase ao carregar a página
+  useEffect(() => {
+    const testarConexao = async () => {
+      try {
+        const { data, error } = await supabase.from('users').select('count', { count: 'exact', head: true })
+        if (error) {
+          console.error('❌ Erro de conexão com Supabase:', error)
+          setErro('Erro de conexão com o servidor')
+        } else {
+          console.log('✅ Conexão com Supabase OK')
+        }
+      } catch (err) {
+        console.error('❌ Erro ao testar conexão:', err)
+      }
+    }
+    testarConexao()
+  }, [])
 
   // Função para formatar CPF visualmente
   const formatarCPF = (valor: string) => {
@@ -23,7 +41,7 @@ export default function LoginPage() {
     return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
   }
 
-  // Função para extrair apenas os números do CPF
+  // Função untuk extrair apenas os números do CPF
   const extrairNumerosCPF = (cpfFormatado: string) => {
     return cpfFormatado.replace(/\D/g, '')
   }
@@ -40,36 +58,55 @@ export default function LoginPage() {
 
     const cpfLimpo = extrairNumerosCPF(cpf)
 
+    console.log('🔵 Tentando login com CPF:', cpfLimpo)
+
     try {
-      // Buscar todos os usuários e filtrar no JavaScript para comparar CPF sem formatação
-      const { data: users, error } = await supabase
+      // Verificar se o cliente Supabase está configurado
+      if (!supabase) {
+        console.error('❌ Supabase não configurado')
+        setErro('Erro de configuração do sistema')
+        setCarregando(false)
+        return
+      }
+
+      // Consulta simples primeiro para testar
+      const { data: users, error: countError } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+
+      console.log('📊 Total de usuários no banco:', countError ? 'Erro' : users)
+
+      if (countError) {
+        console.error('❌ Erro ao contar usuários:', countError)
+        setErro('Erro ao conectar com o banco de dados')
+        setCarregando(false)
+        return
+      }
+
+      // Buscar usuário pelo CPF
+      const { data: user, error } = await supabase
         .from('users')
         .select('id, nome, email, tipo, status, senha, cpf')
+        .eq('cpf', cpfLimpo)
+        .maybeSingle()
+
+      console.log('🔍 Resultado da busca:', user ? 'Usuário encontrado' : 'Usuário não encontrado')
 
       if (error) {
-        console.error('Erro ao buscar usuários:', error)
-        setErro('Erro ao fazer login')
+        console.error('❌ Erro na consulta:', error)
+        setErro(`Erro: ${error.message || 'Erro ao buscar usuário'}`)
         setCarregando(false)
         return
       }
-
-      if (!users || users.length === 0) {
-        setErro('CPF não encontrado')
-        setCarregando(false)
-        return
-      }
-
-      // Encontrar o usuário comparando CPF sem pontos e traço
-      const user = users.find(u => {
-        const cpfUsuario = u.cpf?.replace(/\D/g, '') || ''
-        return cpfUsuario === cpfLimpo
-      })
 
       if (!user) {
+        console.log('❌ Usuário não encontrado para CPF:', cpfLimpo)
         setErro('CPF não encontrado')
         setCarregando(false)
         return
       }
+
+      console.log('✅ Usuário encontrado:', user.nome, user.tipo)
 
       if (user.senha !== senha) {
         setErro('Senha incorreta')
@@ -98,9 +135,9 @@ export default function LoginPage() {
         router.push('/admin/dashboard')
       }
 
-    } catch (err) {
-      console.error('Erro no login:', err)
-      setErro('Erro ao fazer login')
+    } catch (err: any) {
+      console.error('❌ Erro no login:', err)
+      setErro(`Erro: ${err.message || 'Erro ao fazer login'}`)
     } finally {
       setCarregando(false)
     }
