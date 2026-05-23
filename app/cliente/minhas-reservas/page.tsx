@@ -13,6 +13,7 @@ type ReservaCompleta = {
   id_roteiro?: string
   id_guia?: string
   guia_id?: string
+  chat_id?: string | null
   data_trilha?: string
   data_reserva?: string
   created_at?: string
@@ -24,6 +25,8 @@ type ReservaCompleta = {
   pagamento_status?: string
   comprovante_url?: string | null
   comprovante_status?: string | null
+  comprovante_origem?: string | null
+  pagamento_confirmado_em?: string | null
   cliente_confirmou?: boolean
   guia_confirmou?: boolean
   roteiro?: any
@@ -375,11 +378,20 @@ export default function MinhasReservas() {
           ? 'pago'
           : 'aguardando_aprovacao'
 
+      const novoComprovanteStatus =
+        reservaSelecionada.pagamento_status === 'pago'
+          ? reservaSelecionada.comprovante_status || 'paghiper_confirmado'
+          : 'enviado'
+
       const { error: updateError } = await supabase
         .from('reservas')
         .update({
           comprovante_url: publicUrl,
-          comprovante_status: 'enviado',
+          comprovante_status: novoComprovanteStatus,
+          comprovante_origem:
+            reservaSelecionada.pagamento_status === 'pago'
+              ? reservaSelecionada.comprovante_origem || 'paghiper'
+              : 'cliente',
           pagamento_status: novoPagamentoStatus
         })
         .eq('id', reservaSelecionada.id)
@@ -412,6 +424,14 @@ export default function MinhasReservas() {
     status?: string,
     pagamentoStatus?: string
   ) => {
+    if (pagamentoStatus === 'pago') {
+      return {
+        text: '✓ Reserva confirmada',
+        bg: '#dcfce7',
+        color: '#16a34a'
+      }
+    }
+
     if (status === 'realizada') {
       return {
         text: '✓ Realizada',
@@ -433,14 +453,6 @@ export default function MinhasReservas() {
         text: '✗ Cancelada',
         bg: '#fee2e2',
         color: '#dc2626'
-      }
-    }
-
-    if (pagamentoStatus === 'pago') {
-      return {
-        text: '✓ Pagamento confirmado',
-        bg: '#dcfce7',
-        color: '#16a34a'
       }
     }
 
@@ -484,7 +496,39 @@ export default function MinhasReservas() {
   }
 
   const getComprovanteBadge = (reserva: ReservaCompleta) => {
-    if (reserva.comprovante_url) {
+    if (reserva.comprovante_origem === 'paghiper') {
+      return {
+        text: 'PagHiper',
+        bg: '#dcfce7',
+        color: '#166534'
+      }
+    }
+
+    if (reserva.comprovante_status === 'paghiper_confirmado') {
+      return {
+        text: 'PagHiper',
+        bg: '#dcfce7',
+        color: '#166534'
+      }
+    }
+
+    if (reserva.comprovante_status === 'aprovado') {
+      return {
+        text: 'Aprovado',
+        bg: '#dcfce7',
+        color: '#166534'
+      }
+    }
+
+    if (reserva.comprovante_status === 'reprovado') {
+      return {
+        text: 'Reprovado',
+        bg: '#fee2e2',
+        color: '#991b1b'
+      }
+    }
+
+    if (reserva.comprovante_url || reserva.comprovante_status === 'enviado') {
       return {
         text: '📎 Enviado',
         bg: '#dbeafe',
@@ -516,6 +560,10 @@ export default function MinhasReservas() {
 
   const handlePagar = (reservaId: string) => {
     router.push(`/cliente/pagamento/${reservaId}`)
+  }
+
+  const abrirChat = (chatId: string) => {
+    router.push(`/chat/${chatId}`)
   }
 
   const handleLogout = () => {
@@ -702,6 +750,11 @@ export default function MinhasReservas() {
 
         .btn-blue {
           background-color: #2563eb;
+          color: #ffffff;
+        }
+
+        .btn-purple {
+          background-color: #4f46e5;
           color: #ffffff;
         }
 
@@ -892,7 +945,7 @@ export default function MinhasReservas() {
                 marginTop: '4px'
               }}
             >
-              Acompanhe suas aventuras e envie comprovantes quando necessário.
+              Acompanhe suas aventuras, pagamentos, comprovantes e chat com o guia.
             </p>
           </div>
 
@@ -976,7 +1029,7 @@ export default function MinhasReservas() {
                       const comprovanteBadge = getComprovanteBadge(reserva)
 
                       const precisaPagar =
-                        reserva.status === 'pendente' &&
+                        reserva.status !== 'cancelada' &&
                         reserva.pagamento_status !== 'pago'
 
                       const podeCancelar =
@@ -1070,6 +1123,15 @@ export default function MinhasReservas() {
                                 </button>
                               )}
 
+                              {reserva.chat_id && (
+                                <button
+                                  onClick={() => abrirChat(reserva.chat_id || '')}
+                                  className="btn btn-purple"
+                                >
+                                  💬 Chat
+                                </button>
+                              )}
+
                               {podeEnviarComprovante && (
                                 <button
                                   onClick={() => abrirModalComprovante(reserva)}
@@ -1124,7 +1186,7 @@ export default function MinhasReservas() {
                   const comprovanteBadge = getComprovanteBadge(reserva)
 
                   const precisaPagar =
-                    reserva.status === 'pendente' &&
+                    reserva.status !== 'cancelada' &&
                     reserva.pagamento_status !== 'pago'
 
                   const podeCancelar =
@@ -1248,6 +1310,16 @@ export default function MinhasReservas() {
                             style={{ flex: 1 }}
                           >
                             💳 Pagar
+                          </button>
+                        )}
+
+                        {reserva.chat_id && (
+                          <button
+                            onClick={() => abrirChat(reserva.chat_id || '')}
+                            className="btn btn-purple"
+                            style={{ flex: 1 }}
+                          >
+                            💬 Chat
                           </button>
                         )}
 
