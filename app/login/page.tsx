@@ -12,14 +12,13 @@ export default function LoginPage() {
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
 
-  // Testar conexão com Supabase ao carregar a página
+  // Testar conexão com Supabase ao carregar a página (opcional)
   useEffect(() => {
     const testarConexao = async () => {
       try {
-        const { data, error } = await supabase.from('users').select('count', { count: 'exact', head: true })
+        const { error } = await supabase.from('users').select('id', { count: 'exact', head: true })
         if (error) {
           console.error('❌ Erro de conexão com Supabase:', error)
-          setErro('Erro de conexão com o servidor')
         } else {
           console.log('✅ Conexão com Supabase OK')
         }
@@ -41,14 +40,11 @@ export default function LoginPage() {
     return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
   }
 
-  // Função untuk extrair apenas os números do CPF
-  const extrairNumerosCPF = (cpfFormatado: string) => {
-    return cpfFormatado.replace(/\D/g, '')
-  }
+  // Extrai apenas números do CPF
+  const extrairNumerosCPF = (cpfFormatado: string) => cpfFormatado.replace(/\D/g, '')
 
   const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const valorFormatado = formatarCPF(e.target.value)
-    setCpf(valorFormatado)
+    setCpf(formatarCPF(e.target.value))
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -58,39 +54,13 @@ export default function LoginPage() {
 
     const cpfLimpo = extrairNumerosCPF(cpf)
 
-    console.log('🔵 Tentando login com CPF:', cpfLimpo)
-
     try {
-      // Verificar se o cliente Supabase está configurado
-      if (!supabase) {
-        console.error('❌ Supabase não configurado')
-        setErro('Erro de configuração do sistema')
-        setCarregando(false)
-        return
-      }
-
-      // Consulta simples primeiro para testar
-      const { data: users, error: countError } = await supabase
-        .from('users')
-        .select('id', { count: 'exact', head: true })
-
-      console.log('📊 Total de usuários no banco:', countError ? 'Erro' : users)
-
-      if (countError) {
-        console.error('❌ Erro ao contar usuários:', countError)
-        setErro('Erro ao conectar com o banco de dados')
-        setCarregando(false)
-        return
-      }
-
       // Buscar usuário pelo CPF
       const { data: user, error } = await supabase
         .from('users')
-        .select('id, nome, email, tipo, status, senha, cpf')
+        .select('id, nome, email, tipo, status, senha')
         .eq('cpf', cpfLimpo)
         .maybeSingle()
-
-      console.log('🔍 Resultado da busca:', user ? 'Usuário encontrado' : 'Usuário não encontrado')
 
       if (error) {
         console.error('❌ Erro na consulta:', error)
@@ -100,13 +70,10 @@ export default function LoginPage() {
       }
 
       if (!user) {
-        console.log('❌ Usuário não encontrado para CPF:', cpfLimpo)
         setErro('CPF não encontrado')
         setCarregando(false)
         return
       }
-
-      console.log('✅ Usuário encontrado:', user.nome, user.tipo)
 
       if (user.senha !== senha) {
         setErro('Senha incorreta')
@@ -114,12 +81,20 @@ export default function LoginPage() {
         return
       }
 
+      // Verifica o status do usuário com mensagens específicas
       if (user.status !== 'ativo') {
-        setErro('Usuário inativo')
+        if (user.status === 'pendente') {
+          setErro('⏳ Seu cadastro está pendente de aprovação. Aguarde o administrador.')
+        } else if (user.status === 'suspenso') {
+          setErro('⚠️ Sua conta está suspensa. Entre em contato com o suporte.')
+        } else {
+          setErro('❌ Usuário inativo. Entre em contato com o suporte.')
+        }
         setCarregando(false)
         return
       }
 
+      // Salva sessão
       localStorage.setItem('user', JSON.stringify({
         id: user.id,
         nome: user.nome,
@@ -127,6 +102,7 @@ export default function LoginPage() {
         tipo: user.tipo,
       }))
 
+      // Redireciona conforme o tipo
       if (user.tipo === 'cliente') {
         router.push('/cliente/dashboard')
       } else if (user.tipo === 'guia') {
