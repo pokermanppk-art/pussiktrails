@@ -1,7 +1,26 @@
 import { NextResponse } from 'next/server'
 import axios from 'axios'
+import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
+
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      'Credenciais Supabase ausentes no servidor. Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.'
+    )
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  })
+}
 
 function normalizarValorEmCentavos(valor: unknown) {
   const numero = Number(valor)
@@ -13,12 +32,80 @@ function normalizarValorEmCentavos(valor: unknown) {
   return Math.round(numero * 100)
 }
 
+function procurarCampoRecursivo(obj: any, nomes: string[]): string {
+  if (!obj) return ''
+
+  if (typeof obj !== 'object') return ''
+
+  for (const nome of nomes) {
+    const valor = obj[nome]
+
+    if (typeof valor === 'string' && valor.trim()) {
+      return valor
+    }
+
+    if (typeof valor === 'number') {
+      return String(valor)
+    }
+  }
+
+  for (const key of Object.keys(obj)) {
+    const encontrado = procurarCampoRecursivo(obj[key], nomes)
+
+    if (encontrado) return encontrado
+  }
+
+  return ''
+}
+
+function extrairDadosPix(data: any) {
+  const transactionId = procurarCampoRecursivo(data, [
+    'transaction_id',
+    'transactionId',
+    'idTransacao',
+    'id_transaction',
+    'hash'
+  ])
+
+  const pixCode = procurarCampoRecursivo(data, [
+    'qr_code_text',
+    'pix_code',
+    'pix_copia_cola',
+    'codigo_pix',
+    'emv',
+    'copy_paste',
+    'copia_cola',
+    'qrcode_text',
+    'qrCodeText'
+  ])
+
+  const qrCodeBase64 = procurarCampoRecursivo(data, [
+    'qr_code_base64',
+    'qrcode_base64',
+    'pix_qr_code_base64',
+    'pix_qrcode_base64',
+    'qrcode_image',
+    'qrCodeBase64'
+  ])
+
+  const status = procurarCampoRecursivo(data, [
+    'status',
+    'status_request',
+    'status_pagamento',
+    'payment_status'
+  ])
+
+  return {
+    transactionId,
+    pixCode,
+    qrCodeBase64,
+    status
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-
-    console.log('BODY RECEBIDO PARA PIX:')
-    console.log(body)
 
     const apiKey = process.env.PAGHIPER_API_KEY
     const token = process.env.PAGHIPER_TOKEN
@@ -27,16 +114,11 @@ export async function POST(req: Request) {
       'https://prussiktrails.vercel.app'
 
     if (!apiKey || !token) {
-      console.error('Credenciais PagHiper ausentes:', {
-        hasApiKey: Boolean(apiKey),
-        hasToken: Boolean(token)
-      })
-
       return NextResponse.json(
         {
           error: true,
           message:
-            'Credenciais PagHiper ausentes no ambiente de produção. Configure PAGHIPER_API_KEY e PAGHIPER_TOKEN na Vercel.'
+            'Credenciais PagHiper ausentes no ambiente. Configure PAGHIPER_API_KEY e PAGHIPER_TOKEN na Vercel.'
         },
         { status: 500 }
       )
@@ -52,28 +134,78 @@ export async function POST(req: Request) {
       )
     }
 
-    if (!body.valor) {
+    const supabase = getSupabaseAdmin()
+
+    const { data: reserva, error: reservaError } = await supabase
+      .from('reservas')
+      .select('*')
+      .eq('id', body.reservaId)
+      .maybeSingle()
+
+    if (reservaError) {
+      throw reservaError
+    }
+
+    if (!reserva) {
       return NextResponse.json(
         {
           error: true,
-          message: 'Valor da reserva não enviado.'
+          message: 'Reserva não encontrada.'
         },
-        { status: 400 }
+        { status: 404 }
       )
     }
 
+    if (reserva.pagamento_status === 'pago') {
+      return NextResponse.json({
+        success: true,
+        alreadyPaid: true,
+        message: 'Reserva já está paga.',
+        reserva
+      })
+    }
+
+    if (
+      reserva.paghiper_order_id &&
+      (reserva.paghiper_pix_code || reserva.paghiper_qrcode_base64)
+    ) {
+      return NextResponse.json({
+        success: true,
+        reused: true,
+        message: 'PIX já existente para esta reserva.',
+        reserva,
+        pix: {
+          order_id: reserva.paghiper_order_id,
+          transaction_id: reserva.paghiper_transaction_id,
+          pix_code: reserva.paghiper_pix_code,
+          qr_code_base64: reserva.paghiper_qrcode_base64,
+          status: reserva.paghiper_status
+        }
+      })
+    }
+
+    const valorReserva =
+      body.valor ||
+      reserva.valor_total ||
+      reserva.valor ||
+      0
+
+    const priceCents = normalizarValorEmCentavos(valorReserva)
+
     const nomeCliente =
       body.nome ||
+      reserva.nome_cliente ||
+      reserva.cliente_nome ||
       'Cliente PrussikTrails'
 
     const emailCliente =
       body.email ||
+      reserva.email_cliente ||
+      reserva.cliente_email ||
+      reserva.email ||
       'cliente@prussiktrails.com.br'
 
-    const priceCents = normalizarValorEmCentavos(body.valor)
-
-    console.log('VALOR EM CENTAVOS ENVIADO AO PAGHIPER:')
-    console.log(priceCents)
+    const orderId = `RESERVA-${reserva.id}`
 
     const response = await axios.post(
       'https://pix.paghiper.com/invoice/create/',
@@ -81,12 +213,11 @@ export async function POST(req: Request) {
         apiKey,
         token,
 
-        order_id: `RESERVA-${body.reservaId}`,
+        order_id: orderId,
 
         payer_email: emailCliente,
         payer_name: nomeCliente,
 
-        // CPF teste. Depois podemos trocar pelo CPF real do cliente.
         payer_cpf_cnpj: '12345678909',
 
         days_due_date: 1,
@@ -95,9 +226,9 @@ export async function POST(req: Request) {
 
         items: [
           {
-            description: `Reserva PrussikTrails ${body.reservaId}`,
+            description: `Reserva PrussikTrails ${reserva.id}`,
             quantity: 1,
-            item_id: String(body.reservaId),
+            item_id: String(reserva.id),
             price_cents: priceCents
           }
         ],
@@ -113,13 +244,35 @@ export async function POST(req: Request) {
       }
     )
 
-    console.log('RESPOSTA PAGHIPER:')
-    console.log(JSON.stringify(response.data, null, 2))
+    const retornoPagHiper = response.data
+    const dadosPix = extrairDadosPix(retornoPagHiper)
 
-    return NextResponse.json(response.data)
+    await supabase
+      .from('reservas')
+      .update({
+        paghiper_order_id: orderId,
+        paghiper_transaction_id: dadosPix.transactionId || null,
+        paghiper_pix_code: dadosPix.pixCode || null,
+        paghiper_qrcode_base64: dadosPix.qrCodeBase64 || null,
+        paghiper_status: dadosPix.status || 'created',
+        paghiper_response: retornoPagHiper,
+        pagamento_status: 'pendente',
+        pagamento_criado_em: new Date().toISOString()
+      })
+      .eq('id', reserva.id)
+
+    return NextResponse.json({
+      success: true,
+      order_id: orderId,
+      transaction_id: dadosPix.transactionId,
+      pix_code: dadosPix.pixCode,
+      qr_code_base64: dadosPix.qrCodeBase64,
+      status: dadosPix.status,
+      paghiper: retornoPagHiper
+    })
 
   } catch (error: any) {
-    console.error('ERRO PAGHIPER:')
+    console.error('ERRO CREATE PIX PAGHIPER:')
     console.error(error.response?.data || error.message || error)
 
     return NextResponse.json(

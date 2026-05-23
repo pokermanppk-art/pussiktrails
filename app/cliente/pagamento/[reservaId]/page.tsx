@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -9,9 +9,11 @@ type AnyObject = Record<string, any>
 
 export default function PagamentoPIX() {
   const params = useParams()
+  const router = useRouter()
   const reservaId = params.reservaId as string
 
   const carregouRef = useRef(false)
+  const pollingRef = useRef<NodeJS.Timeout | null>(null)
 
   const [carregando, setCarregando] = useState(true)
   const [qrCode, setQrCode] = useState('')
@@ -22,15 +24,46 @@ export default function PagamentoPIX() {
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [copiado, setCopiado] = useState(false)
+  const [pagamentoConfirmado, setPagamentoConfirmado] = useState(false)
 
   useEffect(() => {
     if (!reservaId) return
 
     if (carregouRef.current) return
-    carregouRef.current = true
 
+    carregouRef.current = true
     carregarPagamento()
+    iniciarPollingPagamento()
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current)
+      }
+    }
   }, [reservaId])
+
+  const iniciarPollingPagamento = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+    }
+
+    pollingRef.current = setInterval(() => {
+      verificarStatusPagamento()
+    }, 5000)
+  }
+
+  const finalizarTelaPagamento = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+    }
+
+    setPagamentoConfirmado(true)
+    setMensagem('✅ Pagamento confirmado! Redirecionando para suas reservas...')
+
+    setTimeout(() => {
+      router.push('/cliente/minhas-reservas')
+    }, 2500)
+  }
 
   const buscarReserva = async () => {
     const { data, error } = await supabase
@@ -40,16 +73,7 @@ export default function PagamentoPIX() {
       .maybeSingle()
 
     if (error) {
-      console.log('Erro detalhado ao buscar reserva:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      })
-
-      throw new Error(
-        error.message || 'Erro ao buscar reserva no Supabase.'
-      )
+      throw error
     }
 
     if (!data) {
@@ -64,18 +88,12 @@ export default function PagamentoPIX() {
 
     const { data, error } = await supabase
       .from('roteiros')
-      .select('id, titulo, preco')
+      .select('*')
       .eq('id', roteiroId)
       .maybeSingle()
 
     if (error) {
-      console.log('Erro ao buscar roteiro:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      })
-
+      console.warn('Erro ao buscar roteiro:', error)
       return null
     }
 
@@ -114,6 +132,7 @@ export default function PagamentoPIX() {
   ) => {
     return (
       roteiro?.titulo ||
+      roteiro?.nome ||
       reserva.roteiro_titulo ||
       reserva.titulo_roteiro ||
       reserva.titulo ||
@@ -188,10 +207,10 @@ export default function PagamentoPIX() {
     if (typeof obj !== 'object') return ''
 
     const prioridadePix = [
-      'qr_code_text',
       'pix_code',
       'pix_copia_cola',
       'codigo_pix',
+      'qr_code_text',
       'emv',
       'copy_paste',
       'copia_cola',
@@ -262,6 +281,55 @@ export default function PagamentoPIX() {
     return ''
   }
 
+  const preencherPixNaTela = (
+    reserva: AnyObject,
+    respostaApi?: AnyObject
+  ) => {
+    const pixSalvo =
+      reserva.paghiper_pix_code ||
+      respostaApi?.pix_code ||
+      procurarCampoRecursivo(respostaApi, 'pix')
+
+    const qrSalvo =
+      reserva.paghiper_qrcode_base64 ||
+      respostaApi?.qr_code_base64 ||
+      procurarCampoRecursivo(respostaApi, 'qr')
+
+    const imagemQr = montarImagemQrCode(qrSalvo || '', pixSalvo || '')
+
+    if (imagemQr) {
+      setQrCode(imagemQr)
+    }
+
+    if (pixSalvo) {
+      setCodigoPix(String(pixSalvo))
+    }
+
+    if (!imagemQr && !pixSalvo) {
+      setMensagem(
+        'PIX criado, mas o QR Code não foi localizado na resposta.'
+      )
+    }
+  }
+
+  const verificarStatusPagamento = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reservas')
+        .select('id, pagamento_status')
+        .eq('id', reservaId)
+        .maybeSingle()
+
+      if (error || !data) return
+
+      if (data.pagamento_status === 'pago') {
+        finalizarTelaPagamento()
+      }
+    } catch (error) {
+      console.warn('Erro ao verificar status de pagamento:', error)
+    }
+  }
+
   const carregarPagamento = async () => {
     try {
       setCarregando(true)
@@ -271,11 +339,17 @@ export default function PagamentoPIX() {
 
       const reserva = await buscarReserva()
 
-      console.log('Reserva encontrada:', reserva)
+      if (reserva.pagamento_status === 'pago') {
+        finalizarTelaPagamento()
+        return
+      }
 
-      const roteiro = await buscarRoteiro(reserva.roteiro_id)
+      const roteiroId =
+        reserva.roteiro_id ||
+        reserva.id_roteiro ||
+        null
 
-      console.log('Roteiro encontrado:', roteiro)
+      const roteiro = await buscarRoteiro(roteiroId)
 
       const valorRealReserva = buscarValorRealDaReserva(reserva, roteiro)
 
@@ -292,12 +366,11 @@ export default function PagamentoPIX() {
       setValor(valorRealReserva)
       setRoteiroTitulo(titulo)
 
-      console.log('Dados enviados para criação do PIX:', {
-        reservaId: reserva.id,
-        valor: valorRealReserva,
-        nome: nomeCliente,
-        email: emailCliente
-      })
+      if (reserva.paghiper_pix_code || reserva.paghiper_qrcode_base64) {
+        preencherPixNaTela(reserva)
+        setCarregando(false)
+        return
+      }
 
       const response = await fetch('/api/paghiper/create-pix', {
         method: 'POST',
@@ -314,9 +387,6 @@ export default function PagamentoPIX() {
 
       const data = await response.json()
 
-      console.log('Resposta PagHiper no front:')
-      console.log(JSON.stringify(data, null, 2))
-
       if (!response.ok) {
         throw new Error(
           data?.message ||
@@ -326,38 +396,19 @@ export default function PagamentoPIX() {
         )
       }
 
-      const qrCodeRecebido = procurarCampoRecursivo(data, 'qr')
-      const codigoPixRecebido = procurarCampoRecursivo(data, 'pix')
-
-      console.log('QR Code encontrado:', qrCodeRecebido ? 'SIM' : 'NÃO')
-      console.log('Código PIX encontrado:', codigoPixRecebido ? 'SIM' : 'NÃO')
-
-      const imagemQr = montarImagemQrCode(
-        qrCodeRecebido,
-        codigoPixRecebido
-      )
-
-      if (imagemQr) {
-        setQrCode(imagemQr)
+      if (data?.alreadyPaid) {
+        finalizarTelaPagamento()
+        return
       }
 
-      if (codigoPixRecebido) {
-        setCodigoPix(String(codigoPixRecebido))
-      }
-
-      if (!imagemQr && !codigoPixRecebido) {
-        setMensagem(
-          'Cobrança criada, mas o QR Code PIX não foi localizado na resposta da API.'
-        )
-      }
+      preencherPixNaTela(reserva, data)
 
     } catch (err: any) {
-      console.log('Erro ao carregar pagamento:', err)
+      console.error('Erro ao carregar pagamento:', err)
 
       setMensagem(
         err?.message || 'Erro ao gerar pagamento PIX.'
       )
-
     } finally {
       setCarregando(false)
     }
@@ -478,6 +529,48 @@ export default function PagamentoPIX() {
 
           <p style={{ color: '#6b7280' }}>
             Gerando PIX...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (pagamentoConfirmado) {
+    return (
+      <div className="pagamento-confirmado">
+        <style jsx global>{`
+          .pagamento-confirmado {
+            min-height: 100vh;
+            min-height: 100dvh;
+            background: #f3f4f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+          }
+
+          .confirmado-card {
+            width: 100%;
+            max-width: 460px;
+            background: white;
+            border-radius: 24px;
+            padding: 28px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+          }
+        `}</style>
+
+        <div className="confirmado-card">
+          <div style={{ fontSize: 54, marginBottom: 12 }}>
+            ✅
+          </div>
+
+          <h1 style={{ color: '#16a34a', margin: '0 0 8px' }}>
+            Pagamento confirmado
+          </h1>
+
+          <p style={{ color: '#6b7280', margin: 0 }}>
+            Estamos atualizando sua reserva e redirecionando você.
           </p>
         </div>
       </div>
@@ -643,6 +736,16 @@ export default function PagamentoPIX() {
           line-height: 1.4;
         }
 
+        .status-info {
+          background: #eff6ff;
+          color: #1d4ed8;
+          padding: 12px 14px;
+          border-radius: 16px;
+          font-size: 13px;
+          text-align: center;
+          margin-bottom: 18px;
+        }
+
         @media (max-width: 480px) {
           .pagamento-page {
             padding: 12px;
@@ -697,6 +800,10 @@ export default function PagamentoPIX() {
               {roteiroTitulo || 'Reserva PrussikTrails'}
             </p>
 
+            <div className="status-info">
+              Assim que o PIX for confirmado pela PagHiper, esta tela será encerrada automaticamente.
+            </div>
+
             <div className="pagamento-valor-box">
               <div className="pagamento-valor">
                 R$ {valor.toFixed(2)}
@@ -745,9 +852,9 @@ export default function PagamentoPIX() {
                 type="file"
                 accept="image/*,.pdf"
                 className="upload-input"
-                onChange={(e) =>
+                onChange={(event) =>
                   setArquivo(
-                    e.target.files?.[0] || null
+                    event.target.files?.[0] || null
                   )
                 }
               />
