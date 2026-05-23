@@ -19,7 +19,6 @@ export default function PerfilPublicoGuia() {
   const [bio, setBio] = useState('')
   const [avaliacoes, setAvaliacoes] = useState<any[]>([])
 
-  // Medalhas especiais do guia
   const [medalhas, setMedalhas] = useState<any[]>([])
   const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
 
@@ -91,20 +90,42 @@ export default function PerfilPublicoGuia() {
         setTotalClientes(new Set(reservas?.map(r => r.cliente_id)).size)
       }
 
+      // 🔥 CORREÇÃO: Buscar avaliações com dados do cliente
       const { data: avaliacoesData } = await supabase
         .from('avaliacoes')
-        .select('id, nota, comentario, resposta_guia, created_at')
+        .select(`
+          id,
+          nota,
+          comentario,
+          resposta_guia,
+          created_at,
+          cliente_id,
+          cliente:cliente_id (id, nome, avatar_url)
+        `)
         .eq('guia_id', id)
         .eq('status_moderacao', 'aprovada')
         .order('created_at', { ascending: false })
+
       if (avaliacoesData) {
-        setAvaliacoes(avaliacoesData)
-        setTotalAvaliacoes(avaliacoesData.length)
-        const media = avaliacoesData.length ? avaliacoesData.reduce((a, b) => a + b.nota, 0) / avaliacoesData.length : 0
+        // Formatando para incluir nome e avatar do cliente
+        const avaliacoesFormatadas = avaliacoesData.map((a: any) => ({
+          id: a.id,
+          nota: a.nota,
+          comentario: a.comentario,
+          resposta_guia: a.resposta_guia,
+          created_at: a.created_at,
+          cliente_id: a.cliente_id,
+          cliente_nome: a.cliente?.nome || 'Cliente',
+          cliente_avatar: a.cliente?.avatar_url
+        }))
+        setAvaliacoes(avaliacoesFormatadas)
+        setTotalAvaliacoes(avaliacoesFormatadas.length)
+        const media = avaliacoesFormatadas.length
+          ? avaliacoesFormatadas.reduce((acc, a) => acc + a.nota, 0) / avaliacoesFormatadas.length
+          : 0
         setAvaliacaoMedia(media)
       }
 
-      // Carregar medalhas especiais do guia
       await carregarMedalhas()
       setCarregando(false)
     }
@@ -182,7 +203,7 @@ export default function PerfilPublicoGuia() {
       {/* HEADER */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PussikTrails</h1>
+          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
           <button onClick={() => router.back()} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 16px', borderRadius: '40px', cursor: 'pointer', fontSize: '13px' }}>← Voltar</button>
         </div>
       </div>
@@ -259,7 +280,7 @@ export default function PerfilPublicoGuia() {
           )}
         </div>
 
-        {/* AVALIAÇÕES */}
+        {/* AVALIAÇÕES (COM NOME E AVATAR DO CLIENTE) */}
         <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>💬 Avaliações ({totalAvaliacoes})</h3>
           {avaliacoes.length === 0 ? (
@@ -269,17 +290,61 @@ export default function PerfilPublicoGuia() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {avaliacoes.slice(0, 5).map((a) => (
-                <div key={a.id} style={{ backgroundColor: '#f9fafb', borderRadius: '16px', padding: '12px' }}>
+              {avaliacoes.slice(0, 5).map((av) => (
+                <div key={av.id} style={{ backgroundColor: '#f9fafb', borderRadius: '16px', padding: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-                    <div style={{ fontSize: '11px', color: '#f59e0b' }}>{getNotaEstrelas(a.nota)}</div>
-                    <div style={{ fontSize: '9px', color: '#9ca3af' }}>{new Date(a.created_at).toLocaleDateString('pt-BR')}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {/* Avatar do cliente clicável */}
+                      <div
+                        onClick={() => router.push(`/cliente/publico/${av.cliente_id}`)}
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          backgroundColor: '#16a34a',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          cursor: 'pointer',
+                          color: 'white',
+                          fontSize: '12px',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {av.cliente_avatar ? (
+                          <img src={av.cliente_avatar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          av.cliente_nome?.charAt(0).toUpperCase() || 'C'
+                        )}
+                      </div>
+                      <div>
+                        {/* Nome do cliente clicável */}
+                        <div
+                          onClick={() => router.push(`/cliente/publico/${av.cliente_id}`)}
+                          style={{ fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', color: '#16a34a', textDecoration: 'underline' }}
+                        >
+                          {av.cliente_nome}
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#f59e0b' }}>{getNotaEstrelas(av.nota)}</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '9px', color: '#9ca3af' }}>{new Date(av.created_at).toLocaleDateString('pt-BR')}</div>
                   </div>
-                  {a.comentario && <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#4b5563' }}>“{a.comentario}”</p>}
-                  {a.resposta_guia && <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #e5e7eb' }}><p style={{ margin: 0, fontSize: '10px', fontWeight: 'bold', color: '#16a34a' }}>Resposta:</p><p style={{ margin: '4px 0 0 0', fontSize: '10px', color: '#4b5563' }}>{a.resposta_guia}</p></div>}
+                  {av.comentario && <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#4b5563' }}>“{av.comentario}”</p>}
+                  {av.resposta_guia && (
+                    <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #e5e7eb' }}>
+                      <p style={{ margin: 0, fontSize: '10px', fontWeight: 'bold', color: '#16a34a' }}>Resposta:</p>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '10px', color: '#4b5563' }}>{av.resposta_guia}</p>
+                    </div>
+                  )}
                 </div>
               ))}
-              {totalAvaliacoes > 5 && <button onClick={() => router.push(`/guia/avaliacoes`)} style={{ textAlign: 'center', color: '#16a34a', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '8px' }}>Ver todas →</button>}
+              {totalAvaliacoes > 5 && (
+                <button onClick={() => router.push(`/guia/avaliacoes`)} style={{ textAlign: 'center', color: '#16a34a', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '8px' }}>
+                  Ver todas →
+                </button>
+              )}
             </div>
           )}
         </div>

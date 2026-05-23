@@ -239,6 +239,13 @@ export default function LoginPage() {
             </button>
           </form>
 
+          {/* Link para recuperar senha */}
+          <div style={{ textAlign: 'center', marginTop: '16px' }}>
+            <Link href="/recuperar-senha" style={{ fontSize: '13px', color: '#16a34a', textDecoration: 'none' }}>
+              Esqueci minha senha
+            </Link>
+          </div>
+
           <div style={{ 
             display: 'flex', 
             alignItems: 'center', 

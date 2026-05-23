@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+import SettingsButton from '@/components/SettingsButton'
 
 type Guia = {
   id: string
@@ -357,7 +358,7 @@ export default function AdminGuias() {
         style={{
           backgroundColor: 'white',
           borderBottom: '1px solid #e5e7eb',
-          padding: '16px 24px',
+          padding: '12px 16px',
           position: 'sticky',
           top: 0,
           zIndex: 50
@@ -375,26 +376,27 @@ export default function AdminGuias() {
           }}
         >
           <div>
-            <h1 style={{ margin: 0, fontSize: '24px', color: '#16a34a', fontWeight: 'bold' }}>
+            <h1 style={{ margin: 0, fontSize: '22px', color: '#dc2626', fontWeight: 'bold' }}>
               👥 Gerenciar Guias
             </h1>
-            <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#6b7280' }}>
+            <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>
               Aprove, suspenda ou ative navegadores
             </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <SettingsButton userId={user.id} userEmail={user.email} />
             <button
               onClick={() => router.push('/admin/dashboard')}
               style={{
                 backgroundColor: '#f3f4f6',
                 border: 'none',
                 borderRadius: '999px',
-                padding: '10px 20px',
+                padding: '8px 20px',
                 cursor: 'pointer',
                 color: '#374151',
                 fontWeight: '600',
-                fontSize: '14px',
+                fontSize: '13px',
                 transition: 'all 0.2s'
               }}
               onMouseEnter={(e) => {
@@ -406,7 +408,7 @@ export default function AdminGuias() {
                 e.currentTarget.style.transform = 'translateY(0)'
               }}
             >
-              ← Voltar ao Dashboard
+              ← Dashboard
             </button>
 
             <button
@@ -419,10 +421,10 @@ export default function AdminGuias() {
                 color: 'white',
                 border: 'none',
                 borderRadius: '999px',
-                padding: '10px 20px',
+                padding: '8px 20px',
                 cursor: 'pointer',
                 fontWeight: '600',
-                fontSize: '14px',
+                fontSize: '13px',
                 transition: 'background-color 0.2s'
               }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#b91c1c'}
@@ -439,10 +441,10 @@ export default function AdminGuias() {
         style={{
           maxWidth: '1400px',
           margin: '0 auto',
-          padding: '32px 24px',
+          padding: '24px 20px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '28px'
+          gap: '24px'
         }}
       >
         {/* BARRA DE BUSCA */}
@@ -463,7 +465,7 @@ export default function AdminGuias() {
                 onChange={(e) => setBusca(e.target.value)}
                 style={{
                   width: '100%',
-                  padding: '12px 16px',
+                  padding: '10px 16px',
                   borderRadius: '40px',
                   border: '1px solid #e5e7eb',
                   fontSize: '14px',
@@ -481,9 +483,9 @@ export default function AdminGuias() {
                   backgroundColor: '#f3f4f6',
                   border: 'none',
                   borderRadius: '40px',
-                  padding: '10px 20px',
+                  padding: '8px 16px',
                   cursor: 'pointer',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   color: '#6b7280'
                 }}
               >
@@ -497,7 +499,7 @@ export default function AdminGuias() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
             gap: '16px'
           }}
         >
@@ -528,8 +530,8 @@ export default function AdminGuias() {
               key={item.label}
               style={{
                 backgroundColor: item.bg,
-                borderRadius: '24px',
-                padding: '20px',
+                borderRadius: '20px',
+                padding: '16px',
                 border: `1px solid ${item.cor}20`,
                 transition: 'all 0.2s ease'
               }}
@@ -542,10 +544,10 @@ export default function AdminGuias() {
                 }}
               >
                 <div>
-                  <div style={{ fontSize: '28px', marginBottom: '10px' }}>{item.emoji}</div>
+                  <div style={{ fontSize: '24px', marginBottom: '8px' }}>{item.emoji}</div>
                   <div
                     style={{
-                      fontSize: '30px',
+                      fontSize: '28px',
                       fontWeight: '800',
                       color: item.cor,
                       lineHeight: 1
@@ -553,7 +555,7 @@ export default function AdminGuias() {
                   >
                     {item.total}
                   </div>
-                  <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '6px' }}>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
                     {item.label}
                   </div>
                 </div>
@@ -567,21 +569,18 @@ export default function AdminGuias() {
           <div
             style={{
               backgroundColor: 'white',
-              borderRadius: '28px',
-              padding: '24px',
+              borderRadius: '24px',
+              padding: '20px',
               boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ fontSize: '24px' }}>🟡</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ fontSize: '22px' }}>🟡</div>
                 <div>
-                  <div style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>Guias Pendentes</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>{guiasPendentes.length} guia(s) aguardando aprovação</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>Guias Pendentes</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280' }}>{guiasPendentes.length} guia(s) aguardando aprovação</div>
                 </div>
-              </div>
-              <div style={{ backgroundColor: '#f59e0b', color: 'white', width: '40px', height: '40px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700' }}>
-                {guiasPendentes.length}
               </div>
             </div>
 
@@ -593,38 +592,59 @@ export default function AdminGuias() {
                     backgroundColor: '#fffbeb',
                     border: '1px solid #fde68a',
                     borderRadius: '16px',
-                    padding: '16px',
+                    padding: '14px',
                     transition: 'all 0.2s ease'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', color: 'white', overflow: 'hidden' }}>
+                        <div
+                          onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                          style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '50%',
+                            backgroundColor: '#f59e0b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '18px',
+                            color: 'white',
+                            overflow: 'hidden',
+                            cursor: 'pointer'
+                          }}
+                        >
                           {guia.avatar_url ? <img src={guia.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>{guia.nome?.charAt(0).toUpperCase() || 'G'}</span>}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#111827' }}>{guia.nome}</div>
-                          <div style={{ fontSize: '12px', color: '#6b7280' }}>{guia.email}</div>
-                          <div style={{ fontSize: '11px', color: '#9ca3af' }}>CPF: {guia.cpf}</div>
+                          <div
+                            onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                            style={{ fontWeight: 'bold', fontSize: '15px', color: '#111827', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#f59e0b' }}
+                          >
+                            {guia.nome}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>{guia.email}</div>
+                          <div style={{ fontSize: '10px', color: '#9ca3af' }}>CPF: {guia.cpf}</div>
                         </div>
                       </div>
-                      {guia.bio && (
-                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#4b5563', backgroundColor: 'white', padding: '8px 12px', borderRadius: '12px' }}>
-                          {guia.bio.length > 100 ? `${guia.bio.substring(0, 100)}...` : guia.bio}
-                        </div>
-                      )}
                     </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                        style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '40px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
+                      >
+                        👤 Perfil
+                      </button>
                       <button
                         onClick={() => atualizarStatus(guia.id, 'ativo')}
-                        style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                        style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
                       >
                         ✅ Aprovar
                       </button>
                       <button
                         onClick={() => setModalSuspensao({ isOpen: true, guia })}
-                        style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                        style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '40px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
                       >
                         ⚠️ Suspender
                       </button>
@@ -641,21 +661,18 @@ export default function AdminGuias() {
           <div
             style={{
               backgroundColor: 'white',
-              borderRadius: '28px',
-              padding: '24px',
+              borderRadius: '24px',
+              padding: '20px',
               boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ fontSize: '24px' }}>🟢</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ fontSize: '22px' }}>🟢</div>
                 <div>
-                  <div style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>Guias Ativos</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>{guiasAtivos.length} guia(s) ativo(s)</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>Guias Ativos</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280' }}>{guiasAtivos.length} guia(s) ativo(s)</div>
                 </div>
-              </div>
-              <div style={{ backgroundColor: '#16a34a', color: 'white', width: '40px', height: '40px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700' }}>
-                {guiasAtivos.length}
               </div>
             </div>
 
@@ -667,26 +684,52 @@ export default function AdminGuias() {
                     backgroundColor: '#f0fdf4',
                     border: '1px solid #bbf7d0',
                     borderRadius: '16px',
-                    padding: '16px'
+                    padding: '14px'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', color: 'white', overflow: 'hidden' }}>
+                        <div
+                          onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                          style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '50%',
+                            backgroundColor: '#16a34a',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '18px',
+                            color: 'white',
+                            overflow: 'hidden',
+                            cursor: 'pointer'
+                          }}
+                        >
                           {guia.avatar_url ? <img src={guia.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>{guia.nome?.charAt(0).toUpperCase() || 'G'}</span>}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#111827' }}>{guia.nome}</div>
-                          <div style={{ fontSize: '12px', color: '#6b7280' }}>{guia.email}</div>
-                          <div style={{ fontSize: '11px', color: '#9ca3af' }}>CPF: {guia.cpf}</div>
+                          <div
+                            onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                            style={{ fontWeight: 'bold', fontSize: '15px', color: '#111827', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#16a34a' }}
+                          >
+                            {guia.nome}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>{guia.email}</div>
+                          <div style={{ fontSize: '10px', color: '#9ca3af' }}>CPF: {guia.cpf}</div>
                         </div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                        style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '40px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
+                      >
+                        👤 Perfil
+                      </button>
                       <button
                         onClick={() => setModalSuspensao({ isOpen: true, guia })}
-                        style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                        style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '40px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
                       >
                         ⚠️ Suspender
                       </button>
@@ -703,21 +746,18 @@ export default function AdminGuias() {
           <div
             style={{
               backgroundColor: 'white',
-              borderRadius: '28px',
-              padding: '24px',
+              borderRadius: '24px',
+              padding: '20px',
               boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ fontSize: '24px' }}>🔴</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ fontSize: '22px' }}>🔴</div>
                 <div>
-                  <div style={{ fontSize: '18px', fontWeight: '700', color: '#111827' }}>Guias Suspensos</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>{guiasSuspensos.length} guia(s) suspenso(s)</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>Guias Suspensos</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280' }}>{guiasSuspensos.length} guia(s) suspenso(s)</div>
                 </div>
-              </div>
-              <div style={{ backgroundColor: '#dc2626', color: 'white', width: '40px', height: '40px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700' }}>
-                {guiasSuspensos.length}
               </div>
             </div>
 
@@ -729,36 +769,62 @@ export default function AdminGuias() {
                     backgroundColor: '#fef2f2',
                     border: '1px solid #fecaca',
                     borderRadius: '16px',
-                    padding: '16px'
+                    padding: '14px'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', color: 'white' }}>
-                          {guia.nome?.charAt(0).toUpperCase() || 'G'}
+                        <div
+                          onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                          style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '50%',
+                            backgroundColor: '#dc2626',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '18px',
+                            color: 'white',
+                            overflow: 'hidden',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <span>{guia.nome?.charAt(0).toUpperCase() || 'G'}</span>
                         </div>
                         <div>
-                          <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#111827' }}>{guia.nome}</div>
-                          <div style={{ fontSize: '12px', color: '#6b7280' }}>{guia.email}</div>
-                          <div style={{ fontSize: '11px', color: '#9ca3af' }}>CPF: {guia.cpf}</div>
+                          <div
+                            onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                            style={{ fontWeight: 'bold', fontSize: '15px', color: '#111827', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#dc2626' }}
+                          >
+                            {guia.nome}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>{guia.email}</div>
+                          <div style={{ fontSize: '10px', color: '#9ca3af' }}>CPF: {guia.cpf}</div>
                           {guia.suspenso_ate && (
-                            <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '4px' }}>
+                            <div style={{ fontSize: '10px', color: '#dc2626', marginTop: '4px' }}>
                               ⏰ Suspenso até {new Date(guia.suspenso_ate).toLocaleDateString('pt-BR')}
                             </div>
                           )}
                           {guia.motivo_suspensao && (
-                            <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                            <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>
                               Motivo: {guia.motivo_suspensao}
                             </div>
                           )}
                         </div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => router.push(`/guia/publico/${guia.id}`)}
+                        style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '40px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
+                      >
+                        👤 Perfil
+                      </button>
                       <button
                         onClick={() => reativarGuia(guia.id)}
-                        style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                        style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}
                       >
                         🔄 Reativar
                       </button>
@@ -771,24 +837,24 @@ export default function AdminGuias() {
         )}
 
         {carregando && (
-          <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '60px', textAlign: 'center', color: '#6b7280' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '48px', textAlign: 'center', color: '#6b7280' }}>
             Carregando guias...
           </div>
         )}
 
         {!carregando && guiasFiltrados.length === 0 && busca && (
-          <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '60px', textAlign: 'center' }}>
-            <div style={{ fontSize: '48px', marginBottom: '12px' }}>🔍</div>
+          <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '48px', textAlign: 'center' }}>
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔍</div>
             <div style={{ fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Nenhum guia encontrado</div>
-            <div style={{ fontSize: '13px', color: '#6b7280' }}>Tente buscar por outro nome, e-mail ou CPF.</div>
+            <div style={{ fontSize: '12px', color: '#6b7280' }}>Tente buscar por outro nome, e-mail ou CPF.</div>
           </div>
         )}
 
         {!carregando && guiasFiltrados.length === 0 && !busca && (
-          <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '60px', textAlign: 'center' }}>
-            <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
+          <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '48px', textAlign: 'center' }}>
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}>👥</div>
             <div style={{ fontWeight: 'bold', color: '#374151', marginBottom: '6px' }}>Nenhum guia cadastrado</div>
-            <div style={{ fontSize: '13px', color: '#6b7280' }}>Os guias aparecerão aqui quando se cadastrarem.</div>
+            <div style={{ fontSize: '12px', color: '#6b7280' }}>Os guias aparecerão aqui quando se cadastrarem.</div>
           </div>
         )}
       </div>
