@@ -10,7 +10,7 @@ function getSupabaseAdmin() {
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
-      'Credenciais Supabase ausentes no servidor. Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.'
+      'Credenciais Supabase ausentes no servidor. Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel.'
     )
   }
 
@@ -63,15 +63,16 @@ function extrairDadosPix(data: any) {
     'transaction_id',
     'transactionId',
     'idTransacao',
+    'id_transacao',
     'id_transaction',
     'hash'
   ])
 
   const pixCode = procurarCampoRecursivo(data, [
-    'qr_code_text',
     'pix_code',
     'pix_copia_cola',
     'codigo_pix',
+    'qr_code_text',
     'emv',
     'copy_paste',
     'copia_cola',
@@ -173,14 +174,12 @@ export async function POST(req: Request) {
         success: true,
         reused: true,
         message: 'PIX já existente para esta reserva.',
-        reserva,
-        pix: {
-          order_id: reserva.paghiper_order_id,
-          transaction_id: reserva.paghiper_transaction_id,
-          pix_code: reserva.paghiper_pix_code,
-          qr_code_base64: reserva.paghiper_qrcode_base64,
-          status: reserva.paghiper_status
-        }
+        order_id: reserva.paghiper_order_id,
+        transaction_id: reserva.paghiper_transaction_id,
+        pix_code: reserva.paghiper_pix_code,
+        qr_code_base64: reserva.paghiper_qrcode_base64,
+        status: reserva.paghiper_status,
+        reserva
       })
     }
 
@@ -218,7 +217,11 @@ export async function POST(req: Request) {
         payer_email: emailCliente,
         payer_name: nomeCliente,
 
-        payer_cpf_cnpj: '12345678909',
+        payer_cpf_cnpj:
+          body.cpf ||
+          reserva.cpf ||
+          reserva.payer_cpf_cnpj ||
+          '12345678909',
 
         days_due_date: 1,
 
@@ -247,7 +250,7 @@ export async function POST(req: Request) {
     const retornoPagHiper = response.data
     const dadosPix = extrairDadosPix(retornoPagHiper)
 
-    await supabase
+    const { error: updateError } = await supabase
       .from('reservas')
       .update({
         paghiper_order_id: orderId,
@@ -260,6 +263,10 @@ export async function POST(req: Request) {
         pagamento_criado_em: new Date().toISOString()
       })
       .eq('id', reserva.id)
+
+    if (updateError) {
+      throw updateError
+    }
 
     return NextResponse.json({
       success: true,
