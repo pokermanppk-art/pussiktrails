@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import axios from 'axios'
 
+export const dynamic = 'force-dynamic'
+
 function normalizarValorEmCentavos(valor: unknown) {
   const numero = Number(valor)
 
@@ -20,23 +22,21 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.PAGHIPER_API_KEY
     const token = process.env.PAGHIPER_TOKEN
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      'https://prussiktrails.vercel.app'
 
     if (!apiKey || !token) {
-      return NextResponse.json(
-        {
-          error: true,
-          message: 'Credenciais PagHiper ausentes no .env.local'
-        },
-        { status: 500 }
-      )
-    }
+      console.error('Credenciais PagHiper ausentes:', {
+        hasApiKey: Boolean(apiKey),
+        hasToken: Boolean(token)
+      })
 
-    if (!appUrl) {
       return NextResponse.json(
         {
           error: true,
-          message: 'NEXT_PUBLIC_APP_URL ausente no .env.local'
+          message:
+            'Credenciais PagHiper ausentes no ambiente de produção. Configure PAGHIPER_API_KEY e PAGHIPER_TOKEN na Vercel.'
         },
         { status: 500 }
       )
@@ -52,25 +52,23 @@ export async function POST(req: Request) {
       )
     }
 
-    if (!body.email) {
+    if (!body.valor) {
       return NextResponse.json(
         {
           error: true,
-          message: 'E-mail do cliente não enviado.'
+          message: 'Valor da reserva não enviado.'
         },
         { status: 400 }
       )
     }
 
-    if (!body.nome) {
-      return NextResponse.json(
-        {
-          error: true,
-          message: 'Nome do cliente não enviado.'
-        },
-        { status: 400 }
-      )
-    }
+    const nomeCliente =
+      body.nome ||
+      'Cliente PrussikTrails'
+
+    const emailCliente =
+      body.email ||
+      'cliente@prussiktrails.com.br'
 
     const priceCents = normalizarValorEmCentavos(body.valor)
 
@@ -85,10 +83,10 @@ export async function POST(req: Request) {
 
         order_id: `RESERVA-${body.reservaId}`,
 
-        payer_email: body.email,
-        payer_name: body.nome,
+        payer_email: emailCliente,
+        payer_name: nomeCliente,
 
-        // CPF teste. Depois trocamos pelo CPF real do cliente.
+        // CPF teste. Depois podemos trocar pelo CPF real do cliente.
         payer_cpf_cnpj: '12345678909',
 
         days_due_date: 1,
@@ -121,14 +119,14 @@ export async function POST(req: Request) {
     return NextResponse.json(response.data)
 
   } catch (error: any) {
-    console.log('ERRO PAGHIPER:')
-    console.log(error.response?.data || error.message || error)
+    console.error('ERRO PAGHIPER:')
+    console.error(error.response?.data || error.message || error)
 
     return NextResponse.json(
       {
         error: true,
         message:
-          error.message || 'Erro interno ao gerar PIX PagHiper',
+          error.message || 'Erro interno ao gerar PIX PagHiper.',
         details:
           error.response?.data || null
       },

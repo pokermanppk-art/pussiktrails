@@ -10,6 +10,8 @@ type ReservaCompleta = {
   id_cliente?: string
   roteiro_id?: string
   id_roteiro?: string
+  id_guia?: string
+  guia_id?: string
   data_trilha?: string
   data_reserva?: string
   created_at?: string
@@ -34,7 +36,6 @@ export default function MinhasReservas() {
   const [reservas, setReservas] = useState<ReservaCompleta[]>([])
   const [carregando, setCarregando] = useState(true)
   const [mensagem, setMensagem] = useState('')
-  const [diagnostico, setDiagnostico] = useState<any>(null)
 
   useEffect(() => {
     if (carregouRef.current) return
@@ -93,29 +94,20 @@ export default function MinhasReservas() {
   const carregarReservas = async (usuarioParam?: any) => {
     setCarregando(true)
     setMensagem('')
-    setDiagnostico(null)
 
     const usuario = usuarioParam || user
     const clienteId = getClienteId(usuario)
 
     if (!clienteId) {
-      setMensagem('Não foi possível identificar o ID do cliente logado.')
-      setDiagnostico({
-        motivo: 'ID do usuário ausente no localStorage.',
-        usuario
-      })
+      setMensagem('Não foi possível identificar o cliente logado.')
       setReservas([])
       setCarregando(false)
       return
     }
 
     try {
-      console.log('Usuário logado em Minhas Reservas:', usuario)
-      console.log('Cliente ID usado na busca:', clienteId)
-
-      let reservasData: any[] | null = null
+      let reservasData: any[] = []
       let reservasError: any = null
-      let colunaUsada = 'cliente_id'
 
       const tentativaClienteId = await buscarReservasPorColuna(
         'cliente_id',
@@ -124,14 +116,7 @@ export default function MinhasReservas() {
 
       if (!tentativaClienteId.error) {
         reservasData = tentativaClienteId.data || []
-        reservasError = null
-        colunaUsada = 'cliente_id'
       } else {
-        console.warn(
-          'Falha ao buscar por cliente_id:',
-          tentativaClienteId.error
-        )
-
         const tentativaIdCliente = await buscarReservasPorColuna(
           'id_cliente',
           clienteId
@@ -139,15 +124,8 @@ export default function MinhasReservas() {
 
         if (!tentativaIdCliente.error) {
           reservasData = tentativaIdCliente.data || []
-          reservasError = null
-          colunaUsada = 'id_cliente'
         } else {
           reservasError = tentativaClienteId.error
-
-          console.warn(
-            'Falha também ao buscar por id_cliente:',
-            tentativaIdCliente.error
-          )
         }
       }
 
@@ -155,21 +133,8 @@ export default function MinhasReservas() {
         throw reservasError
       }
 
-      console.log('Reservas encontradas:', reservasData)
-      console.log('Coluna usada na busca:', colunaUsada)
-
       if (!reservasData || reservasData.length === 0) {
         setReservas([])
-        setDiagnostico({
-          aviso:
-            'A consulta funcionou, mas não encontrou reservas para este usuário.',
-          clienteIdUsado: clienteId,
-          colunaUsada,
-          emailUsuario: usuario?.email || null,
-          tipoUsuario: usuario?.tipo || null,
-          supabaseUrlConfigurada:
-            Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL)
-        })
         setCarregando(false)
         return
       }
@@ -179,6 +144,7 @@ export default function MinhasReservas() {
           reservasData
             .map((reserva) => reserva.roteiro_id || reserva.id_roteiro)
             .filter(Boolean)
+            .map((id) => String(id))
         )
       ]
 
@@ -187,7 +153,7 @@ export default function MinhasReservas() {
       if (roteiroIds.length > 0) {
         const { data: roteirosData, error: roteirosError } = await supabase
           .from('roteiros')
-          .select('id, titulo, preco, id_guia, guia_id')
+          .select('*')
           .in('id', roteiroIds)
 
         if (roteirosError) {
@@ -196,7 +162,7 @@ export default function MinhasReservas() {
 
         if (roteirosData) {
           roteirosMap = roteirosData.reduce((acc, roteiro) => {
-            acc[roteiro.id] = roteiro
+            acc[String(roteiro.id)] = roteiro
             return acc
           }, {} as Record<string, any>)
         }
@@ -204,9 +170,26 @@ export default function MinhasReservas() {
 
       const guiaIds = [
         ...new Set(
-          Object.values(roteirosMap)
-            .map((roteiro: any) => roteiro?.id_guia || roteiro?.guia_id)
+          reservasData
+            .map((reserva) => {
+              const roteiroId =
+                reserva.roteiro_id ||
+                reserva.id_roteiro
+
+              const roteiro = roteiroId
+                ? roteirosMap[String(roteiroId)]
+                : null
+
+              return (
+                reserva.id_guia ||
+                reserva.guia_id ||
+                roteiro?.id_guia ||
+                roteiro?.guia_id ||
+                roteiro?.guia
+              )
+            })
             .filter(Boolean)
+            .map((id) => String(id))
         )
       ]
 
@@ -224,7 +207,10 @@ export default function MinhasReservas() {
 
         if (guiasData) {
           guiasMap = guiasData.reduce((acc, guia) => {
-            acc[guia.id] = guia.nome || guia.email || 'Guia'
+            acc[String(guia.id)] =
+              guia.nome ||
+              guia.email ||
+              'Guia'
             return acc
           }, {} as Record<string, string>)
         }
@@ -237,12 +223,15 @@ export default function MinhasReservas() {
             reserva.id_roteiro
 
           const roteiro = roteiroId
-            ? roteirosMap[roteiroId]
+            ? roteirosMap[String(roteiroId)]
             : null
 
           const guiaId =
+            reserva.id_guia ||
+            reserva.guia_id ||
             roteiro?.id_guia ||
-            roteiro?.guia_id
+            roteiro?.guia_id ||
+            roteiro?.guia
 
           const quantidadePessoas = Number(
             reserva.quantidade_pessoas ||
@@ -261,17 +250,21 @@ export default function MinhasReservas() {
 
           const valorTotal = Number(valorBase || 0)
 
+          const tituloRoteiro =
+            roteiro?.titulo ||
+            roteiro?.nome ||
+            reserva.roteiro_titulo ||
+            reserva.titulo_roteiro ||
+            reserva.titulo ||
+            'Roteiro não encontrado'
+
           return {
             ...reserva,
             roteiro: roteiro || null,
             guia_nome: guiaId
-              ? guiasMap[guiaId] || 'Guia'
+              ? guiasMap[String(guiaId)] || 'Guia'
               : 'Guia',
-            roteiro_titulo:
-              roteiro?.titulo ||
-              reserva.roteiro_titulo ||
-              reserva.titulo_roteiro ||
-              'Roteiro não encontrado',
+            roteiro_titulo: tituloRoteiro,
             quantidade_pessoas: quantidadePessoas,
             valor_total: valorTotal
           }
@@ -280,32 +273,13 @@ export default function MinhasReservas() {
 
       setReservas(reservasCompletas)
 
-      setDiagnostico({
-        sucesso: true,
-        totalReservas: reservasCompletas.length,
-        clienteIdUsado: clienteId,
-        colunaUsada,
-        roteirosBuscados: roteiroIds.length,
-        guiasBuscados: guiaIds.length
-      })
-
     } catch (err: any) {
       console.error('Erro ao carregar reservas:', err)
 
       setMensagem(
         err?.message ||
-        'Erro ao carregar reservas. Verifique as permissões da tabela reservas no Supabase.'
+        'Erro ao carregar reservas. Tente novamente.'
       )
-
-      setDiagnostico({
-        erro: true,
-        message: err?.message || null,
-        details: err?.details || null,
-        hint: err?.hint || null,
-        code: err?.code || null,
-        clienteIdUsado: clienteId,
-        usuario
-      })
 
       setReservas([])
 
@@ -508,8 +482,7 @@ export default function MinhasReservas() {
         }
 
         .empty-card,
-        .table-card,
-        .diagnostico-card {
+        .table-card {
           background-color: #ffffff;
           border-radius: 24px;
           box-shadow: 0 1px 3px rgba(0,0,0,0.08);
@@ -609,23 +582,6 @@ export default function MinhasReservas() {
           border-radius: 14px;
           margin-bottom: 16px;
           font-size: 13px;
-        }
-
-        .diagnostico-card {
-          margin-top: 16px;
-          padding: 16px;
-          border: 1px dashed #d1d5db;
-        }
-
-        .diagnostico-card pre {
-          white-space: pre-wrap;
-          word-break: break-word;
-          font-size: 11px;
-          color: #374151;
-          background: #f9fafb;
-          padding: 12px;
-          border-radius: 12px;
-          overflow-x: auto;
         }
 
         @media (max-width: 760px) {
@@ -746,356 +702,306 @@ export default function MinhasReservas() {
           )}
 
           {reservas.length === 0 ? (
-            <>
-              <div className="empty-card">
-                <div
-                  style={{
-                    fontSize: '48px',
-                    marginBottom: '12px'
-                  }}
-                >
-                  📭
-                </div>
-
-                <div
-                  style={{
-                    fontWeight: 'bold',
-                    color: '#374151',
-                    marginBottom: '6px'
-                  }}
-                >
-                  Você ainda não fez nenhuma reserva
-                </div>
-
-                <div
-                  style={{
-                    color: '#6b7280',
-                    marginBottom: '20px',
-                    fontSize: '13px'
-                  }}
-                >
-                  Se você já reservou, confira o diagnóstico abaixo.
-                </div>
-
-                <button
-                  onClick={() => router.push('/cliente/roteiros')}
-                  className="btn btn-green"
-                >
-                  Explorar roteiros →
-                </button>
+            <div className="empty-card">
+              <div
+                style={{
+                  fontSize: '48px',
+                  marginBottom: '12px'
+                }}
+              >
+                📭
               </div>
 
-              {diagnostico && (
-                <div className="diagnostico-card">
-                  <strong
-                    style={{
-                      display: 'block',
-                      marginBottom: '8px',
-                      color: '#111827'
-                    }}
-                  >
-                    Diagnóstico técnico
-                  </strong>
+              <div
+                style={{
+                  fontWeight: 'bold',
+                  color: '#374151',
+                  marginBottom: '6px'
+                }}
+              >
+                Você ainda não fez nenhuma reserva
+              </div>
 
-                  <p
-                    style={{
-                      color: '#6b7280',
-                      fontSize: '12px',
-                      lineHeight: 1.5
-                    }}
-                  >
-                    Envie este bloco para conferirmos se o deploy está usando o mesmo Supabase, se o ID do cliente bate com a reserva ou se há bloqueio de RLS.
-                  </p>
+              <div
+                style={{
+                  color: '#6b7280',
+                  marginBottom: '20px',
+                  fontSize: '13px'
+                }}
+              >
+                Explore os roteiros disponíveis e reserve sua próxima aventura.
+              </div>
 
-                  <pre>
-                    {JSON.stringify(diagnostico, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </>
+              <button
+                onClick={() => router.push('/cliente/roteiros')}
+                className="btn btn-green"
+              >
+                Explorar roteiros →
+              </button>
+            </div>
           ) : (
-            <>
-              <div className="table-card">
-                <div className="reservas-table-wrapper">
-                  <table className="reservas-table">
-                    <thead>
-                      <tr>
-                        <th>Roteiro</th>
-                        <th>Guia</th>
-                        <th>Data</th>
-                        <th style={{ textAlign: 'center' }}>Pessoas</th>
-                        <th style={{ textAlign: 'center' }}>Valor</th>
-                        <th style={{ textAlign: 'center' }}>Pagamento</th>
-                        <th>Status</th>
-                        <th style={{ textAlign: 'center' }}>Ações</th>
-                      </tr>
-                    </thead>
+            <div className="table-card">
+              <div className="reservas-table-wrapper">
+                <table className="reservas-table">
+                  <thead>
+                    <tr>
+                      <th>Roteiro</th>
+                      <th>Guia</th>
+                      <th>Data</th>
+                      <th style={{ textAlign: 'center' }}>Pessoas</th>
+                      <th style={{ textAlign: 'center' }}>Valor</th>
+                      <th style={{ textAlign: 'center' }}>Pagamento</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'center' }}>Ações</th>
+                    </tr>
+                  </thead>
 
-                    <tbody>
-                      {reservas.map((reserva) => {
-                        const statusBadge = getStatusBadge(
-                          reserva.status,
-                          reserva.pagamento_status
-                        )
+                  <tbody>
+                    {reservas.map((reserva) => {
+                      const statusBadge = getStatusBadge(
+                        reserva.status,
+                        reserva.pagamento_status
+                      )
 
-                        const pagamentoBadge = getPagamentoBadge(
-                          reserva.pagamento_status
-                        )
+                      const pagamentoBadge = getPagamentoBadge(
+                        reserva.pagamento_status
+                      )
 
-                        const precisaPagar =
-                          reserva.status === 'pendente' &&
-                          reserva.pagamento_status !== 'pago'
+                      const precisaPagar =
+                        reserva.status === 'pendente' &&
+                        reserva.pagamento_status !== 'pago'
 
-                        const podeCancelar =
-                          reserva.status === 'pendente' ||
-                          reserva.status === 'confirmada'
+                      const podeCancelar =
+                        reserva.status === 'pendente' ||
+                        reserva.status === 'confirmada'
 
-                        return (
-                          <tr key={reserva.id}>
-                            <td
+                      return (
+                        <tr key={reserva.id}>
+                          <td
+                            style={{
+                              fontWeight: 600,
+                              color: '#111827'
+                            }}
+                          >
+                            {reserva.roteiro_titulo}
+                          </td>
+
+                          <td>{reserva.guia_nome}</td>
+
+                          <td>{formatarData(reserva)}</td>
+
+                          <td style={{ textAlign: 'center' }}>
+                            {reserva.quantidade_pessoas || 1}
+                          </td>
+
+                          <td
+                            style={{
+                              textAlign: 'center',
+                              fontWeight: 700,
+                              color: '#16a34a'
+                            }}
+                          >
+                            R$ {(Number(reserva.valor_total) || 0).toFixed(2)}
+                          </td>
+
+                          <td style={{ textAlign: 'center' }}>
+                            <span
+                              className="badge"
                               style={{
-                                fontWeight: 600,
-                                color: '#111827'
+                                backgroundColor: pagamentoBadge.bg,
+                                color: pagamentoBadge.color
                               }}
                             >
-                              {reserva.roteiro_titulo}
-                            </td>
+                              {pagamentoBadge.text}
+                            </span>
+                          </td>
 
-                            <td>{reserva.guia_nome}</td>
-
-                            <td>{formatarData(reserva)}</td>
-
-                            <td style={{ textAlign: 'center' }}>
-                              {reserva.quantidade_pessoas || 1}
-                            </td>
-
-                            <td
+                          <td>
+                            <span
+                              className="badge"
                               style={{
-                                textAlign: 'center',
-                                fontWeight: 700,
-                                color: '#16a34a'
+                                backgroundColor: statusBadge.bg,
+                                color: statusBadge.color
                               }}
                             >
-                              R$ {(Number(reserva.valor_total) || 0).toFixed(2)}
-                            </td>
+                              {statusBadge.text}
+                            </span>
+                          </td>
 
-                            <td style={{ textAlign: 'center' }}>
-                              <span
-                                className="badge"
-                                style={{
-                                  backgroundColor: pagamentoBadge.bg,
-                                  color: pagamentoBadge.color
-                                }}
-                              >
-                                {pagamentoBadge.text}
-                              </span>
-                            </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                gap: '6px',
+                                justifyContent: 'center',
+                                flexWrap: 'wrap'
+                              }}
+                            >
+                              {precisaPagar && (
+                                <button
+                                  onClick={() => handlePagar(reserva.id)}
+                                  className="btn btn-green"
+                                >
+                                  💳 Pagar
+                                </button>
+                              )}
 
-                            <td>
-                              <span
-                                className="badge"
-                                style={{
-                                  backgroundColor: statusBadge.bg,
-                                  color: statusBadge.color
-                                }}
-                              >
-                                {statusBadge.text}
-                              </span>
-                            </td>
+                              {podeCancelar && (
+                                <button
+                                  onClick={() => cancelarReserva(reserva.id)}
+                                  className="btn btn-red"
+                                >
+                                  Cancelar
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-                            <td style={{ textAlign: 'center' }}>
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  gap: '6px',
-                                  justifyContent: 'center',
-                                  flexWrap: 'wrap'
-                                }}
-                              >
-                                {precisaPagar && (
-                                  <button
-                                    onClick={() => handlePagar(reserva.id)}
-                                    className="btn btn-green"
-                                  >
-                                    💳 Pagar
-                                  </button>
-                                )}
+              <div className="mobile-list">
+                {reservas.map((reserva) => {
+                  const statusBadge = getStatusBadge(
+                    reserva.status,
+                    reserva.pagamento_status
+                  )
 
-                                {podeCancelar && (
-                                  <button
-                                    onClick={() => cancelarReserva(reserva.id)}
-                                    className="btn btn-red"
-                                  >
-                                    Cancelar
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                  const pagamentoBadge = getPagamentoBadge(
+                    reserva.pagamento_status
+                  )
 
-                <div className="mobile-list">
-                  {reservas.map((reserva) => {
-                    const statusBadge = getStatusBadge(
-                      reserva.status,
-                      reserva.pagamento_status
-                    )
+                  const precisaPagar =
+                    reserva.status === 'pendente' &&
+                    reserva.pagamento_status !== 'pago'
 
-                    const pagamentoBadge = getPagamentoBadge(
-                      reserva.pagamento_status
-                    )
+                  const podeCancelar =
+                    reserva.status === 'pendente' ||
+                    reserva.status === 'confirmada'
 
-                    const precisaPagar =
-                      reserva.status === 'pendente' &&
-                      reserva.pagamento_status !== 'pago'
-
-                    const podeCancelar =
-                      reserva.status === 'pendente' ||
-                      reserva.status === 'confirmada'
-
-                    return (
+                  return (
+                    <div
+                      key={reserva.id}
+                      className="reserva-mobile-card"
+                    >
                       <div
-                        key={reserva.id}
-                        className="reserva-mobile-card"
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          marginBottom: '10px'
+                        }}
                       >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            gap: '12px',
-                            marginBottom: '10px'
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontWeight: 700,
-                                color: '#111827',
-                                fontSize: '15px'
-                              }}
-                            >
-                              {reserva.roteiro_titulo}
-                            </div>
-
-                            <div
-                              style={{
-                                color: '#6b7280',
-                                fontSize: '12px',
-                                marginTop: '3px'
-                              }}
-                            >
-                              Guia: {reserva.guia_nome}
-                            </div>
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              color: '#111827',
+                              fontSize: '15px'
+                            }}
+                          >
+                            {reserva.roteiro_titulo}
                           </div>
 
                           <div
                             style={{
-                              fontWeight: 800,
-                              color: '#16a34a',
-                              whiteSpace: 'nowrap'
+                              color: '#6b7280',
+                              fontSize: '12px',
+                              marginTop: '3px'
                             }}
                           >
-                            R$ {(Number(reserva.valor_total) || 0).toFixed(2)}
+                            Guia: {reserva.guia_nome}
                           </div>
                         </div>
 
                         <div
                           style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr',
-                            gap: '8px',
-                            fontSize: '12px',
-                            color: '#6b7280',
-                            marginBottom: '12px'
+                            fontWeight: 800,
+                            color: '#16a34a',
+                            whiteSpace: 'nowrap'
                           }}
                         >
-                          <div>📅 {formatarData(reserva)}</div>
-                          <div>👥 {reserva.quantidade_pessoas || 1} pessoa(s)</div>
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: '8px',
-                            flexWrap: 'wrap',
-                            marginBottom: '12px'
-                          }}
-                        >
-                          <span
-                            className="badge"
-                            style={{
-                              backgroundColor: pagamentoBadge.bg,
-                              color: pagamentoBadge.color
-                            }}
-                          >
-                            {pagamentoBadge.text}
-                          </span>
-
-                          <span
-                            className="badge"
-                            style={{
-                              backgroundColor: statusBadge.bg,
-                              color: statusBadge.color
-                            }}
-                          >
-                            {statusBadge.text}
-                          </span>
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: '8px'
-                          }}
-                        >
-                          {precisaPagar && (
-                            <button
-                              onClick={() => handlePagar(reserva.id)}
-                              className="btn btn-green"
-                              style={{ flex: 1 }}
-                            >
-                              💳 Pagar
-                            </button>
-                          )}
-
-                          {podeCancelar && (
-                            <button
-                              onClick={() => cancelarReserva(reserva.id)}
-                              className="btn btn-red"
-                              style={{ flex: 1 }}
-                            >
-                              Cancelar
-                            </button>
-                          )}
+                          R$ {(Number(reserva.valor_total) || 0).toFixed(2)}
                         </div>
                       </div>
-                    )
-                  })}
-                </div>
+
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '8px',
+                          fontSize: '12px',
+                          color: '#6b7280',
+                          marginBottom: '12px'
+                        }}
+                      >
+                        <div>📅 {formatarData(reserva)}</div>
+                        <div>👥 {reserva.quantidade_pessoas || 1} pessoa(s)</div>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                          marginBottom: '12px'
+                        }}
+                      >
+                        <span
+                          className="badge"
+                          style={{
+                            backgroundColor: pagamentoBadge.bg,
+                            color: pagamentoBadge.color
+                          }}
+                        >
+                          {pagamentoBadge.text}
+                        </span>
+
+                        <span
+                          className="badge"
+                          style={{
+                            backgroundColor: statusBadge.bg,
+                            color: statusBadge.color
+                          }}
+                        >
+                          {statusBadge.text}
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: '8px'
+                        }}
+                      >
+                        {precisaPagar && (
+                          <button
+                            onClick={() => handlePagar(reserva.id)}
+                            className="btn btn-green"
+                            style={{ flex: 1 }}
+                          >
+                            💳 Pagar
+                          </button>
+                        )}
+
+                        {podeCancelar && (
+                          <button
+                            onClick={() => cancelarReserva(reserva.id)}
+                            className="btn btn-red"
+                            style={{ flex: 1 }}
+                          >
+                            Cancelar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-
-              {diagnostico && (
-                <div className="diagnostico-card">
-                  <strong
-                    style={{
-                      display: 'block',
-                      marginBottom: '8px',
-                      color: '#111827'
-                    }}
-                  >
-                    Diagnóstico técnico
-                  </strong>
-
-                  <pre>
-                    {JSON.stringify(diagnostico, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </div>
       </div>
