@@ -2,6 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import bcrypt from 'bcryptjs'
+import { supabase } from '@/lib/supabase/client'
+import { registrarAtividade } from '@/lib/logAtividade'
 
 export default function LoginForm() {
   const router = useRouter()
@@ -10,27 +13,65 @@ export default function LoginForm() {
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
 
+  // Função para formatar CPF visualmente (apenas para exibição, não afeta a busca)
+  const formatarCPF = (valor: string) => {
+    let numeros = valor.replace(/\D/g, '')
+    if (numeros.length > 11) numeros = numeros.slice(0, 11)
+    if (numeros.length <= 3) return numeros
+    if (numeros.length <= 6) return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
+    if (numeros.length <= 9) return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
+  }
+
+  const extrairNumerosCPF = (cpfFormatado: string) => cpfFormatado.replace(/\D/g, '')
+
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCpf(formatarCPF(e.target.value))
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setErro('')
     setCarregando(true)
 
+    const cpfLimpo = extrairNumerosCPF(cpf)
+
     try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpf, senha })
-      })
+      // Buscar usuário pelo CPF
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, nome, email, tipo, status, senha_hash')
+        .eq('cpf', cpfLimpo)
+        .maybeSingle()
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        setErro(data.error || 'Erro no login')
+      if (userError || !user) {
+        setErro('CPF não encontrado')
+        setCarregando(false)
         return
       }
 
-      const user = data.user
+      // 🔐 Verificar senha usando bcrypt
+      const senhaValida = await bcrypt.compare(senha, user.senha_hash)
+      if (!senhaValida) {
+        setErro('Senha incorreta')
+        setCarregando(false)
+        return
+      }
 
+      // Verifica o status do usuário
+      if (user.status !== 'ativo') {
+        if (user.status === 'pendente') {
+          setErro('⏳ Seu cadastro está pendente de aprovação. Aguarde o administrador.')
+        } else if (user.status === 'suspenso') {
+          setErro('⚠️ Sua conta está suspensa. Entre em contato com o suporte.')
+        } else {
+          setErro('❌ Usuário inativo. Entre em contato com o suporte.')
+        }
+        setCarregando(false)
+        return
+      }
+
+      // Salva sessão
       localStorage.setItem('user', JSON.stringify({
         id: user.id,
         nome: user.nome,
@@ -38,11 +79,30 @@ export default function LoginForm() {
         tipo: user.tipo,
       }))
 
+      // 📝 Registrar atividade de login
+      const primeiroNome = user.nome?.split(' ')[0] || user.email?.split('@')[0] || 'Usuário'
+      const tipoUsuario = user.tipo === 'cliente' ? 'cliente' : (user.tipo === 'guia' ? 'guia' : 'admin')
+      const detalhes = `${primeiroNome} (${tipoUsuario === 'cliente' ? 'Aventureiro' : tipoUsuario === 'guia' ? 'Navegador' : 'Administrador'}) fez login`
+
+      await registrarAtividade(
+        user.id,
+        tipoUsuario,
+        primeiroNome,
+        'login',
+        detalhes
+      )
+
       // Redireciona conforme o tipo
-      if (user.tipo === 'cliente') router.push('/cliente/dashboard')
-      else if (user.tipo === 'guia') router.push('/guia/dashboard')
-      else router.push('/admin/dashboard')
-    } catch (err) {
+      if (user.tipo === 'cliente') {
+        router.push('/cliente/dashboard')
+      } else if (user.tipo === 'guia') {
+        router.push('/guia/dashboard')
+      } else {
+        router.push('/admin/dashboard')
+      }
+
+    } catch (err: any) {
+      console.error('Erro no login:', err)
       setErro('Erro ao conectar com o servidor.')
     } finally {
       setCarregando(false)
@@ -54,7 +114,7 @@ export default function LoginForm() {
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <div className="text-4xl mb-2">🏔️</div>
-          <h2 className="text-3xl font-extrabold text-gray-900">Prussik Trails</h2>
+          <h2 className="text-3xl font-extrabold text-gray-900">PussikTrails</h2>
           <p className="mt-2 text-sm text-gray-600">Digite seu CPF e senha</p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
@@ -66,7 +126,8 @@ export default function LoginForm() {
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
                 placeholder="CPF (ex: 111.222.333-44)"
                 value={cpf}
-                onChange={(e) => setCpf(e.target.value)}
+                onChange={handleCpfChange}
+                maxLength={14}
               />
             </div>
             <div>

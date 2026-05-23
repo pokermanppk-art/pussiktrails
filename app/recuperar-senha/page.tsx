@@ -3,11 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase/client'
 
 export default function RecuperarSenha() {
   const router = useRouter()
-  const [identificador, setIdentificador] = useState('') // CPF ou e‑mail
+  const [identificador, setIdentificador] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
@@ -21,52 +20,38 @@ export default function RecuperarSenha() {
     return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
   }
 
-  const extrairNumeros = (valor: string) => valor.replace(/\D/g, '')
+  const handleIdentificadorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let valor = e.target.value
+    // Se parecer com CPF (11 dígitos), formata
+    if (valor.replace(/\D/g, '').length <= 11 && /^\d+$/.test(valor.replace(/\D/g, ''))) {
+      valor = formatarCPF(valor)
+    }
+    setIdentificador(valor)
+  }
 
-  const handleEnviar = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setEnviando(true)
     setMensagem('')
     setErro('')
 
-    // Se o identificador parecer um CPF (apenas números ou formatado)
-    const isCPF = /^\d{3}\.\d{3}\.\d{3}-\d{2}$/.test(identificador) || /^\d{11}$/.test(identificador)
-    const valorBusca = isCPF ? extrairNumeros(identificador) : identificador
-
     try {
-      let user
-      if (isCPF) {
-        const { data } = await supabase
-          .from('users')
-          .select('id, email, nome')
-          .eq('cpf', valorBusca)
-          .maybeSingle()
-        user = data
+      const response = await fetch('/api/recuperar-senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identificador })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setMensagem(data.message || 'E-mail enviado! Verifique sua caixa de entrada.')
+        setTimeout(() => router.push('/login'), 5000)
       } else {
-        const { data } = await supabase
-          .from('users')
-          .select('id, email, nome')
-          .eq('email', valorBusca)
-          .maybeSingle()
-        user = data
+        setErro(data.error || 'Erro ao processar solicitação')
       }
-
-      if (!user) {
-        setErro('Nenhum usuário encontrado com esse CPF ou e‑mail.')
-        setEnviando(false)
-        return
-      }
-
-      // 🔁 Aqui você pode integrar com um serviço real de e‑mail (ex: Resend, Nodemailer)
-      // Por enquanto, apenas simulamos o envio.
-      console.log('Enviar link de recuperação para:', user.email)
-
-      // Simulação de sucesso
-      setMensagem(`✅ Um link de recuperação foi enviado para ${user.email}. Verifique sua caixa de entrada.`)
-      setTimeout(() => router.push('/login'), 4000)
-    } catch (err: any) {
-      setErro('Erro ao processar solicitação. Tente novamente.')
-      console.error(err)
+    } catch (err) {
+      setErro('Erro ao conectar com o servidor')
     } finally {
       setEnviando(false)
     }
@@ -85,23 +70,23 @@ export default function RecuperarSenha() {
         }}>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔐</div>
-            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>Esqueci minha senha</h1>
+            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>Recuperar senha</h1>
             <p style={{ color: '#6b7280', marginTop: '8px', fontSize: '14px' }}>
-              Digite seu CPF ou e‑mail para receber as instruções
+              Digite seu CPF ou e-mail cadastrado
             </p>
           </div>
 
-          <form onSubmit={handleEnviar}>
+          <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-                CPF ou E‑mail
+                CPF ou E-mail
               </label>
               <input
                 type="text"
                 required
                 placeholder="Ex: 000.000.000-00 ou seu@email.com"
                 value={identificador}
-                onChange={(e) => setIdentificador(e.target.value)}
+                onChange={handleIdentificadorChange}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
@@ -190,7 +175,7 @@ export default function RecuperarSenha() {
             marginTop: '32px',
             marginBottom: 0
           }}>
-            Você receberá um e‑mail com instruções para redefinir sua senha.
+            Você receberá um e‑mail com um link para redefinir sua senha. O link é válido por 1 hora.
           </p>
         </div>
       </div>

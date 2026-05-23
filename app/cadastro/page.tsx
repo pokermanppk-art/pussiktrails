@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
+import bcrypt from 'bcryptjs'
 
 export default function CadastroPage() {
   const router = useRouter()
@@ -51,6 +52,12 @@ export default function CadastroPage() {
       return
     }
 
+    if (senha.length < 6) {
+      setErro('A senha deve ter pelo menos 6 caracteres')
+      setCarregando(false)
+      return
+    }
+
     if (!dataNascimento) {
       setErro('Data de nascimento é obrigatória')
       setCarregando(false)
@@ -62,13 +69,17 @@ export default function CadastroPage() {
     const instagramLimpo = instagram.replace('@', '').trim()
     const cnpjLimpo = cnpj.replace(/\D/g, '')
 
+    // 🔐 Gerar hash da senha
+    const salt = await bcrypt.genSalt(10)
+    const senhaHash = await bcrypt.hash(senha, salt)
+
     const dadosBase = {
       nome,
       email,
       celular: celularLimpo,
       cpf: cpfLimpo,
       data_nascimento: dataNascimento,
-      senha,
+      senha_hash: senhaHash,  // 👈 AGORA USA HASH!
       tipo,
       status: tipo === 'cliente' ? 'ativo' : 'pendente',
       created_at: new Date().toISOString(),
