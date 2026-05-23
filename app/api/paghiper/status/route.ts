@@ -40,9 +40,19 @@ export async function GET(req: Request) {
 
     const { data: reserva, error } = await supabase
       .from('reservas')
-      .select(
-        'id, pagamento_status, paghiper_status, paghiper_order_id, paghiper_transaction_id, pagamento_confirmado_em'
-      )
+      .select(`
+        id,
+        status,
+        pagamento_status,
+        comprovante_status,
+        comprovante_url,
+        comprovante_origem,
+        chat_id,
+        paghiper_status,
+        paghiper_order_id,
+        paghiper_transaction_id,
+        pagamento_confirmado_em
+      `)
       .eq('id', reservaId)
       .maybeSingle()
 
@@ -63,7 +73,12 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       reserva_id: reserva.id,
+      reserva_status: reserva.status || 'pendente',
       pagamento_status: reserva.pagamento_status || 'pendente',
+      comprovante_status: reserva.comprovante_status || null,
+      comprovante_url: reserva.comprovante_url || null,
+      comprovante_origem: reserva.comprovante_origem || null,
+      chat_id: reserva.chat_id || null,
       paghiper_status: reserva.paghiper_status || null,
       paghiper_order_id: reserva.paghiper_order_id || null,
       paghiper_transaction_id: reserva.paghiper_transaction_id || null,
