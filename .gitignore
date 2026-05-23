@@ -62,4 +62,4 @@ yarn-error.log*
 
 git add .env.production
 git commit -m "Adiciona variáveis de ambiente para produção"
-git push
+git push".env.production" 
