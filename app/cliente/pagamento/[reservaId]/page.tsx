@@ -3,28 +3,29 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { v4 as uuidv4 } from 'uuid'
 
 type AnyObject = Record<string, any>
 
 export default function PagamentoPIX() {
   const params = useParams()
   const router = useRouter()
+
   const reservaId = params.reservaId as string
 
   const carregouRef = useRef(false)
-  const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const redirecionandoRef = useRef(false)
 
   const [carregando, setCarregando] = useState(true)
+  const [verificando, setVerificando] = useState(false)
   const [qrCode, setQrCode] = useState('')
   const [codigoPix, setCodigoPix] = useState('')
   const [valor, setValor] = useState(0)
   const [roteiroTitulo, setRoteiroTitulo] = useState('')
   const [mensagem, setMensagem] = useState('')
-  const [arquivo, setArquivo] = useState<File | null>(null)
-  const [enviando, setEnviando] = useState(false)
   const [copiado, setCopiado] = useState(false)
   const [pagamentoConfirmado, setPagamentoConfirmado] = useState(false)
+  const [statusPagamento, setStatusPagamento] = useState('pendente')
 
   useEffect(() => {
     if (!reservaId) return
@@ -32,37 +33,44 @@ export default function PagamentoPIX() {
     if (carregouRef.current) return
 
     carregouRef.current = true
+
     carregarPagamento()
     iniciarPollingPagamento()
 
     return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current)
-      }
+      pararPollingPagamento()
     }
   }, [reservaId])
 
   const iniciarPollingPagamento = () => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current)
-    }
+    pararPollingPagamento()
 
     pollingRef.current = setInterval(() => {
       verificarStatusPagamento()
-    }, 5000)
+    }, 4000)
+  }
+
+  const pararPollingPagamento = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
   }
 
   const finalizarTelaPagamento = () => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current)
-    }
+    if (redirecionandoRef.current) return
+
+    redirecionandoRef.current = true
+
+    pararPollingPagamento()
 
     setPagamentoConfirmado(true)
+    setStatusPagamento('pago')
     setMensagem('✅ Pagamento confirmado! Redirecionando para suas reservas...')
 
     setTimeout(() => {
-      router.push('/cliente/minhas-reservas')
-    }, 2500)
+      router.replace('/cliente/minhas-reservas')
+    }, 2200)
   }
 
   const buscarReserva = async () => {
@@ -258,7 +266,10 @@ export default function PagamentoPIX() {
     return ''
   }
 
-  const montarImagemQrCode = (qrRecebido: string, pixRecebido: string) => {
+  const montarImagemQrCode = (
+    qrRecebido: string,
+    pixRecebido: string
+  ) => {
     if (qrRecebido) {
       let qrCodeFormatado = String(qrRecebido)
 
@@ -288,14 +299,19 @@ export default function PagamentoPIX() {
     const pixSalvo =
       reserva.paghiper_pix_code ||
       respostaApi?.pix_code ||
+      respostaApi?.reserva?.paghiper_pix_code ||
       procurarCampoRecursivo(respostaApi, 'pix')
 
     const qrSalvo =
       reserva.paghiper_qrcode_base64 ||
       respostaApi?.qr_code_base64 ||
+      respostaApi?.reserva?.paghiper_qrcode_base64 ||
       procurarCampoRecursivo(respostaApi, 'qr')
 
-    const imagemQr = montarImagemQrCode(qrSalvo || '', pixSalvo || '')
+    const imagemQr = montarImagemQrCode(
+      qrSalvo || '',
+      pixSalvo || ''
+    )
 
     if (imagemQr) {
       setQrCode(imagemQr)
@@ -307,26 +323,52 @@ export default function PagamentoPIX() {
 
     if (!imagemQr && !pixSalvo) {
       setMensagem(
-        'PIX criado, mas o QR Code não foi localizado na resposta.'
+        'PIX criado, mas o QR Code não foi localizado. Verifique o retorno da PagHiper.'
       )
     }
   }
 
   const verificarStatusPagamento = async () => {
+    if (!reservaId || pagamentoConfirmado || redirecionandoRef.current) return
+
     try {
-      const { data, error } = await supabase
-        .from('reservas')
-        .select('id, pagamento_status')
-        .eq('id', reservaId)
-        .maybeSingle()
+      const response = await fetch(
+        `/api/paghiper/status?reservaId=${encodeURIComponent(reservaId)}`,
+        {
+          method: 'GET',
+          cache: 'no-store'
+        }
+      )
 
-      if (error || !data) return
+      const data = await response.json()
 
-      if (data.pagamento_status === 'pago') {
+      if (!response.ok) {
+        console.warn('Erro ao consultar status PagHiper:', data)
+        return
+      }
+
+      const status =
+        data?.pagamento_status ||
+        data?.paghiper_status ||
+        'pendente'
+
+      setStatusPagamento(status)
+
+      if (data?.pago || status === 'pago') {
         finalizarTelaPagamento()
       }
     } catch (error) {
       console.warn('Erro ao verificar status de pagamento:', error)
+    }
+  }
+
+  const verificarAgora = async () => {
+    setVerificando(true)
+
+    try {
+      await verificarStatusPagamento()
+    } finally {
+      setVerificando(false)
     }
   }
 
@@ -338,6 +380,8 @@ export default function PagamentoPIX() {
       setCodigoPix('')
 
       const reserva = await buscarReserva()
+
+      setStatusPagamento(reserva.pagamento_status || 'pendente')
 
       if (reserva.pagamento_status === 'pago') {
         finalizarTelaPagamento()
@@ -377,6 +421,7 @@ export default function PagamentoPIX() {
         headers: {
           'Content-Type': 'application/json'
         },
+        cache: 'no-store',
         body: JSON.stringify({
           reservaId: reserva.id,
           valor: valorRealReserva,
@@ -402,7 +447,6 @@ export default function PagamentoPIX() {
       }
 
       preencherPixNaTela(reserva, data)
-
     } catch (err: any) {
       console.error('Erro ao carregar pagamento:', err)
 
@@ -428,69 +472,15 @@ export default function PagamentoPIX() {
       setTimeout(() => {
         setCopiado(false)
       }, 3000)
-
     } catch (err) {
       console.log('Erro ao copiar PIX:', err)
       setMensagem('Erro ao copiar código PIX.')
     }
   }
 
-  const handleUpload = async () => {
-    if (!arquivo) {
-      setMensagem('Selecione um comprovante.')
-      return
-    }
-
-    setEnviando(true)
-    setMensagem('')
-
-    try {
-      const fileExt = arquivo.name.split('.').pop()
-
-      const fileName =
-        `${reservaId}_${uuidv4()}.${fileExt}`
-
-      const filePath =
-        `comprovantes/${fileName}`
-
-      const { error: uploadError } =
-        await supabase.storage
-          .from('comprovantes')
-          .upload(filePath, arquivo)
-
-      if (uploadError) {
-        throw uploadError
-      }
-
-      const {
-        data: { publicUrl }
-      } = supabase.storage
-        .from('comprovantes')
-        .getPublicUrl(filePath)
-
-      const { error: updateError } = await supabase
-        .from('reservas')
-        .update({
-          comprovante_url: publicUrl,
-          comprovante_status: 'enviado',
-          pagamento_status: 'aguardando_aprovacao'
-        })
-        .eq('id', reservaId)
-
-      if (updateError) {
-        throw updateError
-      }
-
-      setMensagem('✅ Comprovante enviado com sucesso!')
-
-    } catch (err) {
-      console.log('Erro ao enviar comprovante:', err)
-
-      setMensagem('❌ Erro ao enviar comprovante.')
-
-    } finally {
-      setEnviando(false)
-    }
+  const voltarParaReservas = () => {
+    pararPollingPagamento()
+    router.replace('/cliente/minhas-reservas')
   }
 
   if (carregando) {
@@ -558,6 +548,18 @@ export default function PagamentoPIX() {
             text-align: center;
             box-shadow: 0 2px 10px rgba(0,0,0,0.08);
           }
+
+          .confirmado-card h1 {
+            color: #16a34a;
+            margin: 0 0 8px;
+            font-size: 24px;
+          }
+
+          .confirmado-card p {
+            color: #6b7280;
+            margin: 0;
+            line-height: 1.5;
+          }
         `}</style>
 
         <div className="confirmado-card">
@@ -565,12 +567,12 @@ export default function PagamentoPIX() {
             ✅
           </div>
 
-          <h1 style={{ color: '#16a34a', margin: '0 0 8px' }}>
+          <h1>
             Pagamento confirmado
           </h1>
 
-          <p style={{ color: '#6b7280', margin: 0 }}>
-            Estamos atualizando sua reserva e redirecionando você.
+          <p>
+            Sua reserva foi atualizada. Estamos redirecionando para Minhas Reservas.
           </p>
         </div>
       </div>
@@ -610,9 +612,33 @@ export default function PagamentoPIX() {
 
         .pagamento-subtitle {
           color: #6b7280;
-          margin-bottom: 24px;
+          margin-bottom: 20px;
           font-size: 15px;
           line-height: 1.4;
+        }
+
+        .status-info {
+          background: #eff6ff;
+          color: #1d4ed8;
+          padding: 12px 14px;
+          border-radius: 16px;
+          font-size: 13px;
+          text-align: center;
+          margin-bottom: 18px;
+          line-height: 1.45;
+        }
+
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 5px 10px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 800;
+          background: #fef3c7;
+          color: #92400e;
+          margin-top: 8px;
         }
 
         .pagamento-valor-box {
@@ -665,33 +691,29 @@ export default function PagamentoPIX() {
           padding: 15px 18px;
           font-weight: 700;
           cursor: pointer;
-          margin-bottom: 24px;
+          margin-bottom: 12px;
           font-size: 15px;
           min-height: 50px;
         }
 
-        .upload-section {
-          border-top: 1px solid #e5e7eb;
-          padding-top: 20px;
-        }
-
-        .upload-title {
-          margin-bottom: 10px;
-          color: #111827;
-          font-size: 17px;
-          font-weight: 700;
-        }
-
-        .upload-input {
+        .botao-azul {
           width: 100%;
-          margin-bottom: 16px;
-          font-size: 14px;
-        }
-
-        .botao-preto {
-          width: 100%;
-          background-color: #111827;
+          background-color: #2563eb;
           color: #ffffff;
+          border: none;
+          border-radius: 40px;
+          padding: 15px 18px;
+          font-weight: 700;
+          cursor: pointer;
+          margin-bottom: 12px;
+          font-size: 15px;
+          min-height: 50px;
+        }
+
+        .botao-cinza {
+          width: 100%;
+          background-color: #f3f4f6;
+          color: #374151;
           border: none;
           border-radius: 40px;
           padding: 15px 18px;
@@ -701,8 +723,8 @@ export default function PagamentoPIX() {
           min-height: 50px;
         }
 
-        .botao-preto:disabled {
-          background-color: #6b7280;
+        .botao-azul:disabled {
+          background-color: #93c5fd;
           cursor: not-allowed;
         }
 
@@ -736,16 +758,6 @@ export default function PagamentoPIX() {
           line-height: 1.4;
         }
 
-        .status-info {
-          background: #eff6ff;
-          color: #1d4ed8;
-          padding: 12px 14px;
-          border-radius: 16px;
-          font-size: 13px;
-          text-align: center;
-          margin-bottom: 18px;
-        }
-
         @media (max-width: 480px) {
           .pagamento-page {
             padding: 12px;
@@ -762,7 +774,7 @@ export default function PagamentoPIX() {
 
           .pagamento-subtitle {
             font-size: 14px;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
           }
 
           .pagamento-valor {
@@ -781,7 +793,8 @@ export default function PagamentoPIX() {
           }
 
           .botao-verde,
-          .botao-preto {
+          .botao-azul,
+          .botao-cinza {
             font-size: 14px;
             padding: 14px 16px;
             min-height: 52px;
@@ -801,7 +814,11 @@ export default function PagamentoPIX() {
             </p>
 
             <div className="status-info">
-              Assim que o PIX for confirmado pela PagHiper, esta tela será encerrada automaticamente.
+              Assim que a PagHiper confirmar o PIX, esta tela será encerrada automaticamente e sua reserva será atualizada.
+              <br />
+              <span className="status-pill">
+                Status: {statusPagamento || 'pendente'}
+              </span>
             </div>
 
             <div className="pagamento-valor-box">
@@ -843,32 +860,22 @@ export default function PagamentoPIX() {
               </div>
             )}
 
-            <div className="upload-section">
-              <h3 className="upload-title">
-                📎 Enviar comprovante
-              </h3>
+            <button
+              onClick={verificarAgora}
+              disabled={verificando}
+              className="botao-azul"
+            >
+              {verificando
+                ? 'Verificando...'
+                : '🔄 Já paguei, verificar agora'}
+            </button>
 
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                className="upload-input"
-                onChange={(event) =>
-                  setArquivo(
-                    event.target.files?.[0] || null
-                  )
-                }
-              />
-
-              <button
-                onClick={handleUpload}
-                disabled={enviando}
-                className="botao-preto"
-              >
-                {enviando
-                  ? 'Enviando...'
-                  : '📤 Enviar comprovante'}
-              </button>
-            </div>
+            <button
+              onClick={voltarParaReservas}
+              className="botao-cinza"
+            >
+              Voltar para Minhas Reservas
+            </button>
 
             {mensagem && (
               <div
