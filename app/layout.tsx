@@ -1,49 +1,93 @@
 // app/layout.tsx
-import type { Metadata } from 'next'
+
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap'
+})
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: true,
+  viewportFit: 'cover',
+  themeColor: '#dc2626'
+}
 
 export const metadata: Metadata = {
   title: 'PrussikTrails - Sua Aventura Começa Aqui',
-  description: 'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros em busca de experiências únicas na natureza.',
-  keywords: 'trilhas, aventura, ecoturismo, guia de montanha, trekking, natureza',
+  description:
+    'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros em busca de experiências únicas na natureza.',
+  keywords:
+    'trilhas, aventura, ecoturismo, guia de montanha, trekking, natureza, roteiros outdoor, rapel, expedições',
   authors: [{ name: 'PrussikTrails' }],
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: true,
-  },
-  themeColor: '#dc2626',
-  manifest: '/manifest.json',
+  creator: 'PrussikTrails',
+  publisher: 'PrussikTrails',
+
+  metadataBase: new URL('https://prussiktrails.vercel.app'),
+
+  manifest: '/manifest.webmanifest',
+
   icons: {
-    icon: '/favicon.ico',
-    apple: '/apple-icon.png',
+    icon: [
+      {
+        url: '/favicon.ico'
+      },
+      {
+        url: '/icon-192.png',
+        sizes: '192x192',
+        type: 'image/png'
+      },
+      {
+        url: '/icon-512.png',
+        sizes: '512x512',
+        type: 'image/png'
+      }
+    ],
+    apple: [
+      {
+        url: '/icon-192.png',
+        sizes: '192x192',
+        type: 'image/png'
+      }
+    ]
   },
+
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'PrussikTrails'
+  },
+
   openGraph: {
     title: 'PrussikTrails - Sua Aventura Começa Aqui',
-    description: 'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros.',
-    url: 'https://prussiktrails.com',
+    description:
+      'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros.',
+    url: 'https://prussiktrails.vercel.app',
     siteName: 'PrussikTrails',
     images: [
       {
         url: '/og-image.jpg',
         width: 1200,
         height: 630,
-        alt: 'PrussikTrails - Aventura na natureza',
-      },
+        alt: 'PrussikTrails - Aventura na natureza'
+      }
     ],
     locale: 'pt_BR',
-    type: 'website',
+    type: 'website'
   },
+
   twitter: {
     card: 'summary_large_image',
     title: 'PrussikTrails - Sua Aventura Começa Aqui',
     description: 'Plataforma de aventuras e trilhas',
-    images: ['/og-image.jpg'],
+    images: ['/og-image.jpg']
   },
+
   robots: {
     index: true,
     follow: true,
@@ -52,49 +96,72 @@ export const metadata: Metadata = {
       follow: true,
       'max-video-preview': -1,
       'max-image-preview': 'large',
-      'max-snippet': -1,
-    },
+      'max-snippet': -1
+    }
   },
+
+  other: {
+    'mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'apple-mobile-web-app-title': 'PrussikTrails',
+    'format-detection': 'telephone=no',
+    'msapplication-TileColor': '#dc2626',
+    'color-scheme': 'light'
+  }
 }
 
 export default function RootLayout({
-  children,
+  children
 }: {
   children: React.ReactNode
 }) {
   return (
     <html lang="pt-BR">
       <head>
-        {/* Meta tags para PWA */}
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="PrussikTrails" />
-        <meta name="format-detection" content="telephone=no" />
-        <meta name="msapplication-TileColor" content="#dc2626" />
-        
-        {/* Meta tags para redes sociais */}
+        <link rel="manifest" href="/manifest.webmanifest" />
+
+        <link rel="icon" href="/favicon.ico" />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="192x192"
+          href="/icon-192.png"
+        />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="512x512"
+          href="/icon-512.png"
+        />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="PrussikTrails" />
         <meta property="og:locale" content="pt_BR" />
-        
-        {/* Meta tags para mobile */}
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover" />
-        
-        {/* Pré-conexões para melhor performance */}
+
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link rel="dns-prefetch" href="https://your-project.supabase.co" />
-        
-        {/* Tema claro/escuro */}
-        <meta name="color-scheme" content="light" />
-        
-        {/* Favicons */}
-        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+
+        <link
+          rel="dns-prefetch"
+          href="https://ktlzltlrhnreqhprupvv.supabase.co"
+        />
       </head>
-      <body className={inter.className} style={{ margin: 0, padding: 0, minHeight: '100vh' }}>
+
+      <body
+        className={inter.className}
+        style={{
+          margin: 0,
+          padding: 0,
+          minHeight: '100vh',
+          backgroundColor: '#f3f4f6'
+        }}
+      >
         {children}
       </body>
     </html>
