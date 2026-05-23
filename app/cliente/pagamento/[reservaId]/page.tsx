@@ -254,7 +254,7 @@ export default function PagamentoPIX() {
     }
 
     if (pixRecebido) {
-      return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(
+      return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
         pixRecebido
       )}`
     }
@@ -347,7 +347,7 @@ export default function PagamentoPIX() {
 
       if (!imagemQr && !codigoPixRecebido) {
         setMensagem(
-          'Cobrança criada, mas o QR Code PIX não foi localizado na resposta da API. Copie a resposta do console "Resposta PagHiper no front" e me envie.'
+          'Cobrança criada, mas o QR Code PIX não foi localizado na resposta da API.'
         )
       }
 
@@ -444,35 +444,37 @@ export default function PagamentoPIX() {
 
   if (carregando) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#f3f4f6'
-        }}
-      >
+      <div className="pagamento-loading">
         <style jsx global>{`
           @keyframes spin {
             to {
               transform: rotate(360deg);
             }
           }
+
+          .pagamento-loading {
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f3f4f6;
+            padding: 20px;
+          }
+
+          .spinner-pix {
+            width: 50px;
+            height: 50px;
+            border-radius: 999px;
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #16a34a;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+          }
         `}</style>
 
         <div style={{ textAlign: 'center' }}>
-          <div
-            style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '50%',
-              border: '4px solid #e5e7eb',
-              borderTop: '4px solid #16a34a',
-              animation: 'spin 1s linear infinite',
-              margin: '0 auto 16px'
-            }}
-          />
+          <div className="spinner-pix" />
 
           <p style={{ color: '#6b7280' }}>
             Gerando PIX...
@@ -483,207 +485,298 @@ export default function PagamentoPIX() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: '#f3f4f6',
-        padding: '20px'
-      }}
-    >
-      <div
-        style={{
-          maxWidth: '500px',
-          margin: '0 auto'
-        }}
-      >
-        <div
-          style={{
-            backgroundColor: 'white',
-            borderRadius: '24px',
-            padding: '24px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.05)'
-          }}
-        >
-          <h1
-            style={{
-              fontSize: '24px',
-              fontWeight: 'bold',
-              marginBottom: '10px',
-              color: '#111827'
-            }}
-          >
-            💳 Pagamento PIX
-          </h1>
+    <>
+      <style jsx global>{`
+        .pagamento-page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background-color: #f3f4f6;
+          padding: 20px;
+        }
 
-          <p
-            style={{
-              color: '#6b7280',
-              marginBottom: '24px'
-            }}
-          >
-            {roteiroTitulo || 'Reserva PrussikTrails'}
-          </p>
+        .pagamento-container {
+          width: 100%;
+          max-width: 500px;
+          margin: 0 auto;
+        }
 
-          <div
-            style={{
-              textAlign: 'center',
-              marginBottom: '24px'
-            }}
-          >
-            <div
-              style={{
-                fontSize: '36px',
-                fontWeight: 'bold',
-                color: '#16a34a'
-              }}
-            >
-              R$ {valor.toFixed(2)}
-            </div>
-          </div>
+        .pagamento-card {
+          background-color: #ffffff;
+          border-radius: 24px;
+          padding: 24px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
 
-          {qrCode && (
-            <div
-              style={{
-                textAlign: 'center',
-                marginBottom: '24px'
-              }}
-            >
-              <img
-                src={qrCode}
-                alt="QR Code PIX"
-                style={{
-                  width: '250px',
-                  height: '250px',
-                  borderRadius: '20px',
-                  border: '1px solid #e5e7eb'
-                }}
-              />
-            </div>
-          )}
+        .pagamento-title {
+          font-size: 24px;
+          font-weight: 700;
+          margin-bottom: 10px;
+          color: #111827;
+          line-height: 1.2;
+        }
 
-          {codigoPix && (
-            <>
-              <div
-                style={{
-                  backgroundColor: '#f9fafb',
-                  borderRadius: '16px',
-                  padding: '14px',
-                  marginBottom: '16px',
-                  wordBreak: 'break-all',
-                  fontSize: '12px',
-                  color: '#374151'
-                }}
-              >
-                {codigoPix}
+        .pagamento-subtitle {
+          color: #6b7280;
+          margin-bottom: 24px;
+          font-size: 15px;
+          line-height: 1.4;
+        }
+
+        .pagamento-valor-box {
+          text-align: center;
+          margin-bottom: 24px;
+        }
+
+        .pagamento-valor {
+          font-size: 36px;
+          font-weight: 800;
+          color: #16a34a;
+          line-height: 1.1;
+        }
+
+        .qr-wrapper {
+          text-align: center;
+          margin-bottom: 24px;
+        }
+
+        .qr-image {
+          width: min(260px, 78vw);
+          height: min(260px, 78vw);
+          max-width: 100%;
+          border-radius: 20px;
+          border: 1px solid #e5e7eb;
+          object-fit: contain;
+          background: #ffffff;
+        }
+
+        .codigo-pix-box {
+          background-color: #f9fafb;
+          border-radius: 16px;
+          padding: 14px;
+          margin-bottom: 16px;
+          word-break: break-all;
+          overflow-wrap: anywhere;
+          font-size: 12px;
+          color: #374151;
+          max-height: 160px;
+          overflow-y: auto;
+          line-height: 1.45;
+        }
+
+        .botao-verde {
+          width: 100%;
+          background-color: #16a34a;
+          color: #ffffff;
+          border: none;
+          border-radius: 40px;
+          padding: 15px 18px;
+          font-weight: 700;
+          cursor: pointer;
+          margin-bottom: 24px;
+          font-size: 15px;
+          min-height: 50px;
+        }
+
+        .upload-section {
+          border-top: 1px solid #e5e7eb;
+          padding-top: 20px;
+        }
+
+        .upload-title {
+          margin-bottom: 10px;
+          color: #111827;
+          font-size: 17px;
+          font-weight: 700;
+        }
+
+        .upload-input {
+          width: 100%;
+          margin-bottom: 16px;
+          font-size: 14px;
+        }
+
+        .botao-preto {
+          width: 100%;
+          background-color: #111827;
+          color: #ffffff;
+          border: none;
+          border-radius: 40px;
+          padding: 15px 18px;
+          font-weight: 700;
+          cursor: pointer;
+          font-size: 15px;
+          min-height: 50px;
+        }
+
+        .botao-preto:disabled {
+          background-color: #6b7280;
+          cursor: not-allowed;
+        }
+
+        .mensagem-box {
+          margin-top: 20px;
+          padding: 14px;
+          border-radius: 16px;
+          text-align: center;
+          font-size: 13px;
+          line-height: 1.4;
+        }
+
+        .mensagem-sucesso {
+          background-color: #dcfce7;
+          color: #166534;
+        }
+
+        .mensagem-erro {
+          background-color: #fee2e2;
+          color: #991b1b;
+        }
+
+        .alerta-pix {
+          padding: 14px;
+          border-radius: 16px;
+          background-color: #fef3c7;
+          color: #92400e;
+          text-align: center;
+          margin-bottom: 20px;
+          font-size: 13px;
+          line-height: 1.4;
+        }
+
+        @media (max-width: 480px) {
+          .pagamento-page {
+            padding: 12px;
+          }
+
+          .pagamento-card {
+            border-radius: 20px;
+            padding: 18px;
+          }
+
+          .pagamento-title {
+            font-size: 22px;
+          }
+
+          .pagamento-subtitle {
+            font-size: 14px;
+            margin-bottom: 20px;
+          }
+
+          .pagamento-valor {
+            font-size: 32px;
+          }
+
+          .qr-image {
+            width: min(245px, 82vw);
+            height: min(245px, 82vw);
+            border-radius: 16px;
+          }
+
+          .codigo-pix-box {
+            font-size: 11px;
+            max-height: 130px;
+          }
+
+          .botao-verde,
+          .botao-preto {
+            font-size: 14px;
+            padding: 14px 16px;
+            min-height: 52px;
+          }
+        }
+      `}</style>
+
+      <div className="pagamento-page">
+        <div className="pagamento-container">
+          <div className="pagamento-card">
+            <h1 className="pagamento-title">
+              💳 Pagamento PIX
+            </h1>
+
+            <p className="pagamento-subtitle">
+              {roteiroTitulo || 'Reserva PrussikTrails'}
+            </p>
+
+            <div className="pagamento-valor-box">
+              <div className="pagamento-valor">
+                R$ {valor.toFixed(2)}
               </div>
+            </div>
+
+            {qrCode && (
+              <div className="qr-wrapper">
+                <img
+                  src={qrCode}
+                  alt="QR Code PIX"
+                  className="qr-image"
+                />
+              </div>
+            )}
+
+            {codigoPix && (
+              <>
+                <div className="codigo-pix-box">
+                  {codigoPix}
+                </div>
+
+                <button
+                  onClick={copiarCodigo}
+                  className="botao-verde"
+                >
+                  {copiado
+                    ? '✅ PIX copiado'
+                    : '📋 Copiar código PIX'}
+                </button>
+              </>
+            )}
+
+            {!qrCode && !codigoPix && !mensagem && (
+              <div className="alerta-pix">
+                Não foi possível carregar o QR Code PIX neste momento.
+              </div>
+            )}
+
+            <div className="upload-section">
+              <h3 className="upload-title">
+                📎 Enviar comprovante
+              </h3>
+
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                className="upload-input"
+                onChange={(e) =>
+                  setArquivo(
+                    e.target.files?.[0] || null
+                  )
+                }
+              />
 
               <button
-                onClick={copiarCodigo}
-                style={{
-                  width: '100%',
-                  backgroundColor: '#16a34a',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '40px',
-                  padding: '14px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  marginBottom: '24px'
-                }}
+                onClick={handleUpload}
+                disabled={enviando}
+                className="botao-preto"
               >
-                {copiado
-                  ? '✅ PIX Copiado'
-                  : '📋 Copiar Código PIX'}
+                {enviando
+                  ? 'Enviando...'
+                  : '📤 Enviar comprovante'}
               </button>
-            </>
-          )}
-
-          {!qrCode && !codigoPix && !mensagem && (
-            <div
-              style={{
-                padding: '14px',
-                borderRadius: '16px',
-                backgroundColor: '#fef3c7',
-                color: '#92400e',
-                textAlign: 'center',
-                marginBottom: '20px'
-              }}
-            >
-              Não foi possível carregar o QR Code PIX neste momento.
             </div>
-          )}
 
-          <div
-            style={{
-              borderTop: '1px solid #e5e7eb',
-              paddingTop: '20px'
-            }}
-          >
-            <h3
-              style={{
-                marginBottom: '10px',
-                color: '#111827'
-              }}
-            >
-              📎 Enviar comprovante
-            </h3>
-
-            <input
-              type="file"
-              accept="image/*,.pdf"
-              onChange={(e) =>
-                setArquivo(
-                  e.target.files?.[0] || null
-                )
-              }
-              style={{
-                marginBottom: '16px'
-              }}
-            />
-
-            <button
-              onClick={handleUpload}
-              disabled={enviando}
-              style={{
-                width: '100%',
-                backgroundColor: enviando ? '#6b7280' : '#111827',
-                color: 'white',
-                border: 'none',
-                borderRadius: '40px',
-                padding: '14px',
-                fontWeight: 'bold',
-                cursor: enviando ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {enviando
-                ? 'Enviando...'
-                : '📤 Enviar comprovante'}
-            </button>
+            {mensagem && (
+              <div
+                className={`mensagem-box ${
+                  mensagem.includes('✅')
+                    ? 'mensagem-sucesso'
+                    : 'mensagem-erro'
+                }`}
+              >
+                {mensagem}
+              </div>
+            )}
           </div>
-
-          {mensagem && (
-            <div
-              style={{
-                marginTop: '20px',
-                padding: '14px',
-                borderRadius: '16px',
-                backgroundColor:
-                  mensagem.includes('✅')
-                    ? '#dcfce7'
-                    : '#fee2e2',
-                color:
-                  mensagem.includes('✅')
-                    ? '#166534'
-                    : '#991b1b',
-                textAlign: 'center',
-                fontSize: '13px'
-              }}
-            >
-              {mensagem}
-            </div>
-          )}
         </div>
       </div>
-    </div>
+    </>
   )
 }
