@@ -1,424 +1,651 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
-export default function ListaRoteiros() {
-  const router = useRouter()
-  const [user, setUser] = useState<any>(null)
-  const [roteiros, setRoteiros] = useState<any[]>([])
-  const [carregando, setCarregando] = useState(true)
-  
-  // Filtros
-  const [busca, setBusca] = useState('')
-  const [localizacao, setLocalizacao] = useState('')
-  const [raioKm, setRaioKm] = useState(50)
-  const [kmMin, setKmMin] = useState(0)
-  const [kmMax, setKmMax] = useState(100)
-  const [dificuldade, setDificuldade] = useState('')
-  const [precoMin, setPrecoMin] = useState(0)
-  const [precoMax, setPrecoMax] = useState(1000)
-  
-  // Estado do usuário para geolocalização
-  const [userLat, setUserLat] = useState<number | null>(null)
-  const [userLng, setUserLng] = useState<number | null>(null)
-  const [usandoLocalizacao, setUsandoLocalizacao] = useState(false)
+type Recorrencia = 'unica' | 'semanal' | 'mensal' | 'anual'
 
-  // Função para calcular distância entre dois pontos (Haversine formula)
-  const calcularDistancia = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371
-    const dLat = (lat2 - lat1) * Math.PI / 180
-    const dLon = (lon2 - lon1) * Math.PI / 180
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2)
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-    return R * c
+type Roteiro = {
+  id: string
+  titulo: string
+  descricao?: string
+  preco?: number
+  duracao_horas?: number
+  km?: number
+  dificuldade?: string
+  localizacao?: string
+  foto_capa?: string | null
+  status?: string
+  ativo?: boolean | null
+  limite_pessoas?: number | null
+  recorrencia?: Recorrencia | string | null
+  renovar_automaticamente?: boolean | null
+  proxima_data?: string | null
+  embarque_data_hora?: string | null
+  retorno_data_hora?: string | null
+  vagas_ocupadas?: number
+  vagas_restantes?: number | null
+  data_disponivel?: string | null
+}
+
+export default function ClienteRoteirosPage() {
+  const router = useRouter()
+
+  const [roteiros, setRoteiros] = useState<Roteiro[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [mensagem, setMensagem] = useState('')
+  const [busca, setBusca] = useState('')
+  const [dificuldade, setDificuldade] = useState('todas')
+
+  useEffect(() => {
+    carregarRoteiros()
+  }, [])
+
+  const hojeInicio = () => {
+    const hoje = new Date()
+    hoje.setHours(0, 0, 0, 0)
+    return hoje
   }
 
-  // Obter localização do usuário
-  const obterLocalizacao = () => {
-    if (!navigator.geolocation) {
-      alert('Geolocalização não suportada pelo seu navegador')
-      return
+  const formatDateInput = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+
+    return `${year}-${month}-${day}`
+  }
+
+  const extrairDataBase = (roteiro: Roteiro) => {
+    const data =
+      roteiro.proxima_data ||
+      roteiro.embarque_data_hora ||
+      roteiro.retorno_data_hora ||
+      null
+
+    if (!data) return null
+
+    return String(data).slice(0, 10)
+  }
+
+  const calcularProximaDataValida = (roteiro: Roteiro) => {
+    const recorrencia = (roteiro.recorrencia || 'unica') as Recorrencia
+    const dataBase = extrairDataBase(roteiro)
+
+    if (!dataBase) return null
+
+    const hoje = hojeInicio()
+    const data = new Date(`${dataBase}T00:00:00`)
+
+    if (Number.isNaN(data.getTime())) return null
+
+    if (data >= hoje) {
+      return formatDateInput(data)
     }
-    setUsandoLocalizacao(true)
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserLat(position.coords.latitude)
-        setUserLng(position.coords.longitude)
-        setUsandoLocalizacao(false)
-        alert('📍 Localização obtida! Use o filtro de raio para buscar roteiros próximos.')
-      },
-      (error) => {
-        console.error('Erro ao obter localização:', error)
-        alert('Não foi possível obter sua localização. Verifique as permissões do navegador.')
-        setUsandoLocalizacao(false)
+
+    if (recorrencia === 'unica') {
+      return null
+    }
+
+    const proxima = new Date(data)
+
+    if (recorrencia === 'semanal') {
+      while (proxima < hoje) {
+        proxima.setDate(proxima.getDate() + 7)
       }
-    )
+    }
+
+    if (recorrencia === 'mensal') {
+      while (proxima < hoje) {
+        proxima.setMonth(proxima.getMonth() + 1)
+      }
+    }
+
+    if (recorrencia === 'anual') {
+      while (proxima < hoje) {
+        proxima.setFullYear(proxima.getFullYear() + 1)
+      }
+    }
+
+    return formatDateInput(proxima)
+  }
+
+  const carregarOcupacao = async (
+    roteiroId: string,
+    dataDisponivel: string | null
+  ) => {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('quantidade_pessoas, quantidade, status, data_trilha, data_reserva')
+      .eq('roteiro_id', roteiroId)
+
+    if (error) {
+      console.warn('Erro ao carregar ocupação:', error)
+      return 0
+    }
+
+    const reservasValidas = (data || []).filter((reserva) => {
+      if (reserva.status === 'cancelada') return false
+
+      if (!dataDisponivel) return true
+
+      const dataReserva =
+        reserva.data_trilha ||
+        reserva.data_reserva ||
+        null
+
+      if (!dataReserva) return true
+
+      return String(dataReserva).slice(0, 10) === dataDisponivel
+    })
+
+    return reservasValidas.reduce((total, reserva) => {
+      return total + Number(reserva.quantidade_pessoas || reserva.quantidade || 1)
+    }, 0)
   }
 
   const carregarRoteiros = async () => {
     setCarregando(true)
+    setMensagem('')
+
     try {
-      console.log('🔵 Iniciando carregamento de roteiros...')
-      
-      // Buscar roteiros
-      let query = supabase
+      const { data, error } = await supabase
         .from('roteiros')
         .select('*')
-        .eq('status', 'ativo')
-
-      if (busca) query = query.ilike('titulo', `%${busca}%`)
-      if (localizacao) query = query.ilike('localizacao', `%${localizacao}%`)
-      if (kmMin > 0) query = query.gte('km', kmMin)
-      if (kmMax < 100) query = query.lte('km', kmMax)
-      if (precoMin > 0) query = query.gte('preco', precoMin)
-      if (precoMax < 1000) query = query.lte('preco', precoMax)
-      if (dificuldade) query = query.eq('dificuldade', dificuldade)
-
-      const { data: roteirosData, error } = await query.order('created_at', { ascending: false })
+        .or('status.eq.ativo,status.is.null')
+        .order('created_at', { ascending: false })
 
       if (error) {
-        console.error('❌ Erro ao buscar roteiros:', error)
         throw error
       }
 
-      console.log('📊 Roteiros encontrados:', roteirosData?.length || 0)
+      const roteirosBase = (data || [])
+        .filter((roteiro) => roteiro.ativo !== false)
+        .map((roteiro) => {
+          const dataDisponivel = calcularProximaDataValida(roteiro)
 
-      // Buscar guias separadamente
-      const guiaIds = [...new Set(roteirosData?.map(r => r.id_guia).filter(Boolean) || [])]
-      let guiasMap = new Map()
-      
-      if (guiaIds.length > 0) {
-        const { data: guias } = await supabase
-          .from('users')
-          .select('id, nome, avatar_url')
-          .in('id', guiaIds)
-        
-        guias?.forEach(g => guiasMap.set(g.id, g))
-        console.log('👤 Guias encontrados:', guias?.length || 0)
-      }
-
-      // Combinar roteiros com guias
-      let roteirosCompletos = roteirosData?.map(roteiro => ({
-        ...roteiro,
-        guia: roteiro.id_guia ? guiasMap.get(roteiro.id_guia) : null
-      })) || []
-
-      // Filtro por distância (se tiver localização do usuário)
-      if (userLat && userLng && raioKm < 500) {
-        roteirosCompletos = roteirosCompletos.filter((roteiro: any) => {
-          if (!roteiro.latitude || !roteiro.longitude) return true
-          const distancia = calcularDistancia(userLat, userLng, roteiro.latitude, roteiro.longitude)
-          return distancia <= raioKm
+          return {
+            ...roteiro,
+            data_disponivel: dataDisponivel
+          }
         })
-        console.log('📍 Após filtro de distância:', roteirosCompletos.length)
-      }
+        .filter((roteiro) => Boolean(roteiro.data_disponivel))
 
-      setRoteiros(roteirosCompletos)
-    } catch (err) {
-      console.error('❌ Erro ao carregar roteiros:', err)
+      const comOcupacao = await Promise.all(
+        roteirosBase.map(async (roteiro) => {
+          const ocupadas = await carregarOcupacao(
+            roteiro.id,
+            roteiro.data_disponivel || null
+          )
+
+          const limite =
+            roteiro.limite_pessoas === null ||
+            roteiro.limite_pessoas === undefined
+              ? null
+              : Number(roteiro.limite_pessoas)
+
+          const restantes =
+            limite === null
+              ? null
+              : Math.max(limite - ocupadas, 0)
+
+          return {
+            ...roteiro,
+            vagas_ocupadas: ocupadas,
+            vagas_restantes: restantes
+          }
+        })
+      )
+
+      setRoteiros(comOcupacao)
+    } catch (error: any) {
+      console.error('Erro ao carregar roteiros:', error)
+      setMensagem(error?.message || 'Erro ao carregar roteiros disponíveis.')
+      setRoteiros([])
     } finally {
       setCarregando(false)
     }
   }
 
-  const limparFiltros = () => {
-    setBusca('')
-    setLocalizacao('')
-    setRaioKm(50)
-    setKmMin(0)
-    setKmMax(100)
-    setDificuldade('')
-    setPrecoMin(0)
-    setPrecoMax(1000)
-    setUserLat(null)
-    setUserLng(null)
+  const roteirosFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase()
+
+    return roteiros.filter((roteiro) => {
+      const bateBusca =
+        !termo ||
+        roteiro.titulo?.toLowerCase().includes(termo) ||
+        roteiro.localizacao?.toLowerCase().includes(termo) ||
+        roteiro.descricao?.toLowerCase().includes(termo)
+
+      const bateDificuldade =
+        dificuldade === 'todas' ||
+        roteiro.dificuldade === dificuldade
+
+      return bateBusca && bateDificuldade
+    })
+  }, [roteiros, busca, dificuldade])
+
+  const formatarMoeda = (valor?: number) => {
+    return Number(valor || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    })
   }
 
-  useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
-    }
-    const parsedUser = JSON.parse(userData)
-    if (parsedUser.tipo !== 'cliente') {
-      router.push('/')
-      return
-    }
-    setUser(parsedUser)
-    carregarRoteiros()
-  }, [busca, localizacao, raioKm, kmMin, kmMax, dificuldade, precoMin, precoMax, userLat, userLng])
+  const formatarData = (data?: string | null) => {
+    if (!data) return 'Data a definir'
 
-  const getDificuldadeCor = (dificuldade: string) => {
-    switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return '#10b981'
-      case 'médio': return '#f59e0b'
-      case 'difícil': return '#ef4444'
-      case 'extremo': return '#8b5cf6'
-      default: return '#6b7280'
-    }
+    const date = new Date(`${String(data).slice(0, 10)}T12:00:00`)
+
+    if (Number.isNaN(date.getTime())) return 'Data a definir'
+
+    return date.toLocaleDateString('pt-BR')
   }
 
-  const getDificuldadeIcone = (dificuldade: string) => {
-    switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return '🥾'
-      case 'médio': return '⛰️'
-      case 'difícil': return '🏔️'
-      case 'extremo': return '⚠️'
-      default: return '🥾'
+  const labelRecorrencia = (recorrencia?: string | null) => {
+    if (recorrencia === 'semanal') return 'Semanal'
+    if (recorrencia === 'mensal') return 'Mensal'
+    if (recorrencia === 'anual') return 'Anual'
+    return 'Única vez'
+  }
+
+  const labelVagas = (roteiro: Roteiro) => {
+    if (roteiro.limite_pessoas === null || roteiro.limite_pessoas === undefined) {
+      return 'Sem limite'
     }
+
+    const restantes = Number(roteiro.vagas_restantes || 0)
+
+    if (restantes <= 0) return 'Esgotado'
+
+    return `${restantes} vaga(s)`
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('user')
-    router.push('/login')
-  }
-
-  if (!user) {
+  if (carregando) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏔️</div>
-          <div style={{ color: '#6b7280' }}>Carregando...</div>
+      <div className="roteiros-loading">
+        <style jsx global>{`
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+
+          .roteiros-loading {
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f3f4f6;
+          }
+
+          .spinner {
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #dc2626;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+          }
+        `}</style>
+
+        <div style={{ textAlign: 'center', color: '#6b7280' }}>
+          <div className="spinner" />
+          Carregando roteiros...
         </div>
       </div>
     )
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
+    <>
       <style jsx global>{`
-        @media (min-width: 768px) {
-          .roteiros-container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
-          .filtros-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 16px !important; }
-          .filtros-avancados { flex-direction: row !important; flex-wrap: wrap !important; gap: 20px !important; }
-          .roteiros-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 24px !important; }
+        .roteiros-page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background: #f3f4f6;
+        }
+
+        .roteiros-header {
+          background: #ffffff;
+          border-bottom: 1px solid #e5e7eb;
+          padding: 14px 18px;
+          position: sticky;
+          top: 0;
+          z-index: 30;
+        }
+
+        .roteiros-header-inner {
+          max-width: 1180px;
+          margin: 0 auto;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .roteiros-main {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 22px 16px 48px;
+        }
+
+        .filters-card {
+          background: #ffffff;
+          border-radius: 22px;
+          padding: 18px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          margin-bottom: 18px;
+          display: grid;
+          grid-template-columns: 1fr 220px;
+          gap: 12px;
+        }
+
+        .filters-card input,
+        .filters-card select {
+          border: 1px solid #d1d5db;
+          border-radius: 14px;
+          padding: 12px 13px;
+          font-size: 14px;
+          outline: none;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 18px;
+        }
+
+        .roteiro-card {
+          background: #ffffff;
+          border-radius: 24px;
+          overflow: hidden;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          cursor: pointer;
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .roteiro-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 20px rgba(0,0,0,0.10);
+        }
+
+        .cover {
+          height: 180px;
+          background: #16a34a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 48px;
+          color: white;
+        }
+
+        .cover img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .card-body {
+          padding: 18px;
+        }
+
+        .badges {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin: 10px 0 14px;
+        }
+
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 5px 9px;
+          font-size: 11px;
+          font-weight: 800;
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .badge.green {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .badge.red {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+
+        .meta {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+          color: #6b7280;
+          font-size: 12px;
+          margin-bottom: 14px;
+        }
+
+        .price-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-top: 12px;
+        }
+
+        .btn {
+          border: none;
+          border-radius: 999px;
+          padding: 10px 14px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .btn-light {
+          background: #f3f4f6;
+          color: #374151;
+        }
+
+        .btn-red {
+          background: #dc2626;
+          color: #ffffff;
+        }
+
+        .empty {
+          background: white;
+          border-radius: 24px;
+          padding: 40px 20px;
+          text-align: center;
+          color: #6b7280;
+        }
+
+        .alert {
+          margin-bottom: 16px;
+          padding: 13px 14px;
+          border-radius: 14px;
+          background: #fee2e2;
+          color: #991b1b;
+          font-size: 13px;
+        }
+
+        @media (max-width: 940px) {
+          .grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 640px) {
+          .roteiros-header-inner {
+            align-items: flex-start;
+          }
+
+          .filters-card {
+            grid-template-columns: 1fr;
+          }
+
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .roteiros-main {
+            padding: 16px 12px 36px;
+          }
         }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Dashboard</button>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Sair</button>
+      <div className="roteiros-page">
+        <header className="roteiros-header">
+          <div className="roteiros-header-inner">
+            <div>
+              <h1 style={{ margin: 0, color: '#dc2626', fontSize: '21px' }}>
+                PrussikTrails
+              </h1>
+
+              <p style={{ margin: '3px 0 0', color: '#6b7280', fontSize: '12px' }}>
+                Roteiros disponíveis
+              </p>
+            </div>
+
+            <button
+              className="btn btn-light"
+              onClick={() => router.push('/cliente/dashboard')}
+            >
+              ← Voltar
+            </button>
           </div>
-        </div>
-      </div>
+        </header>
 
-      <div className="roteiros-container" style={{ padding: '16px' }}>
-        
-        {/* TÍTULO */}
-        <div style={{ marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 'bold', margin: 0, color: '#111827' }}>🌄 Explorar Roteiros</h2>
-          <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Descubra novas aventuras e trilhas incríveis</p>
-        </div>
+        <main className="roteiros-main">
+          <div style={{ marginBottom: '18px' }}>
+            <h2 style={{ margin: 0, color: '#111827', fontSize: '25px' }}>
+              🏔️ Explore roteiros
+            </h2>
 
-        {/* CARD DE FILTROS */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          
-          {/* LINHA 1 - Busca por nome */}
-          <input
-            type="text"
-            placeholder="🔍 Buscar roteiro por nome..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            style={{ width: '100%', padding: '10px 16px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '14px', outline: 'none', marginBottom: '16px' }}
-          />
+            <p style={{ color: '#6b7280', fontSize: '14px', marginTop: '6px' }}>
+              Escolha uma aventura com vagas disponíveis.
+            </p>
+          </div>
 
-          {/* LINHA 2 - Localização + Raio */}
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          {mensagem && <div className="alert">{mensagem}</div>}
+
+          <div className="filters-card">
             <input
-              type="text"
-              placeholder="📍 Cidade ou Estado (ex: São Paulo, RJ)..."
-              value={localizacao}
-              onChange={(e) => setLocalizacao(e.target.value)}
-              style={{ flex: 2, minWidth: '180px', padding: '10px 16px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '14px', outline: 'none' }}
+              value={busca}
+              onChange={(event) => setBusca(event.target.value)}
+              placeholder="Buscar por título, local ou descrição"
             />
-            
-            <div style={{ flex: 1, minWidth: '200px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <button
-                onClick={obterLocalizacao}
-                disabled={usandoLocalizacao}
-                style={{
-                  backgroundColor: userLat ? '#16a34a' : '#f3f4f6',
-                  color: userLat ? 'white' : '#374151',
-                  border: 'none',
-                  borderRadius: '40px',
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                📍 {userLat ? 'Ativa' : (usandoLocalizacao ? '...' : 'Usar localização')}
-              </button>
-              
-              {userLat && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', color: '#6b7280' }}>Raio:</span>
-                  <input
-                    type="range"
-                    min="5"
-                    max="200"
-                    value={raioKm}
-                    onChange={(e) => setRaioKm(Number(e.target.value))}
-                    style={{ width: '120px' }}
-                  />
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#16a34a' }}>{raioKm} km</span>
-                </div>
-              )}
-            </div>
-          </div>
 
-          {/* LINHA 3 - Filtros avançados */}
-          <div className="filtros-avancados" style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-            
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '35px' }}>🥾 KM:</span>
-              <input
-                type="number"
-                placeholder="Mín"
-                value={kmMin}
-                onChange={(e) => setKmMin(Number(e.target.value))}
-                style={{ width: '70px', padding: '8px 12px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '13px', textAlign: 'center' }}
-              />
-              <span>a</span>
-              <input
-                type="number"
-                placeholder="Máx"
-                value={kmMax}
-                onChange={(e) => setKmMax(Number(e.target.value))}
-                style={{ width: '70px', padding: '8px 12px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '13px', textAlign: 'center' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '35px' }}>💰 R$:</span>
-              <input
-                type="number"
-                placeholder="Mín"
-                value={precoMin}
-                onChange={(e) => setPrecoMin(Number(e.target.value))}
-                style={{ width: '80px', padding: '8px 12px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '13px', textAlign: 'center' }}
-              />
-              <span>a</span>
-              <input
-                type="number"
-                placeholder="Máx"
-                value={precoMax}
-                onChange={(e) => setPrecoMax(Number(e.target.value))}
-                style={{ width: '80px', padding: '8px 12px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '13px', textAlign: 'center' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '35px' }}>🏔️ Dificuldade:</span>
-              <select
-                value={dificuldade}
-                onChange={(e) => setDificuldade(e.target.value)}
-                style={{ padding: '8px 16px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '13px', backgroundColor: 'white', cursor: 'pointer' }}
-              >
-                <option value="">Todas</option>
-                <option value="fácil">🥾 Fácil</option>
-                <option value="médio">⛰️ Médio</option>
-                <option value="difícil">🏔️ Difícil</option>
-                <option value="extremo">⚠️ Extremo</option>
-              </select>
-            </div>
-          </div>
-
-          {/* BOTÕES */}
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            <button
-              onClick={limparFiltros}
-              style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontSize: '13px', color: '#374151' }}
+            <select
+              value={dificuldade}
+              onChange={(event) => setDificuldade(event.target.value)}
             >
-              🧹 Limpar filtros
-            </button>
-            <button
-              onClick={() => carregarRoteiros()}
-              style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 24px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
-            >
-              🔍 Buscar
-            </button>
+              <option value="todas">Todas as dificuldades</option>
+              <option value="facil">Fácil</option>
+              <option value="moderada">Moderada</option>
+              <option value="dificil">Difícil</option>
+              <option value="extrema">Extrema</option>
+            </select>
           </div>
-        </div>
 
-        {/* RESULTADOS */}
-        {carregando ? (
-          <div style={{ textAlign: 'center', padding: '48px' }}>
-            <div style={{ width: '40px', height: '40px', border: '3px solid #e5e7eb', borderTopColor: '#dc2626', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-            <p style={{ color: '#6b7280' }}>Carregando roteiros...</p>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          </div>
-        ) : roteiros.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px', backgroundColor: 'white', borderRadius: '20px' }}>
-            <span style={{ fontSize: '48px' }}>🗺️</span>
-            <p style={{ marginTop: '12px', color: '#6b7280' }}>Nenhum roteiro encontrado com os filtros selecionados.</p>
-            <button onClick={limparFiltros} style={{ marginTop: '16px', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 24px', cursor: 'pointer', fontSize: '13px' }}>Limpar filtros</button>
-          </div>
-        ) : (
-          <>
-            <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '12px' }}>📍 {roteiros.length} roteiro(s) encontrado(s)</p>
-            <div className="roteiros-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-              {roteiros.map((roteiro) => (
-                <div
-                  key={roteiro.id}
-                  onClick={() => router.push(`/roteiros/${roteiro.id}`)}
-                  style={{
-                    backgroundColor: 'white',
-                    borderRadius: '20px',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-4px)'
-                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)'
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'
-                  }}
-                >
-                  <div style={{ height: '140px', backgroundColor: '#e5e7eb', overflow: 'hidden', position: 'relative' }}>
-                    {roteiro.foto_capa ? (
-                      <img src={roteiro.foto_capa} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px' }}>🏔️</div>
-                    )}
-                    <div style={{ position: 'absolute', bottom: '8px', right: '8px', backgroundColor: 'rgba(0,0,0,0.7)', padding: '4px 10px', borderRadius: '20px', fontSize: '10px', color: 'white' }}>
-                      {getDificuldadeIcone(roteiro.dificuldade)} {roteiro.dificuldade}
+          {roteirosFiltrados.length === 0 ? (
+            <div className="empty">
+              <div style={{ fontSize: '46px', marginBottom: '10px' }}>
+                🧭
+              </div>
+
+              Nenhum roteiro disponível no momento.
+            </div>
+          ) : (
+            <div className="grid">
+              {roteirosFiltrados.map((roteiro) => {
+                const vagasTexto = labelVagas(roteiro)
+                const esgotado = vagasTexto === 'Esgotado'
+
+                return (
+                  <article
+                    key={roteiro.id}
+                    className="roteiro-card"
+                    onClick={() => router.push(`/roteiros/${roteiro.id}`)}
+                  >
+                    <div className="cover">
+                      {roteiro.foto_capa ? (
+                        <img
+                          src={roteiro.foto_capa}
+                          alt={roteiro.titulo}
+                          onError={(event) => {
+                            ;(event.currentTarget as HTMLImageElement).style.display = 'none'
+                          }}
+                        />
+                      ) : (
+                        <span>🏔️</span>
+                      )}
                     </div>
-                  </div>
-                  <div style={{ padding: '14px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '4px' }}>{roteiro.titulo}</div>
-                    <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '8px' }}>📍 {roteiro.localizacao}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'white' }}>
-                          {roteiro.guia?.nome?.charAt(0).toUpperCase() || 'G'}
-                        </div>
-                        <span style={{ fontSize: '10px', color: '#6b7280' }}>{roteiro.guia?.nome || 'Guia'}</span>
+
+                    <div className="card-body">
+                      <h3 style={{ margin: 0, fontSize: '17px', color: '#111827' }}>
+                        {roteiro.titulo}
+                      </h3>
+
+                      <p
+                        style={{
+                          margin: '8px 0 0',
+                          color: '#6b7280',
+                          fontSize: '13px',
+                          lineHeight: 1.45
+                        }}
+                      >
+                        {roteiro.localizacao || 'Local a definir'}
+                      </p>
+
+                      <div className="badges">
+                        <span className="badge green">
+                          📅 {formatarData(roteiro.data_disponivel)}
+                        </span>
+
+                        <span className="badge">
+                          🔁 {labelRecorrencia(roteiro.recorrencia)}
+                        </span>
+
+                        <span className={`badge ${esgotado ? 'red' : 'green'}`}>
+                          👥 {vagasTexto}
+                        </span>
                       </div>
-                      <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#16a34a' }}>R$ {roteiro.preco}</div>
+
+                      <div className="meta">
+                        <span>🥾 {roteiro.km || 0} km</span>
+                        <span>⏱️ {roteiro.duracao_horas || 0} h</span>
+                        <span>📌 {roteiro.dificuldade || 'Nível livre'}</span>
+                        <span>
+                          👤 {roteiro.limite_pessoas ? `Máx. ${roteiro.limite_pessoas}` : 'Sem limite'}
+                        </span>
+                      </div>
+
+                      <div className="price-row">
+                        <strong style={{ color: '#16a34a', fontSize: '18px' }}>
+                          {formatarMoeda(roteiro.preco)}
+                        </strong>
+
+                        <button
+                          className="btn btn-red"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            router.push(`/roteiros/${roteiro.id}`)
+                          }}
+                        >
+                          Ver detalhes
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  </article>
+                )
+              })}
             </div>
-          </>
-        )}
+          )}
+        </main>
       </div>
-    </div>
+    </>
   )
 }

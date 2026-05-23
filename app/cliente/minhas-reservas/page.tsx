@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+import { v4 as uuidv4 } from 'uuid'
 
 type ReservaCompleta = {
   id: string
@@ -21,6 +22,8 @@ type ReservaCompleta = {
   valor?: number
   status?: string
   pagamento_status?: string
+  comprovante_url?: string | null
+  comprovante_status?: string | null
   cliente_confirmou?: boolean
   guia_confirmou?: boolean
   roteiro?: any
@@ -36,6 +39,13 @@ export default function MinhasReservas() {
   const [reservas, setReservas] = useState<ReservaCompleta[]>([])
   const [carregando, setCarregando] = useState(true)
   const [mensagem, setMensagem] = useState('')
+
+  const [modalComprovanteAberto, setModalComprovanteAberto] = useState(false)
+  const [reservaSelecionada, setReservaSelecionada] =
+    useState<ReservaCompleta | null>(null)
+  const [arquivoComprovante, setArquivoComprovante] =
+    useState<File | null>(null)
+  const [enviandoComprovante, setEnviandoComprovante] = useState(false)
 
   useEffect(() => {
     if (carregouRef.current) return
@@ -304,6 +314,100 @@ export default function MinhasReservas() {
     }
   }
 
+  const abrirModalComprovante = (reserva: ReservaCompleta) => {
+    setReservaSelecionada(reserva)
+    setArquivoComprovante(null)
+    setMensagem('')
+    setModalComprovanteAberto(true)
+  }
+
+  const fecharModalComprovante = () => {
+    if (enviandoComprovante) return
+
+    setModalComprovanteAberto(false)
+    setReservaSelecionada(null)
+    setArquivoComprovante(null)
+  }
+
+  const enviarComprovante = async () => {
+    if (!reservaSelecionada) {
+      setMensagem('Reserva não selecionada.')
+      return
+    }
+
+    if (!arquivoComprovante) {
+      setMensagem('Selecione um arquivo de comprovante.')
+      return
+    }
+
+    setEnviandoComprovante(true)
+    setMensagem('')
+
+    try {
+      const fileExt =
+        arquivoComprovante.name.split('.').pop() || 'arquivo'
+
+      const fileName =
+        `${reservaSelecionada.id}_${uuidv4()}.${fileExt}`
+
+      const filePath =
+        `comprovantes/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('comprovantes')
+        .upload(filePath, arquivoComprovante, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        throw uploadError
+      }
+
+      const {
+        data: { publicUrl }
+      } = supabase.storage
+        .from('comprovantes')
+        .getPublicUrl(filePath)
+
+      const novoPagamentoStatus =
+        reservaSelecionada.pagamento_status === 'pago'
+          ? 'pago'
+          : 'aguardando_aprovacao'
+
+      const { error: updateError } = await supabase
+        .from('reservas')
+        .update({
+          comprovante_url: publicUrl,
+          comprovante_status: 'enviado',
+          pagamento_status: novoPagamentoStatus
+        })
+        .eq('id', reservaSelecionada.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      setMensagem('✅ Comprovante enviado com sucesso!')
+      setModalComprovanteAberto(false)
+      setReservaSelecionada(null)
+      setArquivoComprovante(null)
+
+      if (user) {
+        await carregarReservas(user)
+      }
+    } catch (error: any) {
+      console.error('Erro ao enviar comprovante:', error)
+
+      setMensagem(
+        error?.message ||
+        'Erro ao enviar comprovante. Verifique o bucket comprovantes no Supabase Storage.'
+      )
+    } finally {
+      setEnviandoComprovante(false)
+    }
+  }
+
   const getStatusBadge = (
     status?: string,
     pagamentoStatus?: string
@@ -334,9 +438,17 @@ export default function MinhasReservas() {
 
     if (pagamentoStatus === 'pago') {
       return {
-        text: '⏳ Aguardando confirmação',
-        bg: '#fef3c7',
-        color: '#d97706'
+        text: '✓ Pagamento confirmado',
+        bg: '#dcfce7',
+        color: '#16a34a'
+      }
+    }
+
+    if (pagamentoStatus === 'aguardando_aprovacao') {
+      return {
+        text: '⏳ Comprovante em análise',
+        bg: '#dbeafe',
+        color: '#1d4ed8'
       }
     }
 
@@ -368,6 +480,22 @@ export default function MinhasReservas() {
       text: '⏳ Pendente',
       bg: '#fef3c7',
       color: '#d97706'
+    }
+  }
+
+  const getComprovanteBadge = (reserva: ReservaCompleta) => {
+    if (reserva.comprovante_url) {
+      return {
+        text: '📎 Enviado',
+        bg: '#dbeafe',
+        color: '#1d4ed8'
+      }
+    }
+
+    return {
+      text: 'Sem comprovante',
+      bg: '#f3f4f6',
+      color: '#6b7280'
     }
   }
 
@@ -572,6 +700,17 @@ export default function MinhasReservas() {
           color: #374151;
         }
 
+        .btn-blue {
+          background-color: #2563eb;
+          color: #ffffff;
+        }
+
+        .btn-outline {
+          background-color: #ffffff;
+          color: #374151;
+          border: 1px solid #d1d5db;
+        }
+
         .mensagem {
           background: #fee2e2;
           color: #991b1b;
@@ -579,6 +718,63 @@ export default function MinhasReservas() {
           border-radius: 14px;
           margin-bottom: 16px;
           font-size: 13px;
+        }
+
+        .mensagem.sucesso {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(17, 24, 39, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          z-index: 100;
+        }
+
+        .modal-card {
+          width: 100%;
+          max-width: 460px;
+          background: #ffffff;
+          border-radius: 24px;
+          padding: 22px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+        }
+
+        .modal-title {
+          margin: 0 0 6px;
+          font-size: 21px;
+          color: #111827;
+          font-weight: 800;
+        }
+
+        .modal-subtitle {
+          margin: 0 0 18px;
+          font-size: 13px;
+          color: #6b7280;
+          line-height: 1.45;
+        }
+
+        .file-input {
+          width: 100%;
+          border: 1px dashed #d1d5db;
+          border-radius: 16px;
+          padding: 14px;
+          font-size: 13px;
+          background: #f9fafb;
+          margin-bottom: 16px;
+          box-sizing: border-box;
+        }
+
+        .modal-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+          flex-wrap: wrap;
         }
 
         @media (max-width: 760px) {
@@ -607,6 +803,14 @@ export default function MinhasReservas() {
             text-align: center;
             padding: 9px 12px;
           }
+
+          .modal-actions {
+            flex-direction: column-reverse;
+          }
+
+          .modal-actions .btn {
+            width: 100%;
+          }
         }
       `}</style>
 
@@ -622,7 +826,7 @@ export default function MinhasReservas() {
                   margin: 0
                 }}
               >
-                PussikTrails
+                PrussikTrails
               </h1>
 
               <p
@@ -688,12 +892,16 @@ export default function MinhasReservas() {
                 marginTop: '4px'
               }}
             >
-              Acompanhe suas aventuras
+              Acompanhe suas aventuras e envie comprovantes quando necessário.
             </p>
           </div>
 
           {mensagem && (
-            <div className="mensagem">
+            <div
+              className={`mensagem ${
+                mensagem.includes('✅') ? 'sucesso' : ''
+              }`}
+            >
               {mensagem}
             </div>
           )}
@@ -748,6 +956,7 @@ export default function MinhasReservas() {
                       <th style={{ textAlign: 'center' }}>Pessoas</th>
                       <th style={{ textAlign: 'center' }}>Valor</th>
                       <th style={{ textAlign: 'center' }}>Pagamento</th>
+                      <th style={{ textAlign: 'center' }}>Comprovante</th>
                       <th>Status</th>
                       <th style={{ textAlign: 'center' }}>Ações</th>
                     </tr>
@@ -764,6 +973,8 @@ export default function MinhasReservas() {
                         reserva.pagamento_status
                       )
 
+                      const comprovanteBadge = getComprovanteBadge(reserva)
+
                       const precisaPagar =
                         reserva.status === 'pendente' &&
                         reserva.pagamento_status !== 'pago'
@@ -771,6 +982,10 @@ export default function MinhasReservas() {
                       const podeCancelar =
                         reserva.status === 'pendente' ||
                         reserva.status === 'confirmada'
+
+                      const podeEnviarComprovante =
+                        reserva.status !== 'cancelada' &&
+                        reserva.pagamento_status !== 'pago'
 
                       return (
                         <tr key={reserva.id}>
@@ -813,6 +1028,18 @@ export default function MinhasReservas() {
                             </span>
                           </td>
 
+                          <td style={{ textAlign: 'center' }}>
+                            <span
+                              className="badge"
+                              style={{
+                                backgroundColor: comprovanteBadge.bg,
+                                color: comprovanteBadge.color
+                              }}
+                            >
+                              {comprovanteBadge.text}
+                            </span>
+                          </td>
+
                           <td>
                             <span
                               className="badge"
@@ -840,6 +1067,29 @@ export default function MinhasReservas() {
                                   className="btn btn-green"
                                 >
                                   💳 Pagar
+                                </button>
+                              )}
+
+                              {podeEnviarComprovante && (
+                                <button
+                                  onClick={() => abrirModalComprovante(reserva)}
+                                  className="btn btn-blue"
+                                >
+                                  📎 Comprovante
+                                </button>
+                              )}
+
+                              {reserva.comprovante_url && (
+                                <button
+                                  onClick={() =>
+                                    window.open(
+                                      reserva.comprovante_url || '',
+                                      '_blank'
+                                    )
+                                  }
+                                  className="btn btn-outline"
+                                >
+                                  Ver
                                 </button>
                               )}
 
@@ -871,6 +1121,8 @@ export default function MinhasReservas() {
                     reserva.pagamento_status
                   )
 
+                  const comprovanteBadge = getComprovanteBadge(reserva)
+
                   const precisaPagar =
                     reserva.status === 'pendente' &&
                     reserva.pagamento_status !== 'pago'
@@ -878,6 +1130,10 @@ export default function MinhasReservas() {
                   const podeCancelar =
                     reserva.status === 'pendente' ||
                     reserva.status === 'confirmada'
+
+                  const podeEnviarComprovante =
+                    reserva.status !== 'cancelada' &&
+                    reserva.pagamento_status !== 'pago'
 
                   return (
                     <div
@@ -960,6 +1216,16 @@ export default function MinhasReservas() {
                         <span
                           className="badge"
                           style={{
+                            backgroundColor: comprovanteBadge.bg,
+                            color: comprovanteBadge.color
+                          }}
+                        >
+                          {comprovanteBadge.text}
+                        </span>
+
+                        <span
+                          className="badge"
+                          style={{
                             backgroundColor: statusBadge.bg,
                             color: statusBadge.color
                           }}
@@ -971,7 +1237,8 @@ export default function MinhasReservas() {
                       <div
                         style={{
                           display: 'flex',
-                          gap: '8px'
+                          gap: '8px',
+                          flexWrap: 'wrap'
                         }}
                       >
                         {precisaPagar && (
@@ -981,6 +1248,31 @@ export default function MinhasReservas() {
                             style={{ flex: 1 }}
                           >
                             💳 Pagar
+                          </button>
+                        )}
+
+                        {podeEnviarComprovante && (
+                          <button
+                            onClick={() => abrirModalComprovante(reserva)}
+                            className="btn btn-blue"
+                            style={{ flex: 1 }}
+                          >
+                            📎 Comprovante
+                          </button>
+                        )}
+
+                        {reserva.comprovante_url && (
+                          <button
+                            onClick={() =>
+                              window.open(
+                                reserva.comprovante_url || '',
+                                '_blank'
+                              )
+                            }
+                            className="btn btn-outline"
+                            style={{ flex: 1 }}
+                          >
+                            Ver comprovante
                           </button>
                         )}
 
@@ -1002,6 +1294,55 @@ export default function MinhasReservas() {
           )}
         </div>
       </div>
+
+      {modalComprovanteAberto && reservaSelecionada && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <h3 className="modal-title">
+              Enviar comprovante
+            </h3>
+
+            <p className="modal-subtitle">
+              Reserva: <strong>{reservaSelecionada.roteiro_titulo}</strong>
+              <br />
+              Envie uma imagem ou PDF do comprovante de pagamento.
+            </p>
+
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              className="file-input"
+              onChange={(event) =>
+                setArquivoComprovante(
+                  event.target.files?.[0] || null
+                )
+              }
+            />
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-light"
+                onClick={fecharModalComprovante}
+                disabled={enviandoComprovante}
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-blue"
+                onClick={enviarComprovante}
+                disabled={enviandoComprovante}
+              >
+                {enviandoComprovante
+                  ? 'Enviando...'
+                  : '📎 Enviar comprovante'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
