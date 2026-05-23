@@ -1,52 +1,78 @@
-'use client'
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  setErro('')
+  setSucesso('')
+  setCarregando(true)
 
-import { RegisterForm } from '@/components/RegisterForm'
+  // Validações básicas
+  if (senha !== confirmarSenha) {
+    setErro('As senhas não conferem')
+    setCarregando(false)
+    return
+  }
 
-export default function CadastroPage() {
-  return (
-    <div style={{ 
-      minHeight: '100vh', 
-      backgroundColor: '#f3f4f6', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center',
-    }}>
-      <div style={{ 
-        maxWidth: '560px', 
-        margin: '0 auto', 
-        padding: '40px 24px', 
-        width: '100%', 
-        display: 'flex', 
-        justifyContent: 'center' 
-      }}>
-        <div style={{ 
-          backgroundColor: 'white', 
-          borderRadius: '28px', 
-          padding: '40px 32px', 
-          width: '100%',
-          boxShadow: '0 20px 40px -12px rgba(0,0,0,0.15)',
-        }}>
-          
-          {/* TÍTULO SIMPLES */}
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <h1 style={{ 
-              fontSize: '26px', 
-              fontWeight: 'bold', 
-              color: '#dc2626', 
-              margin: 0,
-              letterSpacing: '-0.5px'
-            }}>
-              Criar conta
-            </h1>
-            <p style={{ color: '#6b7280', marginTop: '6px', fontSize: '13px' }}>
-              e começar a sua jornada
-            </p>
-          </div>
+  const cpfLimpo = cpf.replace(/\D/g, '')
+  const celularLimpo = celular.replace(/\D/g, '')
+  const instagramLimpo = instagram.replace('@', '').trim()
 
-          {/* FORMULÁRIO */}
-          <RegisterForm />
-        </div>
-      </div>
-    </div>
-  )
+  // Dados base
+  const dadosBase = {
+    nome,
+    email,
+    celular: celularLimpo,
+    cpf: cpfLimpo,
+    senha,
+    tipo,
+    status: tipo === 'cliente' ? 'ativo' : 'pendente',
+    created_at: new Date().toISOString(),
+  }
+
+  // Dados específicos para guia
+  const dadosGuia = tipo === 'guia' ? {
+    instagram: instagramLimpo,
+    cadastur,
+    cnpj: cnpj.replace(/\D/g, ''),
+  } : {}
+
+  const dadosCompletos = { ...dadosBase, ...dadosGuia }
+
+  console.log('🔵 [REGISTER] Enviando dados:', JSON.stringify(dadosCompletos, null, 2))
+
+  try {
+    // Usar supabase normal (com as políticas RLS que criamos)
+    const { data, error } = await supabase
+      .from('users')
+      .insert([dadosCompletos])
+      .select()
+
+    if (error) {
+      console.error('❌ [REGISTER] Erro detalhado:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      })
+      
+      if (error.message.includes('duplicate key')) {
+        setErro('CPF, e-mail ou celular já cadastrado')
+      } else if (error.code === '42501') {
+        setErro('Erro de permissão. Contate o administrador.')
+      } else {
+        setErro(`Erro: ${error.message}`)
+      }
+      setCarregando(false)
+      return
+    }
+
+    console.log('✅ [REGISTER] Sucesso:', data)
+    setSucesso('Cadastro realizado com sucesso! Redirecionando para o login...')
+    setTimeout(() => {
+      router.push('/login')
+    }, 2000)
+
+  } catch (err: any) {
+    console.error('❌ [REGISTER] Exceção:', err)
+    setErro(err.message || 'Erro ao cadastrar')
+    setCarregando(false)
+  }
 }
