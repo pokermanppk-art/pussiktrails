@@ -23,120 +23,114 @@ export default function MinhasReservas() {
     }
     setUser(parsedUser)
     carregarReservas(parsedUser.id)
-  }, [router])
+  }, [])
 
   const carregarReservas = async (clienteId: string) => {
-    const { data, error } = await supabase
-      .from('reservas')
-      .select(`
-        *,
-        roteiro:roteiro_id (id, titulo, foto_capa, localizacao, id_guia, preco),
-        guia:roteiro_id (id_guia)
-      `)
-      .eq('cliente_id', clienteId)
-      .order('created_at', { ascending: false })
+    setCarregando(true)
+    try {
+      // Buscar reservas
+      const { data: reservasData, error: reservasError } = await supabase
+        .from('reservas')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .order('created_at', { ascending: false })
 
-    if (!error && data) {
-      const reservasCompleto = await Promise.all(
-        data.map(async (reserva) => {
-          const guiaId = reserva.roteiro?.id_guia
-          let guiaNome = 'Guia'
-          if (guiaId) {
-            const { data: guiaData } = await supabase
-              .from('users')
-              .select('nome')
-              .eq('id', guiaId)
-              .single()
-            if (guiaData) guiaNome = guiaData.nome
-          }
+      if (reservasError) throw reservasError
 
-          const { data: avaliacaoExistente } = await supabase
-            .from('avaliacoes')
-            .select('id')
-            .eq('reserva_id', reserva.id)
-            .maybeSingle()
+      if (!reservasData || reservasData.length === 0) {
+        setReservas([])
+        setCarregando(false)
+        return
+      }
 
-          return {
-            ...reserva,
-            guia_nome: guiaNome,
-            jaAvaliado: !!avaliacaoExistente,
-            preco_unitario: reserva.roteiro?.preco || 0
-          }
-        })
-      )
-      setReservas(reservasCompleto)
+      // Buscar roteiros relacionados
+      const roteiroIds = [...new Set(reservasData.map(r => r.roteiro_id).filter(Boolean))]
+      let roteirosMap: Record<string, any> = {}
+      
+      if (roteiroIds.length > 0) {
+        const { data: roteirosData } = await supabase
+          .from('roteiros')
+          .select('id, titulo, preco, id_guia')
+          .in('id', roteiroIds)
+        
+        if (roteirosData) {
+          roteirosMap = roteirosData.reduce((acc, roteiro) => {
+            acc[roteiro.id] = roteiro
+            return acc
+          }, {} as Record<string, any>)
+        }
+      }
+
+      // Buscar nomes dos guias
+      const guiaIds = [...new Set(Object.values(roteirosMap).map((r: any) => r?.id_guia).filter(Boolean))]
+      let guiasMap: Record<string, string> = {}
+      
+      if (guiaIds.length > 0) {
+        const { data: guiasData } = await supabase
+          .from('users')
+          .select('id, nome')
+          .in('id', guiaIds)
+        
+        if (guiasData) {
+          guiasMap = guiasData.reduce((acc, guia) => {
+            acc[guia.id] = guia.nome
+            return acc
+          }, {} as Record<string, string>)
+        }
+      }
+
+      // Montar reservas completas
+      const reservasCompletas = reservasData.map((reserva) => {
+        const roteiro = roteirosMap[reserva.roteiro_id]
+        const guiaNome = roteiro?.id_guia ? (guiasMap[roteiro.id_guia] || 'Guia') : 'Guia'
+        
+        return {
+          ...reserva,
+          roteiro: roteiro || null,
+          guia_nome: guiaNome,
+          roteiro_titulo: roteiro?.titulo || 'Roteiro não encontrado',
+          valor_total: reserva.valor_total || (roteiro?.preco * reserva.quantidade_pessoas) || 0
+        }
+      })
+
+      setReservas(reservasCompletas)
+    } catch (err) {
+      console.error('Erro ao carregar reservas:', err)
+      setReservas([])
+    } finally {
+      setCarregando(false)
     }
-    setCarregando(false)
   }
 
   const cancelarReserva = async (reservaId: string) => {
     if (!confirm('Tem certeza que deseja cancelar esta reserva?')) return
     
-    await supabase
+    const { error } = await supabase
       .from('reservas')
       .update({ status: 'cancelada' })
       .eq('id', reservaId)
     
-    const userData = localStorage.getItem('user')
-    if (userData) {
-      const user = JSON.parse(userData)
+    if (!error && user) {
       carregarReservas(user.id)
     }
   }
 
-  const confirmarRealizacao = async (reservaId: string) => {
-    await supabase
-      .from('reservas')
-      .update({ cliente_confirmou: true })
-      .eq('id', reservaId)
-
-    const { data: reserva } = await supabase
-      .from('reservas')
-      .select('guia_confirmou')
-      .eq('id', reservaId)
-      .single()
-
-    if (reserva?.guia_confirmou) {
-      await supabase
-        .from('reservas')
-        .update({ status: 'realizada' })
-        .eq('id', reservaId)
-    }
-
-    const userData = localStorage.getItem('user')
-    if (userData) {
-      const user = JSON.parse(userData)
-      carregarReservas(user.id)
-    }
-  }
-
-  const getStatusBadge = (status: string, clienteConfirmou: boolean, guiaConfirmou: boolean, jaAvaliado: boolean, pagamentoStatus?: string) => {
-    if (jaAvaliado) {
-      return { text: '✅ Concluída', bg: '#dcfce7', color: '#16a34a' }
-    }
-    
+  const getStatusBadge = (status: string, pagamentoStatus: string) => {
     if (status === 'realizada') return { text: '✓ Realizada', bg: '#e0e7ff', color: '#4f46e5' }
-    
-    if (status === 'confirmada') {
-      if (clienteConfirmou && guiaConfirmou) return { text: '⏳ Aguardando sua avaliação', bg: '#fef3c7', color: '#d97706' }
-      if (clienteConfirmou) return { text: '⏳ Aguardando confirmação do guia', bg: '#fef3c7', color: '#d97706' }
-      if (guiaConfirmou) return { text: '⏳ Aguardando sua confirmação', bg: '#fef3c7', color: '#d97706' }
-      return { text: '✓ Confirmada', bg: '#dcfce7', color: '#16a34a' }
-    }
-    
-    if (status === 'pendente') {
-      if (pagamentoStatus === 'pago') return { text: '⏳ Aguardando confirmação do guia', bg: '#fef3c7', color: '#d97706' }
-      return { text: '⏳ Aguardando pagamento', bg: '#fef3c7', color: '#d97706' }
-    }
-    
+    if (status === 'confirmada') return { text: '✓ Confirmada', bg: '#dcfce7', color: '#16a34a' }
     if (status === 'cancelada') return { text: '✗ Cancelada', bg: '#fee2e2', color: '#dc2626' }
-    return { text: status, bg: '#f3f4f6', color: '#6b7280' }
+    if (pagamentoStatus === 'pago') return { text: '⏳ Aguardando confirmação', bg: '#fef3c7', color: '#d97706' }
+    return { text: '⏳ Aguardando pagamento', bg: '#fef3c7', color: '#d97706' }
   }
 
   const getPagamentoBadge = (pagamentoStatus: string) => {
     return pagamentoStatus === 'pago'
       ? { text: '✅ Pago', bg: '#dcfce7', color: '#16a34a' }
       : { text: '⏳ Pendente', bg: '#fef3c7', color: '#d97706' }
+  }
+
+  const handlePagar = (reservaId: string) => {
+    router.push(`/cliente/pagamento/${reservaId}`)
   }
 
   const handleLogout = () => {
@@ -148,8 +142,9 @@ export default function MinhasReservas() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏔️</div>
-          <div style={{ color: '#6b7280' }}>Carregando suas reservas...</div>
+          <div style={{ width: '40px', height: '40px', border: '3px solid #e5e7eb', borderTopColor: '#16a34a', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 12px' }} />
+          <p style={{ color: '#6b7280' }}>Carregando suas reservas...</p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
     )
@@ -204,20 +199,22 @@ export default function MinhasReservas() {
                 </thead>
                 <tbody>
                   {reservas.map((reserva) => {
-                    const statusBadge = getStatusBadge(reserva.status, reserva.cliente_confirmou, reserva.guia_confirmou, reserva.jaAvaliado, reserva.pagamento_status)
+                    const statusBadge = getStatusBadge(reserva.status, reserva.pagamento_status)
                     const pagamentoBadge = getPagamentoBadge(reserva.pagamento_status)
                     const precisaPagar = reserva.status === 'pendente' && reserva.pagamento_status !== 'pago'
                     const podeCancelar = reserva.status === 'pendente' || reserva.status === 'confirmada'
                     
                     return (
                       <tr key={reserva.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                        <td style={{ padding: '12px', fontSize: '13px', fontWeight: '500', color: '#111827' }}>{reserva.roteiro?.titulo || '-'}</td>
+                        <td style={{ padding: '12px', fontSize: '13px', fontWeight: '500', color: '#111827' }}>{reserva.roteiro_titulo}</td>
                         <td style={{ padding: '12px', fontSize: '12px', color: '#6b7280' }}>{reserva.guia_nome}</td>
                         <td style={{ padding: '12px', fontSize: '12px', color: '#6b7280' }}>
-                          {reserva.data_trilha ? new Date(reserva.data_trilha).toLocaleDateString('pt-BR') : '-'}
+                          {reserva.data_trilha ? new Date(reserva.data_trilha).toLocaleDateString('pt-BR') : 'A definir'}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '12px', color: '#6b7280' }}>{reserva.quantidade_pessoas}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#16a34a' }}>R$ {reserva.valor_total?.toFixed(2)}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '12px', color: '#6b7280' }}>{reserva.quantidade_pessoas || 1}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#16a34a' }}>
+                          R$ {(reserva.valor_total || 0).toFixed(2)}
+                        </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           <span style={{
                             display: 'inline-block',
@@ -246,10 +243,9 @@ export default function MinhasReservas() {
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                            {/* Botão Pagar com PIX */}
                             {precisaPagar && (
                               <button
-                                onClick={() => router.push(`/cliente/pagamento/${reserva.id}`)}
+                                onClick={() => handlePagar(reserva.id)}
                                 style={{
                                   backgroundColor: '#16a34a',
                                   color: 'white',
@@ -264,8 +260,6 @@ export default function MinhasReservas() {
                                 💳 Pagar
                               </button>
                             )}
-                            
-                            {/* Botão Cancelar */}
                             {podeCancelar && (
                               <button
                                 onClick={() => cancelarReserva(reserva.id)}
@@ -281,46 +275,6 @@ export default function MinhasReservas() {
                               >
                                 Cancelar
                               </button>
-                            )}
-                            
-                            {/* Botão Confirmar Realização */}
-                            {reserva.status === 'confirmada' && !reserva.cliente_confirmou && (
-                              <button
-                                onClick={() => confirmarRealizacao(reserva.id)}
-                                style={{
-                                  backgroundColor: '#16a34a',
-                                  color: 'white',
-                                  padding: '5px 12px',
-                                  borderRadius: '20px',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontSize: '10px'
-                                }}
-                              >
-                                ✓ Confirmar
-                              </button>
-                            )}
-                            
-                            {/* Botão Avaliar */}
-                            {reserva.status === 'realizada' && !reserva.jaAvaliado && (
-                              <button
-                                onClick={() => router.push(`/cliente/avaliar/${reserva.id}`)}
-                                style={{
-                                  backgroundColor: '#16a34a',
-                                  color: 'white',
-                                  padding: '5px 12px',
-                                  borderRadius: '20px',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontSize: '10px'
-                                }}
-                              >
-                                ⭐ Avaliar
-                              </button>
-                            )}
-                            
-                            {reserva.jaAvaliado && (
-                              <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: '500' }}>✓ Avaliado</span>
                             )}
                           </div>
                         </td>
