@@ -1,60 +1,53 @@
 import { NextResponse } from 'next/server'
-
-// Dados mockados para teste (SUBSTITUA pelos dados reais do seu banco)
-const USUARIOS_MOCK = [
-  {
-    id: '1',
-    nome: 'Admin Teste',
-    email: 'admin@prussik.com',
-    cpf: '111.222.333-44',
-    senha: '123456',
-    tipo: 'admin',
-    status: 'ativo'
-  },
-  {
-    id: '2',
-    nome: 'Cliente Teste',
-    email: 'cliente@prussik.com',
-    cpf: '222.333.444-55',
-    senha: '123456',
-    tipo: 'cliente',
-    status: 'ativo'
-  },
-  {
-    id: '3',
-    nome: 'Guia Teste',
-    email: 'guia@prussik.com',
-    cpf: '333.444.555-66',
-    senha: '123456',
-    tipo: 'guia',
-    status: 'ativo'
-  }
-]
+import { supabase } from '@/lib/supabase/client'
 
 export async function POST(request: Request) {
   try {
     const { cpf, senha } = await request.json()
-    
-    // Busca usuário no mock
-    const user = USUARIOS_MOCK.find(u => u.cpf === cpf)
-    
+
+    const cpfLimpo = cpf.replace(/\D/g, '')
+
+    // Buscar usuário
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, nome, email, tipo, status, senha_hash, senha')
+      .eq('cpf', cpfLimpo)
+      .maybeSingle()
+
+    if (error) {
+      console.error('Erro:', error)
+      return NextResponse.json({ error: 'Erro ao buscar usuário' }, { status: 500 })
+    }
+
     if (!user) {
       return NextResponse.json({ error: 'CPF não encontrado' }, { status: 401 })
     }
-    
-    if (user.senha !== senha) {
-      return NextResponse.json({ error: 'Senha incorreta' }, { status: 401 })
-    }
-    
+
+    // Verifica status
     if (user.status !== 'ativo') {
       return NextResponse.json({ error: 'Usuário inativo' }, { status: 401 })
     }
+
+    // 🔓 VERIFICAÇÃO SIMPLES (apenas para teste)
+    // Tenta comparar com senha_hash primeiro, se não, com senha antiga
+    let senhaValida = false
     
-    // Retorna usuário sem a senha
-    const { senha: _, ...userSemSenha } = user
-    
+    if (user.senha_hash) {
+      // Se tiver bcrypt, usa (mas vamos pular por enquanto)
+      senhaValida = user.senha_hash === senha // apenas para teste!
+    } else if (user.senha) {
+      senhaValida = user.senha === senha
+    }
+
+    if (!senhaValida) {
+      return NextResponse.json({ error: 'Senha incorreta' }, { status: 401 })
+    }
+
+    const { senha_hash, senha: _, ...userSemSenha } = user
     return NextResponse.json({ user: userSemSenha })
+
   } catch (err) {
+    console.error('Erro:', err)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
