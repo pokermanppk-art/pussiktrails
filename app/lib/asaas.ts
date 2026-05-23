@@ -31,13 +31,15 @@ export interface AsaasPayment {
   status: 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED'
   dueDate: string
   description?: string
-  pixQrCode?: string
-  pixQrCodeImage?: string
   invoiceUrl?: string
 }
 
+export interface AsaasPixQrCode {
+  encodedImage: string
+  payload: string
+}
+
 export const asaas = {
-  // Clientes
   customers: {
     create: async (data: {
       name: string
@@ -53,9 +55,13 @@ export const asaas = {
       const response = await asaasClient.get(`/customers/${id}`)
       return response.data
     },
+    
+    list: async (params?: { cpfCnpj?: string }): Promise<{ data: AsaasCustomer[] }> => {
+      const response = await asaasClient.get('/customers', { params })
+      return response.data
+    },
   },
 
-  // Pagamentos PIX
   payments: {
     create: async (data: {
       customer: string
@@ -74,13 +80,12 @@ export const asaas = {
       return response.data
     },
 
-    getPixQrCode: async (paymentId: string): Promise<{ encodedImage: string; payload: string }> => {
+    getPixQrCode: async (paymentId: string): Promise<AsaasPixQrCode> => {
       const response = await asaasClient.get(`/payments/${paymentId}/pixQrCode`)
       return response.data
     },
   },
 
-  // Webhooks
   webhooks: {
     create: async (data: {
       name: string

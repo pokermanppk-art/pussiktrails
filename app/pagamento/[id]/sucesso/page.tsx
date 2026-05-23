@@ -1,17 +1,9 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
 
 export default function PagamentoSucesso() {
   const router = useRouter()
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      router.push('/cliente/minhas-reservas')
-    }, 5000)
-    return () => clearTimeout(timer)
-  }, [router])
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -21,7 +13,7 @@ export default function PagamentoSucesso() {
           Pagamento Confirmado!
         </h1>
         <p style={{ color: '#6b7280', marginBottom: '24px' }}>
-          Seu pagamento foi processado com sucesso. O guia será notificado para confirmar sua reserva.
+          Seu pagamento foi processado com sucesso.
         </p>
         <button
           onClick={() => router.push('/cliente/minhas-reservas')}

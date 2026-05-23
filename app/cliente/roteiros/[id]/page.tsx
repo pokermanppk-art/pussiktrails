@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { registrarAtividade } from '@/lib/logAtividade'
 
@@ -17,583 +17,465 @@ type Roteiro = {
   foto_capa: string | null
   galeria_fotos: string[]
   embarque_local: string
-  embarque_data_hora: string
+  embarque_data: string
   retorno_local: string
-  retorno_data_hora: string
+  retorno_data: string
   roteiro_detalhado?: string
   status: string
-  guia_id?: string
-  guia_nome?: string
-  guia_email?: string
-  guia_avatar?: string
-  guia_bio?: string
+  id_guia: string
 }
 
-export default function ClienteRoteiroDetalhe() {
-  const router = useRouter()
+type Guia = {
+  id: string
+  nome: string
+  email: string
+  avatar_url: string | null
+  bio: string | null
+  instagram: string | null
+}
+
+export default function DetalhesRoteiro() {
+
   const params = useParams()
+  const router = useRouter()
+
   const id = params.id as string
-  const [user, setUser] = useState<any>(null)
+
   const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
+  const [guia, setGuia] = useState<Guia | null>(null)
+
   const [carregando, setCarregando] = useState(true)
   const [reservando, setReservando] = useState(false)
+
   const [quantidadePessoas, setQuantidadePessoas] = useState(1)
+
   const [mensagem, setMensagem] = useState('')
+
   const [fotoSelecionada, setFotoSelecionada] = useState(0)
   const [todasFotos, setTodasFotos] = useState<string[]>([])
 
+  const [usuarioLogado, setUsuarioLogado] = useState<any>(null)
+
+  const [mostrarPix, setMostrarPix] = useState(false)
+
+  const [pixCode, setPixCode] = useState('')
+  const [pixQrCode, setPixQrCode] = useState('')
+
   useEffect(() => {
+
     const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
+
+    if (userData) {
+      setUsuarioLogado(JSON.parse(userData))
     }
-    const parsedUser = JSON.parse(userData)
-    if (parsedUser.tipo !== 'cliente') {
-      router.push('/login')
-      return
-    }
-    setUser(parsedUser)
+
     carregarRoteiro()
+
   }, [id])
 
   const carregarRoteiro = async () => {
+
     setCarregando(true)
+
     try {
-      const { data, error } = await supabase
+
+      const { data: roteiroData, error: roteiroError } = await supabase
         .from('roteiros')
         .select('*')
         .eq('id', id)
         .single()
 
-      if (error) throw error
+      if (roteiroError) throw roteiroError
 
-      if (data.status !== 'ativo') {
-        setMensagem('Este roteiro não está disponível no momento.')
-        setCarregando(false)
-        return
-      }
+      setRoteiro(roteiroData)
 
-      let guiaNome = 'Guia'
-      let guiaEmail = ''
-      let guiaAvatar = null
-      let guiaBio = null
+      const fotosArray: string[] = roteiroData.galeria_fotos || []
 
-      if (data.id_guia) {
-        const { data: guia } = await supabase
-          .from('users')
-          .select('nome, email, avatar_url, bio')
-          .eq('id', data.id_guia)
-          .single()
-        if (guia) {
-          guiaNome = guia.nome
-          guiaEmail = guia.email
-          guiaAvatar = guia.avatar_url
-          guiaBio = guia.bio
-        }
-      }
+      const fotosValidas = fotosArray.filter(
+        (foto: string) => foto && foto.trim() !== ''
+      )
 
-      const fotosArray: string[] = data.galeria_fotos || []
-      const fotosValidas = fotosArray.filter((foto: string) => foto && foto.trim() !== '')
-      
       let listaFotos: string[] = []
-      if (data.foto_capa) {
-        listaFotos.push(data.foto_capa)
+
+      if (roteiroData.foto_capa) {
+        listaFotos.push(roteiroData.foto_capa)
       }
-      listaFotos = [...listaFotos, ...fotosValidas.filter((f: string) => f !== data.foto_capa)]
-      
+
+      listaFotos = [
+        ...listaFotos,
+        ...fotosValidas.filter(
+          (f: string) => f !== roteiroData.foto_capa
+        )
+      ]
+
       setTodasFotos(listaFotos)
-      
-      setRoteiro({
-        ...data,
-        guia_nome: guiaNome,
-        guia_email: guiaEmail,
-        guia_id: data.id_guia,
-        guia_avatar: guiaAvatar,
-        guia_bio: guiaBio,
-        galeria_fotos: fotosValidas
-      })
+
+      if (roteiroData.id_guia) {
+
+        const { data: guiaData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', roteiroData.id_guia)
+          .single()
+
+        setGuia(guiaData)
+      }
+
     } catch (err) {
-      console.error('Erro ao carregar roteiro:', err)
-      setMensagem('Erro ao carregar roteiro.')
+
+      console.error(err)
+
     } finally {
+
       setCarregando(false)
     }
   }
 
   const handleReservar = async () => {
-    if (!user) {
+
+    if (!usuarioLogado) {
+
       router.push('/login')
       return
     }
 
     setReservando(true)
-    setMensagem('')
 
     try {
-      const dataTrilha = roteiro?.embarque_data_hora 
-        ? new Date(roteiro.embarque_data_hora).toISOString().split('T')[0]
-        : new Date().toISOString().split('T')[0]
 
-      const reservaData = {
-        cliente_id: user.id,
-        roteiro_id: roteiro?.id,
-        data_trilha: dataTrilha,
-        quantidade_pessoas: quantidadePessoas,
-        valor_total: (roteiro?.preco || 0) * quantidadePessoas,
-        status: 'pendente'
+      const valorTotal =
+        (roteiro?.preco || 0) * quantidadePessoas
+
+      // 1️⃣ CRIAR RESERVA
+
+      const { data: reserva, error: reservaError } =
+        await supabase
+          .from('reservas')
+          .insert({
+            cliente_id: usuarioLogado.id,
+            roteiro_id: roteiro?.id,
+            quantidade_pessoas: quantidadePessoas,
+            valor_total: valorTotal,
+            status: 'aguardando_pagamento',
+            status_pagamento: 'pendente'
+          })
+          .select()
+          .single()
+
+      if (reservaError) throw reservaError
+
+      // 2️⃣ GERAR PIX
+
+      const response = await fetch('/api/paghiper', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          amount: valorTotal,
+          email: usuarioLogado.email,
+          description: roteiro?.titulo,
+          reservationId: reserva.id
+        })
+      })
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.error)
       }
 
-      const { data: reserva, error } = await supabase
+      // 3️⃣ SALVAR PIX
+
+      await supabase
         .from('reservas')
-        .insert(reservaData)
-        .select()
+        .update({
+          transaction_id: data.transaction_id,
+          pix_code: data.qr_code_text,
+          pix_qrcode: data.qr_code_base64
+        })
+        .eq('id', reserva.id)
 
-      if (error) throw error
+      setPixCode(data.qr_code_text)
+      setPixQrCode(data.qr_code_base64)
 
-      const primeiroNome = user.nome?.split(' ')[0] || user.email?.split('@')[0] || 'Cliente'
+      setMostrarPix(true)
+
+      // LOG
+
+      const primeiroNome =
+        usuarioLogado.nome?.split(' ')[0] ||
+        usuarioLogado.email?.split('@')[0] ||
+        'Cliente'
+
       await registrarAtividade(
-        user.id,
+        usuarioLogado.id,
         'cliente',
         primeiroNome,
         'reservou',
-        `${primeiroNome} reservou o roteiro "${roteiro?.titulo}"`,
+        `${primeiroNome} iniciou pagamento PIX do roteiro "${roteiro?.titulo}"`,
         roteiro?.id
       )
 
-      setMensagem('✅ Reserva solicitada com sucesso! Aguardando confirmação.')
-      setTimeout(() => {
-        router.push('/cliente/minhas-reservas')
-      }, 2000)
     } catch (err: any) {
-      console.error('Erro ao reservar:', err)
-      setMensagem(`❌ Erro ao realizar reserva: ${err.message || 'Tente novamente.'}`)
+
+      setMensagem(
+        `❌ ${err.message || 'Erro ao gerar PIX'}`
+      )
+
     } finally {
+
       setReservando(false)
     }
   }
 
-  const formatarData = (dataHora: string) => {
-    if (!dataHora) return { data: 'Data não informada', hora: 'Horário não informado' }
-    try {
-      const data = new Date(dataHora)
-      if (isNaN(data.getTime())) {
-        return { data: 'Data não informada', hora: 'Horário não informado' }
-      }
-      return {
-        data: data.toLocaleDateString('pt-BR', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric'
-        }),
-        hora: data.toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit'
-        })
-      }
-    } catch {
-      return { data: 'Data não informada', hora: 'Horário não informado' }
-    }
-  }
-
-  const getDificuldadeIcone = (dificuldade: string) => {
-    switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return '🥾'
-      case 'médio': return '⛰️'
-      case 'difícil': return '🏔️'
-      case 'extremo': return '⚠️'
-      default: return '🥾'
-    }
-  }
-
-  const getDificuldadeCor = (dificuldade: string) => {
-    switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return '#10b981'
-      case 'médio': return '#f59e0b'
-      case 'difícil': return '#ef4444'
-      case 'extremo': return '#8b5cf6'
-      default: return '#6b7280'
-    }
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem('user')
-    router.push('/login')
-  }
-
   if (carregando) {
+
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: '48px', height: '48px', border: '3px solid #e5e7eb', borderTopColor: '#dc2626', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-          <p style={{ color: '#6b7280' }}>Carregando roteiro...</p>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}
+      >
+        Carregando...
       </div>
     )
   }
-
-  if (!roteiro) {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-        <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px' }}>
-          <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PrussikTrails</h1>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 16px', cursor: 'pointer' }}>Sair</button>
-          </div>
-        </div>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '64px 24px', textAlign: 'center' }}>
-          <div style={{ fontSize: '64px', marginBottom: '16px' }}>⚠️</div>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>Roteiro não encontrado</h2>
-          <p style={{ color: '#6b7280', marginBottom: '24px' }}>{mensagem || 'O roteiro que você procura não está disponível.'}</p>
-          <button onClick={() => router.push('/cliente/roteiros')} style={{ backgroundColor: '#dc2626', color: 'white', padding: '12px 24px', borderRadius: '40px', border: 'none', cursor: 'pointer', fontWeight: '500' }}>
-            ← Voltar para roteiros
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const embarque = formatarData(roteiro.embarque_data_hora)
-  const retorno = formatarData(roteiro.retorno_data_hora)
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      {/* CABEÇALHO PREMIUM */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PrussikTrails</h1>
-            <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>Detalhes da aventura</p>
-          </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', color: '#374151', fontWeight: '600', fontSize: '13px' }}>← Dashboard</button>
-            <button onClick={() => router.push('/cliente/perfil')} style={{ backgroundColor: '#111827', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Perfil</button>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '40px', padding: '8px 20px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Sair</button>
-          </div>
-        </div>
-      </div>
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundColor: '#f3f4f6',
+        padding: '20px'
+      }}
+    >
 
-      {/* CONTEÚDO PRINCIPAL */}
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px' }}>
-        {/* GALERIA DE FOTOS - TOPO ELEGANTE */}
-        <div style={{ marginBottom: '32px' }}>
-          {todasFotos.length > 0 ? (
-            <>
-              {/* Foto Principal - Destaque */}
-              <div style={{ 
-                borderRadius: '24px', 
-                overflow: 'hidden', 
-                height: '420px', 
-                position: 'relative', 
-                boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                marginBottom: '16px',
-                backgroundColor: '#1f2937'
-              }}>
-                <img 
-                  key={todasFotos[fotoSelecionada]} 
-                  src={todasFotos[fotoSelecionada]} 
-                  alt={roteiro.titulo} 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                />
-                <div style={{ 
-                  position: 'absolute', 
-                  bottom: '20px', 
-                  left: '20px', 
-                  backgroundColor: 'rgba(0,0,0,0.65)', 
-                  backdropFilter: 'blur(8px)',
-                  padding: '8px 20px', 
-                  borderRadius: '40px' 
-                }}>
-                  <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>
-                    {getDificuldadeIcone(roteiro.dificuldade)} {roteiro.dificuldade?.toUpperCase()}
-                  </span>
-                </div>
-                <div style={{ 
-                  position: 'absolute', 
-                  bottom: '20px', 
-                  right: '20px', 
-                  backgroundColor: 'rgba(0,0,0,0.65)', 
-                  backdropFilter: 'blur(8px)',
-                  padding: '6px 12px', 
-                  borderRadius: '20px',
-                  fontSize: '12px',
-                  color: 'white'
-                }}>
-                  {fotoSelecionada + 1} / {todasFotos.length}
-                </div>
-              </div>
+      <div
+        style={{
+          maxWidth: '1200px',
+          margin: '0 auto'
+        }}
+      >
 
-              {/* Miniaturas das fotos */}
-              {todasFotos.length > 1 && (
-                <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', justifyContent: 'center' }}>
-                  {todasFotos.map((foto: string, index: number) => (
-                    <button
-                      key={index}
-                      onClick={() => setFotoSelecionada(index)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: 0,
-                        borderRadius: '12px',
-                        overflow: 'hidden',
-                        flexShrink: 0,
-                        transition: 'all 0.2s ease',
-                        opacity: fotoSelecionada === index ? 1 : 0.6,
-                        transform: fotoSelecionada === index ? 'scale(1.02)' : 'scale(1)'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = '0.8'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = fotoSelecionada === index ? '1' : '0.6'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }}
-                    >
-                      <img 
-                        src={foto} 
-                        alt={`Foto ${index + 1}`} 
-                        style={{ 
-                          width: '100px', 
-                          height: '70px', 
-                          objectFit: 'cover',
-                          borderRadius: '12px',
-                          border: fotoSelecionada === index ? '2px solid #dc2626' : '2px solid transparent'
-                        }} 
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <div style={{ 
-              borderRadius: '24px', 
-              overflow: 'hidden', 
-              height: '320px', 
-              position: 'relative', 
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+        <h1
+          style={{
+            fontSize: '32px',
+            fontWeight: 'bold',
+            marginBottom: '10px'
+          }}
+        >
+          {roteiro?.titulo}
+        </h1>
+
+        <p
+          style={{
+            color: '#6b7280',
+            marginBottom: '20px'
+          }}
+        >
+          {roteiro?.descricao}
+        </p>
+
+        {/* RESERVA */}
+
+        <div
+          style={{
+            backgroundColor: 'white',
+            borderRadius: '24px',
+            padding: '24px',
+            maxWidth: '420px'
+          }}
+        >
+
+          <div
+            style={{
+              fontSize: '34px',
+              fontWeight: 'bold',
+              color: '#dc2626',
+              marginBottom: '20px'
+            }}
+          >
+            R$ {roteiro?.preco}
+          </div>
+
+          <div
+            style={{
+              marginBottom: '20px'
+            }}
+          >
+
+            <label>
+              Pessoas
+            </label>
+
+            <input
+              type="number"
+              min={1}
+              value={quantidadePessoas}
+              onChange={(e) =>
+                setQuantidadePessoas(
+                  Number(e.target.value)
+                )
+              }
+              style={{
+                width: '100%',
+                marginTop: '8px',
+                padding: '12px',
+                borderRadius: '12px',
+                border: '1px solid #d1d5db'
+              }}
+            />
+
+          </div>
+
+          <button
+            onClick={handleReservar}
+            disabled={reservando}
+            style={{
+              width: '100%',
               backgroundColor: '#dc2626',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: 'column'
-            }}>
-              <span style={{ fontSize: '64px' }}>🏔️</span>
-              <span style={{ color: 'white', fontSize: '20px', fontWeight: 'bold', marginTop: '16px' }}>{roteiro.titulo}</span>
-              <div style={{ 
-                position: 'absolute', 
-                bottom: '20px', 
-                left: '20px', 
-                backgroundColor: 'rgba(0,0,0,0.65)', 
-                padding: '8px 20px', 
-                borderRadius: '40px' 
-              }}>
-                <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>
-                  {getDificuldadeIcone(roteiro.dificuldade)} {roteiro.dificuldade?.toUpperCase()}
-                </span>
-              </div>
+              color: 'white',
+              padding: '16px',
+              borderRadius: '999px',
+              border: 'none',
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            {reservando
+              ? 'Gerando PIX...'
+              : '💳 Reservar via PIX'}
+          </button>
+
+          {mensagem && (
+
+            <div
+              style={{
+                marginTop: '16px',
+                backgroundColor: '#fee2e2',
+                color: '#dc2626',
+                padding: '12px',
+                borderRadius: '12px'
+              }}
+            >
+              {mensagem}
             </div>
+
           )}
+
         </div>
 
-        {/* Grid de 2 colunas */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '32px' }}>
-          {/* COLUNA ESQUERDA - INFORMAÇÕES */}
-          <div>
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#111827', margin: '0 0 12px 0' }}>{roteiro.titulo}</h1>
-              <p style={{ color: '#6b7280', fontSize: '14px', marginBottom: '16px', lineHeight: 1.6 }}>{roteiro.descricao}</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
-                <span style={{ fontSize: '20px' }}>📍</span>
-                <span style={{ color: '#374151', fontWeight: '500' }}>{roteiro.localizacao}</span>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Características da Trilha</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>🥾</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827' }}>{roteiro.km}</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>KM de trilha</div>
-                </div>
-                <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>⏱️</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827' }}>{roteiro.duracao_horas}</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>Horas de duração</div>
-                </div>
-                <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>{getDificuldadeIcone(roteiro.dificuldade)}</div>
-                  <div style={{ fontSize: '20px', fontWeight: 'bold', color: getDificuldadeCor(roteiro.dificuldade) }}>{roteiro.dificuldade}</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280' }}>Dificuldade</div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Logística da Aventura</h3>
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '20px' }}>📍</span>
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: '600', color: '#111827' }}>Ponto de Encontro</div>
-                    <div style={{ fontSize: '14px', color: '#374151' }}>{roteiro.embarque_local}</div>
-                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
-                      📅 {embarque.data} • ⏰ {embarque.hora}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '20px' }}>🏁</span>
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: '600', color: '#111827' }}>Ponto de Retorno</div>
-                    <div style={{ fontSize: '14px', color: '#374151' }}>{roteiro.retorno_local}</div>
-                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
-                      📅 {retorno.data} • ⏰ {retorno.hora}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {roteiro.roteiro_detalhado && (
-              <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>📋 Roteiro da Viagem</h3>
-                <div style={{ fontSize: '14px', color: '#4b5563', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {roteiro.roteiro_detalhado}
-                </div>
-              </div>
-            )}
-
-            {/* CARD DO GUIA - CORRIGIDO */}
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '20px' }}>Seu Guia</h3>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                  {roteiro.guia_avatar ? (
-                    <img src={roteiro.guia_avatar} alt={roteiro.guia_nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ fontSize: '28px', color: 'white' }}>{roteiro.guia_nome?.charAt(0).toUpperCase() || 'G'}</span>
-                  )}
-                </div>
-                <div>
-                  <button
-                    onClick={() => {
-                      if (roteiro?.guia_id) {
-                        router.push(`/guia/publico/${roteiro.guia_id}`)
-                      }
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: 0,
-                      textAlign: 'left'
-                    }}
-                  >
-                    <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#111827', textDecoration: 'underline', textDecorationColor: '#dc2626' }}>
-                      {roteiro.guia_nome || 'Guia'}
-                    </div>
-                  </button>
-                  <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>
-                    {roteiro.guia_bio || 'Guia experiente, pronto para te mostrar o melhor da trilha!'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* COLUNA DIREITA - RESERVA */}
-          <div style={{ position: 'sticky', top: '100px', alignSelf: 'start' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '28px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
-              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#dc2626' }}>
-                  R$ {roteiro.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-                <div style={{ fontSize: '13px', color: '#6b7280' }}>por pessoa</div>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#374151' }}>Número de pessoas</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#f9fafb', borderRadius: '40px', padding: '4px', border: '1px solid #e5e7eb' }}>
-                  <button
-                    type="button"
-                    onClick={() => setQuantidadePessoas(Math.max(1, quantidadePessoas - 1))}
-                    style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: '20px' }}
-                  >
-                    -
-                  </button>
-                  <span style={{ fontSize: '18px', fontWeight: '600', flex: 1, textAlign: 'center' }}>{quantidadePessoas}</span>
-                  <button
-                    type="button"
-                    onClick={() => setQuantidadePessoas(quantidadePessoas + 1)}
-                    style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', fontSize: '20px' }}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span style={{ color: '#6b7280' }}>Valor por pessoa</span>
-                  <span style={{ fontWeight: '500' }}>R$ {roteiro.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span style={{ color: '#6b7280' }}>Quantidade</span>
-                  <span style={{ fontWeight: '500' }}>{quantidadePessoas}x</span>
-                </div>
-                <div style={{ borderTop: '1px solid #e5e7eb', margin: '12px 0', paddingTop: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 'bold' }}>Total</span>
-                    <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626' }}>
-                      R$ {(roteiro.preco * quantidadePessoas).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {mensagem && (
-                <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '12px', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626', fontSize: '13px', textAlign: 'center' }}>
-                  {mensagem}
-                </div>
-              )}
-
-              <button
-                onClick={handleReservar}
-                disabled={reservando}
-                style={{
-                  width: '100%',
-                  backgroundColor: '#dc2626',
-                  color: 'white',
-                  padding: '16px',
-                  borderRadius: '40px',
-                  border: 'none',
-                  cursor: reservando ? 'not-allowed' : 'pointer',
-                  fontWeight: 'bold',
-                  fontSize: '16px',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseEnter={(e) => { if (!reservando) e.currentTarget.style.backgroundColor = '#b91c1c' }}
-                onMouseLeave={(e) => { if (!reservando) e.currentTarget.style.backgroundColor = '#dc2626' }}
-              >
-                {reservando ? 'Processando...' : '📌 Reservar Agora'}
-              </button>
-
-              <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '12px', color: '#9ca3af' }}>
-                <span>✅ Pagamento seguro</span> • <span>🔒 Cancelamento gratuito</span>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
+
+      {/* MODAL PIX */}
+
+      {mostrarPix && (
+
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 9999
+          }}
+        >
+
+          <div
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '24px',
+              padding: '32px',
+              width: '95%',
+              maxWidth: '420px',
+              textAlign: 'center'
+            }}
+          >
+
+            <h2
+              style={{
+                fontSize: '24px',
+                fontWeight: 'bold',
+                marginBottom: '20px'
+              }}
+            >
+              ✅ Pagamento PIX
+            </h2>
+
+            <img
+              src={`data:image/png;base64,${pixQrCode}`}
+              alt="PIX"
+              style={{
+                width: '240px',
+                margin: '0 auto 20px'
+              }}
+            />
+
+            <textarea
+              value={pixCode}
+              readOnly
+              style={{
+                width: '100%',
+                height: '120px',
+                borderRadius: '12px',
+                padding: '12px',
+                border: '1px solid #d1d5db',
+                fontSize: '12px'
+              }}
+            />
+
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(pixCode)
+                alert('PIX copiado!')
+              }}
+              style={{
+                width: '100%',
+                marginTop: '16px',
+                backgroundColor: '#16a34a',
+                color: 'white',
+                padding: '14px',
+                borderRadius: '999px',
+                border: 'none',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              📋 Copiar PIX
+            </button>
+
+            <button
+              onClick={() => {
+                setMostrarPix(false)
+                router.push('/cliente/minhas-reservas')
+              }}
+              style={{
+                width: '100%',
+                marginTop: '10px',
+                backgroundColor: '#111827',
+                color: 'white',
+                padding: '14px',
+                borderRadius: '999px',
+                border: 'none',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              Fechar
+            </button>
+
+          </div>
+
+        </div>
+
+      )}
+
     </div>
   )
 }
