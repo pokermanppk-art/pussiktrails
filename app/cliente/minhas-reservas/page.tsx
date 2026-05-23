@@ -42,6 +42,7 @@ export default function MinhasReservas() {
   const [reservas, setReservas] = useState<ReservaCompleta[]>([])
   const [carregando, setCarregando] = useState(true)
   const [mensagem, setMensagem] = useState('')
+  const [menuAbertoId, setMenuAbertoId] = useState<string | null>(null)
 
   const [modalComprovanteAberto, setModalComprovanteAberto] = useState(false)
   const [reservaSelecionada, setReservaSelecionada] =
@@ -298,19 +299,39 @@ export default function MinhasReservas() {
     }
   }
 
-  const cancelarReserva = async (reservaId: string) => {
-    if (!confirm('Tem certeza que deseja cancelar esta reserva?')) return
+  const podeCancelarReserva = (reserva: ReservaCompleta) => {
+    if (reserva.status === 'cancelada') return false
+    if (reserva.status === 'realizada') return false
+
+    return (
+      reserva.status === 'pendente' ||
+      reserva.status === 'confirmada'
+    )
+  }
+
+  const cancelarReserva = async (reserva: ReservaCompleta) => {
+    const confirmacao = prompt(
+      'Atenção: esta ação cancelará a reserva. Para confirmar, digite CANCELAR.'
+    )
+
+    if (confirmacao !== 'CANCELAR') {
+      setMensagem('Cancelamento não realizado.')
+      return
+    }
 
     const { error } = await supabase
       .from('reservas')
       .update({ status: 'cancelada' })
-      .eq('id', reservaId)
+      .eq('id', reserva.id)
 
     if (error) {
       console.error('Erro ao cancelar reserva:', error)
       setMensagem('Erro ao cancelar reserva.')
       return
     }
+
+    setMenuAbertoId(null)
+    setMensagem('Reserva cancelada com sucesso.')
 
     if (user) {
       await carregarReservas(user)
@@ -492,54 +513,6 @@ export default function MinhasReservas() {
       text: '⏳ Pendente',
       bg: '#fef3c7',
       color: '#d97706'
-    }
-  }
-
-  const getComprovanteBadge = (reserva: ReservaCompleta) => {
-    if (reserva.comprovante_origem === 'paghiper') {
-      return {
-        text: 'PagHiper',
-        bg: '#dcfce7',
-        color: '#166534'
-      }
-    }
-
-    if (reserva.comprovante_status === 'paghiper_confirmado') {
-      return {
-        text: 'PagHiper',
-        bg: '#dcfce7',
-        color: '#166534'
-      }
-    }
-
-    if (reserva.comprovante_status === 'aprovado') {
-      return {
-        text: 'Aprovado',
-        bg: '#dcfce7',
-        color: '#166534'
-      }
-    }
-
-    if (reserva.comprovante_status === 'reprovado') {
-      return {
-        text: 'Reprovado',
-        bg: '#fee2e2',
-        color: '#991b1b'
-      }
-    }
-
-    if (reserva.comprovante_url || reserva.comprovante_status === 'enviado') {
-      return {
-        text: '📎 Enviado',
-        bg: '#dbeafe',
-        color: '#1d4ed8'
-      }
-    }
-
-    return {
-      text: 'Sem comprovante',
-      bg: '#f3f4f6',
-      color: '#6b7280'
     }
   }
 
@@ -736,6 +709,12 @@ export default function MinhasReservas() {
         .btn-red {
           background-color: #dc2626;
           color: #ffffff;
+        }
+
+        .btn-red-outline {
+          background-color: #fff5f5;
+          color: #dc2626;
+          border: 1px solid #fecaca;
         }
 
         .btn-dark {
@@ -945,7 +924,7 @@ export default function MinhasReservas() {
                 marginTop: '4px'
               }}
             >
-              Acompanhe suas aventuras, pagamentos, comprovantes e chat com o guia.
+              Acompanhe suas aventuras, pagamentos e chat com o guia.
             </p>
           </div>
 
@@ -1009,7 +988,6 @@ export default function MinhasReservas() {
                       <th style={{ textAlign: 'center' }}>Pessoas</th>
                       <th style={{ textAlign: 'center' }}>Valor</th>
                       <th style={{ textAlign: 'center' }}>Pagamento</th>
-                      <th style={{ textAlign: 'center' }}>Comprovante</th>
                       <th>Status</th>
                       <th style={{ textAlign: 'center' }}>Ações</th>
                     </tr>
@@ -1026,19 +1004,16 @@ export default function MinhasReservas() {
                         reserva.pagamento_status
                       )
 
-                      const comprovanteBadge = getComprovanteBadge(reserva)
-
                       const precisaPagar =
                         reserva.status !== 'cancelada' &&
                         reserva.pagamento_status !== 'pago'
 
-                      const podeCancelar =
-                        reserva.status === 'pendente' ||
-                        reserva.status === 'confirmada'
-
                       const podeEnviarComprovante =
                         reserva.status !== 'cancelada' &&
                         reserva.pagamento_status !== 'pago'
+
+                      const podeCancelar =
+                        podeCancelarReserva(reserva)
 
                       return (
                         <tr key={reserva.id}>
@@ -1078,18 +1053,6 @@ export default function MinhasReservas() {
                               }}
                             >
                               {pagamentoBadge.text}
-                            </span>
-                          </td>
-
-                          <td style={{ textAlign: 'center' }}>
-                            <span
-                              className="badge"
-                              style={{
-                                backgroundColor: comprovanteBadge.bg,
-                                color: comprovanteBadge.color
-                              }}
-                            >
-                              {comprovanteBadge.text}
                             </span>
                           </td>
 
@@ -1151,16 +1114,31 @@ export default function MinhasReservas() {
                                   }
                                   className="btn btn-outline"
                                 >
-                                  Ver
+                                  Ver comprovante
                                 </button>
                               )}
 
                               {podeCancelar && (
                                 <button
-                                  onClick={() => cancelarReserva(reserva.id)}
-                                  className="btn btn-red"
+                                  onClick={() =>
+                                    setMenuAbertoId(
+                                      menuAbertoId === reserva.id
+                                        ? null
+                                        : reserva.id
+                                    )
+                                  }
+                                  className="btn btn-light"
                                 >
-                                  Cancelar
+                                  Mais opções
+                                </button>
+                              )}
+
+                              {podeCancelar && menuAbertoId === reserva.id && (
+                                <button
+                                  onClick={() => cancelarReserva(reserva)}
+                                  className="btn btn-red-outline"
+                                >
+                                  Cancelar reserva
                                 </button>
                               )}
                             </div>
@@ -1183,19 +1161,16 @@ export default function MinhasReservas() {
                     reserva.pagamento_status
                   )
 
-                  const comprovanteBadge = getComprovanteBadge(reserva)
-
                   const precisaPagar =
                     reserva.status !== 'cancelada' &&
                     reserva.pagamento_status !== 'pago'
 
-                  const podeCancelar =
-                    reserva.status === 'pendente' ||
-                    reserva.status === 'confirmada'
-
                   const podeEnviarComprovante =
                     reserva.status !== 'cancelada' &&
                     reserva.pagamento_status !== 'pago'
+
+                  const podeCancelar =
+                    podeCancelarReserva(reserva)
 
                   return (
                     <div
@@ -1278,16 +1253,6 @@ export default function MinhasReservas() {
                         <span
                           className="badge"
                           style={{
-                            backgroundColor: comprovanteBadge.bg,
-                            color: comprovanteBadge.color
-                          }}
-                        >
-                          {comprovanteBadge.text}
-                        </span>
-
-                        <span
-                          className="badge"
-                          style={{
                             backgroundColor: statusBadge.bg,
                             color: statusBadge.color
                           }}
@@ -1350,11 +1315,27 @@ export default function MinhasReservas() {
 
                         {podeCancelar && (
                           <button
-                            onClick={() => cancelarReserva(reserva.id)}
-                            className="btn btn-red"
+                            onClick={() =>
+                              setMenuAbertoId(
+                                menuAbertoId === reserva.id
+                                  ? null
+                                  : reserva.id
+                              )
+                            }
+                            className="btn btn-light"
                             style={{ flex: 1 }}
                           >
-                            Cancelar
+                            Mais opções
+                          </button>
+                        )}
+
+                        {podeCancelar && menuAbertoId === reserva.id && (
+                          <button
+                            onClick={() => cancelarReserva(reserva)}
+                            className="btn btn-red-outline"
+                            style={{ flex: 1 }}
+                          >
+                            Cancelar reserva
                           </button>
                         )}
                       </div>
