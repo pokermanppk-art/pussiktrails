@@ -62,7 +62,6 @@ export default function MinhasReservas() {
 
       setUser(parsedUser)
       await carregarReservas(parsedUser)
-
     } catch (error) {
       console.error('Erro ao iniciar minhas reservas:', error)
       setMensagem('Erro ao carregar usuário. Faça login novamente.')
@@ -272,7 +271,6 @@ export default function MinhasReservas() {
       )
 
       setReservas(reservasCompletas)
-
     } catch (err: any) {
       console.error('Erro ao carregar reservas:', err)
 
@@ -282,7 +280,6 @@ export default function MinhasReservas() {
       )
 
       setReservas([])
-
     } finally {
       setCarregando(false)
     }
