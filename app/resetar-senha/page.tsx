@@ -1,271 +1,397 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import { supabase } from '@/lib/supabase/client'
-import bcrypt from 'bcryptjs'
 
-export default function ResetarSenha() {
+function ResetarSenhaContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const token = searchParams.get('token')
 
+  const [email, setEmail] = useState('')
   const [novaSenha, setNovaSenha] = useState('')
   const [confirmarSenha, setConfirmarSenha] = useState('')
+  const [token, setToken] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [mensagem, setMensagem] = useState('')
-  const [erro, setErro] = useState('')
-  const [tokenValido, setTokenValido] = useState(false)
-  const [verificando, setVerificando] = useState(true)
+  const [sucesso, setSucesso] = useState(false)
 
-  // Verificar se o token é válido
   useEffect(() => {
-    const verificarToken = async () => {
-      if (!token) {
-        setErro('Token não fornecido')
-        setVerificando(false)
-        return
-      }
+    const tokenUrl =
+      searchParams.get('token') ||
+      searchParams.get('code') ||
+      ''
 
-      const { data, error } = await supabase
-        .from('password_resets')
-        .select('usuario_id, expira_em, usado')
-        .eq('token', token)
-        .single()
+    const emailUrl =
+      searchParams.get('email') ||
+      ''
 
-      if (error || !data) {
-        setErro('Token inválido ou expirado')
-        setVerificando(false)
-        return
-      }
-
-      if (data.usado) {
-        setErro('Este token já foi utilizado. Solicite uma nova recuperação.')
-        setVerificando(false)
-        return
-      }
-
-      const agora = new Date()
-      const expira = new Date(data.expira_em)
-      if (agora > expira) {
-        setErro('Token expirado. Solicite uma nova recuperação.')
-        setVerificando(false)
-        return
-      }
-
-      setTokenValido(true)
-      setVerificando(false)
+    if (tokenUrl) {
+      setToken(tokenUrl)
     }
 
-    verificarToken()
-  }, [token])
+    if (emailUrl) {
+      setEmail(emailUrl)
+    }
+  }, [searchParams])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
+  const validarFormulario = () => {
+    if (!email.trim()) {
+      setMensagem('Informe o e-mail cadastrado.')
+      return false
+    }
+
+    if (!novaSenha.trim()) {
+      setMensagem('Informe a nova senha.')
+      return false
+    }
+
     if (novaSenha.length < 6) {
-      setErro('A senha deve ter pelo menos 6 caracteres')
-      return
+      setMensagem('A senha deve ter pelo menos 6 caracteres.')
+      return false
     }
 
     if (novaSenha !== confirmarSenha) {
-      setErro('As senhas não coincidem')
-      return
+      setMensagem('As senhas não conferem.')
+      return false
     }
 
-    setCarregando(true)
-    setErro('')
+    return true
+  }
+
+  const handleResetarSenha = async (event: React.FormEvent) => {
+    event.preventDefault()
+
     setMensagem('')
+    setSucesso(false)
+
+    if (!validarFormulario()) return
+
+    setCarregando(true)
 
     try {
-      // Buscar o reset para obter o usuario_id
-      const { data: resetData, error: resetError } = await supabase
-        .from('password_resets')
-        .select('usuario_id')
-        .eq('token', token)
-        .single()
+      const response = await fetch('/api/resetar-senha', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email,
+          novaSenha,
+          token
+        })
+      })
 
-      if (resetError) {
-        throw new Error('Token inválido')
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message ||
+          data?.error ||
+          'Erro ao resetar senha.'
+        )
       }
 
-      // 🔐 Gerar hash da nova senha
-      const salt = await bcrypt.genSalt(10)
-      const senhaHash = await bcrypt.hash(novaSenha, salt)
+      setSucesso(true)
+      setMensagem('Senha alterada com sucesso. Você já pode fazer login.')
 
-      // Atualizar a senha do usuário (agora usando senha_hash)
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ senha_hash: senhaHash })
-        .eq('id', resetData.usuario_id)
+      setTimeout(() => {
+        router.push('/login')
+      }, 1800)
 
-      if (updateError) {
-        throw new Error('Erro ao atualizar senha')
-      }
+    } catch (error: any) {
+      console.error('Erro ao resetar senha:', error)
 
-      // Marcar token como usado
-      await supabase
-        .from('password_resets')
-        .update({ usado: true })
-        .eq('token', token)
+      setMensagem(
+        error?.message ||
+        'Não foi possível resetar a senha. Tente novamente.'
+      )
 
-      setMensagem('✅ Senha alterada com sucesso! Redirecionando para o login...')
-      setTimeout(() => router.push('/login'), 3000)
-    } catch (err: any) {
-      setErro(err.message || 'Erro ao redefinir senha')
     } finally {
       setCarregando(false)
     }
   }
 
-  if (verificando) {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔍</div>
-          <div style={{ color: '#6b7280' }}>Verificando token...</div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!tokenValido) {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '24px',
-          padding: '40px',
-          maxWidth: '450px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <div style={{ fontSize: '56px', marginBottom: '16px' }}>⚠️</div>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626', marginBottom: '8px' }}>Token inválido</h2>
-          <p style={{ color: '#6b7280', marginBottom: '24px' }}>{erro}</p>
-          <Link href="/recuperar-senha" style={{ backgroundColor: '#16a34a', color: 'white', padding: '10px 24px', borderRadius: '40px', textDecoration: 'none', display: 'inline-block' }}>
-            Solicitar nova recuperação
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px', width: '100%', display: 'flex', justifyContent: 'center' }}>
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '24px',
-          padding: '40px',
-          maxWidth: '450px',
-          width: '100%',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.08)'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔑</div>
-            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>Redefinir senha</h1>
-            <p style={{ color: '#6b7280', marginTop: '8px', fontSize: '14px' }}>
-              Digite sua nova senha
-            </p>
+    <>
+      <style jsx global>{`
+        .reset-page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: linear-gradient(135deg, #111827 0%, #1f2937 45%, #dc2626 100%);
+          padding: 20px;
+        }
+
+        .reset-card {
+          width: 100%;
+          max-width: 440px;
+          background: #ffffff;
+          border-radius: 24px;
+          padding: 28px;
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+        }
+
+        .reset-logo {
+          text-align: center;
+          margin-bottom: 22px;
+        }
+
+        .reset-logo h1 {
+          color: #dc2626;
+          font-size: 28px;
+          font-weight: 800;
+          margin: 0;
+        }
+
+        .reset-logo p {
+          color: #6b7280;
+          font-size: 13px;
+          margin: 6px 0 0;
+        }
+
+        .reset-title {
+          font-size: 22px;
+          font-weight: 800;
+          color: #111827;
+          margin: 0 0 8px;
+          text-align: center;
+        }
+
+        .reset-subtitle {
+          color: #6b7280;
+          font-size: 14px;
+          line-height: 1.5;
+          text-align: center;
+          margin: 0 0 22px;
+        }
+
+        .reset-form {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .field-group {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .field-group label {
+          font-size: 13px;
+          font-weight: 700;
+          color: #374151;
+        }
+
+        .field-group input {
+          width: 100%;
+          border: 1px solid #d1d5db;
+          border-radius: 14px;
+          padding: 13px 14px;
+          font-size: 14px;
+          outline: none;
+          box-sizing: border-box;
+        }
+
+        .field-group input:focus {
+          border-color: #dc2626;
+          box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+        }
+
+        .reset-button {
+          width: 100%;
+          border: none;
+          border-radius: 999px;
+          background: #dc2626;
+          color: #ffffff;
+          padding: 14px 18px;
+          font-size: 15px;
+          font-weight: 800;
+          cursor: pointer;
+          margin-top: 8px;
+          min-height: 50px;
+        }
+
+        .reset-button:disabled {
+          background: #9ca3af;
+          cursor: not-allowed;
+        }
+
+        .reset-message {
+          margin-top: 16px;
+          padding: 13px 14px;
+          border-radius: 14px;
+          font-size: 13px;
+          line-height: 1.45;
+          text-align: center;
+        }
+
+        .reset-message.success {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .reset-message.error {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+
+        .reset-footer {
+          margin-top: 20px;
+          text-align: center;
+        }
+
+        .reset-footer button {
+          background: transparent;
+          border: none;
+          color: #dc2626;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        @media (max-width: 480px) {
+          .reset-page {
+            padding: 14px;
+            align-items: flex-start;
+            padding-top: 44px;
+          }
+
+          .reset-card {
+            border-radius: 20px;
+            padding: 22px;
+          }
+
+          .reset-logo h1 {
+            font-size: 25px;
+          }
+
+          .reset-title {
+            font-size: 20px;
+          }
+        }
+      `}</style>
+
+      <main className="reset-page">
+        <section className="reset-card">
+          <div className="reset-logo">
+            <h1>PrussikTrails</h1>
+            <p>Sua aventura começa aqui</p>
           </div>
 
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+          <h2 className="reset-title">
+            Redefinir senha
+          </h2>
+
+          <p className="reset-subtitle">
+            Informe seu e-mail e cadastre uma nova senha de acesso.
+          </p>
+
+          <form
+            className="reset-form"
+            onSubmit={handleResetarSenha}
+          >
+            <div className="field-group">
+              <label htmlFor="email">
+                E-mail
+              </label>
+
+              <input
+                id="email"
+                type="email"
+                value={email}
+                placeholder="seuemail@exemplo.com"
+                autoComplete="email"
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </div>
+
+            <div className="field-group">
+              <label htmlFor="novaSenha">
                 Nova senha
               </label>
+
               <input
+                id="novaSenha"
                 type="password"
-                required
-                placeholder="Mínimo 6 caracteres"
                 value={novaSenha}
-                onChange={(e) => setNovaSenha(e.target.value)}
-                style={inputStyle}
+                placeholder="Digite sua nova senha"
+                autoComplete="new-password"
+                onChange={(event) => setNovaSenha(event.target.value)}
               />
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+            <div className="field-group">
+              <label htmlFor="confirmarSenha">
                 Confirmar nova senha
               </label>
+
               <input
+                id="confirmarSenha"
                 type="password"
-                required
-                placeholder="Digite a senha novamente"
                 value={confirmarSenha}
-                onChange={(e) => setConfirmarSenha(e.target.value)}
-                style={inputStyle}
+                placeholder="Confirme sua nova senha"
+                autoComplete="new-password"
+                onChange={(event) => setConfirmarSenha(event.target.value)}
               />
             </div>
-
-            {erro && (
-              <div style={{
-                backgroundColor: '#fee2e2',
-                color: '#dc2626',
-                padding: '12px',
-                borderRadius: '12px',
-                fontSize: '13px',
-                textAlign: 'center',
-                marginBottom: '16px'
-              }}>
-                {erro}
-              </div>
-            )}
-
-            {mensagem && (
-              <div style={{
-                backgroundColor: '#dcfce7',
-                color: '#16a34a',
-                padding: '12px',
-                borderRadius: '12px',
-                fontSize: '13px',
-                textAlign: 'center',
-                marginBottom: '16px'
-              }}>
-                {mensagem}
-              </div>
-            )}
 
             <button
               type="submit"
+              className="reset-button"
               disabled={carregando}
-              style={{
-                width: '100%',
-                backgroundColor: '#16a34a',
-                color: 'white',
-                padding: '12px 24px',
-                borderRadius: '40px',
-                border: 'none',
-                cursor: carregando ? 'not-allowed' : 'pointer',
-                fontSize: '16px',
-                fontWeight: '600',
-                opacity: carregando ? 0.6 : 1
-              }}
             >
-              {carregando ? 'Redefinindo...' : 'Redefinir senha'}
+              {carregando
+                ? 'Alterando senha...'
+                : 'Alterar senha'}
             </button>
           </form>
 
-          <div style={{ textAlign: 'center', marginTop: '24px' }}>
-            <Link href="/login" style={{ fontSize: '13px', color: '#16a34a', textDecoration: 'none' }}>
-              ← Voltar para o login
-            </Link>
+          {mensagem && (
+            <div
+              className={`reset-message ${
+                sucesso ? 'success' : 'error'
+              }`}
+            >
+              {mensagem}
+            </div>
+          )}
+
+          <div className="reset-footer">
+            <button
+              type="button"
+              onClick={() => router.push('/login')}
+            >
+              Voltar para o login
+            </button>
           </div>
-        </div>
-      </div>
-    </div>
+        </section>
+      </main>
+    </>
   )
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '12px 16px',
-  border: '1px solid #e5e7eb',
-  borderRadius: '12px',
-  fontSize: '14px',
-  outline: 'none',
-  transition: 'all 0.2s',
-  fontFamily: 'inherit'
+export default function ResetarSenhaPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          style={{
+            minHeight: '100dvh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#f3f4f6',
+            color: '#374151'
+          }}
+        >
+          Carregando...
+        </div>
+      }
+    >
+      <ResetarSenhaContent />
+    </Suspense>
+  )
 }
