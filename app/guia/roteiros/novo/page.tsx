@@ -1,530 +1,1250 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { registrarAtividade } from '@/lib/logAtividade'
 
-export default function NovoRoteiro() {
+type FormRoteiro = {
+  titulo: string
+  descricao: string
+  local: string
+  local_encontro: string
+  data_roteiro: string
+  hora_roteiro: string
+  duracao: string
+  dificuldade: string
+  preco: string
+  imagem_url: string
+  observacoes: string
+}
+
+const formInicial: FormRoteiro = {
+  titulo: '',
+  descricao: '',
+  local: '',
+  local_encontro: '',
+  data_roteiro: '',
+  hora_roteiro: '',
+  duracao: '',
+  dificuldade: 'iniciante',
+  preco: '',
+  imagem_url: '',
+  observacoes: ''
+}
+
+export default function NovoRoteiroPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
-  const [mensagem, setMensagem] = useState('')
+  const carregouRef = useRef(false)
 
-  // Campos do formulário
-  const [form, setForm] = useState({
-    titulo: '',
-    descricao: '',
-    preco: '',
-    duracao_horas: '',
-    km: '',
-    dificuldade: 'fácil',
-    localizacao: '',
-    embarque_local: '',
-    embarque_data_hora: '',
-    retorno_local: '',
-    retorno_data_hora: '',
-    roteiro_detalhado: '',
-    foto_capa: '',
-    galeria_fotos: '',
-    // NOVOS CAMPOS
-    limite_pessoas: '', // vazio = sem limite
-    recorrencia: 'unica', // unica, semanal, mensal, anual
-    renovar_automaticamente: false,
-    proxima_data: ''
-  })
+  const [user, setUser] = useState<any>(null)
+  const [form, setForm] = useState<FormRoteiro>(formInicial)
+  const [arquivoImagem, setArquivoImagem] = useState<File | null>(null)
+  const [previewImagem, setPreviewImagem] = useState('')
+  const [carregando, setCarregando] = useState(true)
+  const [salvando, setSalvando] = useState(false)
+  const [mensagem, setMensagem] = useState('')
+  const [tipoMensagem, setTipoMensagem] = useState<'sucesso' | 'erro' | ''>('')
 
   useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
-    }
-    const parsed = JSON.parse(userData)
-    if (parsed.tipo !== 'guia') {
-      router.push('/login')
-      return
-    }
-    setUser(parsed)
+    if (carregouRef.current) return
+
+    carregouRef.current = true
+    iniciarPagina()
   }, [])
 
-  const setCampo = (key: string, value: any) =>
-    setForm((prev) => ({ ...prev, [key]: value }))
-
-  const salvar = async () => {
-    if (!user) return
-
-    // Validações básicas
-    if (!form.titulo || !form.descricao || !form.preco) {
-      setMensagem('Preencha título, descrição e preço.')
-      return
+  useEffect(() => {
+    return () => {
+      if (previewImagem && previewImagem.startsWith('blob:')) {
+        URL.revokeObjectURL(previewImagem)
+      }
     }
+  }, [previewImagem])
 
-    if (form.recorrencia !== 'unica' && !form.proxima_data) {
-      setMensagem('Para roteiros recorrentes, informe a próxima data.')
-      return
-    }
-
-    setLoading(true)
-    setMensagem('')
-
+  const iniciarPagina = async () => {
     try {
-      // Processar galeria de fotos
-      const galeria = String(form.galeria_fotos || '')
-        .split('\n')
-        .map((x) => x.trim())
-        .filter(Boolean)
+      const userData = localStorage.getItem('user')
 
-      // Processar limite de pessoas (vazio = null = sem limite)
-      let limite = null
-      if (form.limite_pessoas && String(form.limite_pessoas).trim() !== '') {
-        limite = parseInt(form.limite_pessoas)
-        if (isNaN(limite) || limite < 1) limite = 1
-        if (limite > 100) limite = 100
+      if (!userData) {
+        router.push('/login')
+        return
       }
 
-      // Data inicial (usada como próxima data)
-      const dataInicial = form.embarque_data_hora
-        ? new Date(form.embarque_data_hora)
-        : null
+      const parsedUser = JSON.parse(userData)
 
-      const payload = {
-        id_guia: user.id,
-        titulo: form.titulo,
-        descricao: form.descricao,
-        preco: Number(form.preco),
-        duracao_horas: Number(form.duracao_horas || 0),
-        km: Number(form.km || 0),
-        dificuldade: form.dificuldade,
-        localizacao: form.localizacao,
-        embarque_local: form.embarque_local,
-        embarque_data_hora: form.embarque_data_hora || null,
-        retorno_local: form.retorno_local,
-        retorno_data_hora: form.retorno_data_hora || null,
-        roteiro_detalhado: form.roteiro_detalhado,
-        foto_capa: form.foto_capa || null,
-        galeria_fotos: galeria,
-        status: 'aguardando_aprovacao',
-        // NOVOS CAMPOS
-        limite_pessoas: limite,
-        recorrencia: form.recorrencia,
-        renovar_automaticamente: form.renovar_automaticamente,
-        proxima_data: form.proxima_data || (dataInicial ? dataInicial.toISOString().split('T')[0] : null),
-        ativo: true
+      if (parsedUser.tipo !== 'guia') {
+        router.push('/login')
+        return
       }
 
-      const { data, error } = await supabase
-        .from('roteiros')
-        .insert(payload)
-        .select('id')
-        .single()
-
-      if (error) throw error
-
-      // Registrar atividade
-      const primeiroNome = user.nome?.split(' ')[0] || 'Guia'
-      await registrarAtividade(
-        user.id,
-        'guia',
-        primeiroNome,
-        'criou_roteiro',
-        `${primeiroNome} criou o roteiro "${form.titulo}"`,
-        data.id
-      )
-
-      setMensagem(
-        form.recorrencia === 'unica'
-          ? '✅ Roteiro enviado para aprovação!'
-          : `✅ Roteiro recorrente (${form.recorrencia}) enviado para aprovação!`
-      )
-
-      setTimeout(() => router.push('/guia/dashboard'), 1500)
-    } catch (err: any) {
-      console.error('Erro ao salvar roteiro:', err)
-      setMensagem(`❌ ${err.message || 'Erro ao salvar.'}`)
+      setUser(parsedUser)
+    } catch (error) {
+      console.error('Erro ao iniciar página de novo roteiro:', error)
+      setMensagem('Erro ao validar usuário guia. Faça login novamente.')
+      setTipoMensagem('erro')
     } finally {
-      setLoading(false)
+      setCarregando(false)
     }
   }
 
-  if (!user) {
+  const atualizarCampo = (
+    campo: keyof FormRoteiro,
+    valor: string
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      [campo]: valor
+    }))
+  }
+
+  const parsePreco = (valor: string) => {
+    const normalizado = String(valor || '')
+      .replace(/\./g, '')
+      .replace(',', '.')
+      .replace(/[^\d.]/g, '')
+
+    const numero = Number(normalizado)
+
+    if (Number.isNaN(numero)) return 0
+
+    return numero
+  }
+
+  const limparFormulario = () => {
+    setForm(formInicial)
+    setArquivoImagem(null)
+
+    if (previewImagem && previewImagem.startsWith('blob:')) {
+      URL.revokeObjectURL(previewImagem)
+    }
+
+    setPreviewImagem('')
+  }
+
+  const handleImagemChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null
+
+    setMensagem('')
+    setTipoMensagem('')
+
+    if (!file) {
+      setArquivoImagem(null)
+      setPreviewImagem('')
+      return
+    }
+
+    const tiposPermitidos = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp'
+    ]
+
+    if (!tiposPermitidos.includes(file.type)) {
+      setMensagem('Envie uma imagem em JPG, PNG ou WEBP.')
+      setTipoMensagem('erro')
+      setArquivoImagem(null)
+      setPreviewImagem('')
+      return
+    }
+
+    const limiteMb = 10
+    const limiteBytes = limiteMb * 1024 * 1024
+
+    if (file.size > limiteBytes) {
+      setMensagem(`A imagem deve ter no máximo ${limiteMb}MB.`)
+      setTipoMensagem('erro')
+      setArquivoImagem(null)
+      setPreviewImagem('')
+      return
+    }
+
+    if (previewImagem && previewImagem.startsWith('blob:')) {
+      URL.revokeObjectURL(previewImagem)
+    }
+
+    setArquivoImagem(file)
+    setPreviewImagem(URL.createObjectURL(file))
+    setForm((prev) => ({
+      ...prev,
+      imagem_url: ''
+    }))
+  }
+
+  const removerImagemSelecionada = () => {
+    setArquivoImagem(null)
+
+    if (previewImagem && previewImagem.startsWith('blob:')) {
+      URL.revokeObjectURL(previewImagem)
+    }
+
+    setPreviewImagem('')
+  }
+
+  const gerarNomeArquivoSeguro = (file: File) => {
+    const extensao = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+
+    const nomeBase = file.name
+      .replace(/\.[^/.]+$/, '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9-_]/g, '-')
+      .replace(/-+/g, '-')
+      .toLowerCase()
+      .slice(0, 50)
+
+    const idGuia = user?.id || 'guia'
+    const unique =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+    return `${idGuia}/${Date.now()}-${unique}-${nomeBase || 'roteiro'}.${extensao}`
+  }
+
+  const uploadImagemRoteiro = async () => {
+    if (!arquivoImagem) {
+      return form.imagem_url.trim() || null
+    }
+
+    const filePath = gerarNomeArquivoSeguro(arquivoImagem)
+
+    const { error: uploadError } = await supabase.storage
+      .from('roteiros')
+      .upload(filePath, arquivoImagem, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: arquivoImagem.type
+      })
+
+    if (uploadError) {
+      throw new Error(
+        uploadError.message ||
+          'Erro ao enviar imagem do roteiro. Verifique o bucket roteiros no Supabase Storage.'
+      )
+    }
+
+    const {
+      data: { publicUrl }
+    } = supabase.storage
+      .from('roteiros')
+      .getPublicUrl(filePath)
+
+    return publicUrl || null
+  }
+
+  const extrairColunaAusente = (error: any) => {
+    const texto = [
+      error?.message,
+      error?.details,
+      error?.hint
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+    const matchAspasSimples = texto.match(/'([^']+)'/)
+
+    if (matchAspasSimples?.[1]) {
+      return matchAspasSimples[1]
+    }
+
+    const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
+
+    if (matchColumn?.[1]) {
+      return matchColumn[1]
+    }
+
+    return ''
+  }
+
+  const erroDeColunaAusente = (error: any) => {
+    const texto = String(
+      error?.message ||
+        error?.details ||
+        error?.hint ||
+        ''
+    ).toLowerCase()
+
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        Carregando...
-      </div>
+      error?.code === '42703' ||
+      error?.code === 'PGRST204' ||
+      texto.includes('could not find') ||
+      texto.includes('schema cache') ||
+      texto.includes('column')
+    )
+  }
+
+  const inserirRoteiroComFallback = async (
+    payloadOriginal: Record<string, any>
+  ) => {
+    let payloadAtual = { ...payloadOriginal }
+    const colunasIgnoradas: string[] = []
+
+    for (let tentativa = 0; tentativa < 12; tentativa++) {
+      const { data, error } = await supabase
+        .from('roteiros')
+        .insert(payloadAtual)
+        .select()
+        .single()
+
+      if (!error) {
+        return {
+          data,
+          colunasIgnoradas
+        }
+      }
+
+      if (!erroDeColunaAusente(error)) {
+        throw error
+      }
+
+      const colunaAusente = extrairColunaAusente(error)
+
+      if (!colunaAusente || !(colunaAusente in payloadAtual)) {
+        throw error
+      }
+
+      delete payloadAtual[colunaAusente]
+      colunasIgnoradas.push(colunaAusente)
+    }
+
+    throw new Error(
+      'Não foi possível criar o roteiro após múltiplas tentativas.'
+    )
+  }
+
+  const validarFormulario = () => {
+    if (!form.titulo.trim()) {
+      return 'Informe o título do roteiro.'
+    }
+
+    if (!form.descricao.trim()) {
+      return 'Informe a descrição do roteiro.'
+    }
+
+    if (!form.local.trim()) {
+      return 'Informe o local/região do roteiro.'
+    }
+
+    const preco = parsePreco(form.preco)
+
+    if (!preco || preco <= 0) {
+      return 'Informe um preço válido.'
+    }
+
+    if (!user?.id) {
+      return 'Guia não identificado. Faça login novamente.'
+    }
+
+    return ''
+  }
+
+  const criarRoteiro = async (event: FormEvent) => {
+    event.preventDefault()
+
+    setMensagem('')
+    setTipoMensagem('')
+
+    const erroValidacao = validarFormulario()
+
+    if (erroValidacao) {
+      setMensagem(erroValidacao)
+      setTipoMensagem('erro')
+      return
+    }
+
+    setSalvando(true)
+
+    try {
+      const precoNumerico = parsePreco(form.preco)
+
+      const imagemUrlFinal = await uploadImagemRoteiro()
+
+      const embarqueDataHora = [
+        form.data_roteiro.trim(),
+        form.hora_roteiro.trim()
+      ]
+        .filter(Boolean)
+        .join(' - ')
+
+      const payload: Record<string, any> = {
+        titulo: form.titulo.trim(),
+        descricao: form.descricao.trim(),
+        local: form.local.trim(),
+        duracao: form.duracao.trim() || null,
+        dificuldade: form.dificuldade,
+        preco: precoNumerico,
+        imagem_url: imagemUrlFinal,
+        id_guia: user.id,
+        ativo: true,
+
+        local_encontro: form.local_encontro.trim() || null,
+        data_roteiro: form.data_roteiro.trim() || null,
+        hora_roteiro: form.hora_roteiro.trim() || null,
+        embarque_data_hora: embarqueDataHora || null,
+
+        observacoes: form.observacoes.trim() || null
+      }
+
+      const resultado = await inserirRoteiroComFallback(payload)
+
+      if (resultado.colunasIgnoradas.length > 0) {
+        console.warn(
+          'Roteiro criado, mas algumas colunas não existem no banco:',
+          resultado.colunasIgnoradas
+        )
+
+        setMensagem(
+          `✅ Roteiro criado com sucesso. Atenção: algumas colunas ainda não existem no banco e foram ignoradas: ${resultado.colunasIgnoradas.join(', ')}.`
+        )
+      } else {
+        setMensagem('✅ Roteiro criado com sucesso!')
+      }
+
+      setTipoMensagem('sucesso')
+      limparFormulario()
+    } catch (error: any) {
+      console.error('Erro ao criar roteiro:', error)
+
+      setMensagem(
+        error?.message ||
+          'Erro ao criar roteiro. Verifique as colunas da tabela roteiros e o bucket roteiros no Supabase.'
+      )
+
+      setTipoMensagem('erro')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const sair = () => {
+    localStorage.removeItem('user')
+    router.push('/login')
+  }
+
+  const imagemPreviewFinal =
+    previewImagem ||
+    form.imagem_url.trim() ||
+    ''
+
+  if (carregando) {
+    return (
+      <main
+        style={{
+          minHeight: '100dvh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#f3f4f6',
+          color: '#6b7280'
+        }}
+      >
+        Carregando criação de roteiro...
+      </main>
     )
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      <style jsx global>{`
-        .novo-roteiro-container {
-          max-width: 800px;
+    <main className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          background: #f3f4f6;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at top left, rgba(22, 163, 74, 0.08), transparent 32%),
+            linear-gradient(180deg, #f9fafb 0%, #eef2f7 100%);
+          color: #111827;
+        }
+
+        .header {
+          background: #ffffff;
+          border-bottom: 1px solid #e5e7eb;
+          padding: 14px 18px;
+          position: sticky;
+          top: 0;
+          z-index: 40;
+        }
+
+        .header-inner {
+          max-width: 1180px;
           margin: 0 auto;
-          padding: 24px 16px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 14px;
+          flex-wrap: wrap;
         }
-        .form-card {
-          background: white;
-          border-radius: 24px;
-          padding: 24px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+
+        .brand-title {
+          margin: 0;
+          font-size: 21px;
+          font-weight: 900;
+          color: #dc2626;
         }
-        .form-group {
-          margin-bottom: 16px;
+
+        .brand-subtitle {
+          margin: 3px 0 0;
+          color: #6b7280;
+          font-size: 12px;
         }
-        .form-label {
-          display: block;
-          font-weight: 600;
-          font-size: 13px;
-          margin-bottom: 6px;
-          color: #374151;
+
+        .actions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
         }
-        .form-input, .form-select, .form-textarea {
-          width: 100%;
-          padding: 12px;
-          border: 1px solid #e5e7eb;
-          border-radius: 14px;
-          font-size: 14px;
-        }
-        .form-textarea {
-          resize: vertical;
-        }
-        .form-row {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-        .btn-primary {
-          width: 100%;
-          background: #16a34a;
-          color: white;
+
+        .btn {
           border: none;
-          border-radius: 40px;
-          padding: 14px;
+          border-radius: 999px;
+          padding: 10px 14px;
+          font-size: 12px;
           font-weight: 800;
           cursor: pointer;
-          margin-top: 16px;
+          transition: 0.2s ease;
         }
-        .btn-primary:disabled {
-          opacity: 0.6;
+
+        .btn:disabled {
+          opacity: 0.65;
           cursor: not-allowed;
         }
-        .btn-secondary {
+
+        .btn-light {
           background: #f3f4f6;
           color: #374151;
-          border: none;
-          border-radius: 40px;
-          padding: 12px 20px;
-          cursor: pointer;
-          font-weight: 600;
         }
-        .mensagem-sucesso {
+
+        .btn-dark {
+          background: #111827;
+          color: #ffffff;
+        }
+
+        .btn-green {
+          background: #16a34a;
+          color: #ffffff;
+        }
+
+        .btn-red {
+          background: #dc2626;
+          color: #ffffff;
+        }
+
+        .btn-outline {
+          background: #ffffff;
+          color: #374151;
+          border: 1px solid #d1d5db;
+        }
+
+        .btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+        }
+
+        .container {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 22px 16px 46px;
+        }
+
+        .intro {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 340px;
+          gap: 18px;
+          margin-bottom: 18px;
+        }
+
+        .hero-card,
+        .side-card,
+        .form-card {
+          background: #ffffff;
+          border-radius: 26px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          border: 1px solid #eef2f7;
+        }
+
+        .hero-card {
+          padding: 24px;
+        }
+
+        .hero-label {
+          color: #16a34a;
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin-bottom: 8px;
+        }
+
+        .hero-title {
+          margin: 0;
+          font-size: 30px;
+          line-height: 1.05;
+          color: #111827;
+          font-weight: 900;
+        }
+
+        .hero-text {
+          margin: 12px 0 0;
+          color: #6b7280;
+          font-size: 14px;
+          line-height: 1.65;
+          max-width: 720px;
+        }
+
+        .side-card {
+          padding: 20px;
+        }
+
+        .side-title {
+          font-size: 15px;
+          font-weight: 900;
+          color: #111827;
+          margin-bottom: 10px;
+        }
+
+        .side-list {
+          display: grid;
+          gap: 10px;
+          color: #6b7280;
+          font-size: 13px;
+          line-height: 1.45;
+        }
+
+        .side-item {
+          display: flex;
+          gap: 8px;
+        }
+
+        .side-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #16a34a;
+          margin-top: 6px;
+          flex: 0 0 auto;
+        }
+
+        .form-card {
+          padding: 22px;
+        }
+
+        .section-title {
+          font-size: 17px;
+          font-weight: 900;
+          color: #111827;
+          margin: 0 0 14px;
+        }
+
+        .form-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 16px;
+        }
+
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+
+        .form-group.full {
+          grid-column: 1 / -1;
+        }
+
+        label {
+          font-size: 12px;
+          font-weight: 800;
+          color: #374151;
+        }
+
+        input,
+        textarea,
+        select {
+          width: 100%;
+          border: 1px solid #d1d5db;
+          border-radius: 16px;
+          padding: 12px 13px;
+          font-size: 14px;
+          color: #111827;
+          background: #ffffff;
+          outline: none;
+          transition: 0.2s ease;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+          border-color: #16a34a;
+          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.10);
+        }
+
+        textarea {
+          min-height: 120px;
+          resize: vertical;
+          line-height: 1.55;
+        }
+
+        .helper {
+          color: #9ca3af;
+          font-size: 11px;
+          line-height: 1.4;
+        }
+
+        .divider {
+          margin: 22px 0;
+          height: 1px;
+          background: #eef2f7;
+        }
+
+        .alert {
+          padding: 13px 14px;
+          border-radius: 16px;
+          margin-bottom: 16px;
+          font-size: 13px;
+          line-height: 1.45;
+        }
+
+        .alert.sucesso {
           background: #dcfce7;
           color: #166534;
-          padding: 12px;
-          border-radius: 14px;
-          margin-bottom: 16px;
+          border: 1px solid #bbf7d0;
         }
-        .mensagem-erro {
+
+        .alert.erro {
           background: #fee2e2;
           color: #991b1b;
-          padding: 12px;
-          border-radius: 14px;
-          margin-bottom: 16px;
+          border: 1px solid #fecaca;
         }
-        .checkbox-group {
+
+        .submit-row {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 22px;
+        }
+
+        .upload-box {
+          border: 1px dashed #cbd5e1;
+          background: #f8fafc;
+          border-radius: 22px;
+          padding: 16px;
+          display: grid;
+          grid-template-columns: 220px minmax(0, 1fr);
+          gap: 16px;
+          align-items: stretch;
+        }
+
+        .image-preview {
+          min-height: 170px;
+          border-radius: 18px;
+          background:
+            linear-gradient(135deg, rgba(22, 163, 74, 0.10), rgba(220, 38, 38, 0.06)),
+            #ffffff;
+          border: 1px solid #e5e7eb;
+          overflow: hidden;
           display: flex;
           align-items: center;
-          gap: 8px;
+          justify-content: center;
+          color: #6b7280;
+          font-size: 13px;
+          text-align: center;
+          padding: 14px;
+        }
+
+        .image-preview img {
+          width: 100%;
+          height: 100%;
+          min-height: 170px;
+          object-fit: cover;
+          display: block;
+        }
+
+        .upload-actions {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          justify-content: center;
+        }
+
+        .file-input {
+          border: 1px solid #d1d5db;
+          background: #ffffff;
+          border-radius: 16px;
+          padding: 12px;
+          font-size: 13px;
+        }
+
+        .preview-card {
+          margin-top: 20px;
+          border-radius: 22px;
+          border: 1px solid #e5e7eb;
+          background: #f9fafb;
+          padding: 16px;
+          display: grid;
+          grid-template-columns: 160px minmax(0, 1fr);
+          gap: 14px;
+        }
+
+        .preview-image {
+          height: 120px;
+          border-radius: 16px;
+          overflow: hidden;
+          background: #e5e7eb;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #6b7280;
+          font-size: 12px;
+          text-align: center;
+          padding: 10px;
+        }
+
+        .preview-image img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .preview-title {
+          font-weight: 900;
+          color: #111827;
+          margin-bottom: 6px;
+        }
+
+        .preview-line {
+          color: #6b7280;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .preview-price {
+          color: #16a34a;
+          font-weight: 900;
           margin-top: 8px;
         }
-        .info-text {
-          font-size: 12px;
-          color: #6b7280;
-          margin-top: 4px;
+
+        @media (max-width: 900px) {
+          .intro {
+            grid-template-columns: 1fr;
+          }
+
+          .form-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .header-inner {
+            align-items: flex-start;
+          }
+
+          .actions {
+            width: 100%;
+          }
+
+          .actions .btn {
+            flex: 1;
+          }
+
+          .upload-box,
+          .preview-card {
+            grid-template-columns: 1fr;
+          }
         }
-        hr {
-          margin: 20px 0;
-          border: none;
-          border-top: 1px solid #e5e7eb;
+
+        @media (max-width: 560px) {
+          .container {
+            padding: 16px 12px 38px;
+          }
+
+          .hero-card,
+          .side-card,
+          .form-card {
+            border-radius: 22px;
+          }
+
+          .hero-title {
+            font-size: 24px;
+          }
+
+          .submit-row {
+            flex-direction: column-reverse;
+          }
+
+          .submit-row .btn {
+            width: 100%;
+          }
         }
       `}</style>
 
-      <div style={{ background: 'white', borderBottom: '1px solid #e5e7eb', padding: '14px 16px' }}>
-        <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ margin: 0, color: '#dc2626', fontSize: '22px', fontWeight: 'bold' }}>🏔️ Criar Novo Roteiro</h1>
-          <button onClick={() => router.push('/guia/dashboard')} className="btn-secondary">← Dashboard</button>
+      <header className="header">
+        <div className="header-inner">
+          <div>
+            <h1 className="brand-title">
+              PrussikTrails
+            </h1>
+
+            <p className="brand-subtitle">
+              Criar novo roteiro como guia
+            </p>
+          </div>
+
+          <div className="actions">
+            <button
+              type="button"
+              className="btn btn-light"
+              onClick={() => router.push('/guia/dashboard')}
+            >
+              Dashboard
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-dark"
+              onClick={() => router.push('/guia/roteiros')}
+            >
+              Meus roteiros
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-red"
+              onClick={sair}
+            >
+              Sair
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className="novo-roteiro-container">
-        <div className="form-card">
-          <p style={{ color: '#6b7280', marginBottom: '20px' }}>
-            O roteiro ficará público apenas após aprovação do ADM.
-          </p>
-
-          {mensagem && (
-            <div className={mensagem.includes('✅') ? 'mensagem-sucesso' : 'mensagem-erro'}>
-              {mensagem}
+      <div className="container">
+        <section className="intro">
+          <div className="hero-card">
+            <div className="hero-label">
+              Novo roteiro
             </div>
-          )}
 
-          {/* INFORMAÇÕES BÁSICAS */}
-          <div className="form-group">
-            <label className="form-label">Título *</label>
-            <input
-              className="form-input"
-              value={form.titulo}
-              onChange={(e) => setCampo('titulo', e.target.value)}
-              placeholder="Ex: Trilha da Pedra do Lagarto"
-            />
+            <h2 className="hero-title">
+              Cadastre uma experiência para os aventureiros.
+            </h2>
+
+            <p className="hero-text">
+              Agora o guia pode enviar uma foto do roteiro diretamente pelo formulário.
+              A imagem será salva no Supabase Storage e usada no card do roteiro para o cliente.
+            </p>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Descrição *</label>
-          </div>
-          <div className="form-group">
-            <textarea
-              className="form-textarea"
-              rows={4}
-              value={form.descricao}
-              onChange={(e) => setCampo('descricao', e.target.value)}
-              placeholder="Descreva a experiência, pontos turísticos, dificuldades..."
-            />
-          </div>
+          <aside className="side-card">
+            <div className="side-title">
+              Imagem do roteiro
+            </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Preço (R$) *</label>
+            <div className="side-list">
+              <div className="side-item">
+                <span className="side-dot" />
+                <span>Formatos aceitos: JPG, PNG e WEBP.</span>
+              </div>
+
+              <div className="side-item">
+                <span className="side-dot" />
+                <span>Tamanho máximo recomendado: 10MB.</span>
+              </div>
+
+              <div className="side-item">
+                <span className="side-dot" />
+                <span>Também é possível colar uma URL manualmente.</span>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        {mensagem && (
+          <div className={`alert ${tipoMensagem}`}>
+            {mensagem}
+          </div>
+        )}
+
+        <form className="form-card" onSubmit={criarRoteiro}>
+          <h3 className="section-title">
+            Informações principais
+          </h3>
+
+          <div className="form-grid">
+            <div className="form-group full">
+              <label>Título do roteiro *</label>
               <input
-                className="form-input"
-                type="number"
-                step="0.01"
-                value={form.preco}
-                onChange={(e) => setCampo('preco', e.target.value)}
-                placeholder="0.00"
+                value={form.titulo}
+                onChange={(event) =>
+                  atualizarCampo('titulo', event.target.value)
+                }
+                placeholder="Ex: Nascer do sol na Pedra Grande"
               />
             </div>
-            <div className="form-group">
-              <label className="form-label">Duração (horas)</label>
-              <input
-                className="form-input"
-                type="number"
-                step="0.5"
-                value={form.duracao_horas}
-                onChange={(e) => setCampo('duracao_horas', e.target.value)}
-                placeholder="4"
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">KM</label>
-              <input
-                className="form-input"
-                type="number"
-                step="0.1"
-                value={form.km}
-                onChange={(e) => setCampo('km', e.target.value)}
-                placeholder="8.5"
-              />
-            </div>
-          </div>
 
-          <div className="form-row">
+            <div className="form-group full">
+              <label>Descrição *</label>
+              <textarea
+                value={form.descricao}
+                onChange={(event) =>
+                  atualizarCampo('descricao', event.target.value)
+                }
+                placeholder="Descreva a experiência, nível de esforço, pontos de destaque e orientações gerais..."
+              />
+            </div>
+
             <div className="form-group">
-              <label className="form-label">Dificuldade</label>
+              <label>Local / região do roteiro *</label>
+              <input
+                value={form.local}
+                onChange={(event) =>
+                  atualizarCampo('local', event.target.value)
+                }
+                placeholder="Ex: Atibaia/SP, Serra da Mantiqueira..."
+              />
+              <span className="helper">
+                Local geral que aparece para o cliente.
+              </span>
+            </div>
+
+            <div className="form-group">
+              <label>Dificuldade</label>
               <select
-                className="form-select"
                 value={form.dificuldade}
-                onChange={(e) => setCampo('dificuldade', e.target.value)}
+                onChange={(event) =>
+                  atualizarCampo('dificuldade', event.target.value)
+                }
               >
-                <option value="fácil">🥾 Fácil</option>
-                <option value="médio">⛰️ Médio</option>
-                <option value="difícil">🏔️ Difícil</option>
-                <option value="extremo">⚠️ Extremo</option>
+                <option value="iniciante">Iniciante</option>
+                <option value="facil">Fácil</option>
+                <option value="moderado">Moderado</option>
+                <option value="dificil">Difícil</option>
+                <option value="avancado">Avançado</option>
               </select>
             </div>
+
             <div className="form-group">
-              <label className="form-label">Localização</label>
+              <label>Duração</label>
               <input
-                className="form-input"
-                value={form.localizacao}
-                onChange={(e) => setCampo('localizacao', e.target.value)}
-                placeholder="Cidade/Estado"
+                value={form.duracao}
+                onChange={(event) =>
+                  atualizarCampo('duracao', event.target.value)
+                }
+                placeholder="Ex: 4 horas, meio período, dia inteiro..."
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Preço *</label>
+              <input
+                value={form.preco}
+                onChange={(event) =>
+                  atualizarCampo('preco', event.target.value)
+                }
+                placeholder="Ex: 150,00"
+                inputMode="decimal"
               />
             </div>
           </div>
 
-          <hr />
+          <div className="divider" />
 
-          {/* LOGÍSTICA */}
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>📍 Ponto de Encontro</h3>
-          <div className="form-group">
-            <label className="form-label">Local de Embarque</label>
-            <input
-              className="form-input"
-              value={form.embarque_local}
-              onChange={(e) => setCampo('embarque_local', e.target.value)}
-              placeholder="Endereço completo do ponto de encontro"
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Data e Hora do Embarque</label>
-            <input
-              className="form-input"
-              type="datetime-local"
-              value={form.embarque_data_hora}
-              onChange={(e) => setCampo('embarque_data_hora', e.target.value)}
-            />
-          </div>
+          <h3 className="section-title">
+            Foto do roteiro
+          </h3>
 
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px', marginTop: '24px' }}>🏁 Ponto de Retorno</h3>
-          <div className="form-group">
-            <label className="form-label">Local de Retorno</label>
-            <input
-              className="form-input"
-              value={form.retorno_local}
-              onChange={(e) => setCampo('retorno_local', e.target.value)}
-              placeholder="Endereço do ponto de retorno"
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Data e Hora do Retorno</label>
-            <input
-              className="form-input"
-              type="datetime-local"
-              value={form.retorno_data_hora}
-              onChange={(e) => setCampo('retorno_data_hora', e.target.value)}
-            />
-          </div>
-
-          <hr />
-
-          {/* NOVOS CAMPOS – LIMITE E RECORRÊNCIA */}
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>👥 Limite de Pessoas</h3>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Limite máximo de participantes</label>
-              <select
-                className="form-select"
-                value={form.limite_pessoas || ''}
-                onChange={(e) => setCampo('limite_pessoas', e.target.value)}
-              >
-                <option value="">📌 Sem limite</option>
-                <option value="1">1 pessoa</option>
-                <option value="2">2 pessoas</option>
-                <option value="3">3 pessoas</option>
-                <option value="4">4 pessoas</option>
-                <option value="5">5 pessoas</option>
-                <option value="6">6 pessoas</option>
-                <option value="7">7 pessoas</option>
-                <option value="8">8 pessoas</option>
-                <option value="9">9 pessoas</option>
-                <option value="10">10 pessoas</option>
-                <option value="15">15 pessoas</option>
-                <option value="20">20 pessoas</option>
-                <option value="30">30 pessoas</option>
-                <option value="50">50 pessoas</option>
-                <option value="100">100 pessoas</option>
-              </select>
-              <p className="info-text">Selecione "Sem limite" para não restringir vagas.</p>
+          <div className="upload-box">
+            <div className="image-preview">
+              {imagemPreviewFinal ? (
+                <img src={imagemPreviewFinal} alt="Prévia do roteiro" />
+              ) : (
+                <span>
+                  A prévia da imagem aparecerá aqui.
+                </span>
+              )}
             </div>
-          </div>
 
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px', marginTop: '8px' }}>🔄 Recorrência do Roteiro</h3>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Tipo de recorrência</label>
-              <select
-                className="form-select"
-                value={form.recorrencia}
-                onChange={(e) => setCampo('recorrencia', e.target.value)}
-              >
-                <option value="unica">🎯 Uma única vez</option>
-                <option value="semanal">📅 Semanal – toda semana na mesma data</option>
-                <option value="mensal">🗓️ Mensal – todo mês no mesmo dia</option>
-                <option value="anual">📆 Anual – todo ano na mesma data</option>
-              </select>
-            </div>
-          </div>
-
-          {(form.recorrencia === 'semanal' || form.recorrencia === 'mensal' || form.recorrencia === 'anual') && (
-            <>
+            <div className="upload-actions">
               <div className="form-group">
-                <label className="form-label">Próxima data disponível</label>
+                <label>Enviar foto do roteiro</label>
                 <input
-                  className="form-input"
-                  type="date"
-                  value={form.proxima_data}
-                  onChange={(e) => setCampo('proxima_data', e.target.value)}
+                  className="file-input"
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  onChange={handleImagemChange}
                 />
-                <p className="info-text">
-                  {form.recorrencia === 'semanal' && 'Esta data será usada como referência semanal.'}
-                  {form.recorrencia === 'mensal' && 'Esta data será usada como referência mensal (ex: dia 15 de cada mês).'}
-                  {form.recorrencia === 'anual' && 'Esta data será usada como referência anual (ex: 25 de dezembro).'}
-                </p>
+                <span className="helper">
+                  A imagem será enviada para o bucket roteiros no Supabase Storage.
+                </span>
               </div>
 
-              <div className="checkbox-group">
+              {arquivoImagem && (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={removerImagemSelecionada}
+                  disabled={salvando}
+                >
+                  Remover imagem selecionada
+                </button>
+              )}
+
+              <div className="form-group">
+                <label>Ou cole uma URL de imagem</label>
                 <input
-                  type="checkbox"
-                  id="renovar_automaticamente"
-                  checked={form.renovar_automaticamente}
-                  onChange={(e) => setCampo('renovar_automaticamente', e.target.checked)}
+                  value={form.imagem_url}
+                  onChange={(event) => {
+                    atualizarCampo('imagem_url', event.target.value)
+
+                    if (arquivoImagem) {
+                      setArquivoImagem(null)
+                    }
+
+                    if (previewImagem && previewImagem.startsWith('blob:')) {
+                      URL.revokeObjectURL(previewImagem)
+                    }
+
+                    setPreviewImagem('')
+                  }}
+                  placeholder="https://..."
                 />
-                <label htmlFor="renovar_automaticamente" style={{ fontWeight: 'normal' }}>
-                  ✅ Renovar automaticamente após cada ocorrência
-                </label>
+                <span className="helper">
+                  Se enviar arquivo, a URL manual será ignorada.
+                </span>
               </div>
-              <p className="info-text" style={{ marginLeft: '22px' }}>
-                Se marcado, após a data passar, o sistema calculará a próxima ocorrência automaticamente.
-              </p>
-            </>
-          )}
-
-          <hr />
-
-          {/* FOTOS */}
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>📸 Fotos do Roteiro</h3>
-          <div className="form-group">
-            <label className="form-label">URL da foto de capa</label>
-            <input
-              className="form-input"
-              value={form.foto_capa}
-              onChange={(e) => setCampo('foto_capa', e.target.value)}
-              placeholder="https://exemplo.com/imagem.jpg"
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Galeria de fotos (uma URL por linha)</label>
-            <textarea
-              className="form-textarea"
-              rows={3}
-              value={form.galeria_fotos}
-              onChange={(e) => setCampo('galeria_fotos', e.target.value)}
-              placeholder="https://exemplo.com/foto1.jpg&#10;https://exemplo.com/foto2.jpg"
-            />
+            </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Roteiro detalhado (opcional)</label>
-            <textarea
-              className="form-textarea"
-              rows={6}
-              value={form.roteiro_detalhado}
-              onChange={(e) => setCampo('roteiro_detalhado', e.target.value)}
-              placeholder="Descreva o roteiro passo a passo, paradas, pontos de interesse..."
-            />
+          <div className="divider" />
+
+          <h3 className="section-title">
+            Data, horário e encontro
+          </h3>
+
+          <div className="form-grid">
+            <div className="form-group full">
+              <label>Local de encontro / embarque</label>
+              <input
+                value={form.local_encontro}
+                onChange={(event) =>
+                  atualizarCampo('local_encontro', event.target.value)
+                }
+                placeholder="Ex: Portaria principal do parque, posto BR, estacionamento..."
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Data do roteiro</label>
+              <input
+                value={form.data_roteiro}
+                onChange={(event) =>
+                  atualizarCampo('data_roteiro', event.target.value)
+                }
+                placeholder="Ex: 15/07/2026 ou a combinar"
+              />
+              <span className="helper">
+                Campo livre para evitar erro de calendário ou fuso.
+              </span>
+            </div>
+
+            <div className="form-group">
+              <label>Horário</label>
+              <input
+                value={form.hora_roteiro}
+                onChange={(event) =>
+                  atualizarCampo('hora_roteiro', event.target.value)
+                }
+                placeholder="Ex: 07h30 ou saída ao amanhecer"
+              />
+            </div>
+
+            <div className="form-group full">
+              <label>Observações adicionais</label>
+              <textarea
+                value={form.observacoes}
+                onChange={(event) =>
+                  atualizarCampo('observacoes', event.target.value)
+                }
+                placeholder="Ex: levar água, lanterna, agasalho, documento, tolerância de atraso, política de clima..."
+              />
+            </div>
           </div>
 
-          <button
-            onClick={salvar}
-            disabled={loading}
-            className="btn-primary"
-          >
-            {loading ? 'Salvando...' : '📤 Enviar para aprovação'}
-          </button>
-        </div>
+          <div className="preview-card">
+            <div className="preview-image">
+              {imagemPreviewFinal ? (
+                <img src={imagemPreviewFinal} alt="Prévia final do roteiro" />
+              ) : (
+                <span>Sem imagem</span>
+              )}
+            </div>
+
+            <div>
+              <div className="preview-title">
+                Prévia rápida do roteiro
+              </div>
+
+              <div className="preview-line">
+                <strong>Título:</strong> {form.titulo || 'Ainda não informado'}
+              </div>
+
+              <div className="preview-line">
+                <strong>Local:</strong> {form.local || 'Ainda não informado'}
+              </div>
+
+              <div className="preview-line">
+                <strong>Encontro:</strong> {form.local_encontro || 'A definir'}
+              </div>
+
+              <div className="preview-line">
+                <strong>Data:</strong> {form.data_roteiro || 'A definir'}
+              </div>
+
+              <div className="preview-line">
+                <strong>Horário:</strong> {form.hora_roteiro || 'A definir'}
+              </div>
+
+              <div className="preview-price">
+                R$ {parsePreco(form.preco).toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          <div className="submit-row">
+            <button
+              type="button"
+              className="btn btn-light"
+              onClick={limparFormulario}
+              disabled={salvando}
+            >
+              Limpar
+            </button>
+
+            <button
+              type="submit"
+              className="btn btn-green"
+              disabled={salvando}
+            >
+              {salvando ? 'Salvando roteiro...' : 'Criar roteiro'}
+            </button>
+          </div>
+        </form>
       </div>
-    </div>
+    </main>
   )
 }
