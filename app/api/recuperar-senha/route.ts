@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const email = body?.email
+    const email = String(body?.email || '').trim().toLowerCase()
 
     if (!email) {
       return NextResponse.json(
@@ -22,13 +25,13 @@ export async function POST(req: Request) {
       'https://prussiktrails.vercel.app'
 
     if (!resendApiKey) {
-      console.error('RESEND_API_KEY ausente no ambiente.')
+      console.error('RESEND_API_KEY ausente na Vercel.')
 
       return NextResponse.json(
         {
           error: true,
           message:
-            'Serviço de e-mail não configurado. Defina RESEND_API_KEY na Vercel.'
+            'Serviço de e-mail não configurado. Configure RESEND_API_KEY na Vercel.'
         },
         { status: 500 }
       )
@@ -36,40 +39,23 @@ export async function POST(req: Request) {
 
     const resend = new Resend(resendApiKey)
 
-    const linkRecuperacao = `${appUrl}/login`
+    const resetUrl = `${appUrl}/resetar-senha?email=${encodeURIComponent(email)}`
 
     const { data, error } = await resend.emails.send({
       from: 'PrussikTrails <onboarding@resend.dev>',
       to: email,
       subject: 'Recuperação de senha - PrussikTrails',
       html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
           <h2>Recuperação de senha</h2>
-
-          <p>Olá,</p>
-
-          <p>Recebemos uma solicitação de recuperação de senha para sua conta no PrussikTrails.</p>
-
+          <p>Recebemos uma solicitação para recuperar sua senha no PrussikTrails.</p>
+          <p>Clique no botão abaixo para continuar:</p>
           <p>
-            Acesse o app para redefinir ou solicitar nova senha:
-          </p>
-
-          <p>
-            <a 
-              href="${linkRecuperacao}" 
-              style="display:inline-block;background:#16a34a;color:#ffffff;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:bold;"
-            >
-              Acessar PrussikTrails
+            <a href="${resetUrl}" style="background:#dc2626;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;display:inline-block;">
+              Redefinir senha
             </a>
           </p>
-
-          <p>Se você não solicitou essa recuperação, ignore este e-mail.</p>
-
-          <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
-
-          <p style="font-size:12px;color:#6b7280;">
-            PrussikTrails - Sua aventura começa aqui.
-          </p>
+          <p>Se você não solicitou isso, ignore este e-mail.</p>
         </div>
       `
     })
@@ -89,17 +75,17 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'E-mail de recuperação enviado com sucesso.',
+      message: 'E-mail de recuperação enviado.',
       data
     })
-
   } catch (error: any) {
-    console.error('Erro em recuperar-senha:', error)
+    console.error('Erro recuperar senha:', error)
 
     return NextResponse.json(
       {
         error: true,
-        message: error?.message || 'Erro interno ao recuperar senha.'
+        message:
+          error?.message || 'Erro interno ao solicitar recuperação de senha.'
       },
       { status: 500 }
     )
