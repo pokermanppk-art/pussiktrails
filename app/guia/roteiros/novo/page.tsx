@@ -17,6 +17,8 @@ type FormRoteiro = {
   preco: string
   imagem_url: string
   observacoes: string
+  limite_pessoas: string
+  recorrencia: string
 }
 
 const formInicial: FormRoteiro = {
@@ -30,7 +32,9 @@ const formInicial: FormRoteiro = {
   dificuldade: 'iniciante',
   preco: '',
   imagem_url: '',
-  observacoes: ''
+  observacoes: '',
+  limite_pessoas: '10',
+  recorrencia: 'unica'
 }
 
 export default function NovoRoteiroPage() {
@@ -48,7 +52,6 @@ export default function NovoRoteiroPage() {
 
   useEffect(() => {
     if (carregouRef.current) return
-
     carregouRef.current = true
     iniciarPagina()
   }, [])
@@ -121,6 +124,18 @@ export default function NovoRoteiroPage() {
     if (Number.isNaN(numero)) return 0
 
     return numero
+  }
+
+  const parseLimitePessoas = (valor: string) => {
+    const numero = Number(valor)
+
+    if (Number.isNaN(numero)) return 10
+
+    if (numero <= 0) return 0
+
+    if (numero > 100) return 100
+
+    return Math.floor(numero)
   }
 
   const limparFormulario = () => {
@@ -295,7 +310,7 @@ export default function NovoRoteiroPage() {
     let payloadAtual = { ...payloadOriginal }
     const colunasIgnoradas: string[] = []
 
-    for (let tentativa = 0; tentativa < 12; tentativa++) {
+    for (let tentativa = 0; tentativa < 18; tentativa++) {
       const { data, error } = await supabase
         .from('roteiros')
         .insert(payloadAtual)
@@ -373,9 +388,10 @@ export default function NovoRoteiroPage() {
     try {
       const precoNumerico = parsePreco(form.preco)
       const duracaoHoras = parseDuracaoHoras(form.duracao)
+      const limitePessoasNumero = parseLimitePessoas(form.limite_pessoas)
       const imagemUrlFinal = await uploadImagemRoteiro()
 
-      const localFinal = form.local.trim()
+      const localFinal = form.local.trim() || 'Não informado'
 
       const embarqueDataHora = [
         form.data_roteiro.trim(),
@@ -384,28 +400,68 @@ export default function NovoRoteiroPage() {
         .filter(Boolean)
         .join(' - ')
 
+      const limiteFinal =
+        limitePessoasNumero === 0 ? null : limitePessoasNumero
+
       const payload: Record<string, any> = {
         titulo: form.titulo.trim(),
         descricao: form.descricao.trim(),
-
-        local: localFinal,
-        localizacao: localFinal,
-
-        dificuldade: form.dificuldade,
         preco: precoNumerico,
-        imagem_url: imagemUrlFinal,
-        id_guia: user.id,
-        ativo: true,
 
+        // Colunas obrigatórias reais da tabela
+        localizacao: localFinal,
+        duracao_horas: duracaoHoras || 0,
+
+        // Compatibilidade com campos novos/alternativos
+        local: localFinal,
         duracao: form.duracao.trim() || null,
-        duracao_horas: duracaoHoras,
 
+        // Guia
+        id_guia: user.id,
+
+        // Status/publicação
+        ativo: true,
+        status: 'ativo',
+
+        // Dificuldade
+        dificuldade: form.dificuldade || null,
+
+        // Imagens — compatibilidade com todas as telas
+        imagem_url: imagemUrlFinal,
+        foto_capa: imagemUrlFinal,
+        fotos: imagemUrlFinal ? [imagemUrlFinal] : [],
+        galeria_fotos: imagemUrlFinal ? [imagemUrlFinal] : [],
+
+        // Data, hora e encontro simples
         local_encontro: form.local_encontro.trim() || null,
         data_roteiro: form.data_roteiro.trim() || null,
         hora_roteiro: form.hora_roteiro.trim() || null,
         embarque_data_hora: embarqueDataHora || null,
 
-        observacoes: form.observacoes.trim() || null
+        // Campos antigos/alternativos de embarque
+        embarque_local: form.local_encontro.trim() || null,
+        embarque_data: null,
+        retorno_local: null,
+        retorno_data: null,
+
+        // Observações
+        observacoes: form.observacoes.trim() || null,
+
+        // Limite de pessoas
+        limite_pessoas: limiteFinal,
+        limite_participantes: limiteFinal,
+
+        // Recorrência
+        recorrencia: form.recorrencia || 'unica',
+        renovar_automaticamente: form.recorrencia !== 'unica',
+        proxima_data: null,
+
+        // Campos auxiliares existentes na tabela
+        reportado: false,
+        is_template: false,
+        motivo_modificacao: null,
+        motivo_reporte: null,
+        template_original_id: null
       }
 
       const resultado = await inserirRoteiroComFallback(payload)
@@ -417,7 +473,7 @@ export default function NovoRoteiroPage() {
         )
 
         setMensagem(
-          `✅ Roteiro criado com sucesso. Atenção: algumas colunas ainda não existem no banco e foram ignoradas: ${resultado.colunasIgnoradas.join(', ')}.`
+          `✅ Roteiro criado com sucesso. Atenção: algumas colunas foram ignoradas por não existirem no banco: ${resultado.colunasIgnoradas.join(', ')}.`
         )
       } else {
         setMensagem('✅ Roteiro criado com sucesso!')
@@ -752,14 +808,6 @@ export default function NovoRoteiroPage() {
           border: 1px solid #fecaca;
         }
 
-        .submit-row {
-          display: flex;
-          justify-content: flex-end;
-          gap: 10px;
-          flex-wrap: wrap;
-          margin-top: 22px;
-        }
-
         .upload-box {
           border: 1px dashed #cbd5e1;
           background: #f8fafc;
@@ -860,6 +908,14 @@ export default function NovoRoteiroPage() {
           margin-top: 8px;
         }
 
+        .submit-row {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 22px;
+        }
+
         @media (max-width: 900px) {
           .intro {
             grid-template-columns: 1fr;
@@ -957,36 +1013,29 @@ export default function NovoRoteiroPage() {
             </h2>
 
             <p className="hero-text">
-              O guia pode enviar uma foto do roteiro, definir data, horário,
-              local de encontro, duração, preço e orientações principais da
-              experiência. O sistema salva tanto o campo novo local quanto o campo
-              antigo localizacao, evitando erro de coluna obrigatória.
+              Esta versão salva o roteiro compatível com a estrutura real da tabela:
+              localizacao, duracao_horas, foto_capa, galeria, limite de pessoas,
+              recorrência e status ativo.
             </p>
           </div>
 
           <aside className="side-card">
-            <div className="side-title">Compatibilidade do banco</div>
+            <div className="side-title">Compatibilidade final</div>
 
             <div className="side-list">
               <div className="side-item">
                 <span className="side-dot" />
-                <span>
-                  Local do roteiro será salvo em local e também em localizacao.
-                </span>
+                <span>Imagem salva em imagem_url, foto_capa, fotos e galeria_fotos.</span>
               </div>
 
               <div className="side-item">
                 <span className="side-dot" />
-                <span>
-                  Duração em texto será salva em duracao e o número em duracao_horas.
-                </span>
+                <span>Local salvo em local e localizacao.</span>
               </div>
 
               <div className="side-item">
                 <span className="side-dot" />
-                <span>
-                  Se uma coluna opcional não existir, ela será ignorada automaticamente.
-                </span>
+                <span>Limite de pessoas pode ser “sem limite” ou de 1 a 100.</span>
               </div>
             </div>
           </aside>
@@ -1033,9 +1082,7 @@ export default function NovoRoteiroPage() {
                 }
                 placeholder="Ex: Atibaia/SP, Serra da Mantiqueira..."
               />
-              <span className="helper">
-                Será salvo em local e localizacao.
-              </span>
+              <span className="helper">Será salvo em local e localizacao.</span>
             </div>
 
             <div className="form-group">
@@ -1078,6 +1125,43 @@ export default function NovoRoteiroPage() {
                 placeholder="Ex: 150,00"
                 inputMode="decimal"
               />
+            </div>
+
+            <div className="form-group">
+              <label>Limite de pessoas</label>
+              <select
+                value={form.limite_pessoas}
+                onChange={(event) =>
+                  atualizarCampo('limite_pessoas', event.target.value)
+                }
+              >
+                <option value="0">Sem limite</option>
+                {Array.from({ length: 100 }, (_, index) => index + 1).map(
+                  (numero) => (
+                    <option key={numero} value={String(numero)}>
+                      {numero} {numero === 1 ? 'pessoa' : 'pessoas'}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Recorrência</label>
+              <select
+                value={form.recorrencia}
+                onChange={(event) =>
+                  atualizarCampo('recorrencia', event.target.value)
+                }
+              >
+                <option value="unica">Única vez</option>
+                <option value="semanal">Semanal</option>
+                <option value="mensal">Mensal</option>
+                <option value="anual">Anual</option>
+              </select>
+              <span className="helper">
+                Quando não for única, o roteiro fica marcado para renovação automática futura.
+              </span>
             </div>
           </div>
 
@@ -1221,6 +1305,17 @@ export default function NovoRoteiroPage() {
               <div className="preview-line">
                 <strong>Duração:</strong> {form.duracao || 'A definir'} |{' '}
                 <strong>Horas:</strong> {parseDuracaoHoras(form.duracao)}
+              </div>
+
+              <div className="preview-line">
+                <strong>Limite:</strong>{' '}
+                {form.limite_pessoas === '0'
+                  ? 'Sem limite'
+                  : `${form.limite_pessoas} pessoas`}
+              </div>
+
+              <div className="preview-line">
+                <strong>Recorrência:</strong> {form.recorrencia}
               </div>
 
               <div className="preview-line">
