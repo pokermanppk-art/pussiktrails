@@ -375,6 +375,8 @@ export default function NovoRoteiroPage() {
       const duracaoHoras = parseDuracaoHoras(form.duracao)
       const imagemUrlFinal = await uploadImagemRoteiro()
 
+      const localFinal = form.local.trim()
+
       const embarqueDataHora = [
         form.data_roteiro.trim(),
         form.hora_roteiro.trim()
@@ -385,7 +387,10 @@ export default function NovoRoteiroPage() {
       const payload: Record<string, any> = {
         titulo: form.titulo.trim(),
         descricao: form.descricao.trim(),
-        local: form.local.trim(),
+
+        local: localFinal,
+        localizacao: localFinal,
+
         dificuldade: form.dificuldade,
         preco: precoNumerico,
         imagem_url: imagemUrlFinal,
@@ -954,32 +959,33 @@ export default function NovoRoteiroPage() {
             <p className="hero-text">
               O guia pode enviar uma foto do roteiro, definir data, horário,
               local de encontro, duração, preço e orientações principais da
-              experiência.
+              experiência. O sistema salva tanto o campo novo local quanto o campo
+              antigo localizacao, evitando erro de coluna obrigatória.
             </p>
           </div>
 
           <aside className="side-card">
-            <div className="side-title">Atenção à duração</div>
+            <div className="side-title">Compatibilidade do banco</div>
 
             <div className="side-list">
               <div className="side-item">
                 <span className="side-dot" />
                 <span>
-                  Escreva a duração como texto: “4 horas”, “meio período” ou “dia inteiro”.
+                  Local do roteiro será salvo em local e também em localizacao.
                 </span>
               </div>
 
               <div className="side-item">
                 <span className="side-dot" />
                 <span>
-                  O sistema extrai o número e salva também em duracao_horas.
+                  Duração em texto será salva em duracao e o número em duracao_horas.
                 </span>
               </div>
 
               <div className="side-item">
                 <span className="side-dot" />
                 <span>
-                  Se não houver número, duracao_horas será salvo como 0 para não quebrar o banco.
+                  Se uma coluna opcional não existir, ela será ignorada automaticamente.
                 </span>
               </div>
             </div>
@@ -1028,7 +1034,7 @@ export default function NovoRoteiroPage() {
                 placeholder="Ex: Atibaia/SP, Serra da Mantiqueira..."
               />
               <span className="helper">
-                Local geral que aparece para o cliente.
+                Será salvo em local e localizacao.
               </span>
             </div>
 
@@ -1058,7 +1064,7 @@ export default function NovoRoteiroPage() {
                 placeholder="Ex: 4 horas, meio período, dia inteiro..."
               />
               <span className="helper">
-                Necessário para preencher duracao_horas no banco.
+                Se houver número, o sistema salva também em duracao_horas.
               </span>
             </div>
 
