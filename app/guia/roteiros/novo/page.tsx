@@ -87,10 +87,7 @@ export default function NovoRoteiroPage() {
     }
   }
 
-  const atualizarCampo = (
-    campo: keyof FormRoteiro,
-    valor: string
-  ) => {
+  const atualizarCampo = (campo: keyof FormRoteiro, valor: string) => {
     setForm((prev) => ({
       ...prev,
       [campo]: valor
@@ -104,6 +101,22 @@ export default function NovoRoteiroPage() {
       .replace(/[^\d.]/g, '')
 
     const numero = Number(normalizado)
+
+    if (Number.isNaN(numero)) return 0
+
+    return numero
+  }
+
+  const parseDuracaoHoras = (valor: string) => {
+    const normalizado = String(valor || '')
+      .replace(',', '.')
+      .trim()
+
+    const match = normalizado.match(/(\d+(\.\d+)?)/)
+
+    if (!match?.[1]) return 0
+
+    const numero = Number(match[1])
 
     if (Number.isNaN(numero)) return 0
 
@@ -165,6 +178,7 @@ export default function NovoRoteiroPage() {
 
     setArquivoImagem(file)
     setPreviewImagem(URL.createObjectURL(file))
+
     setForm((prev) => ({
       ...prev,
       imagem_url: ''
@@ -194,6 +208,7 @@ export default function NovoRoteiroPage() {
       .slice(0, 50)
 
     const idGuia = user?.id || 'guia'
+
     const unique =
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
@@ -357,7 +372,7 @@ export default function NovoRoteiroPage() {
 
     try {
       const precoNumerico = parsePreco(form.preco)
-
+      const duracaoHoras = parseDuracaoHoras(form.duracao)
       const imagemUrlFinal = await uploadImagemRoteiro()
 
       const embarqueDataHora = [
@@ -371,12 +386,14 @@ export default function NovoRoteiroPage() {
         titulo: form.titulo.trim(),
         descricao: form.descricao.trim(),
         local: form.local.trim(),
-        duracao: form.duracao.trim() || null,
         dificuldade: form.dificuldade,
         preco: precoNumerico,
         imagem_url: imagemUrlFinal,
         id_guia: user.id,
         ativo: true,
+
+        duracao: form.duracao.trim() || null,
+        duracao_horas: duracaoHoras,
 
         local_encontro: form.local_encontro.trim() || null,
         data_roteiro: form.data_roteiro.trim() || null,
@@ -422,10 +439,7 @@ export default function NovoRoteiroPage() {
     router.push('/login')
   }
 
-  const imagemPreviewFinal =
-    previewImagem ||
-    form.imagem_url.trim() ||
-    ''
+  const imagemPreviewFinal = previewImagem || form.imagem_url.trim() || ''
 
   if (carregando) {
     return (
@@ -896,13 +910,8 @@ export default function NovoRoteiroPage() {
       <header className="header">
         <div className="header-inner">
           <div>
-            <h1 className="brand-title">
-              PrussikTrails
-            </h1>
-
-            <p className="brand-subtitle">
-              Criar novo roteiro como guia
-            </p>
+            <h1 className="brand-title">PrussikTrails</h1>
+            <p className="brand-subtitle">Criar novo roteiro como guia</p>
           </div>
 
           <div className="actions">
@@ -936,39 +945,42 @@ export default function NovoRoteiroPage() {
       <div className="container">
         <section className="intro">
           <div className="hero-card">
-            <div className="hero-label">
-              Novo roteiro
-            </div>
+            <div className="hero-label">Novo roteiro</div>
 
             <h2 className="hero-title">
               Cadastre uma experiência para os aventureiros.
             </h2>
 
             <p className="hero-text">
-              Agora o guia pode enviar uma foto do roteiro diretamente pelo formulário.
-              A imagem será salva no Supabase Storage e usada no card do roteiro para o cliente.
+              O guia pode enviar uma foto do roteiro, definir data, horário,
+              local de encontro, duração, preço e orientações principais da
+              experiência.
             </p>
           </div>
 
           <aside className="side-card">
-            <div className="side-title">
-              Imagem do roteiro
-            </div>
+            <div className="side-title">Atenção à duração</div>
 
             <div className="side-list">
               <div className="side-item">
                 <span className="side-dot" />
-                <span>Formatos aceitos: JPG, PNG e WEBP.</span>
+                <span>
+                  Escreva a duração como texto: “4 horas”, “meio período” ou “dia inteiro”.
+                </span>
               </div>
 
               <div className="side-item">
                 <span className="side-dot" />
-                <span>Tamanho máximo recomendado: 10MB.</span>
+                <span>
+                  O sistema extrai o número e salva também em duracao_horas.
+                </span>
               </div>
 
               <div className="side-item">
                 <span className="side-dot" />
-                <span>Também é possível colar uma URL manualmente.</span>
+                <span>
+                  Se não houver número, duracao_horas será salvo como 0 para não quebrar o banco.
+                </span>
               </div>
             </div>
           </aside>
@@ -981,9 +993,7 @@ export default function NovoRoteiroPage() {
         )}
 
         <form className="form-card" onSubmit={criarRoteiro}>
-          <h3 className="section-title">
-            Informações principais
-          </h3>
+          <h3 className="section-title">Informações principais</h3>
 
           <div className="form-grid">
             <div className="form-group full">
@@ -1047,6 +1057,9 @@ export default function NovoRoteiroPage() {
                 }
                 placeholder="Ex: 4 horas, meio período, dia inteiro..."
               />
+              <span className="helper">
+                Necessário para preencher duracao_horas no banco.
+              </span>
             </div>
 
             <div className="form-group">
@@ -1064,18 +1077,14 @@ export default function NovoRoteiroPage() {
 
           <div className="divider" />
 
-          <h3 className="section-title">
-            Foto do roteiro
-          </h3>
+          <h3 className="section-title">Foto do roteiro</h3>
 
           <div className="upload-box">
             <div className="image-preview">
               {imagemPreviewFinal ? (
                 <img src={imagemPreviewFinal} alt="Prévia do roteiro" />
               ) : (
-                <span>
-                  A prévia da imagem aparecerá aqui.
-                </span>
+                <span>A prévia da imagem aparecerá aqui.</span>
               )}
             </div>
 
@@ -1132,9 +1141,7 @@ export default function NovoRoteiroPage() {
 
           <div className="divider" />
 
-          <h3 className="section-title">
-            Data, horário e encontro
-          </h3>
+          <h3 className="section-title">Data, horário e encontro</h3>
 
           <div className="form-grid">
             <div className="form-group full">
@@ -1195,9 +1202,7 @@ export default function NovoRoteiroPage() {
             </div>
 
             <div>
-              <div className="preview-title">
-                Prévia rápida do roteiro
-              </div>
+              <div className="preview-title">Prévia rápida do roteiro</div>
 
               <div className="preview-line">
                 <strong>Título:</strong> {form.titulo || 'Ainda não informado'}
@@ -1205,6 +1210,11 @@ export default function NovoRoteiroPage() {
 
               <div className="preview-line">
                 <strong>Local:</strong> {form.local || 'Ainda não informado'}
+              </div>
+
+              <div className="preview-line">
+                <strong>Duração:</strong> {form.duracao || 'A definir'} |{' '}
+                <strong>Horas:</strong> {parseDuracaoHoras(form.duracao)}
               </div>
 
               <div className="preview-line">
