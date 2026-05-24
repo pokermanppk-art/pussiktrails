@@ -1,4 +1,6 @@
-export const dynamic = 'force-static'
+'use client'
+
+import { ReactNode, useState } from 'react'
 
 type Badge = {
   id: number
@@ -84,7 +86,7 @@ const missions: Mission[] = [
 export default function PremiumDemoPage() {
   return (
     <main className="premium-page">
-      <style jsx>{`
+      <style>{`
         :global(body) {
           margin: 0;
           background:
