@@ -1,628 +1,997 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import UploadAvatarModal from '@/components/UploadAvatarModal'
-import SettingsButton from '@/components/SettingsButton'
-import { v4 as uuidv4 } from 'uuid'
 
-export default function PerfilCliente() {
+type PerfilCliente = {
+  id: string
+  nome?: string
+  email?: string
+  telefone?: string
+  tipo?: string
+  created_at?: string
+}
+
+type ReservaResumo = {
+  id: string
+  status?: string
+  pagamento_status?: string
+  valor_total?: number
+  created_at?: string
+}
+
+export default function ClientePerfilPage() {
   const router = useRouter()
+  const carregouRef = useRef(false)
+
   const [user, setUser] = useState<any>(null)
-  const [totalKm, setTotalKm] = useState(0)
-  const [totalTrilhas, setTotalTrilhas] = useState(0)
-  const [fotos, setFotos] = useState<string[]>([])
-  const [bio, setBio] = useState('')
-  const [nome, setNome] = useState('')
-  const [editandoNome, setEditandoNome] = useState(false)
-  const [editandoBio, setEditandoBio] = useState(false)
-  const [uploading, setUploading] = useState(false)
+  const [perfil, setPerfil] = useState<PerfilCliente | null>(null)
+  const [reservas, setReservas] = useState<ReservaResumo[]>([])
+  const [carregando, setCarregando] = useState(true)
   const [mensagem, setMensagem] = useState('')
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
-  const [modalAberto, setModalAberto] = useState(false)
-
-  // Lightbox state
-  const [lightboxAberto, setLightboxAberto] = useState(false)
-  const [fotoAtual, setFotoAtual] = useState(0)
-
-  // Justified Grid state
-  const [linhas, setLinhas] = useState<any[][]>([])
-  const [carregandoFotos, setCarregandoFotos] = useState(true)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const ALTURA_TARGET = 200
-
-  const [medalhas, setMedalhas] = useState<any[]>([])
-  const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
-
-  const metasFotos = [
-    { km: 32, fotos: 5 }, { km: 96, fotos: 15 }, { km: 192, fotos: 30 },
-    { km: 384, fotos: 60 }, { km: 768, fotos: 120 }, { km: 1152, fotos: 200 },
-    { km: 1920, fotos: 400 }, { km: 3840, fotos: 1000 },
-  ]
-
-  const calcularFotosLiberadas = (km: number) => {
-    let fotos = 0
-    for (const meta of metasFotos) if (km >= meta.km) fotos = meta.fotos
-    return fotos
-  }
-
-  const calcularProximoMarco = (km: number) => {
-    for (const meta of metasFotos) if (km < meta.km) return meta.km
-    return metasFotos[metasFotos.length - 1].km
-  }
-
-  const fotosLiberadas = calcularFotosLiberadas(totalKm)
-  const proximoMarco = calcularProximoMarco(totalKm)
-  const progressoParaProximoMarco = totalKm >= proximoMarco ? 100 : (totalKm / proximoMarco) * 100
-
-  const conquistasKm = [
-    { nome: 'Primeira Trilha', icone: '🥾', km: 0, desbloqueado: totalKm >= 0 },
-    { nome: 'Explorador', icone: '🌱', km: 32, desbloqueado: totalKm >= 32 },
-    { nome: 'Caminhante', icone: '🚶', km: 96, desbloqueado: totalKm >= 96 },
-    { nome: 'Aventureiro', icone: '🏔️', km: 384, desbloqueado: totalKm >= 384 },
-    { nome: 'Mestre', icone: '👑', km: 1152, desbloqueado: totalKm >= 1152 },
-    { nome: 'Lenda', icone: '🌟', km: 1920, desbloqueado: totalKm >= 1920 },
-    { nome: 'Lenda Absoluta', icone: '🔥', km: 3840, desbloqueado: totalKm >= 3840 },
-  ]
-
-  const abrirLightbox = (index: number) => {
-    setFotoAtual(index)
-    setLightboxAberto(true)
-  }
-
-  const proximaFoto = () => {
-    setFotoAtual((prev) => (prev + 1) % fotos.length)
-  }
-
-  const fotoAnterior = () => {
-    setFotoAtual((prev) => (prev - 1 + fotos.length) % fotos.length)
-  }
-
-  // Função que calcula o layout justificado (estilo Flickr)
-  const calcularLayoutJustificado = (imagens: any[], alturaAlvo: number) => {
-    const linhasCalc: any[][] = []
-    let linhaAtual: any[] = []
-    let somaProporcoes = 0
-
-    for (const img of imagens) {
-      const proporcao = img.width / img.height
-      linhaAtual.push({ ...img, proporcao })
-      somaProporcoes += proporcao
-
-      const larguraEstimada = somaProporcoes * alturaAlvo
-
-      if (linhaAtual.length >= 2 && larguraEstimada > 400 && larguraEstimada < 1200) {
-        linhasCalc.push([...linhaAtual])
-        linhaAtual = []
-        somaProporcoes = 0
-      }
-    }
-
-    if (linhaAtual.length > 0) {
-      linhasCalc.push(linhaAtual)
-    }
-
-    return linhasCalc
-  }
 
   useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (!userData) { router.push('/login'); return }
-    const parsedUser = JSON.parse(userData)
-    if (parsedUser.tipo !== 'cliente') { router.push('/'); return }
-    setUser(parsedUser)
-    setNome(parsedUser.nome || '')
-    carregarDados(parsedUser.id)
+    if (carregouRef.current) return
+    carregouRef.current = true
+    iniciar()
   }, [])
 
-  const carregarDados = async (userId: string) => {
-    await Promise.all([
-      carregarFotos(userId), carregarAvatar(userId), carregarEstatisticas(userId),
-      carregarBio(userId), carregarMedalhas(userId), carregarNome(userId)
-    ])
-  }
-
-  const carregarNome = async (userId: string) => {
-    const { data } = await supabase.from('users').select('nome').eq('id', userId).single()
-    if (data?.nome) {
-      setNome(data.nome)
-      const userData = localStorage.getItem('user')
-      if (userData) {
-        const user = JSON.parse(userData)
-        user.nome = data.nome
-        localStorage.setItem('user', JSON.stringify(user))
-      }
-    }
-  }
-
-  const salvarNome = async () => {
-    if (!nome.trim()) { setMensagem('❌ Nome não pode ficar vazio'); return }
-    const { error } = await supabase.from('users').update({ nome }).eq('id', user.id)
-    if (error) setMensagem('❌ Erro ao salvar nome')
-    else {
-      setMensagem('✅ Nome atualizado!')
-      const userData = localStorage.getItem('user')
-      if (userData) {
-        const user = JSON.parse(userData)
-        user.nome = nome
-        localStorage.setItem('user', JSON.stringify(user))
-      }
-    }
-    setEditandoNome(false)
-    setTimeout(() => setMensagem(''), 3000)
-  }
-
-  const carregarMedalhas = async (userId: string) => {
-    setCarregandoMedalhas(true)
+  const iniciar = async () => {
     try {
-      const listaPadrao = [
-        { nome: 'Trilhas', icone: '🥾', meta: 2, progresso: 0 },
-        { nome: 'KM', icone: '👣', meta: 32, progresso: 0 },
-        { nome: 'Fotos', icone: '📸', meta: 3, progresso: 0 },
-        { nome: 'Avaliações', icone: '⭐', meta: 5, progresso: 0 },
-        { nome: 'Reservas', icone: '💳', meta: 2, progresso: 0 }
-      ]
-      const { data: progresso } = await supabase
-        .from('usuarios_medalhas')
-        .select('progresso_atual, medalha:medalha_id(nome)')
-        .eq('usuario_id', userId)
-      if (progresso && progresso.length > 0) {
-        const mapa = new Map()
-        progresso.forEach((item: any) => { if (item.medalha?.nome) mapa.set(item.medalha.nome, item.progresso_atual || 0) })
-        setMedalhas(listaPadrao.map(m => ({ ...m, progresso: mapa.get(m.nome) || 0 })))
-      } else setMedalhas(listaPadrao)
-    } catch (err) { console.error(err) } finally { setCarregandoMedalhas(false) }
-  }
+      const userData = localStorage.getItem('user')
 
-  const carregarFotos = async (userId: string) => {
-    const { data } = await supabase.from('users').select('fotos_aventuras').eq('id', userId).single()
-    if (data?.fotos_aventuras) {
-      setFotos(data.fotos_aventuras)
-      await carregarLayoutJustificado(data.fotos_aventuras)
-    } else {
-      setFotos([])
-      setCarregandoFotos(false)
+      if (!userData) {
+        router.push('/login')
+        return
+      }
+
+      const parsedUser = JSON.parse(userData)
+
+      if (parsedUser.tipo !== 'cliente') {
+        router.push('/')
+        return
+      }
+
+      setUser(parsedUser)
+      await carregarPerfil(parsedUser)
+    } catch (error) {
+      console.error('Erro ao iniciar perfil:', error)
+      setMensagem('Erro ao carregar perfil do cliente.')
+      setCarregando(false)
     }
   }
 
-  const carregarLayoutJustificado = async (urls: string[]) => {
-    if (urls.length === 0) {
-      setLinhas([])
-      setCarregandoFotos(false)
-      return
+  const carregarPerfil = async (usuario: any) => {
+    setCarregando(true)
+    setMensagem('')
+
+    try {
+      const clienteId = usuario?.id
+
+      if (!clienteId) {
+        throw new Error('Cliente não identificado.')
+      }
+
+      const { data: perfilData, error: perfilError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', clienteId)
+        .maybeSingle()
+
+      if (perfilError) {
+        console.warn('Erro ao buscar perfil:', perfilError)
+      }
+
+      const { data: reservasData, error: reservasError } = await supabase
+        .from('reservas')
+        .select('id, status, pagamento_status, valor_total, created_at')
+        .eq('cliente_id', clienteId)
+        .order('created_at', { ascending: false })
+
+      if (reservasError) {
+        console.warn('Erro ao buscar reservas do perfil:', reservasError)
+      }
+
+      setPerfil(perfilData || usuario)
+      setReservas(reservasData || [])
+    } catch (error: any) {
+      console.error('Erro ao carregar perfil:', error)
+      setMensagem(error?.message || 'Erro ao carregar dados do perfil.')
+    } finally {
+      setCarregando(false)
     }
-
-    setCarregandoFotos(true)
-    const imagensComDimensoes = await Promise.all(
-      urls.map(async (url, idx) => {
-        return new Promise<{ url: string; width: number; height: number; index: number }>((resolve) => {
-          const img = new Image()
-          img.onload = () => {
-            resolve({ url, width: img.width, height: img.height, index: idx })
-          }
-          img.onerror = () => {
-            resolve({ url, width: 1200, height: 800, index: idx })
-          }
-          img.src = url
-        })
-      })
-    )
-    const linhasCalc = calcularLayoutJustificado(imagensComDimensoes, ALTURA_TARGET)
-    setLinhas(linhasCalc)
-    setCarregandoFotos(false)
   }
 
-  const carregarAvatar = async (userId: string) => {
-    const { data } = await supabase.from('users').select('avatar_url').eq('id', userId).single()
-    if (data?.avatar_url) setAvatarPreview(data.avatar_url)
-  }
-  const carregarEstatisticas = async (userId: string) => {
-    const { data: reservas } = await supabase
-      .from('reservas')
-      .select('*, roteiro:roteiro_id(km)')
-      .eq('cliente_id', userId)
-      .eq('status', 'realizada')
-    let km = 0
-    reservas?.forEach(r => { km += r.roteiro?.km || 0 })
-    setTotalKm(km)
-    setTotalTrilhas(reservas?.length || 0)
-  }
-  const carregarBio = async (userId: string) => {
-    const { data } = await supabase.from('users').select('bio').eq('id', userId).single()
-    if (data?.bio) setBio(data.bio)
-  }
-  const salvarBio = async () => {
-    const { error } = await supabase.from('users').update({ bio }).eq('id', user.id)
-    setMensagem(error ? '❌ Erro ao salvar biografia' : '✅ Biografia atualizada!')
-    setEditandoBio(false)
-    setTimeout(() => setMensagem(''), 3000)
-  }
-
-  const handleUploadFotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length === 0) return
-    if (fotos.length + files.length > fotosLiberadas) {
-      setMensagem(`⚠️ Limite de ${fotosLiberadas} fotos.`)
-      setTimeout(() => setMensagem(''), 4000)
-      return
-    }
-    setUploading(true)
-    const novasUrls: string[] = []
-    for (const file of files) {
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${uuidv4()}.${fileExt}`
-      const filePath = `clientes/${user.id}/${fileName}`
-      const { error } = await supabase.storage.from('fotos-aventuras').upload(filePath, file)
-      if (error) { console.error(error); continue }
-      const { data: { publicUrl } } = supabase.storage.from('fotos-aventuras').getPublicUrl(filePath)
-      novasUrls.push(publicUrl)
-    }
-    const novasFotos = [...fotos, ...novasUrls]
-    await supabase.from('users').update({ fotos_aventuras: novasFotos }).eq('id', user.id)
-    setFotos(novasFotos)
-    await carregarLayoutJustificado(novasFotos)
-    setMensagem(`✅ ${novasUrls.length} foto(s) adicionada(s)!`)
-    setUploading(false)
-    setTimeout(() => setMensagem(''), 3000)
-  }
-
-  const removerFoto = async (index: number) => {
-    if (!confirm('Remover esta foto?')) return
-    const novasFotos = fotos.filter((_, i) => i !== index)
-    await supabase.from('users').update({ fotos_aventuras: novasFotos }).eq('id', user.id)
-    setFotos(novasFotos)
-    await carregarLayoutJustificado(novasFotos)
-    setMensagem('✅ Foto removida!')
-    setTimeout(() => setMensagem(''), 3000)
-  }
-
-  const handleLogout = () => {
+  const sair = () => {
     localStorage.removeItem('user')
     router.push('/login')
   }
 
-  if (!user) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Carregando...</div>
+  const totalReservas = reservas.length
+
+  const reservasPagas = reservas.filter(
+    (reserva) => reserva.pagamento_status === 'pago'
+  ).length
+
+  const reservasRealizadas = reservas.filter(
+    (reserva) => reserva.status === 'realizada'
+  ).length
+
+  const reservasConfirmadas = reservas.filter(
+    (reserva) =>
+      reserva.status === 'confirmada' ||
+      reserva.pagamento_status === 'pago'
+  ).length
+
+  const xpAtual =
+    totalReservas * 420 +
+    reservasPagas * 680 +
+    reservasRealizadas * 1200
+
+  const xpProximoNivel = 6000
+  const progresso = Math.min(100, Math.round((xpAtual / xpProximoNivel) * 100))
+
+  const nivel = Math.max(1, Math.floor(xpAtual / 1000) + 1)
+
+  const nomeCliente =
+    perfil?.nome ||
+    user?.nome ||
+    'Aventureiro Prussik'
+
+  const emailCliente =
+    perfil?.email ||
+    user?.email ||
+    'cliente@prussiktrails.com'
+
+  const membroDesde = perfil?.created_at
+    ? new Date(perfil.created_at).toLocaleDateString('pt-BR')
+    : 'Perfil ativo'
+
+  if (carregando) {
+    return (
+      <main
+        style={{
+          minHeight: '100dvh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#000',
+          color: '#00ff66'
+        }}
+      >
+        Carregando perfil premium...
+      </main>
+    )
+  }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      <style jsx global>{`
-        @media (min-width: 768px) {
-          .perfil-container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
-          .perfil-card { display: flex !important; flex-direction: row !important; align-items: flex-start !important; text-align: left !important; gap: 32px !important; }
-          .perfil-avatar { width: 120px !important; height: 120px !important; }
-          .perfil-avatar span { font-size: 48px !important; }
-          .perfil-stats { justify-content: flex-start !important; gap: 48px !important; }
-          .perfil-stats div { text-align: left !important; }
-          .medalhas-grid { display: flex !important; flex-wrap: wrap !important; gap: 16px !important; justify-content: flex-start !important; }
-          .medalha-card { width: 100px !important; padding: 12px !important; }
-          .conquista-card { width: 90px !important; padding: 12px !important; }
-          .foto-meta { flex-wrap: wrap !important; gap: 12px !important; }
+    <main className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          background: #000000;
+          color: #f4fff7;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        button {
+          font-family: inherit;
+        }
+
+        .page {
+          min-height: 100vh;
+          background:
+            radial-gradient(circle at 18% 8%, rgba(0, 255, 102, 0.15), transparent 30%),
+            radial-gradient(circle at 86% 2%, rgba(255, 255, 255, 0.07), transparent 26%),
+            linear-gradient(180deg, #000000 0%, #050705 48%, #000000 100%);
+          position: relative;
+          overflow-x: hidden;
+        }
+
+        .page::before {
+          content: '';
+          position: fixed;
+          inset: 0;
+          pointer-events: none;
+          background:
+            linear-gradient(90deg, rgba(255,255,255,0.026) 1px, transparent 1px),
+            linear-gradient(0deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+          background-size: 42px 42px;
+          opacity: 0.42;
+          mask-image: linear-gradient(180deg, black, transparent 85%);
+          z-index: 0;
+        }
+
+        .shell {
+          position: relative;
+          z-index: 1;
+          max-width: 1280px;
+          margin: 0 auto;
+          padding: 22px;
+        }
+
+        .topbar {
+          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(0,0,0,0.68);
+          backdrop-filter: blur(18px);
+          border-radius: 30px;
+          padding: 16px 18px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 18px;
+          margin-bottom: 18px;
+          box-shadow: 0 26px 80px rgba(0,0,0,0.35);
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .brand-mark {
+          width: 50px;
+          height: 50px;
+          border: 1px solid rgba(0,255,102,0.22);
+          background:
+            radial-gradient(circle at 30% 20%, rgba(0,255,102,0.24), transparent 42%),
+            linear-gradient(135deg, #101310, #000000);
+          color: #00ff66;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .brand h1 {
+          margin: 0;
+          color: #ffffff;
+          font-size: 20px;
+          font-weight: 300;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+        }
+
+        .brand p {
+          margin: 5px 0 0;
+          color: #8d978f;
+          font-size: 11px;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+        }
+
+        .actions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .btn {
+          border: 1px solid rgba(74,74,74,0.95);
+          background: rgba(255,255,255,0.025);
+          color: #f4fff7;
+          padding: 11px 16px;
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+          cursor: pointer;
+          transition: 0.25s ease;
+        }
+
+        .btn:hover {
+          border-color: rgba(0,255,102,0.72);
+          color: #00ff66;
+          box-shadow: 0 0 22px rgba(0,255,102,0.14);
+        }
+
+        .btn.primary {
+          border-color: rgba(0,255,102,0.6);
+          background: rgba(0,255,102,0.08);
+          color: #00ff66;
+        }
+
+        .hero {
+          min-height: 520px;
+          border-radius: 36px;
+          border: 1px solid rgba(255,255,255,0.09);
+          overflow: hidden;
+          position: relative;
+          margin-bottom: 18px;
+          background:
+            linear-gradient(180deg, rgba(0,0,0,0.08), rgba(0,0,0,0.88)),
+            radial-gradient(circle at 52% 10%, rgba(255,255,255,0.10), transparent 22%),
+            radial-gradient(circle at 27% 42%, rgba(0,255,102,0.14), transparent 25%),
+            linear-gradient(135deg, #101010, #000000 48%, #050805);
+          box-shadow:
+            0 35px 120px rgba(0,0,0,0.58),
+            inset 0 0 80px rgba(255,255,255,0.025);
+        }
+
+        .hero::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+            linear-gradient(0deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+          background-size: 34px 34px;
+          opacity: 0.34;
+          mask-image: linear-gradient(180deg, black, transparent);
+        }
+
+        .hero-inner {
+          position: relative;
+          z-index: 2;
+          min-height: 520px;
+          padding: 32px;
+          display: grid;
+          grid-template-columns: 220px minmax(0, 1fr);
+          gap: 28px;
+          align-items: center;
+        }
+
+        .avatar-frame {
+          width: 180px;
+          height: 180px;
+          border-radius: 50%;
+          padding: 4px;
+          background: conic-gradient(from 180deg, #00ff66, #4a4a4a, #ffffff, #00ff66);
+          box-shadow: 0 0 38px rgba(0,255,102,0.22);
+          position: relative;
+          margin: 0 auto;
+        }
+
+        .avatar-core {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          background:
+            radial-gradient(circle at 50% 22%, rgba(0,255,102,0.24), transparent 34%),
+            linear-gradient(180deg, #151515, #000000);
+          border: 4px solid #000000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #00ff66;
+        }
+
+        .activity {
+          position: absolute;
+          right: 14px;
+          bottom: 18px;
+          width: 22px;
+          height: 22px;
+          border-radius: 999px;
+          border: 4px solid #000000;
+          background: #00ff66;
+          box-shadow: 0 0 18px rgba(0,255,102,0.9);
+        }
+
+        .system-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 9px;
+          padding: 9px 13px;
+          border: 1px solid rgba(0,255,102,0.24);
+          background: rgba(0,255,102,0.06);
+          color: #00ff66;
+          font-size: 11px;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          margin-bottom: 16px;
+        }
+
+        .system-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #00ff66;
+          box-shadow: 0 0 18px rgba(0,255,102,0.9);
+        }
+
+        .title {
+          margin: 0;
+          font-weight: 200;
+          font-size: clamp(38px, 6vw, 72px);
+          line-height: 0.95;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #ffffff;
+        }
+
+        .title span {
+          color: #00ff66;
+          text-shadow: 0 0 32px rgba(0,255,102,0.26);
+        }
+
+        .subtitle {
+          margin: 16px 0 0;
+          max-width: 720px;
+          color: #a0aaa2;
+          font-size: 14px;
+          line-height: 1.75;
+          letter-spacing: 0.03em;
+        }
+
+        .user-meta {
+          margin-top: 18px;
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .meta-chip {
+          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(0,0,0,0.46);
+          padding: 9px 12px;
+          color: #8f9a91;
+          font-size: 11px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+
+        .meta-chip strong {
+          color: #00ff66;
+          font-weight: 500;
+        }
+
+        .status-grid {
+          display: grid;
+          grid-template-columns: 1.2fr repeat(3, 1fr);
+          gap: 1px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(255,255,255,0.08);
+          margin-bottom: 18px;
+        }
+
+        .status-cell {
+          background: rgba(0,0,0,0.78);
+          padding: 18px;
+        }
+
+        .cell-label {
+          color: #7e8a82;
+          font-size: 10px;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+        }
+
+        .cell-value {
+          color: #ffffff;
+          font-size: 28px;
+          font-weight: 200;
+          letter-spacing: 0.08em;
+        }
+
+        .cell-note {
+          color: #00ff66;
+          font-size: 11px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-top: 6px;
+        }
+
+        .xp-meta {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          color: #9ca5a0;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 11px;
+          margin-bottom: 9px;
+        }
+
+        .xp-bar {
+          height: 10px;
+          background: rgba(255,255,255,0.07);
+          border: 1px solid rgba(255,255,255,0.08);
+          overflow: hidden;
+        }
+
+        .xp-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #4a4a4a, #00ff66);
+          box-shadow: 0 0 24px rgba(0,255,102,0.32);
+        }
+
+        .panel-grid {
+          display: grid;
+          grid-template-columns: 1.1fr 0.9fr;
+          gap: 18px;
+        }
+
+        .panel {
+          border: 1px solid rgba(255,255,255,0.08);
+          background:
+            linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02)),
+            rgba(0,0,0,0.72);
+          backdrop-filter: blur(18px);
+          box-shadow: 0 26px 80px rgba(0,0,0,0.34);
+        }
+
+        .panel-head {
+          padding: 20px 20px 0;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .panel-title {
+          margin: 0;
+          color: #ffffff;
+          font-size: 16px;
+          font-weight: 300;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+        }
+
+        .panel-code {
+          color: #00ff66;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 10px;
+          letter-spacing: 0.12em;
+        }
+
+        .passport-card {
+          padding: 20px;
+        }
+
+        .passport-inner {
+          border: 1px solid rgba(0,255,102,0.18);
+          padding: 22px;
+          background:
+            radial-gradient(circle at 90% 10%, rgba(0,255,102,0.12), transparent 30%),
+            rgba(0,0,0,0.58);
+        }
+
+        .passport-title {
+          color: #00ff66;
+          font-size: 12px;
+          letter-spacing: 0.22em;
+          text-transform: uppercase;
+          margin-bottom: 22px;
+        }
+
+        .passport-name {
+          color: #ffffff;
+          font-size: 38px;
+          font-weight: 200;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          margin-bottom: 12px;
+        }
+
+        .passport-text {
+          color: #9aa39d;
+          line-height: 1.75;
+          font-size: 13px;
+        }
+
+        .achievement-grid {
+          padding: 20px;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .achievement {
+          min-height: 148px;
+          padding: 17px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background:
+            radial-gradient(circle at 80% 20%, rgba(0,255,102,0.11), transparent 28%),
+            rgba(0,0,0,0.55);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .hex-icon {
+          width: 56px;
+          height: 56px;
+          color: #00ff66;
+          border: 1px solid rgba(0,255,102,0.22);
+          background: rgba(0,255,102,0.05);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
+          margin-bottom: 16px;
+        }
+
+        .achievement-title {
+          color: #ffffff;
+          font-size: 14px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+        }
+
+        .achievement-desc {
+          margin-top: 8px;
+          color: #919b95;
+          font-size: 12px;
+          line-height: 1.6;
+        }
+
+        .terminal {
+          margin-top: 18px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background:
+            linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+            linear-gradient(0deg, rgba(255,255,255,0.026) 1px, transparent 1px),
+            #000000;
+          background-size: 36px 36px;
+          padding: 22px;
+          display: flex;
+          justify-content: space-between;
+          gap: 20px;
+          flex-wrap: wrap;
+        }
+
+        .terminal-link {
+          color: #a0aaa2;
+          font-size: 11px;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+        }
+
+        .terminal-link span {
+          color: #00ff66;
+          margin-right: 8px;
+        }
+
+        @media (max-width: 900px) {
+          .topbar {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .hero-inner {
+            grid-template-columns: 1fr;
+            text-align: left;
+          }
+
+          .avatar-frame {
+            margin: 0;
+          }
+
+          .status-grid,
+          .panel-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .shell {
+            padding: 12px;
+          }
+
+          .hero-inner {
+            padding: 22px;
+          }
+
+          .actions {
+            width: 100%;
+          }
+
+          .btn {
+            flex: 1;
+          }
+
+          .achievement-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .title {
+            font-size: 38px;
+          }
+
+          .passport-name {
+            font-size: 28px;
+          }
         }
       `}</style>
 
-      <UploadAvatarModal isOpen={modalAberto} onClose={() => setModalAberto(false)} userId={user.id} onAvatarUpdated={setAvatarPreview} />
+      <div className="shell">
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-mark">
+              <PrussikIcon />
+            </div>
 
-      {/* HEADER COM SETTINGS */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <SettingsButton userId={user.id} userEmail={user.email} />
-            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Dashboard</button>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Sair</button>
+            <div>
+              <h1>PrussikTrails Passport</h1>
+              <p>Perfil do aventureiro • Cliente</p>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="perfil-container" style={{ padding: '16px' }}>
-        
-        {/* CARD PERFIL */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '16px' }}>
-          <div className="perfil-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '16px' }}>
-            <button onClick={() => setModalAberto(true)} className="perfil-avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: 'none', cursor: 'pointer' }}>
-              {avatarPreview ? <img src={avatarPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '36px', color: 'white' }}>{(nome || user.email)?.charAt(0).toUpperCase() || 'A'}</span>}
+          <div className="actions">
+            <button className="btn" onClick={() => router.push('/cliente/dashboard')}>
+              Dashboard
             </button>
-            <div style={{ flex: 1 }}>
-              {editandoNome ? (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>
-                  <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '16px', fontWeight: 'bold', textAlign: 'center' }} autoFocus />
-                  <button onClick={salvarNome} style={{ backgroundColor: '#16a34a', color: 'white', padding: '4px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Salvar</button>
-                  <button onClick={() => { setEditandoNome(false); carregarNome(user.id); }} style={{ backgroundColor: '#e5e7eb', padding: '4px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>X</button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>{nome || user.email}</h2>
-                  <button onClick={() => setEditandoNome(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}>✏️</button>
-                </div>
-              )}
-              <p style={{ color: '#6b7280', fontSize: '11px', marginTop: '4px' }}>📅 Aventureiro desde {new Date().getFullYear()}</p>
-              
-              <div className="perfil-stats" style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '12px', flexWrap: 'wrap' }}>
-                <div><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{totalKm}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>KM</div></div>
-                <div><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{totalTrilhas}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>Trilhas</div></div>
-                <div><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f59e0b' }}>{conquistasKm.filter(m => m.desbloqueado).length}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>Medalhas</div></div>
-              </div>
-            </div>
+
+            <button className="btn" onClick={() => router.push('/cliente/minhas-reservas')}>
+              Reservas
+            </button>
+
+            <button className="btn primary" onClick={() => router.push('/cliente/roteiros')}>
+              Explorar
+            </button>
+
+            <button className="btn" onClick={sair}>
+              Sair
+            </button>
           </div>
-          
-          {editandoBio ? (
-            <div style={{ marginTop: '16px' }}>
-              <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={3} placeholder="Escreva algo sobre você..." style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: '13px', resize: 'vertical' }} />
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button onClick={salvarBio} style={{ backgroundColor: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Salvar</button>
-                <button onClick={() => { setEditandoBio(false); carregarBio(user.id); }} style={{ backgroundColor: '#e5e7eb', padding: '6px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cancelar</button>
-              </div>
-            </div>
-          ) : (
-            <div onClick={() => setEditandoBio(true)} style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '12px', cursor: 'pointer', maxHeight: '80px', overflowY: 'auto' }}>
-              {bio ? <p style={{ margin: 0, fontSize: '12px', color: '#4b5563' }}>{bio}</p> : <p style={{ margin: 0, fontSize: '12px', color: '#9ca3af' }}>✏️ Clique para adicionar uma biografia...</p>}
-            </div>
-          )}
-          {mensagem && <div style={{ marginTop: '12px', padding: '8px', borderRadius: '8px', textAlign: 'center', fontSize: '12px', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626' }}>{mensagem}</div>}
-        </div>
+        </header>
 
-        {/* BARRA DE PROGRESSO */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <p style={{ marginBottom: '8px', fontSize: '12px', color: '#4b5563' }}>🎯 Próximo marco: <strong>{proximoMarco} km</strong> (faltam {Math.max(0, proximoMarco - totalKm)} km)</p>
-          <div style={{ backgroundColor: '#e5e7eb', borderRadius: '20px', height: '8px', overflow: 'hidden' }}>
-            <div style={{ width: `${progressoParaProximoMarco}%`, backgroundColor: '#3b82f6', height: '100%', borderRadius: '20px' }} />
-          </div>
-        </div>
-
-        {/* CONQUISTAS POR KM */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px' }}>🏅 Conquistas por KM</h3>
-          <div className="medalhas-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-            {conquistasKm.map((c, i) => (
-              <div key={i} className="conquista-card" style={{ flex: '0 0 auto', width: '65px', backgroundColor: c.desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', border: c.desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: c.desbloqueado ? 1 : 0.6 }}>
-                <div style={{ fontSize: '24px' }}>{c.icone}</div>
-                <div style={{ fontSize: '8px', fontWeight: 'bold' }}>{c.nome.split(' ')[0]}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* MEDALHAS ESPECIAIS */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px' }}>🎖️ Medalhas</h3>
-          <div className="medalhas-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-            {medalhas.map((m, idx) => {
-              const desbloqueado = m.progresso >= m.meta
-              return (
-                <div key={idx} className="medalha-card" style={{ flex: '0 0 auto', width: '65px', backgroundColor: desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', border: desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: desbloqueado ? 1 : 0.6 }}>
-                  <div style={{ fontSize: '24px', position: 'relative', display: 'inline-block' }}>
-                    {m.icone}
-                    {!desbloqueado && <span style={{ position: 'absolute', top: '-5px', right: '-8px', fontSize: '10px' }}>🔒</span>}
-                  </div>
-                  <div style={{ fontSize: '8px', fontWeight: 'bold' }}>{m.nome}</div>
-                  <div style={{ fontSize: '7px', color: '#9ca3af' }}>{m.progresso}/{m.meta}</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* FOTOS COM JUSTIFIED GRID (FLICKR STYLE) */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0 }}>📸 Fotos das Aventuras</h3>
-            <p style={{ fontSize: '11px', color: '#6b7280' }}>{fotos.length}/{fotosLiberadas}</p>
-          </div>
-          
-          <label style={{ display: 'block', textAlign: 'center', backgroundColor: '#16a34a', color: 'white', padding: '10px', borderRadius: '40px', cursor: 'pointer', marginBottom: '16px', fontSize: '13px' }}>
-            {uploading ? 'Enviando...' : '📤 Enviar fotos'}
-            <input type="file" accept="image/*" multiple onChange={handleUploadFotos} disabled={uploading} style={{ display: 'none' }} />
-          </label>
-
-          <div className="foto-meta" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', marginBottom: '12px' }}>
-            {metasFotos.slice(0, 6).map((meta, i) => (
-              <span key={i} style={{ backgroundColor: totalKm >= meta.km ? '#3b82f6' : '#e5e7eb', color: totalKm >= meta.km ? 'white' : '#6b7280', padding: '2px 8px', borderRadius: '20px', fontSize: '9px' }}>{meta.km}km</span>
-            ))}
-          </div>
-
-          {carregandoFotos ? (
-            <div style={{ textAlign: 'center', padding: '32px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-              <span style={{ fontSize: '32px' }}>⏳</span>
-              <p style={{ marginTop: '8px', color: '#6b7280' }}>Carregando fotos...</p>
-            </div>
-          ) : fotos.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '30px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-              <span style={{ fontSize: '32px' }}>🏞️</span>
-              <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Envie suas aventuras!</p>
-            </div>
-          ) : (
-            <div ref={containerRef} style={{ width: '100%' }}>
-              {linhas.map((linha, linhaIndex) => {
-                const somaProporcoes = linha.reduce((acc, img) => acc + img.proporcao, 0)
-                const alturaReal = ALTURA_TARGET
-                
-                return (
-                  <div
-                    key={linhaIndex}
-                    style={{
-                      display: 'flex',
-                      gap: '8px',
-                      marginBottom: '8px',
-                      width: '100%',
-                    }}
-                  >
-                    {linha.map((img, imgIndex) => {
-                      const largura = (img.proporcao / somaProporcoes) * 100
-                      return (
-                        <div
-                          key={imgIndex}
-                          onClick={() => abrirLightbox(img.index)}
-                          style={{
-                            position: 'relative',
-                            width: `${largura}%`,
-                            cursor: 'pointer',
-                            overflow: 'hidden',
-                            borderRadius: '12px',
-                            backgroundColor: '#f1f5f9',
-                          }}
-                        >
-                          <img
-                            src={img.url}
-                            alt={`Foto ${img.index + 1}`}
-                            style={{
-                              width: '100%',
-                              height: `${alturaReal}px`,
-                              objectFit: 'cover',
-                              display: 'block',
-                            }}
-                          />
-                          
-                          {/* Botão de remover */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              removerFoto(img.index)
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: '8px',
-                              right: '8px',
-                              backgroundColor: '#dc2626',
-                              color: 'white',
-                              borderRadius: '50%',
-                              width: '28px',
-                              height: '28px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: '16px',
-                              zIndex: 10,
-                              fontWeight: 'bold'
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* LIGHTBOX / MODAL DE FOTOS */}
-      {lightboxAberto && (
-        <div 
-          onClick={() => setLightboxAberto(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.9)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer'
-          }}
-        >
-          <button
-            onClick={() => setLightboxAberto(false)}
+        {mensagem && (
+          <div
             style={{
-              position: 'absolute',
-              top: '20px',
-              right: '20px',
-              background: 'none',
-              border: 'none',
-              color: 'white',
-              fontSize: '32px',
-              cursor: 'pointer'
+              border: '1px solid rgba(0,255,102,0.28)',
+              color: '#00ff66',
+              padding: 14,
+              marginBottom: 18,
+              background: 'rgba(0,255,102,0.06)'
             }}
           >
-            ✕
-          </button>
-          
-          {fotos.length > 1 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                fotoAnterior()
-              }}
-              style={{
-                position: 'absolute',
-                left: '20px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'rgba(0,0,0,0.5)',
-                border: 'none',
-                color: 'white',
-                fontSize: '40px',
-                cursor: 'pointer',
-                padding: '10px 15px',
-                borderRadius: '50%'
-              }}
-            >
-              ‹
-            </button>
-          )}
-          
-          <img
-            src={fotos[fotoAtual]}
-            alt="Foto"
-            style={{
-              maxWidth: '90vw',
-              maxHeight: '90vh',
-              objectFit: 'contain',
-              cursor: 'default'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          />
-          
-          {fotos.length > 1 && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  proximaFoto()
-                }}
-                style={{
-                  position: 'absolute',
-                  right: '20px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'rgba(0,0,0,0.5)',
-                  border: 'none',
-                  color: 'white',
-                  fontSize: '40px',
-                  cursor: 'pointer',
-                  padding: '10px 15px',
-                  borderRadius: '50%'
-                }}
-              >
-                ›
-              </button>
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '20px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  background: 'rgba(0,0,0,0.6)',
-                  color: 'white',
-                  padding: '5px 12px',
-                  borderRadius: '20px',
-                  fontSize: '14px'
-                }}
-              >
-                {fotoAtual + 1} / {fotos.length}
+            {mensagem}
+          </div>
+        )}
+
+        <section className="hero">
+          <div className="hero-inner">
+            <div>
+              <div className="avatar-frame">
+                <div className="avatar-core">
+                  <AgentIcon />
+                </div>
+                <span className="activity" />
               </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
+            </div>
+
+            <div>
+              <div className="system-chip">
+                <span className="system-dot" />
+                Perfil ativo • Wild Passport
+              </div>
+
+              <h2 className="title">
+                {nomeCliente.split(' ')[0]} <span>Explorer</span>
+              </h2>
+
+              <p className="subtitle">
+                Identidade digital do aventureiro dentro do PrussikTrails.
+                Aqui o cliente acompanha sua evolução, reservas, conquistas,
+                histórico e futuramente poderá ativar a camada premium.
+              </p>
+
+              <div className="user-meta">
+                <div className="meta-chip">
+                  Email: <strong>{emailCliente}</strong>
+                </div>
+
+                <div className="meta-chip">
+                  Membro desde: <strong>{membroDesde}</strong>
+                </div>
+
+                <div className="meta-chip">
+                  Classe: <strong>Trail Commander</strong>
+                </div>
+
+                <div className="meta-chip">
+                  Nível: <strong>LVL {nivel}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="status-grid">
+          <div className="status-cell">
+            <div className="cell-label">Progressão</div>
+
+            <div className="xp-meta">
+              <span>{xpAtual} XP</span>
+              <span>{xpProximoNivel} XP</span>
+            </div>
+
+            <div className="xp-bar">
+              <div
+                className="xp-fill"
+                style={{ width: `${progresso}%` }}
+              />
+            </div>
+
+            <div className="cell-note">
+              {progresso}% até o próximo nível
+            </div>
+          </div>
+
+          <div className="status-cell">
+            <div className="cell-label">Reservas</div>
+            <div className="cell-value">{totalReservas}</div>
+            <div className="cell-note">aventuras criadas</div>
+          </div>
+
+          <div className="status-cell">
+            <div className="cell-label">Confirmadas</div>
+            <div className="cell-value">{reservasConfirmadas}</div>
+            <div className="cell-note">pagas ou ativas</div>
+          </div>
+
+          <div className="status-cell">
+            <div className="cell-label">Realizadas</div>
+            <div className="cell-value">{reservasRealizadas}</div>
+            <div className="cell-note">histórico outdoor</div>
+          </div>
+        </section>
+
+        <section className="panel-grid">
+          <div className="panel passport-card">
+            <div className="passport-inner">
+              <div className="passport-title">Wild Passport</div>
+
+              <div className="passport-name">{nomeCliente}</div>
+
+              <p className="passport-text">
+                Este perfil funciona como um passaporte outdoor. A cada reserva,
+                pagamento confirmado, trilha realizada e interação futura, o cliente
+                acumula reputação, XP, badges e histórico dentro da comunidade
+                PrussikTrails.
+              </p>
+
+              <div className="actions" style={{ marginTop: 24 }}>
+                <button
+                  className="btn primary"
+                  onClick={() => router.push('/cliente/minhas-reservas')}
+                >
+                  Ver minhas reservas
+                </button>
+
+                <button
+                  className="btn"
+                  onClick={() => router.push('/cliente/roteiros')}
+                >
+                  Nova aventura
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-head">
+              <h3 className="panel-title">Field Badges</h3>
+              <span className="panel-code">ACHV_04</span>
+            </div>
+
+            <div className="achievement-grid">
+              <Achievement
+                title="Primeira Reserva"
+                description="Criou sua primeira experiência dentro da plataforma."
+                icon={<TicketIcon />}
+              />
+
+              <Achievement
+                title="Pagamento Confirmado"
+                description="Teve uma reserva confirmada com pagamento aprovado."
+                icon={<ShieldIcon />}
+              />
+
+              <Achievement
+                title="Explorador"
+                description="Começou sua jornada de trilhas e experiências outdoor."
+                icon={<MountainIcon />}
+              />
+
+              <Achievement
+                title="Black Access"
+                description="Camada premium futura para ranking, comunidade e benefícios."
+                icon={<CrownIcon />}
+              />
+            </div>
+          </div>
+        </section>
+
+        <footer className="terminal">
+          <div className="terminal-link">
+            <span>01.</span> Perfil do Aventureiro
+          </div>
+
+          <div className="terminal-link">
+            <span>02.</span> Reservas
+          </div>
+
+          <div className="terminal-link">
+            <span>03.</span> Conquistas
+          </div>
+
+          <div className="terminal-link">
+            <span>04.</span> Premium Futuro
+          </div>
+        </footer>
+      </div>
+    </main>
+  )
+}
+
+function Achievement({
+  title,
+  description,
+  icon
+}: {
+  title: string
+  description: string
+  icon: React.ReactNode
+}) {
+  return (
+    <article className="achievement">
+      <div className="hex-icon">{icon}</div>
+      <div className="achievement-title">{title}</div>
+      <div className="achievement-desc">{description}</div>
+    </article>
+  )
+}
+
+function PrussikIcon() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+      <path d="M12 2L20 7V17L12 22L4 17V7L12 2Z" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7 16L10.5 8L13.5 13L16 9L20 18H4L7 16Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function AgentIcon() {
+  return (
+    <svg width="74" height="74" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M5 21C5 17.4 8.2 15 12 15C15.8 15 19 17.4 19 21" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function TicketIcon() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+      <path d="M4 8V6H20V8C18.9 8 18 8.9 18 10C18 11.1 18.9 12 20 12V18H4V12C5.1 12 6 11.1 6 10C6 8.9 5.1 8 4 8Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+      <path d="M12 3L19 6V11C19 15.5 16.1 19.6 12 21C7.9 19.6 5 15.5 5 11V6L12 3Z" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  )
+}
+
+function MountainIcon() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+      <path d="M3 19L9 8L13 14L16 10L21 19H3Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function CrownIcon() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+      <path d="M4 18L6 8L12 13L18 8L20 18H4Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
   )
 }
