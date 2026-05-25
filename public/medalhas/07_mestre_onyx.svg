@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="640" viewBox="0 0 512 640" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F6E6A8"/>
+      <stop offset="35%" stop-color="#D4B35A"/>
+      <stop offset="70%" stop-color="#A16E25"/>
+      <stop offset="100%" stop-color="#F3D785"/>
+    </linearGradient>
+    <linearGradient id="bronze" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E6B28B"/>
+      <stop offset="40%" stop-color="#B46D3F"/>
+      <stop offset="100%" stop-color="#6E3D1A"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FAFCFD"/>
+      <stop offset="40%" stop-color="#BBC4CC"/>
+      <stop offset="100%" stop-color="#7E8A93"/>
+    </linearGradient>
+    <linearGradient id="platinum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="50%" stop-color="#D6E0E9"/>
+      <stop offset="100%" stop-color="#9EAFBF"/>
+    </linearGradient>
+    <linearGradient id="onyx" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2A2F33"/>
+      <stop offset="50%" stop-color="#111417"/>
+      <stop offset="100%" stop-color="#41464D"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#122015" flood-opacity="0.20"/>
+    </filter>
+    <clipPath id="circleClip"><circle cx="256" cy="335" r="148"/></clipPath>
+    <clipPath id="hexClip"><path d="M256 115 L382 188 V332 L256 405 L130 332 V188 Z"/></clipPath>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="214" y="42" width="84" height="132" rx="18" fill="#596742" stroke="url(#gold)" stroke-width="6"/>
+    <path d="M226 58 H286" stroke="#F1E7CC" stroke-opacity="0.18" stroke-width="4"/>
+    <path d="M226 78 H286" stroke="#F1E7CC" stroke-opacity="0.12" stroke-width="3"/>
+    <circle cx="256" cy="335" r="170" fill="url(#onyx)"/>
+    <circle cx="256" cy="335" r="156" fill="#F0E7D3" fill-opacity="0.32"/>
+    <circle cx="256" cy="335" r="148" fill="#181B1E"/>
+    <g clip-path="url(#circleClip)">
+      
+    <path d="M120 360 L200 250 L245 295 L305 220 L392 360 Z" fill="#EEE5D2" fill-opacity="0.85"/>
+    <path d="M150 360 L223 275 L260 315 L334 238 L360 272 L392 360 Z" fill="#1D3429" fill-opacity="0.35"/>
+    <path d="M70 360 L118 305 L152 335 L185 292 L214 360 Z" fill="#EEE5D2" fill-opacity="0.45"/>
+    <path d="M320 360 L360 300 L396 332 L436 280 L474 360 Z" fill="#EEE5D2" fill-opacity="0.35"/>
+    <path d="M108 360 C150 318, 200 300, 256 298 C318 296, 370 320, 404 360" stroke="#FAF5E8" stroke-opacity="0.18" stroke-width="3" fill="none"/>
+    
+      <path d="M132 354 l12 -24 l-8 0 l11 -22 l-8 0 l13 -26 l13 26 l-8 0 l11 22 l-8 0 l12 24 z" fill="#173125" fill-opacity="0.75"/>
+<path d="M160 354 l12 -24 l-8 0 l11 -22 l-8 0 l13 -26 l13 26 l-8 0 l11 22 l-8 0 l12 24 z" fill="#173125" fill-opacity="0.75"/>
+<path d="M350 354 l12 -24 l-8 0 l11 -22 l-8 0 l13 -26 l13 26 l-8 0 l11 22 l-8 0 l12 24 z" fill="#173125" fill-opacity="0.75"/>
+<path d="M380 354 l12 -24 l-8 0 l11 -22 l-8 0 l13 -26 l13 26 l-8 0 l11 22 l-8 0 l12 24 z" fill="#173125" fill-opacity="0.75"/>
+      
+    <circle cx="256" cy="286" r="88" fill="#EFE6D0" opacity="0.92"/>
+    <circle cx="256" cy="286" r="74" stroke="#C9A654" stroke-width="6" fill="none"/>
+    <text x="256" y="194" text-anchor="middle" font-family="Arial" font-size="28" font-weight="900" fill="#F4E8C8">N</text>
+    <path d="M256 214 L284 278 L256 342 L228 278 Z" fill="#22453A" stroke="#E2C171" stroke-width="5"/>
+    <path d="M256 214 L270 278 L256 342 Z" fill="#F2E8D1"/>
+    <circle cx="256" cy="286" r="14" fill="#C79C47"/>
+    <path d="M256 184 V202 M256 354 V372 M162 278 H180 M332 278 H350" stroke="#DFC48B" stroke-width="4"/>
+    
+    </g>
+    <g>
+      <path d="M184 462 H328 L314 520 H198 Z" fill="url(#onyx)"/>
+      <path d="M196 474 H316 L306 509 H206 Z" fill="#162719" fill-opacity="0.22"/>
+      <path d="M208 498 q48 -18 96 0" stroke="#F6E3A5" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <text x="256" y="495" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="44" font-weight="700" fill="#F7F0DE">MX</text>
+    </g>
+  </g>
+</svg>

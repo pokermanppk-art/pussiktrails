@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="640" viewBox="0 0 512 640" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F6E6A8"/>
+      <stop offset="35%" stop-color="#D4B35A"/>
+      <stop offset="70%" stop-color="#A16E25"/>
+      <stop offset="100%" stop-color="#F3D785"/>
+    </linearGradient>
+    <linearGradient id="bronze" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E6B28B"/>
+      <stop offset="40%" stop-color="#B46D3F"/>
+      <stop offset="100%" stop-color="#6E3D1A"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FAFCFD"/>
+      <stop offset="40%" stop-color="#BBC4CC"/>
+      <stop offset="100%" stop-color="#7E8A93"/>
+    </linearGradient>
+    <linearGradient id="platinum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="50%" stop-color="#D6E0E9"/>
+      <stop offset="100%" stop-color="#9EAFBF"/>
+    </linearGradient>
+    <linearGradient id="onyx" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2A2F33"/>
+      <stop offset="50%" stop-color="#111417"/>
+      <stop offset="100%" stop-color="#41464D"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#122015" flood-opacity="0.20"/>
+    </filter>
+    <clipPath id="circleClip"><circle cx="256" cy="335" r="148"/></clipPath>
+    <clipPath id="hexClip"><path d="M256 115 L382 188 V332 L256 405 L130 332 V188 Z"/></clipPath>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="208" y="46" width="96" height="148" rx="18" fill="#101418" stroke="url(#gold)" stroke-width="6"/>
+    <path d="M228 62 H284" stroke="#F7ECD0" stroke-opacity="0.14" stroke-width="3"/>
+    <path d="M228 82 H284" stroke="#F7ECD0" stroke-opacity="0.10" stroke-width="3"/>
+    <path d="M256 136 l18 22 h-36 z" fill="url(#gold)"/>
+    <circle cx="256" cy="332" r="172" fill="#111417"/>
+    <circle cx="256" cy="332" r="164" fill="url(#gold)" fill-opacity="0.55"/>
+    <circle cx="256" cy="332" r="150" fill="#1E282D"/>
+    <g clip-path="url(#circleClip)">
+      
+    <rect x="176" y="240" width="160" height="96" rx="18" fill="#2A3134" stroke="#D09C4A" stroke-width="6"/>
+    <rect x="202" y="220" width="56" height="28" rx="8" fill="#D09C4A"/>
+    <circle cx="256" cy="288" r="40" fill="#111518" stroke="#D8B466" stroke-width="8"/>
+    <circle cx="256" cy="288" r="20" fill="#46718A" opacity="0.7"/>
+    <circle cx="318" cy="258" r="8" fill="#F1E4C5"/>
+    
+    </g>
+    <path d="M164 508 h184 l-12 28 h-160 z" fill="url(#gold)"/>
+    <text x="256" y="531" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="800" letter-spacing="3" fill="#101418">OURO</text>
+  </g>
+</svg>

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="300" viewBox="0 0 1100 300" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F6E6A8"/>
+      <stop offset="35%" stop-color="#D4B35A"/>
+      <stop offset="70%" stop-color="#A16E25"/>
+      <stop offset="100%" stop-color="#F3D785"/>
+    </linearGradient>
+    <linearGradient id="bronze" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E6B28B"/>
+      <stop offset="40%" stop-color="#B46D3F"/>
+      <stop offset="100%" stop-color="#6E3D1A"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FAFCFD"/>
+      <stop offset="40%" stop-color="#BBC4CC"/>
+      <stop offset="100%" stop-color="#7E8A93"/>
+    </linearGradient>
+    <linearGradient id="platinum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="50%" stop-color="#D6E0E9"/>
+      <stop offset="100%" stop-color="#9EAFBF"/>
+    </linearGradient>
+    <linearGradient id="onyx" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2A2F33"/>
+      <stop offset="50%" stop-color="#111417"/>
+      <stop offset="100%" stop-color="#41464D"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#122015" flood-opacity="0.20"/>
+    </filter>
+    <clipPath id="circleClip"><circle cx="256" cy="335" r="148"/></clipPath>
+    <clipPath id="hexClip"><path d="M256 115 L382 188 V332 L256 405 L130 332 V188 Z"/></clipPath>
+  </defs>
+
+  <g>
+    <path d="M120 98 l58 -62 l58 62 h-26 l-12 -12 l-20 22 l-20 -20 l-16 18 z" fill="#294735"/>
+    <text x="275" y="122" font-family="Georgia, 'Times New Roman', serif" font-size="98" font-weight="700" fill="#203C2E">PrussikTrails</text>
+    <text x="286" y="170" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" letter-spacing="4" fill="#7E8A7A">Seu app de aventuras</text>
+  </g>
+</svg>

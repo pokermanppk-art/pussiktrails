@@ -1,15 +1,286 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import UploadAvatarModal from '@/components/UploadAvatarModal'
+import AvatarCropModal from '@/components/AvatarCropModal'
 import SettingsButton from '@/components/SettingsButton'
 import { v4 as uuidv4 } from 'uuid'
 
+type UsuarioLocal = {
+  id: string
+  nome?: string | null
+  email?: string | null
+  tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
+}
+
+type ReservaEstatistica = {
+  id?: string
+  status?: string | null
+  pagamento_status?: string | null
+  roteiro?: {
+    km?: number | null
+    distancia_km?: number | null
+  } | null
+}
+
+type FotoComDimensao = {
+  url: string
+  width: number
+  height: number
+  index: number
+  proporcao: number
+}
+
+type MedalhaBanco = {
+  id: string
+  status?: string | null
+  progresso_atual?: number | null
+  progresso_total?: number | null
+  conquistada_em?: string | null
+  medalhas?: {
+    id?: string
+    codigo?: string | null
+    nome?: string | null
+    descricao?: string | null
+    categoria?: string | null
+    nivel?: string | null
+    icone?: string | null
+    cor?: string | null
+    especial?: boolean | null
+    ordem?: number | null
+  } | null
+}
+
+type TierJornada = {
+  key: string
+  nome: string
+  titulo: string
+  km: number
+  fotos: number
+  icone: string
+  svg: string
+  cor: string
+  descricao: string
+}
+
+const METAS_JORNADA: TierJornada[] = [
+  {
+    key: 'mochila_partida',
+    nome: 'Partida',
+    titulo: 'Mochila de Partida',
+    km: 0,
+    fotos: 0,
+    icone: '🎒',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/01_backpack_montanha.svg',
+    cor: '#8b5e34',
+    descricao: 'O início simbólico do seu Passaporte Prussik.'
+  },
+  {
+    key: 'barraca_base',
+    nome: 'Base',
+    titulo: 'Barraca Base',
+    km: 32,
+    fotos: 5,
+    icone: '⛺',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/02_tenda_montanha.svg',
+    cor: '#64748b',
+    descricao: 'Você começou a firmar presença nas trilhas.'
+  },
+  {
+    key: 'fogueira_jornada',
+    nome: 'Fogueira',
+    titulo: 'Fogueira da Jornada',
+    km: 96,
+    fotos: 15,
+    icone: '🔥',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/03_fogueira_noturna.svg',
+    cor: '#b45309',
+    descricao: 'Sua história outdoor já começou a ganhar memória.'
+  },
+  {
+    key: 'lanterna_serra',
+    nome: 'Lanterna',
+    titulo: 'Lanterna da Serra',
+    km: 192,
+    fotos: 30,
+    icone: '🏮',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/04_lanterna_trilha.svg',
+    cor: '#365314',
+    descricao: 'Você segue avançando com constância e direção.'
+  },
+  {
+    key: 'placa_trilha',
+    nome: 'Rumo',
+    titulo: 'Rumo Certo',
+    km: 384,
+    fotos: 60,
+    icone: '🪧',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/05_placa_de_trilha.svg',
+    cor: '#3f6212',
+    descricao: 'Sua jornada já tem caminho, escolhas e identidade.'
+  },
+  {
+    key: 'corda_prussik',
+    nome: 'Prussik',
+    titulo: 'Corda Prussik',
+    km: 768,
+    fotos: 120,
+    icone: '🪢',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/06_escalada_carabiner.svg',
+    cor: '#334155',
+    descricao: 'Um marco avançado de técnica, presença e aventura.'
+  },
+  {
+    key: 'cachoeira_viva',
+    nome: 'Cachoeira',
+    titulo: 'Cachoeira Viva',
+    km: 1152,
+    fotos: 200,
+    icone: '💧',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/07_queda_dagua.svg',
+    cor: '#0f766e',
+    descricao: 'Sua jornada atravessa paisagens, memórias e experiências.'
+  },
+  {
+    key: 'amanhecer_cume',
+    nome: 'Cume',
+    titulo: 'Amanhecer no Cume',
+    km: 1920,
+    fotos: 400,
+    icone: '🌄',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/08_amanhecer_cume.svg',
+    cor: '#ca8a04',
+    descricao: 'Uma conquista rara de continuidade e evolução.'
+  },
+  {
+    key: 'mirante_explorador',
+    nome: 'Mirante',
+    titulo: 'Mirante do Explorador',
+    km: 3840,
+    fotos: 1000,
+    icone: '🔭',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/09_binoculos_explorador.svg',
+    cor: '#111827',
+    descricao: 'Um olhar amplo sobre tudo o que você já viveu nas trilhas.'
+  },
+  {
+    key: 'mapa_lendario',
+    nome: 'Lenda',
+    titulo: 'Mapa Lendário',
+    km: 7680,
+    fotos: 2000,
+    icone: '🗺️',
+    svg: '/medalhas/prussik_svg_icones_colecao_02/10_mapa_exploracao.svg',
+    cor: '#0f172a',
+    descricao: 'O nível lendário da jornada Prussik: cada trilha virou história.'
+  }
+]
+
+const ALTURA_TARGET = 200
+
+function normalizar(valor?: string | null) {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function numeroSeguro(valor: unknown, fallback = 0) {
+  const numero = Number(valor)
+  return Number.isFinite(numero) ? numero : fallback
+}
+
+function formatarKm(km: number) {
+  if (km >= 1000) return km.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+  return km.toFixed(km % 1 === 0 ? 0 : 1)
+}
+
+function obterNivelAtual(km: number) {
+  let atual = METAS_JORNADA[0]
+
+  for (const meta of METAS_JORNADA) {
+    if (km >= meta.km) atual = meta
+  }
+
+  return atual
+}
+
+function obterProximoNivel(km: number) {
+  for (const meta of METAS_JORNADA) {
+    if (km < meta.km) return meta
+  }
+
+  return METAS_JORNADA[METAS_JORNADA.length - 1]
+}
+
+function obterMarcoAnterior(km: number) {
+  let anterior = METAS_JORNADA[0]
+
+  for (const meta of METAS_JORNADA) {
+    if (km >= meta.km) anterior = meta
+  }
+
+  return anterior
+}
+
+function calcularProgressoTier(km: number) {
+  const anterior = obterMarcoAnterior(km)
+  const proximo = obterProximoNivel(km)
+
+  if (proximo.km <= anterior.km) return 100
+
+  const progresso = ((km - anterior.km) / (proximo.km - anterior.km)) * 100
+  return Math.max(0, Math.min(100, progresso))
+}
+
+function calcularFotosLiberadas(km: number) {
+  let fotos = 0
+
+  for (const meta of METAS_JORNADA) {
+    if (km >= meta.km) fotos = meta.fotos
+  }
+
+  return fotos
+}
+
+function erroDeColunaAusente(error: unknown) {
+  const err = error as { code?: string; message?: string; details?: string; hint?: string }
+  const texto = String(err?.message || err?.details || err?.hint || '').toLowerCase()
+
+  return (
+    err?.code === '42703' ||
+    err?.code === 'PGRST204' ||
+    texto.includes('could not find') ||
+    texto.includes('schema cache') ||
+    texto.includes('column')
+  )
+}
+
+function extrairColunaAusente(error: unknown) {
+  const err = error as { message?: string; details?: string; hint?: string }
+  const texto = [err?.message, err?.details, err?.hint].filter(Boolean).join(' ')
+
+  const matchAspas = texto.match(/'([^']+)'/)
+  if (matchAspas?.[1]) return matchAspas[1]
+
+  const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
+  if (matchColumn?.[1]) return matchColumn[1]
+
+  return ''
+}
+
 export default function PerfilCliente() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const fotosInputRef = useRef<HTMLInputElement | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const [user, setUser] = useState<UsuarioLocal | null>(null)
   const [totalKm, setTotalKm] = useState(0)
   const [totalTrilhas, setTotalTrilhas] = useState(0)
   const [fotos, setFotos] = useState<string[]>([])
@@ -19,76 +290,226 @@ export default function PerfilCliente() {
   const [editandoBio, setEditandoBio] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [mensagem, setMensagem] = useState('')
+  const [erro, setErro] = useState('')
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
-  const [modalAberto, setModalAberto] = useState(false)
+  const [cropAberto, setCropAberto] = useState(false)
+  const [cropImageSrc, setCropImageSrc] = useState('')
+  const [enviandoAvatar, setEnviandoAvatar] = useState(false)
 
-  // Lightbox state
   const [lightboxAberto, setLightboxAberto] = useState(false)
   const [fotoAtual, setFotoAtual] = useState(0)
 
-  // Justified Grid state
-  const [linhas, setLinhas] = useState<any[][]>([])
+  const [linhas, setLinhas] = useState<FotoComDimensao[][]>([])
   const [carregandoFotos, setCarregandoFotos] = useState(true)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const ALTURA_TARGET = 200
 
-  const [medalhas, setMedalhas] = useState<any[]>([])
+  const [medalhasBanco, setMedalhasBanco] = useState<MedalhaBanco[]>([])
   const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
 
-  const metasFotos = [
-    { km: 32, fotos: 5 }, { km: 96, fotos: 15 }, { km: 192, fotos: 30 },
-    { km: 384, fotos: 60 }, { km: 768, fotos: 120 }, { km: 1152, fotos: 200 },
-    { km: 1920, fotos: 400 }, { km: 3840, fotos: 1000 },
-  ]
+  const nivelAtual = useMemo(() => obterNivelAtual(totalKm), [totalKm])
+  const proximoNivel = useMemo(() => obterProximoNivel(totalKm), [totalKm])
+  const progressoParaProximoMarco = useMemo(() => calcularProgressoTier(totalKm), [totalKm])
+  const fotosLiberadas = useMemo(() => calcularFotosLiberadas(totalKm), [totalKm])
+  const faltamKm = Math.max(0, proximoNivel.km - totalKm)
+  const medalhasKmConquistadas = METAS_JORNADA.filter((meta) => totalKm >= meta.km).length
 
-  const calcularFotosLiberadas = (km: number) => {
-    let fotos = 0
-    for (const meta of metasFotos) if (km >= meta.km) fotos = meta.fotos
-    return fotos
+  useEffect(() => {
+    const userData = localStorage.getItem('user')
+
+    if (!userData) {
+      router.push('/login')
+      return
+    }
+
+    const parsedUser = JSON.parse(userData) as UsuarioLocal
+
+    if (parsedUser.tipo !== 'cliente') {
+      router.push('/')
+      return
+    }
+
+    setUser(parsedUser)
+    setNome(parsedUser.nome || '')
+    setAvatarPreview(parsedUser.avatar_url || parsedUser.foto_url || parsedUser.imagem_url || null)
+    carregarDados(parsedUser.id)
+  }, [router])
+
+  async function carregarDados(userId: string) {
+    await Promise.all([
+      carregarFotos(userId),
+      carregarAvatar(userId),
+      carregarEstatisticas(userId),
+      carregarBio(userId),
+      carregarMedalhas(userId),
+      carregarNome(userId)
+    ])
   }
 
-  const calcularProximoMarco = (km: number) => {
-    for (const meta of metasFotos) if (km < meta.km) return meta.km
-    return metasFotos[metasFotos.length - 1].km
+  async function atualizarUsuarioComFallback(
+    userId: string,
+    payloadOriginal: Record<string, unknown>
+  ) {
+    let payloadAtual = { ...payloadOriginal }
+
+    for (let tentativa = 0; tentativa < 12; tentativa++) {
+      const { data, error } = await supabase
+        .from('users')
+        .update(payloadAtual)
+        .eq('id', userId)
+        .select('*')
+        .maybeSingle()
+
+      if (!error) return data
+
+      if (!erroDeColunaAusente(error)) throw error
+
+      const coluna = extrairColunaAusente(error)
+
+      if (!coluna || !(coluna in payloadAtual)) throw error
+
+      delete payloadAtual[coluna]
+    }
+
+    throw new Error('Não foi possível atualizar o perfil após ajustar colunas.')
   }
 
-  const fotosLiberadas = calcularFotosLiberadas(totalKm)
-  const proximoMarco = calcularProximoMarco(totalKm)
-  const progressoParaProximoMarco = totalKm >= proximoMarco ? 100 : (totalKm / proximoMarco) * 100
+  async function carregarNome(userId: string) {
+    const { data } = await supabase.from('users').select('nome').eq('id', userId).single()
 
-  const conquistasKm = [
-    { nome: 'Primeira Trilha', icone: '🥾', km: 0, desbloqueado: totalKm >= 0 },
-    { nome: 'Explorador', icone: '🌱', km: 32, desbloqueado: totalKm >= 32 },
-    { nome: 'Caminhante', icone: '🚶', km: 96, desbloqueado: totalKm >= 96 },
-    { nome: 'Aventureiro', icone: '🏔️', km: 384, desbloqueado: totalKm >= 384 },
-    { nome: 'Mestre', icone: '👑', km: 1152, desbloqueado: totalKm >= 1152 },
-    { nome: 'Lenda', icone: '🌟', km: 1920, desbloqueado: totalKm >= 1920 },
-    { nome: 'Lenda Absoluta', icone: '🔥', km: 3840, desbloqueado: totalKm >= 3840 },
-  ]
-
-  const abrirLightbox = (index: number) => {
-    setFotoAtual(index)
-    setLightboxAberto(true)
+    if (data?.nome) {
+      setNome(data.nome)
+      atualizarLocalStorage({ nome: data.nome })
+    }
   }
 
-  const proximaFoto = () => {
-    setFotoAtual((prev) => (prev + 1) % fotos.length)
+  async function salvarNome() {
+    if (!user?.id) return
+
+    if (!nome.trim()) {
+      setMensagem('❌ Nome não pode ficar vazio')
+      return
+    }
+
+    setErro('')
+
+    try {
+      await atualizarUsuarioComFallback(user.id, {
+        nome: nome.trim(),
+        updated_at: new Date().toISOString()
+      })
+
+      atualizarLocalStorage({ nome: nome.trim() })
+      setMensagem('✅ Nome atualizado!')
+      setEditandoNome(false)
+    } catch (error) {
+      console.error(error)
+      setMensagem('❌ Erro ao salvar nome')
+    } finally {
+      setTimeout(() => setMensagem(''), 3000)
+    }
   }
 
-  const fotoAnterior = () => {
-    setFotoAtual((prev) => (prev - 1 + fotos.length) % fotos.length)
+  async function carregarMedalhas(userId: string) {
+    setCarregandoMedalhas(true)
+
+    try {
+      const { data, error } = await supabase
+        .from('usuarios_medalhas')
+        .select(`
+          id,
+          status,
+          progresso_atual,
+          progresso_total,
+          conquistada_em,
+          medalhas (
+            id,
+            codigo,
+            nome,
+            descricao,
+            categoria,
+            nivel,
+            icone,
+            cor,
+            especial,
+            ordem
+          )
+        `)
+        .eq('usuario_id', userId)
+        .limit(80)
+
+      if (error) {
+        console.warn('Erro ao carregar medalhas:', error)
+        setMedalhasBanco([])
+        return
+      }
+
+      const lista = ((data || []) as unknown as MedalhaBanco[]).filter(
+        (item) => normalizar(item.status) === 'conquistada'
+      )
+
+      setMedalhasBanco(lista)
+    } catch (error) {
+      console.warn('Erro inesperado ao carregar medalhas:', error)
+      setMedalhasBanco([])
+    } finally {
+      setCarregandoMedalhas(false)
+    }
   }
 
-  // Função que calcula o layout justificado (estilo Flickr)
-  const calcularLayoutJustificado = (imagens: any[], alturaAlvo: number) => {
-    const linhasCalc: any[][] = []
-    let linhaAtual: any[] = []
+  async function carregarFotos(userId: string) {
+    const { data } = await supabase
+      .from('users')
+      .select('fotos_aventuras')
+      .eq('id', userId)
+      .single()
+
+    if (data?.fotos_aventuras) {
+      const lista = Array.isArray(data.fotos_aventuras) ? data.fotos_aventuras : []
+      setFotos(lista)
+      await carregarLayoutJustificado(lista)
+    } else {
+      setFotos([])
+      setCarregandoFotos(false)
+    }
+  }
+
+  async function carregarLayoutJustificado(urls: string[]) {
+    if (urls.length === 0) {
+      setLinhas([])
+      setCarregandoFotos(false)
+      return
+    }
+
+    setCarregandoFotos(true)
+
+    const imagensComDimensoes = await Promise.all(
+      urls.map(async (url, idx) => {
+        return new Promise<FotoComDimensao>((resolve) => {
+          const img = new Image()
+          img.onload = () => {
+            const width = img.width || 1200
+            const height = img.height || 800
+            resolve({ url, width, height, index: idx, proporcao: width / height })
+          }
+          img.onerror = () => {
+            resolve({ url, width: 1200, height: 800, index: idx, proporcao: 1.5 })
+          }
+          img.src = url
+        })
+      })
+    )
+
+    setLinhas(calcularLayoutJustificado(imagensComDimensoes, ALTURA_TARGET))
+    setCarregandoFotos(false)
+  }
+
+  function calcularLayoutJustificado(imagens: FotoComDimensao[], alturaAlvo: number) {
+    const linhasCalc: FotoComDimensao[][] = []
+    let linhaAtual: FotoComDimensao[] = []
     let somaProporcoes = 0
 
     for (const img of imagens) {
-      const proporcao = img.width / img.height
-      linhaAtual.push({ ...img, proporcao })
-      somaProporcoes += proporcao
+      linhaAtual.push(img)
+      somaProporcoes += img.proporcao
 
       const larguraEstimada = somaProporcoes * alturaAlvo
 
@@ -99,167 +520,180 @@ export default function PerfilCliente() {
       }
     }
 
-    if (linhaAtual.length > 0) {
-      linhasCalc.push(linhaAtual)
-    }
+    if (linhaAtual.length > 0) linhasCalc.push(linhaAtual)
 
     return linhasCalc
   }
 
-  useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (!userData) { router.push('/login'); return }
-    const parsedUser = JSON.parse(userData)
-    if (parsedUser.tipo !== 'cliente') { router.push('/'); return }
-    setUser(parsedUser)
-    setNome(parsedUser.nome || '')
-    carregarDados(parsedUser.id)
-  }, [])
+  async function carregarAvatar(userId: string) {
+    const { data } = await supabase
+      .from('users')
+      .select('avatar_url, foto_url, imagem_url')
+      .eq('id', userId)
+      .single()
 
-  const carregarDados = async (userId: string) => {
-    await Promise.all([
-      carregarFotos(userId), carregarAvatar(userId), carregarEstatisticas(userId),
-      carregarBio(userId), carregarMedalhas(userId), carregarNome(userId)
-    ])
-  }
+    const avatar = data?.avatar_url || data?.foto_url || data?.imagem_url || ''
 
-  const carregarNome = async (userId: string) => {
-    const { data } = await supabase.from('users').select('nome').eq('id', userId).single()
-    if (data?.nome) {
-      setNome(data.nome)
-      const userData = localStorage.getItem('user')
-      if (userData) {
-        const user = JSON.parse(userData)
-        user.nome = data.nome
-        localStorage.setItem('user', JSON.stringify(user))
-      }
+    if (avatar) {
+      setAvatarPreview(avatar)
+      atualizarLocalStorage({ avatar_url: avatar, foto_url: avatar, imagem_url: avatar })
     }
   }
 
-  const salvarNome = async () => {
-    if (!nome.trim()) { setMensagem('❌ Nome não pode ficar vazio'); return }
-    const { error } = await supabase.from('users').update({ nome }).eq('id', user.id)
-    if (error) setMensagem('❌ Erro ao salvar nome')
-    else {
-      setMensagem('✅ Nome atualizado!')
-      const userData = localStorage.getItem('user')
-      if (userData) {
-        const user = JSON.parse(userData)
-        user.nome = nome
-        localStorage.setItem('user', JSON.stringify(user))
-      }
-    }
-    setEditandoNome(false)
-    setTimeout(() => setMensagem(''), 3000)
-  }
-
-  const carregarMedalhas = async (userId: string) => {
-    setCarregandoMedalhas(true)
-    try {
-      const listaPadrao = [
-        { nome: 'Trilhas', icone: '🥾', meta: 2, progresso: 0 },
-        { nome: 'KM', icone: '👣', meta: 32, progresso: 0 },
-        { nome: 'Fotos', icone: '📸', meta: 3, progresso: 0 },
-        { nome: 'Avaliações', icone: '⭐', meta: 5, progresso: 0 },
-        { nome: 'Reservas', icone: '💳', meta: 2, progresso: 0 }
-      ]
-      const { data: progresso } = await supabase
-        .from('usuarios_medalhas')
-        .select('progresso_atual, medalha:medalha_id(nome)')
-        .eq('usuario_id', userId)
-      if (progresso && progresso.length > 0) {
-        const mapa = new Map()
-        progresso.forEach((item: any) => { if (item.medalha?.nome) mapa.set(item.medalha.nome, item.progresso_atual || 0) })
-        setMedalhas(listaPadrao.map(m => ({ ...m, progresso: mapa.get(m.nome) || 0 })))
-      } else setMedalhas(listaPadrao)
-    } catch (err) { console.error(err) } finally { setCarregandoMedalhas(false) }
-  }
-
-  const carregarFotos = async (userId: string) => {
-    const { data } = await supabase.from('users').select('fotos_aventuras').eq('id', userId).single()
-    if (data?.fotos_aventuras) {
-      setFotos(data.fotos_aventuras)
-      await carregarLayoutJustificado(data.fotos_aventuras)
-    } else {
-      setFotos([])
-      setCarregandoFotos(false)
-    }
-  }
-
-  const carregarLayoutJustificado = async (urls: string[]) => {
-    if (urls.length === 0) {
-      setLinhas([])
-      setCarregandoFotos(false)
-      return
-    }
-
-    setCarregandoFotos(true)
-    const imagensComDimensoes = await Promise.all(
-      urls.map(async (url, idx) => {
-        return new Promise<{ url: string; width: number; height: number; index: number }>((resolve) => {
-          const img = new Image()
-          img.onload = () => {
-            resolve({ url, width: img.width, height: img.height, index: idx })
-          }
-          img.onerror = () => {
-            resolve({ url, width: 1200, height: 800, index: idx })
-          }
-          img.src = url
-        })
-      })
-    )
-    const linhasCalc = calcularLayoutJustificado(imagensComDimensoes, ALTURA_TARGET)
-    setLinhas(linhasCalc)
-    setCarregandoFotos(false)
-  }
-
-  const carregarAvatar = async (userId: string) => {
-    const { data } = await supabase.from('users').select('avatar_url').eq('id', userId).single()
-    if (data?.avatar_url) setAvatarPreview(data.avatar_url)
-  }
-  const carregarEstatisticas = async (userId: string) => {
+  async function carregarEstatisticas(userId: string) {
     const { data: reservas } = await supabase
       .from('reservas')
-      .select('*, roteiro:roteiro_id(km)')
+      .select('*, roteiro:roteiro_id(km, distancia_km)')
       .eq('cliente_id', userId)
       .eq('status', 'realizada')
-    let km = 0
-    reservas?.forEach(r => { km += r.roteiro?.km || 0 })
+
+    const lista = ((reservas || []) as unknown as ReservaEstatistica[])
+
+    const km = lista.reduce((total, reserva) => {
+      return total + numeroSeguro(reserva.roteiro?.km ?? reserva.roteiro?.distancia_km)
+    }, 0)
+
     setTotalKm(km)
-    setTotalTrilhas(reservas?.length || 0)
+    setTotalTrilhas(lista.length)
   }
-  const carregarBio = async (userId: string) => {
+
+  async function carregarBio(userId: string) {
     const { data } = await supabase.from('users').select('bio').eq('id', userId).single()
     if (data?.bio) setBio(data.bio)
   }
-  const salvarBio = async () => {
-    const { error } = await supabase.from('users').update({ bio }).eq('id', user.id)
-    setMensagem(error ? '❌ Erro ao salvar biografia' : '✅ Biografia atualizada!')
-    setEditandoBio(false)
-    setTimeout(() => setMensagem(''), 3000)
+
+  async function salvarBio() {
+    if (!user?.id) return
+
+    setErro('')
+
+    try {
+      await atualizarUsuarioComFallback(user.id, {
+        bio,
+        updated_at: new Date().toISOString()
+      })
+
+      setMensagem('✅ Biografia atualizada!')
+      setEditandoBio(false)
+    } catch (error) {
+      console.error(error)
+      setMensagem('❌ Erro ao salvar biografia')
+    } finally {
+      setTimeout(() => setMensagem(''), 3000)
+    }
   }
 
-  const handleUploadFotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  function atualizarLocalStorage(payload: Partial<UsuarioLocal>) {
+    const userData = localStorage.getItem('user')
+
+    if (!userData) return
+
+    const usuario = JSON.parse(userData) as UsuarioLocal
+    const atualizado = { ...usuario, ...payload }
+    localStorage.setItem('user', JSON.stringify(atualizado))
+    setUser(atualizado)
+  }
+
+  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setMensagem('❌ Escolha um arquivo de imagem.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setCropImageSrc(String(reader.result || ''))
+      setCropAberto(true)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function uploadAvatar(file: File) {
+    if (!user?.id) return
+
+    setEnviandoAvatar(true)
+    setErro('')
+    setMensagem('')
+
+    try {
+      const caminho = `clientes/${user.id}/avatar/avatar-${Date.now()}.webp`
+
+      const { error: uploadError } = await supabase.storage
+        .from('fotos-aventuras')
+        .upload(caminho, file, {
+          upsert: true,
+          contentType: file.type || 'image/webp'
+        })
+
+      if (uploadError) throw uploadError
+
+      const { data } = supabase.storage.from('fotos-aventuras').getPublicUrl(caminho)
+      const publicUrl = data?.publicUrl || ''
+
+      if (!publicUrl) throw new Error('Não foi possível gerar a URL pública da foto.')
+
+      await atualizarUsuarioComFallback(user.id, {
+        avatar_url: publicUrl,
+        foto_url: publicUrl,
+        imagem_url: publicUrl,
+        updated_at: new Date().toISOString()
+      })
+
+      setAvatarPreview(publicUrl)
+      atualizarLocalStorage({ avatar_url: publicUrl, foto_url: publicUrl, imagem_url: publicUrl })
+      setCropAberto(false)
+      setCropImageSrc('')
+      setMensagem('✅ Foto de perfil atualizada!')
+    } catch (error) {
+      console.error('Erro ao enviar avatar:', error)
+      const message = error instanceof Error ? error.message : 'Não foi possível atualizar a foto.'
+      setErro(message)
+      setMensagem('❌ Não foi possível atualizar a foto.')
+    } finally {
+      setEnviandoAvatar(false)
+      setTimeout(() => setMensagem(''), 3000)
+    }
+  }
+
+  async function handleUploadFotos(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || [])
-    if (files.length === 0) return
+    event.target.value = ''
+
+    if (!user?.id || files.length === 0) return
+
     if (fotos.length + files.length > fotosLiberadas) {
       setMensagem(`⚠️ Limite de ${fotosLiberadas} fotos.`)
       setTimeout(() => setMensagem(''), 4000)
       return
     }
+
     setUploading(true)
+
     const novasUrls: string[] = []
+
     for (const file of files) {
-      const fileExt = file.name.split('.').pop()
+      const fileExt = file.name.split('.').pop() || 'jpg'
       const fileName = `${uuidv4()}.${fileExt}`
       const filePath = `clientes/${user.id}/${fileName}`
+
       const { error } = await supabase.storage.from('fotos-aventuras').upload(filePath, file)
-      if (error) { console.error(error); continue }
-      const { data: { publicUrl } } = supabase.storage.from('fotos-aventuras').getPublicUrl(filePath)
-      novasUrls.push(publicUrl)
+
+      if (error) {
+        console.error(error)
+        continue
+      }
+
+      const { data } = supabase.storage.from('fotos-aventuras').getPublicUrl(filePath)
+      if (data?.publicUrl) novasUrls.push(data.publicUrl)
     }
+
     const novasFotos = [...fotos, ...novasUrls]
-    await supabase.from('users').update({ fotos_aventuras: novasFotos }).eq('id', user.id)
+    await atualizarUsuarioComFallback(user.id, { fotos_aventuras: novasFotos })
     setFotos(novasFotos)
     await carregarLayoutJustificado(novasFotos)
     setMensagem(`✅ ${novasUrls.length} foto(s) adicionada(s)!`)
@@ -267,362 +701,1277 @@ export default function PerfilCliente() {
     setTimeout(() => setMensagem(''), 3000)
   }
 
-  const removerFoto = async (index: number) => {
+  async function removerFoto(index: number) {
+    if (!user?.id) return
     if (!confirm('Remover esta foto?')) return
+
     const novasFotos = fotos.filter((_, i) => i !== index)
-    await supabase.from('users').update({ fotos_aventuras: novasFotos }).eq('id', user.id)
+    await atualizarUsuarioComFallback(user.id, { fotos_aventuras: novasFotos })
     setFotos(novasFotos)
     await carregarLayoutJustificado(novasFotos)
     setMensagem('✅ Foto removida!')
     setTimeout(() => setMensagem(''), 3000)
   }
 
-  const handleLogout = () => {
+  function abrirLightbox(index: number) {
+    setFotoAtual(index)
+    setLightboxAberto(true)
+  }
+
+  function proximaFoto() {
+    setFotoAtual((prev) => (prev + 1) % fotos.length)
+  }
+
+  function fotoAnterior() {
+    setFotoAtual((prev) => (prev - 1 + fotos.length) % fotos.length)
+  }
+
+  function handleLogout() {
     localStorage.removeItem('user')
     router.push('/login')
   }
 
-  if (!user) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Carregando...</div>
+  if (!user) {
+    return (
+      <div className="loadingSimple">
+        <style>{styles}</style>
+        Carregando...
+      </div>
+    )
+  }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      <style jsx global>{`
-        @media (min-width: 768px) {
-          .perfil-container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
-          .perfil-card { display: flex !important; flex-direction: row !important; align-items: flex-start !important; text-align: left !important; gap: 32px !important; }
-          .perfil-avatar { width: 120px !important; height: 120px !important; }
-          .perfil-avatar span { font-size: 48px !important; }
-          .perfil-stats { justify-content: flex-start !important; gap: 48px !important; }
-          .perfil-stats div { text-align: left !important; }
-          .medalhas-grid { display: flex !important; flex-wrap: wrap !important; gap: 16px !important; justify-content: flex-start !important; }
-          .medalha-card { width: 100px !important; padding: 12px !important; }
-          .conquista-card { width: 90px !important; padding: 12px !important; }
-          .foto-meta { flex-wrap: wrap !important; gap: 12px !important; }
-        }
-      `}</style>
+    <main className="page">
+      <style>{styles}</style>
 
-      <UploadAvatarModal isOpen={modalAberto} onClose={() => setModalAberto(false)} userId={user.id} onAvatarUpdated={setAvatarPreview} />
+      <AvatarCropModal
+        open={cropAberto}
+        imageSrc={cropImageSrc}
+        title="Ajustar foto do passaporte"
+        onCancel={() => {
+          if (enviandoAvatar) return
+          setCropAberto(false)
+          setCropImageSrc('')
+        }}
+        onConfirm={uploadAvatar}
+      />
 
-      {/* HEADER COM SETTINGS */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <SettingsButton userId={user.id} userEmail={user.email} />
-            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Dashboard</button>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Sair</button>
-          </div>
-        </div>
-      </div>
+      <header className="topbar">
+        <div className="topbarInner">
+          <button className="brand" type="button" onClick={() => router.push('/cliente/dashboard')}>
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+            <div>
+              <strong>PrussikTrails</strong>
+              <span>Passaporte Prussik</span>
+            </div>
+          </button>
 
-      <div className="perfil-container" style={{ padding: '16px' }}>
-        
-        {/* CARD PERFIL */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '16px' }}>
-          <div className="perfil-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '16px' }}>
-            <button onClick={() => setModalAberto(true)} className="perfil-avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: 'none', cursor: 'pointer' }}>
-              {avatarPreview ? <img src={avatarPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '36px', color: 'white' }}>{(nome || user.email)?.charAt(0).toUpperCase() || 'A'}</span>}
+          <div className="topActions">
+            <SettingsButton userId={user.id} userEmail={user.email || ''} />
+            <button className="pillButton muted" type="button" onClick={() => router.push('/cliente/dashboard')}>
+              Dashboard
             </button>
-            <div style={{ flex: 1 }}>
-              {editandoNome ? (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>
-                  <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '16px', fontWeight: 'bold', textAlign: 'center' }} autoFocus />
-                  <button onClick={salvarNome} style={{ backgroundColor: '#16a34a', color: 'white', padding: '4px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Salvar</button>
-                  <button onClick={() => { setEditandoNome(false); carregarNome(user.id); }} style={{ backgroundColor: '#e5e7eb', padding: '4px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>X</button>
-                </div>
+            <button className="pillButton danger" type="button" onClick={handleLogout}>
+              Sair
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="shell">
+        <section className="passportHero">
+          <div className="avatarColumn">
+            <button
+              type="button"
+              className="avatarButton"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={enviandoAvatar}
+            >
+              {avatarPreview ? (
+                <img src={avatarPreview} alt={nome || user.email || 'Cliente'} />
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>{nome || user.email}</h2>
-                  <button onClick={() => setEditandoNome(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}>✏️</button>
-                </div>
+                <span>{(nome || user.email || 'A').charAt(0).toUpperCase()}</span>
               )}
-              <p style={{ color: '#6b7280', fontSize: '11px', marginTop: '4px' }}>📅 Aventureiro desde {new Date().getFullYear()}</p>
-              
-              <div className="perfil-stats" style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '12px', flexWrap: 'wrap' }}>
-                <div><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{totalKm}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>KM</div></div>
-                <div><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{totalTrilhas}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>Trilhas</div></div>
-                <div><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f59e0b' }}>{conquistasKm.filter(m => m.desbloqueado).length}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>Medalhas</div></div>
+            </button>
+            <button
+              type="button"
+              className="avatarHintButton"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={enviandoAvatar}
+            >
+              {enviandoAvatar ? 'Salvando foto...' : 'Ajustar foto'}
+            </button>
+            <input
+              ref={fileInputRef}
+              className="hiddenInput"
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarChange}
+            />
+          </div>
+
+          <div className="heroTextBlock">
+            <div className="kicker">Passaporte Prussik</div>
+
+            {editandoNome ? (
+              <div className="nameEditRow">
+                <input value={nome} onChange={(event) => setNome(event.target.value)} autoFocus />
+                <button type="button" onClick={salvarNome}>Salvar</button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    setEditandoNome(false)
+                    carregarNome(user.id)
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <div className="nameRow">
+                <h1>{nome || user.email}</h1>
+                <button type="button" onClick={() => setEditandoNome(true)}>✏️</button>
+              </div>
+            )}
+
+            <p>
+              Seu perfil de jornada outdoor: quilômetros, trilhas, fotos e medalhas reunidos em um só lugar.
+            </p>
+
+            <div className="heroStats">
+              <div>
+                <strong>{formatarKm(totalKm)}</strong>
+                <span>km</span>
+              </div>
+              <div>
+                <strong>{totalTrilhas}</strong>
+                <span>trilhas</span>
+              </div>
+              <div>
+                <strong>{medalhasKmConquistadas + medalhasBanco.length}</strong>
+                <span>medalhas</span>
               </div>
             </div>
           </div>
-          
-          {editandoBio ? (
-            <div style={{ marginTop: '16px' }}>
-              <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={3} placeholder="Escreva algo sobre você..." style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: '13px', resize: 'vertical' }} />
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button onClick={salvarBio} style={{ backgroundColor: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Salvar</button>
-                <button onClick={() => { setEditandoBio(false); carregarBio(user.id); }} style={{ backgroundColor: '#e5e7eb', padding: '6px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cancelar</button>
-              </div>
+
+          <aside className="rankCard">
+            <div className="rankMedal rankSvgMedal" style={{ borderColor: nivelAtual.cor }}>
+              <img src={nivelAtual.svg} alt={nivelAtual.titulo} />
             </div>
-          ) : (
-            <div onClick={() => setEditandoBio(true)} style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '12px', cursor: 'pointer', maxHeight: '80px', overflowY: 'auto' }}>
-              {bio ? <p style={{ margin: 0, fontSize: '12px', color: '#4b5563' }}>{bio}</p> : <p style={{ margin: 0, fontSize: '12px', color: '#9ca3af' }}>✏️ Clique para adicionar uma biografia...</p>}
+            <strong>{nivelAtual.titulo}</strong>
+            <p>{nivelAtual.descricao}</p>
+            <div className="progressMeta">
+              <span>{formatarKm(totalKm)} km</span>
+              <span>Próximo marco</span>
             </div>
-          )}
-          {mensagem && <div style={{ marginTop: '12px', padding: '8px', borderRadius: '8px', textAlign: 'center', fontSize: '12px', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626' }}>{mensagem}</div>}
-        </div>
+            <div className="progressTrack">
+              <div style={{ width: `${progressoParaProximoMarco}%` }} />
+            </div>
+            <small>
+              {faltamKm > 0 ? 'Continue sua jornada para revelar a próxima medalha.' : 'Você alcançou o maior marco da jornada.'}
+            </small>
+          </aside>
+        </section>
 
-        {/* BARRA DE PROGRESSO */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <p style={{ marginBottom: '8px', fontSize: '12px', color: '#4b5563' }}>🎯 Próximo marco: <strong>{proximoMarco} km</strong> (faltam {Math.max(0, proximoMarco - totalKm)} km)</p>
-          <div style={{ backgroundColor: '#e5e7eb', borderRadius: '20px', height: '8px', overflow: 'hidden' }}>
-            <div style={{ width: `${progressoParaProximoMarco}%`, backgroundColor: '#3b82f6', height: '100%', borderRadius: '20px' }} />
+        {mensagem && (
+          <div className={mensagem.includes('✅') ? 'notice success' : 'notice warning'}>
+            {mensagem}
           </div>
-        </div>
+        )}
+        {erro && <div className="notice error">{erro}</div>}
 
-        {/* CONQUISTAS POR KM */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px' }}>🏅 Conquistas por KM</h3>
-          <div className="medalhas-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-            {conquistasKm.map((c, i) => (
-              <div key={i} className="conquista-card" style={{ flex: '0 0 auto', width: '65px', backgroundColor: c.desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', border: c.desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: c.desbloqueado ? 1 : 0.6 }}>
-                <div style={{ fontSize: '24px' }}>{c.icone}</div>
-                <div style={{ fontSize: '8px', fontWeight: 'bold' }}>{c.nome.split(' ')[0]}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* MEDALHAS ESPECIAIS */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px' }}>🎖️ Medalhas</h3>
-          <div className="medalhas-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-            {medalhas.map((m, idx) => {
-              const desbloqueado = m.progresso >= m.meta
-              return (
-                <div key={idx} className="medalha-card" style={{ flex: '0 0 auto', width: '65px', backgroundColor: desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', border: desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: desbloqueado ? 1 : 0.6 }}>
-                  <div style={{ fontSize: '24px', position: 'relative', display: 'inline-block' }}>
-                    {m.icone}
-                    {!desbloqueado && <span style={{ position: 'absolute', top: '-5px', right: '-8px', fontSize: '10px' }}>🔒</span>}
-                  </div>
-                  <div style={{ fontSize: '8px', fontWeight: 'bold' }}>{m.nome}</div>
-                  <div style={{ fontSize: '7px', color: '#9ca3af' }}>{m.progresso}/{m.meta}</div>
+        <section className="grid">
+          <div className="leftStack">
+            <section className="card bioCard">
+              <div className="cardHeader">
+                <div>
+                  <h2>Sobre minha jornada</h2>
+                  <span>Um espaço curto para contar seu estilo de aventura.</span>
                 </div>
-              )
-            })}
-          </div>
-        </div>
+                {!editandoBio && (
+                  <button type="button" onClick={() => setEditandoBio(true)}>Editar</button>
+                )}
+              </div>
 
-        {/* FOTOS COM JUSTIFIED GRID (FLICKR STYLE) */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0 }}>📸 Fotos das Aventuras</h3>
-            <p style={{ fontSize: '11px', color: '#6b7280' }}>{fotos.length}/{fotosLiberadas}</p>
-          </div>
-          
-          <label style={{ display: 'block', textAlign: 'center', backgroundColor: '#16a34a', color: 'white', padding: '10px', borderRadius: '40px', cursor: 'pointer', marginBottom: '16px', fontSize: '13px' }}>
-            {uploading ? 'Enviando...' : '📤 Enviar fotos'}
-            <input type="file" accept="image/*" multiple onChange={handleUploadFotos} disabled={uploading} style={{ display: 'none' }} />
-          </label>
+              <div className="cardBody">
+                {editandoBio ? (
+                  <>
+                    <textarea
+                      value={bio}
+                      onChange={(event) => setBio(event.target.value)}
+                      rows={4}
+                      placeholder="Conte algo sobre você, seu ritmo, o que gosta de viver nas trilhas..."
+                    />
+                    <div className="actionRow">
+                      <button type="button" className="primary" onClick={salvarBio}>Salvar bio</button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setEditandoBio(false)
+                          carregarBio(user.id)
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="bioText">
+                    {bio || 'Clique em editar para adicionar uma biografia simples ao seu Passaporte Prussik.'}
+                  </p>
+                )}
+              </div>
+            </section>
 
-          <div className="foto-meta" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', marginBottom: '12px' }}>
-            {metasFotos.slice(0, 6).map((meta, i) => (
-              <span key={i} style={{ backgroundColor: totalKm >= meta.km ? '#3b82f6' : '#e5e7eb', color: totalKm >= meta.km ? 'white' : '#6b7280', padding: '2px 8px', borderRadius: '20px', fontSize: '9px' }}>{meta.km}km</span>
-            ))}
-          </div>
+            <section className="card">
+              <div className="cardHeader compactHeader">
+                <div>
+                  <h2>Medalhas</h2>
+                </div>
+              </div>
 
-          {carregandoFotos ? (
-            <div style={{ textAlign: 'center', padding: '32px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-              <span style={{ fontSize: '32px' }}>⏳</span>
-              <p style={{ marginTop: '8px', color: '#6b7280' }}>Carregando fotos...</p>
-            </div>
-          ) : fotos.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '30px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-              <span style={{ fontSize: '32px' }}>🏞️</span>
-              <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Envie suas aventuras!</p>
-            </div>
-          ) : (
-            <div ref={containerRef} style={{ width: '100%' }}>
-              {linhas.map((linha, linhaIndex) => {
-                const somaProporcoes = linha.reduce((acc, img) => acc + img.proporcao, 0)
-                const alturaReal = ALTURA_TARGET
-                
-                return (
-                  <div
-                    key={linhaIndex}
-                    style={{
-                      display: 'flex',
-                      gap: '8px',
-                      marginBottom: '8px',
-                      width: '100%',
-                    }}
-                  >
-                    {linha.map((img, imgIndex) => {
-                      const largura = (img.proporcao / somaProporcoes) * 100
-                      return (
-                        <div
-                          key={imgIndex}
-                          onClick={() => abrirLightbox(img.index)}
-                          style={{
-                            position: 'relative',
-                            width: `${largura}%`,
-                            cursor: 'pointer',
-                            overflow: 'hidden',
-                            borderRadius: '12px',
-                            backgroundColor: '#f1f5f9',
-                          }}
-                        >
+              <div className="cardBody">
+                <div className="unifiedMedalGrid">
+                  {METAS_JORNADA.map((meta) => {
+                    const desbloqueado = totalKm >= meta.km
+                    return (
+                      <article key={meta.key} className={desbloqueado ? 'tierCard unlocked' : 'tierCard'}>
+                        <div className="hexMedal svgMedalWrap" style={{ borderColor: meta.cor }}>
                           <img
-                            src={img.url}
-                            alt={`Foto ${img.index + 1}`}
-                            style={{
-                              width: '100%',
-                              height: `${alturaReal}px`,
-                              objectFit: 'cover',
-                              display: 'block',
-                            }}
+                            src={meta.svg}
+                            alt={meta.titulo}
+                            className={desbloqueado ? 'medalSvg' : 'medalSvg lockedSvg'}
                           />
-                          
-                          {/* Botão de remover */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              removerFoto(img.index)
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: '8px',
-                              right: '8px',
-                              backgroundColor: '#dc2626',
-                              color: 'white',
-                              borderRadius: '50%',
-                              width: '28px',
-                              height: '28px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: '16px',
-                              zIndex: 10,
-                              fontWeight: 'bold'
-                            }}
-                          >
-                            ×
-                          </button>
+                        </div>
+                        <strong>{meta.nome}</strong>
+                        <small>{desbloqueado ? 'Conquistada' : 'Bloqueada'}</small>
+                      </article>
+                    )
+                  })}
+
+                  {medalhasBanco.slice(0, 12).map((item) => {
+                    const medalha = item.medalhas
+                    return (
+                      <article key={item.id} className="tierCard unlocked specialUnified">
+                        <div className="hexMedal" style={{ borderColor: medalha?.cor || '#991b1b' }}>
+                          <span>{medalha?.icone || '🏅'}</span>
+                        </div>
+                        <strong>{medalha?.nome || 'Medalha'}</strong>
+                        <small>{medalha?.categoria || 'Especial'}</small>
+                      </article>
+                    )
+                  })}
+                </div>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2>Fotos das aventuras</h2>
+                  <span>{fotos.length}/{fotosLiberadas} fotos liberadas no seu nível atual.</span>
+                </div>
+                <button type="button" onClick={() => fotosInputRef.current?.click()} disabled={uploading || fotosLiberadas <= 0}>
+                  {uploading ? 'Enviando...' : 'Enviar fotos'}
+                </button>
+                <input
+                  ref={fotosInputRef}
+                  className="hiddenInput"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadFotos}
+                  disabled={uploading}
+                />
+              </div>
+
+              <div className="cardBody">
+                <div className="photoMilestones">
+                  {METAS_JORNADA.filter((meta) => meta.fotos > 0).slice(0, 8).map((meta) => (
+                    <span key={meta.key} className={totalKm >= meta.km ? 'active' : ''}>
+                      {meta.km}km · {meta.fotos} fotos
+                    </span>
+                  ))}
+                </div>
+
+                {carregandoFotos ? (
+                  <div className="emptyBox">Carregando fotos...</div>
+                ) : fotos.length === 0 ? (
+                  <div className="emptyBox">Envie registros das suas aventuras para montar sua galeria.</div>
+                ) : (
+                  <div ref={containerRef} className="justifiedGrid">
+                    {linhas.map((linha, linhaIndex) => {
+                      const somaProporcoes = linha.reduce((acc, img) => acc + img.proporcao, 0)
+                      return (
+                        <div className="photoRow" key={linhaIndex}>
+                          {linha.map((img) => {
+                            const largura = (img.proporcao / somaProporcoes) * 100
+                            return (
+                              <div
+                                key={`${img.url}-${img.index}`}
+                                className="photoCell"
+                                onClick={() => abrirLightbox(img.index)}
+                                style={{ width: `${largura}%` }}
+                              >
+                                <img src={img.url} alt={`Foto ${img.index + 1}`} />
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    removerFoto(img.index)
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )
+                          })}
                         </div>
                       )
                     })}
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                )}
+              </div>
+            </section>
+          </div>
+
+          <aside className="rightStack">
+            <section className="card compactCard">
+              <div className="cardBody">
+                <div className="summaryLine">
+                  <span>Nível atual</span>
+                  <strong>{nivelAtual.nome}</strong>
+                </div>
+                <div className="summaryLine">
+                  <span>Próxima conquista</span>
+                  <strong>{proximoNivel.nome}</strong>
+                </div>
+                <div className="summaryLine">
+                  <span>Fotos liberadas</span>
+                  <strong>{fotosLiberadas}</strong>
+                </div>
+                <div className="summaryLine">
+                  <span>Fotos usadas</span>
+                  <strong>{fotos.length}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="card compactCard">
+              <div className="cardHeader compact">
+                <div>
+                  <h2>Próxima conquista</h2>
+                  <span>O próximo degrau da sua jornada.</span>
+                </div>
+              </div>
+              <div className="cardBody">
+                <div className="nextMedal">
+                  <div className="hexMedal nextSvgMedal" style={{ borderColor: proximoNivel.cor }}>
+                    <img src={proximoNivel.svg} alt={proximoNivel.titulo} className="medalSvg" />
+                  </div>
+                  <strong>{proximoNivel.titulo}</strong>
+                  <p>{proximoNivel.descricao}</p>
+                  <div className="progressTrack soft">
+                    <div style={{ width: `${progressoParaProximoMarco}%` }} />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="card compactCard">
+              <div className="cardHeader compact">
+                <div>
+                  <h2>Leitura rápida</h2>
+                  <span>Seu momento no Passaporte.</span>
+                </div>
+              </div>
+              <div className="cardBody">
+                <p className="plainText">
+                  Você está no nível <strong>{nivelAtual.titulo}</strong>, com {formatarKm(totalKm)} km registrados e {totalTrilhas} trilha(s) realizadas.
+                </p>
+              </div>
+            </section>
+          </aside>
+        </section>
       </div>
 
-      {/* LIGHTBOX / MODAL DE FOTOS */}
-      {lightboxAberto && (
-        <div 
-          onClick={() => setLightboxAberto(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.9)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer'
-          }}
-        >
-          <button
-            onClick={() => setLightboxAberto(false)}
-            style={{
-              position: 'absolute',
-              top: '20px',
-              right: '20px',
-              background: 'none',
-              border: 'none',
-              color: 'white',
-              fontSize: '32px',
-              cursor: 'pointer'
-            }}
-          >
-            ✕
-          </button>
-          
+      {lightboxAberto && fotos.length > 0 && (
+        <div className="lightbox" onClick={() => setLightboxAberto(false)}>
+          <button className="lightboxClose" type="button" onClick={() => setLightboxAberto(false)}>✕</button>
+
           {fotos.length > 1 && (
             <button
-              onClick={(e) => {
-                e.stopPropagation()
+              type="button"
+              className="lightboxNav left"
+              onClick={(event) => {
+                event.stopPropagation()
                 fotoAnterior()
-              }}
-              style={{
-                position: 'absolute',
-                left: '20px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'rgba(0,0,0,0.5)',
-                border: 'none',
-                color: 'white',
-                fontSize: '40px',
-                cursor: 'pointer',
-                padding: '10px 15px',
-                borderRadius: '50%'
               }}
             >
               ‹
             </button>
           )}
-          
-          <img
-            src={fotos[fotoAtual]}
-            alt="Foto"
-            style={{
-              maxWidth: '90vw',
-              maxHeight: '90vh',
-              objectFit: 'contain',
-              cursor: 'default'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          />
-          
+
+          <img src={fotos[fotoAtual]} alt="Foto" onClick={(event) => event.stopPropagation()} />
+
           {fotos.length > 1 && (
             <>
               <button
-                onClick={(e) => {
-                  e.stopPropagation()
+                type="button"
+                className="lightboxNav right"
+                onClick={(event) => {
+                  event.stopPropagation()
                   proximaFoto()
-                }}
-                style={{
-                  position: 'absolute',
-                  right: '20px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'rgba(0,0,0,0.5)',
-                  border: 'none',
-                  color: 'white',
-                  fontSize: '40px',
-                  cursor: 'pointer',
-                  padding: '10px 15px',
-                  borderRadius: '50%'
                 }}
               >
                 ›
               </button>
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '20px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  background: 'rgba(0,0,0,0.6)',
-                  color: 'white',
-                  padding: '5px 12px',
-                  borderRadius: '20px',
-                  fontSize: '14px'
-                }}
-              >
-                {fotoAtual + 1} / {fotos.length}
-              </div>
+              <div className="lightboxCount">{fotoAtual + 1} / {fotos.length}</div>
             </>
           )}
         </div>
       )}
-    </div>
+    </main>
   )
 }
+
+const styles = `
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #f6f7f1;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .loadingSimple {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f6f7f1;
+    color: #172018;
+    font-weight: 800;
+  }
+
+  .page {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
+      radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
+      linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
+    color: #172018;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(255,253,247,0.88);
+    border-bottom: 1px solid rgba(15,23,42,0.06);
+    backdrop-filter: blur(18px);
+    padding: 10px 16px;
+  }
+
+  .topbarInner {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    color: #172018;
+  }
+
+  .brand img {
+    width: auto;
+    height: 46px;
+    object-fit: contain;
+  }
+
+  .brand strong {
+    display: block;
+    color: #dc2626;
+    font-size: 19px;
+    font-weight: 950;
+    line-height: 1;
+    letter-spacing: -0.05em;
+  }
+
+  .brand span {
+    display: block;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .topActions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .pillButton {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .pillButton.muted { background: #f3f4f6; color: #172018; }
+  .pillButton.danger { background: #dc2626; color: #fff; }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px 16px 54px;
+  }
+
+  .passportHero {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr) 310px;
+    gap: 20px;
+    align-items: center;
+    border-radius: 36px;
+    padding: 24px;
+    background:
+      linear-gradient(135deg, rgba(23,32,24,0.78), rgba(23,32,24,0.34)),
+      radial-gradient(circle at top right, rgba(190,242,100,0.30), transparent 34%),
+      linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
+    color: #fff;
+    box-shadow: 0 24px 60px rgba(23,32,24,0.18);
+    margin-bottom: 16px;
+  }
+
+  .avatarColumn {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+  }
+
+  .avatarButton {
+    width: 150px;
+    height: 150px;
+    border-radius: 999px;
+    border: 4px solid rgba(255,255,255,0.78);
+    background: #16a34a;
+    overflow: hidden;
+    cursor: pointer;
+    padding: 0;
+    box-shadow: 0 18px 38px rgba(0,0,0,0.22);
+  }
+
+  .avatarButton img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .avatarButton span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: white;
+    font-size: 58px;
+    font-weight: 950;
+  }
+
+  .avatarHintButton {
+    border: 1px solid rgba(255,255,255,0.26);
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .hiddenInput { display: none; }
+
+  .kicker {
+    display: inline-flex;
+    width: fit-content;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.24);
+    background: rgba(255,255,255,0.12);
+    color: #f7fee7;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .nameRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .nameRow h1 {
+    margin: 0;
+    font-size: clamp(38px, 5vw, 66px);
+    line-height: 0.92;
+    font-weight: 950;
+    letter-spacing: -0.08em;
+  }
+
+  .nameRow button {
+    border: 1px solid rgba(255,255,255,0.26);
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    border-radius: 999px;
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+  }
+
+  .nameEditRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nameEditRow input {
+    min-width: min(100%, 320px);
+    border: 1px solid rgba(255,255,255,0.34);
+    background: rgba(255,255,255,0.14);
+    color: #fff;
+    border-radius: 16px;
+    padding: 12px;
+    font-size: 22px;
+    font-weight: 900;
+    outline: none;
+  }
+
+  .nameEditRow button,
+  .actionRow button,
+  .cardHeader button {
+    border: 0;
+    border-radius: 999px;
+    padding: 10px 13px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .nameEditRow button { background: #bef264; color: #172018; }
+  .nameEditRow button.ghost { background: rgba(255,255,255,0.16); color: #fff; }
+
+  .heroTextBlock p {
+    max-width: 620px;
+    color: rgba(255,255,255,0.82);
+    line-height: 1.62;
+    margin: 14px 0 0;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .heroStats {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+  }
+
+  .heroStats div {
+    min-width: 92px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.12);
+    border-radius: 20px;
+    padding: 12px;
+  }
+
+  .heroStats strong {
+    display: block;
+    font-size: 22px;
+    line-height: 1;
+    font-weight: 950;
+  }
+
+  .heroStats span {
+    display: block;
+    margin-top: 4px;
+    color: rgba(255,255,255,0.72);
+    font-size: 11px;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .rankCard {
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.14);
+    border-radius: 30px;
+    padding: 18px;
+    backdrop-filter: blur(14px);
+  }
+
+  .rankMedal,
+  .hexMedal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
+    border: 3px solid #92400e;
+    background:
+      radial-gradient(circle at 30% 18%, rgba(255,255,255,0.74), transparent 28%),
+      linear-gradient(145deg, #fffdf7, rgba(120,113,108,0.20));
+    color: #172018;
+    box-shadow: inset 0 0 0 2px rgba(29,38,24,0.08), 0 8px 18px rgba(25,35,18,0.12);
+  }
+
+  .rankMedal {
+    width: 76px;
+    height: 76px;
+    margin-bottom: 12px;
+  }
+
+  .rankMedal span { font-size: 34px; }
+
+  .rankSvgMedal {
+    width: 112px;
+    height: 112px;
+    clip-path: none;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .rankSvgMedal img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0 10px 16px rgba(0,0,0,0.22));
+  }
+
+  .rankCard strong {
+    display: block;
+    color: #fff;
+    font-size: 22px;
+    line-height: 1.05;
+    font-weight: 950;
+    letter-spacing: -0.04em;
+  }
+
+  .rankCard p {
+    margin: 8px 0 0;
+    color: rgba(255,255,255,0.76);
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 700;
+  }
+
+  .progressMeta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 13px;
+    color: rgba(255,255,255,0.78);
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .progressTrack {
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.18);
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .progressTrack div {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #365314, #84cc16, #f97316);
+  }
+
+  .progressTrack.soft { background: rgba(15,23,42,0.08); }
+
+  .rankCard small {
+    display: block;
+    margin-top: 9px;
+    color: rgba(255,255,255,0.74);
+    font-size: 11px;
+    line-height: 1.4;
+    font-weight: 800;
+  }
+
+  .notice {
+    border-radius: 18px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    font-weight: 850;
+  }
+
+  .notice.success { background: #dcfce7; color: #166534; }
+  .notice.warning { background: #fef3c7; color: #92400e; }
+  .notice.error { background: #fee2e2; color: #991b1b; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .leftStack,
+  .rightStack {
+    display: grid;
+    gap: 16px;
+  }
+
+  .card {
+    background: rgba(255,255,255,0.90);
+    border: 1px solid rgba(15,23,42,0.06);
+    border-radius: 30px;
+    box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+    overflow: hidden;
+  }
+
+  .cardHeader {
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(15,23,42,0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .cardHeader.compact { padding-bottom: 14px; }
+
+  .cardHeader.compactHeader {
+    padding-bottom: 14px;
+  }
+
+  .cardHeader h2 {
+    margin: 0;
+    color: #172018;
+    font-size: 18px;
+    font-weight: 950;
+    letter-spacing: -0.04em;
+  }
+
+  .cardHeader span {
+    display: block;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1.45;
+  }
+
+  .cardHeader button,
+  .actionRow .primary {
+    background: #16a34a;
+    color: #fff;
+  }
+
+  .cardBody { padding: 18px; }
+
+  textarea {
+    width: 100%;
+    min-height: 118px;
+    resize: vertical;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: #fffdf7;
+    border-radius: 18px;
+    padding: 13px 14px;
+    font-size: 14px;
+    color: #172018;
+    outline: none;
+    font-weight: 650;
+    line-height: 1.55;
+  }
+
+  .actionRow {
+    display: flex;
+    gap: 9px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .actionRow .secondary {
+    background: #eef2e5;
+    color: #475569;
+  }
+
+  .bioText {
+    margin: 0;
+    color: #475569;
+    font-size: 14px;
+    line-height: 1.7;
+    font-weight: 650;
+  }
+
+  .unifiedMedalGrid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .tierCard {
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.06);
+    border-radius: 22px;
+    padding: 12px 8px;
+    text-align: center;
+    opacity: 1;
+  }
+
+  .tierCard:not(.unlocked) {
+    background: rgba(255,253,247,0.64);
+  }
+
+  .tierCard.unlocked {
+    opacity: 1;
+    filter: none;
+  }
+
+  .tierCard.specialUnified {
+    background:
+      radial-gradient(circle at top right, rgba(251,146,60,0.10), transparent 34%),
+      #fffdf7;
+  }
+
+  .hexMedal {
+    width: 74px;
+    height: 74px;
+    margin: 0 auto 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hexMedal span {
+    font-size: 23px;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.16));
+  }
+
+  .svgMedalWrap {
+    width: 86px;
+    height: 86px;
+  }
+
+  .nextSvgMedal {
+    width: 108px;
+    height: 108px;
+  }
+
+  .medalSvg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0 8px 14px rgba(15,23,42,0.14));
+  }
+
+  .lockedSvg {
+    opacity: 0.24;
+    filter: grayscale(1) saturate(0.15) contrast(0.82) brightness(1.05);
+  }
+
+  .tierCard strong {
+    display: block;
+    color: #172018;
+    font-size: 12px;
+    font-weight: 950;
+    line-height: 1.2;
+  }
+
+  .tierCard small {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 850;
+  }
+
+  .photoMilestones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .photoMilestones span {
+    border-radius: 999px;
+    background: #e5e7eb;
+    color: #6b7280;
+    padding: 5px 8px;
+    font-size: 10px;
+    font-weight: 850;
+  }
+
+  .photoMilestones span.active {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .emptyBox {
+    border: 1px dashed rgba(15,23,42,0.16);
+    background: #fffdf7;
+    border-radius: 20px;
+    padding: 28px;
+    text-align: center;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.5;
+    font-weight: 750;
+  }
+
+  .justifiedGrid { width: 100%; }
+
+  .photoRow {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    width: 100%;
+  }
+
+  .photoCell {
+    position: relative;
+    cursor: pointer;
+    overflow: hidden;
+    border-radius: 14px;
+    background: #f1f5f9;
+  }
+
+  .photoCell img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    display: block;
+  }
+
+  .photoCell button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 0;
+    background: #dc2626;
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 950;
+  }
+
+  .summaryLine {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid rgba(15,23,42,0.06);
+    padding: 11px 0;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .summaryLine:last-child { border-bottom: 0; }
+
+  .summaryLine strong {
+    color: #172018;
+    font-weight: 950;
+  }
+
+  .nextMedal {
+    text-align: center;
+  }
+
+  .nextMedal strong {
+    display: block;
+    color: #172018;
+    font-size: 15px;
+    font-weight: 950;
+    margin-top: 8px;
+  }
+
+  .nextMedal p,
+  .plainText {
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.55;
+    font-weight: 700;
+  }
+
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0,0,0,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .lightbox img {
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    cursor: default;
+  }
+
+  .lightboxClose,
+  .lightboxNav {
+    position: absolute;
+    border: 0;
+    background: rgba(0,0,0,0.5);
+    color: white;
+    cursor: pointer;
+  }
+
+  .lightboxClose {
+    top: 20px;
+    right: 20px;
+    background: transparent;
+    font-size: 32px;
+  }
+
+  .lightboxNav {
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: 999px;
+    font-size: 40px;
+    padding: 10px 15px;
+  }
+
+  .lightboxNav.left { left: 20px; }
+  .lightboxNav.right { right: 20px; }
+
+  .lightboxCount {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.6);
+    color: white;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+  }
+
+  @media (max-width: 1040px) {
+    .passportHero,
+    .grid {
+      grid-template-columns: 1fr;
+    }
+
+    .avatarColumn {
+      justify-items: start;
+    }
+
+    .tierGrid,
+    .specialGrid,
+    .unifiedMedalGrid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 720px) {
+    .topbar {
+      padding: 9px 12px;
+    }
+
+    .brand img { height: 40px; }
+    .brand strong { font-size: 17px; }
+    .brand span { font-size: 10px; }
+
+    .topActions {
+      gap: 6px;
+    }
+
+    .topActions .pillButton {
+      display: none;
+    }
+
+    .shell {
+      padding: 16px 12px 42px;
+    }
+
+    .passportHero,
+    .card {
+      border-radius: 28px;
+    }
+
+    .passportHero {
+      padding: 20px;
+    }
+
+    .avatarButton {
+      width: 128px;
+      height: 128px;
+    }
+
+    .nameRow h1 {
+      font-size: 38px;
+    }
+
+    .heroStats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .tierGrid,
+    .specialGrid,
+    .unifiedMedalGrid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .svgMedalWrap {
+      width: 76px;
+      height: 76px;
+    }
+
+    .nextSvgMedal,
+    .rankSvgMedal {
+      width: 96px;
+      height: 96px;
+    }
+
+    .photoRow {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .photoCell {
+      width: 100% !important;
+    }
+
+    .photoCell img {
+      height: 220px;
+    }
+  }
+`

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="640" viewBox="0 0 512 640" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F6E6A8"/>
+      <stop offset="35%" stop-color="#D4B35A"/>
+      <stop offset="70%" stop-color="#A16E25"/>
+      <stop offset="100%" stop-color="#F3D785"/>
+    </linearGradient>
+    <linearGradient id="bronze" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E6B28B"/>
+      <stop offset="40%" stop-color="#B46D3F"/>
+      <stop offset="100%" stop-color="#6E3D1A"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FAFCFD"/>
+      <stop offset="40%" stop-color="#BBC4CC"/>
+      <stop offset="100%" stop-color="#7E8A93"/>
+    </linearGradient>
+    <linearGradient id="platinum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="50%" stop-color="#D6E0E9"/>
+      <stop offset="100%" stop-color="#9EAFBF"/>
+    </linearGradient>
+    <linearGradient id="onyx" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2A2F33"/>
+      <stop offset="50%" stop-color="#111417"/>
+      <stop offset="100%" stop-color="#41464D"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#122015" flood-opacity="0.20"/>
+    </filter>
+    <clipPath id="circleClip"><circle cx="256" cy="335" r="148"/></clipPath>
+    <clipPath id="hexClip"><path d="M256 115 L382 188 V332 L256 405 L130 332 V188 Z"/></clipPath>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="214" y="42" width="84" height="132" rx="18" fill="#596742" stroke="url(#gold)" stroke-width="6"/>
+    <path d="M226 58 H286" stroke="#F1E7CC" stroke-opacity="0.18" stroke-width="4"/>
+    <path d="M226 78 H286" stroke="#F1E7CC" stroke-opacity="0.12" stroke-width="3"/>
+    <circle cx="256" cy="335" r="170" fill="url(#onyx)"/>
+    <circle cx="256" cy="335" r="156" fill="#F0E7D3" fill-opacity="0.32"/>
+    <circle cx="256" cy="335" r="148" fill="#1A1D20"/>
+    <g clip-path="url(#circleClip)">
+      
+    <path d="M120 360 L200 250 L245 295 L305 220 L392 360 Z" fill="#EEE5D2" fill-opacity="0.85"/>
+    <path d="M150 360 L223 275 L260 315 L334 238 L360 272 L392 360 Z" fill="#1D3429" fill-opacity="0.35"/>
+    <path d="M70 360 L118 305 L152 335 L185 292 L214 360 Z" fill="#EEE5D2" fill-opacity="0.45"/>
+    <path d="M320 360 L360 300 L396 332 L436 280 L474 360 Z" fill="#EEE5D2" fill-opacity="0.35"/>
+    <path d="M108 360 C150 318, 200 300, 256 298 C318 296, 370 320, 404 360" stroke="#FAF5E8" stroke-opacity="0.18" stroke-width="3" fill="none"/>
+    
+      <path d="M132 354 l12 -24 l-8 0 l11 -22 l-8 0 l13 -26 l13 26 l-8 0 l11 22 l-8 0 l12 24 z" fill="#173125" fill-opacity="0.75"/>
+<path d="M160 354 l12 -24 l-8 0 l11 -22 l-8 0 l13 -26 l13 26 l-8 0 l11 22 l-8 0 l12 24 z" fill="#173125" fill-opacity="0.75"/>
+<path d="M350 354 l12 -24 l-8 0 l11 -22 l-8 0 l13 -26 l13 26 l-8 0 l11 22 l-8 0 l12 24 z" fill="#173125" fill-opacity="0.75"/>
+<path d="M380 354 l12 -24 l-8 0 l11 -22 l-8 0 l13 -26 l13 26 l-8 0 l11 22 l-8 0 l12 24 z" fill="#173125" fill-opacity="0.75"/>
+      
+    <path d="M188 334 q40 -96 68 -130 q28 34 68 130 q-28 -10 -68 -10 q-40 0 -68 10 z" fill="#13171A" opacity="0.75"/>
+    <circle cx="256" cy="226" r="26" fill="#0D1012"/>
+    <path d="M221 214 q35 -18 70 0 v22 q-35 -12 -70 0 z" fill="#1E2327"/>
+    <path d="M204 240 q28 16 52 16 q24 0 52 -16 v84 q-26 16 -52 42 q-26 -26 -52 -42 z" fill="#1A1F22" stroke="#D1AA52" stroke-width="6"/>
+    <path d="M256 262 l18 28 h-36 z" fill="#D1AA52"/>
+    <path d="M184 240 l-18 104" stroke="#D1AA52" stroke-width="8" stroke-linecap="round"/>
+    <path d="M176 240 l16 -18 l12 20 z" fill="#D1AA52"/>
+    
+    </g>
+    <g>
+      <path d="M184 462 H328 L314 520 H198 Z" fill="url(#onyx)"/>
+      <path d="M196 474 H316 L306 509 H206 Z" fill="#162719" fill-opacity="0.22"/>
+      <path d="M208 498 q48 -18 96 0" stroke="#F6E3A5" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <text x="256" y="495" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="44" font-weight="700" fill="#F7F0DE">OX</text>
+    </g>
+  </g>
+</svg>

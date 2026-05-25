@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="120" y1="100" x2="904" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F6E3A8"/>
+      <stop offset="0.35" stop-color="#D1A64A"/>
+      <stop offset="0.7" stop-color="#8F6026"/>
+      <stop offset="1" stop-color="#F3D07A"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="120" y1="100" x2="904" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5F7FB"/>
+      <stop offset="0.35" stop-color="#C8D0D8"/>
+      <stop offset="0.7" stop-color="#838E98"/>
+      <stop offset="1" stop-color="#F0F3F8"/>
+    </linearGradient>
+    <linearGradient id="bronze" x1="120" y1="100" x2="904" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F1C09B"/>
+      <stop offset="0.35" stop-color="#B97345"/>
+      <stop offset="0.7" stop-color="#764320"/>
+      <stop offset="1" stop-color="#E4B087"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#10150F" flood-opacity="0.22"/>
+    </filter>
+    <clipPath id="hexClip"><path d="M512 94 L816 270 V622 L512 798 L208 622 V270 Z"/></clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#F6F0E4"/>
+  <g filter="url(#shadow)">
+    <path d="M512 72 L842 262 V640 L512 830 L182 640 V262 Z" fill="url(#gold)"/>
+    <path d="M512 92 L820 270 V628 L512 806 L204 628 V270 Z" fill="#EEE5D6" fill-opacity="0.25"/>
+    <path d="M512 94 L816 270 V622 L512 798 L208 622 V270 Z" fill="#182129"/>
+    <g clip-path="url(#hexClip)">
+
+      <path d="M512 138 L530 184 L576 202 L530 220 L512 266 L494 220 L448 202 L494 184 Z" fill="#F2D38D"/>
+      <path d="M282 214 C372 170, 448 154, 512 154 C582 154, 656 170, 742 214" stroke="#E8D3A8" stroke-opacity="0.9" stroke-width="6" fill="none"/>
+    
+      <path d="M306 340 L396 290 L462 372 L358 436 Z" fill="#8A6A36" opacity="0.2"/>
+      <path d="M654 340 L564 290 L498 372 L602 436 Z" fill="#8A6A36" opacity="0.2"/>
+      <rect x="346" y="432" width="160" height="176" rx="72" fill="#242729" stroke="#B98745" stroke-width="10" transform="rotate(18 346 432)"/>
+      <rect x="518" y="432" width="160" height="176" rx="72" fill="#242729" stroke="#B98745" stroke-width="10" transform="rotate(-18 518 432)"/>
+      <circle cx="414" cy="572" r="80" fill="#1B2125" stroke="#C28D48" stroke-width="16"/>
+      <circle cx="614" cy="572" r="80" fill="#1B2125" stroke="#C28D48" stroke-width="16"/>
+      <circle cx="414" cy="572" r="42" fill="#6FA0A4" opacity="0.75"/><circle cx="614" cy="572" r="42" fill="#6FA0A4" opacity="0.75"/>
+      <rect x="470" y="480" width="84" height="94" rx="20" fill="#2B2F32" stroke="#C28D48" stroke-width="10"/>
+      <rect x="494" y="468" width="36" height="54" rx="10" fill="#B27E3E"/>
+      <path d="M318 612 l38 -76 h24 l-26 76 z" fill="#4A453E"/><path d="M670 612 l-38 -76 h-24 l26 76 z" fill="#4A453E"/>
+      <path d="M306 300 C412 266, 468 258, 512 258 C570 258, 644 274, 726 300" stroke="#C6B791" stroke-width="8" fill="none"/>
+    
+    </g>
+    <path d="M320 646 H704 L678 738 H346 Z" fill="url(#gold)"/>
+    <path d="M336 660 H688 L666 724 H358 Z" fill="#1E2833"/>
+    <path d="M458 748 l54 -60 l54 60 h-32 l-22 -24 l-22 24 z" fill="#E5C170"/><path d="M482 748 l30 -34 l30 34 h-18 l-12 -12 l-12 12 z" fill="#C7953D"/>
+  </g>
+</svg>

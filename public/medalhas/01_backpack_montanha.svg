@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="120" y1="100" x2="904" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F6E3A8"/>
+      <stop offset="0.35" stop-color="#D1A64A"/>
+      <stop offset="0.7" stop-color="#8F6026"/>
+      <stop offset="1" stop-color="#F3D07A"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="120" y1="100" x2="904" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5F7FB"/>
+      <stop offset="0.35" stop-color="#C8D0D8"/>
+      <stop offset="0.7" stop-color="#838E98"/>
+      <stop offset="1" stop-color="#F0F3F8"/>
+    </linearGradient>
+    <linearGradient id="bronze" x1="120" y1="100" x2="904" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F1C09B"/>
+      <stop offset="0.35" stop-color="#B97345"/>
+      <stop offset="0.7" stop-color="#764320"/>
+      <stop offset="1" stop-color="#E4B087"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#10150F" flood-opacity="0.22"/>
+    </filter>
+    <clipPath id="hexClip"><path d="M512 94 L816 270 V622 L512 798 L208 622 V270 Z"/></clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#F6F0E4"/>
+  <g filter="url(#shadow)">
+    <path d="M512 72 L842 262 V640 L512 830 L182 640 V262 Z" fill="url(#gold)"/>
+    <path d="M512 92 L820 270 V628 L512 806 L204 628 V270 Z" fill="#EEE5D6" fill-opacity="0.25"/>
+    <path d="M512 94 L816 270 V622 L512 798 L208 622 V270 Z" fill="#283726"/>
+    <g clip-path="url(#hexClip)">
+
+      <path d="M512 138 L530 184 L576 202 L530 220 L512 266 L494 220 L448 202 L494 184 Z" fill="#F2D38D"/>
+      <path d="M282 214 C372 170, 448 154, 512 154 C582 154, 656 170, 742 214" stroke="#E8D3A8" stroke-opacity="0.9" stroke-width="6" fill="none"/>
+    
+      <path d="M262 622 L378 410 L444 470 L532 356 L662 622 Z" fill="#E7D7B9" fill-opacity="0.35"/>
+      <path d="M280 622 L394 446 L446 500 L534 390 L642 622 Z" fill="#102117" fill-opacity="0.35"/>
+      <g opacity="0.85">
+        <path d="M254 610 l22 -44 l-16 0 l24 -40 l-14 0 l26 -48 l26 48 l-14 0 l24 40 l-16 0 l22 44 z" fill="#102518"/>
+        <path d="M724 610 l22 -44 l-16 0 l24 -40 l-14 0 l26 -48 l26 48 l-14 0 l24 40 l-16 0 l22 44 z" fill="#102518"/>
+      </g>
+      <rect x="392" y="318" width="254" height="296" rx="58" fill="#6F6041" stroke="#C79A5B" stroke-width="8"/>
+      <path d="M434 292 H604 a42 42 0 0 1 42 42 V388 H392 V334 a42 42 0 0 1 42 -42 z" fill="#796746" stroke="#C79A5B" stroke-width="8"/>
+      <rect x="442" y="436" width="154" height="138" rx="18" fill="#5E5038" stroke="#D7B281" stroke-width="6"/>
+      <path d="M520 430 v150" stroke="#D8C1A0" stroke-width="6" stroke-dasharray="10 10"/>
+      <path d="M460 450 C490 474, 548 476, 578 450" stroke="#D8C1A0" stroke-width="6" fill="none"/>
+      <path d="M460 486 C492 510, 546 512, 578 486" stroke="#D8C1A0" stroke-width="6" fill="none"/>
+      <rect x="352" y="432" width="62" height="130" rx="20" fill="#6D5B3B" stroke="#C79A5B" stroke-width="6"/>
+      <rect x="624" y="432" width="62" height="130" rx="20" fill="#6D5B3B" stroke="#C79A5B" stroke-width="6"/>
+      <path d="M450 320 v308 M588 320 v308" stroke="#B68449" stroke-width="12"/>
+      <rect x="440" y="392" width="20" height="36" rx="6" fill="#D6B173"/><rect x="578" y="392" width="20" height="36" rx="6" fill="#D6B173"/>
+      <circle cx="678" cy="340" r="54" fill="#252322" stroke="#A06E35" stroke-width="8"/>
+      <circle cx="678" cy="340" r="34" fill="#111416" stroke="#6E5328" stroke-width="6"/>
+    
+    </g>
+    <path d="M320 646 H704 L678 738 H346 Z" fill="url(#gold)"/>
+    <path d="M336 660 H688 L666 724 H358 Z" fill="#304234"/>
+    <path d="M458 748 l54 -60 l54 60 h-32 l-22 -24 l-22 24 z" fill="#E5C170"/><path d="M482 748 l30 -34 l30 34 h-18 l-12 -12 l-12 12 z" fill="#C7953D"/>
+  </g>
+</svg>

@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="640" viewBox="0 0 512 640" fill="none">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F6E6A8"/>
+      <stop offset="35%" stop-color="#D4B35A"/>
+      <stop offset="70%" stop-color="#A16E25"/>
+      <stop offset="100%" stop-color="#F3D785"/>
+    </linearGradient>
+    <linearGradient id="bronze" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E6B28B"/>
+      <stop offset="40%" stop-color="#B46D3F"/>
+      <stop offset="100%" stop-color="#6E3D1A"/>
+    </linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FAFCFD"/>
+      <stop offset="40%" stop-color="#BBC4CC"/>
+      <stop offset="100%" stop-color="#7E8A93"/>
+    </linearGradient>
+    <linearGradient id="platinum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="50%" stop-color="#D6E0E9"/>
+      <stop offset="100%" stop-color="#9EAFBF"/>
+    </linearGradient>
+    <linearGradient id="onyx" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2A2F33"/>
+      <stop offset="50%" stop-color="#111417"/>
+      <stop offset="100%" stop-color="#41464D"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#122015" flood-opacity="0.20"/>
+    </filter>
+    <clipPath id="circleClip"><circle cx="256" cy="335" r="148"/></clipPath>
+    <clipPath id="hexClip"><path d="M256 115 L382 188 V332 L256 405 L130 332 V188 Z"/></clipPath>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="208" y="46" width="96" height="148" rx="18" fill="#101418" stroke="url(#bronze)" stroke-width="6"/>
+    <path d="M228 62 H284" stroke="#F7ECD0" stroke-opacity="0.14" stroke-width="3"/>
+    <path d="M228 82 H284" stroke="#F7ECD0" stroke-opacity="0.10" stroke-width="3"/>
+    <path d="M256 136 l18 22 h-36 z" fill="url(#bronze)"/>
+    <circle cx="256" cy="332" r="172" fill="#111417"/>
+    <circle cx="256" cy="332" r="164" fill="url(#bronze)" fill-opacity="0.55"/>
+    <circle cx="256" cy="332" r="150" fill="#1A1F23"/>
+    <g clip-path="url(#circleClip)">
+      
+    <ellipse cx="256" cy="292" rx="56" ry="88" fill="#E7D0A3" opacity="0.92"/>
+    <path d="M256 232 q24 28 20 86 q-2 34 -20 76 q-18 -42 -20 -76 q-4 -58 20 -86 z" fill="#9C6A39" opacity="0.50"/>
+    <circle cx="222" cy="210" r="12" fill="#E7D0A3"/>
+    <circle cx="240" cy="192" r="13" fill="#E7D0A3"/>
+    <circle cx="262" cy="184" r="14" fill="#E7D0A3"/>
+    <circle cx="284" cy="186" r="12" fill="#E7D0A3"/>
+    <circle cx="302" cy="198" r="10" fill="#E7D0A3"/>
+    
+    </g>
+    <path d="M164 508 h184 l-12 28 h-160 z" fill="url(#bronze)"/>
+    <text x="256" y="531" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="800" letter-spacing="3" fill="#101418">BRONZE</text>
+  </g>
+</svg>
