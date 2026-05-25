@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
-
 type UsuarioLocal = {
   id: string
   nome?: string | null
@@ -86,6 +85,8 @@ type Medalha = {
 
 type MedalhaUsuario = {
   id: string
+  usuario_id?: string | null
+  medalha_id?: string | null
   status?: string | null
   progresso_atual?: number | null
   progresso_total?: number | null
@@ -117,10 +118,10 @@ export default function ClienteDashboardPage() {
   const [roteirosQuentes, setRoteirosQuentes] = useState<Roteiro[]>([])
   const [proximasReservas, setProximasReservas] = useState<Reserva[]>([])
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([])
-  const [medalhasConquistadas, setMedalhasConquistadas] = useState<MedalhaUsuario[]>([])
-  const [proximaMedalha, setProximaMedalha] = useState<MedalhaUsuario | null>(null)
   const [abaNotificacao, setAbaNotificacao] = useState<'all' | 'com'>('all')
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
+  const [medalhasConquistadas, setMedalhasConquistadas] = useState<MedalhaUsuario[]>([])
+  const [proximaMedalha, setProximaMedalha] = useState<MedalhaUsuario | null>(null)
 
   useEffect(() => {
     if (iniciouRef.current) return
@@ -276,6 +277,23 @@ export default function ClienteDashboardPage() {
 
   const reservaCancelada = (reserva: Reserva) => {
     return normalizar(reserva.status) === 'cancelada'
+  }
+
+  const medalhaRelacionada = (item: MedalhaUsuario): Medalha | null => {
+    if (Array.isArray(item.medalhas)) {
+      return item.medalhas[0] || null
+    }
+
+    return item.medalhas || null
+  }
+
+  const progressoPercentual = (item: MedalhaUsuario) => {
+    const atual = Number(item.progresso_atual || 0)
+    const total = Number(item.progresso_total || 1)
+
+    if (!total || total <= 0) return 0
+
+    return Math.min(100, Math.max(0, Math.round((atual / total) * 100)))
   }
 
   const buscarReservasCliente = async (clienteId: string) => {
@@ -435,12 +453,14 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  const carregarMedalhasUsuario = async (userId: string) => {
+  const carregarMedalhas = async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('usuarios_medalhas')
         .select(`
           id,
+          usuario_id,
+          medalha_id,
           status,
           progresso_atual,
           progresso_total,
@@ -459,36 +479,33 @@ export default function ClienteDashboardPage() {
           )
         `)
         .eq('usuario_id', userId)
+        .limit(80)
 
       if (error) {
-        console.warn('Erro ao buscar medalhas do usuário:', error)
+        console.warn('Erro ao buscar medalhas do cliente:', error)
         setMedalhasConquistadas([])
         setProximaMedalha(null)
         return 0
       }
 
-      const lista = ((data || []) as unknown as MedalhaUsuario[]).filter(
-        (item: MedalhaUsuario) => Boolean(item.id)
-      )
+      const lista = (data || []) as MedalhaUsuario[]
 
       const conquistadas = lista
         .filter((item: MedalhaUsuario) => normalizar(item.status) === 'conquistada')
         .sort((a: MedalhaUsuario, b: MedalhaUsuario) => {
-          const dataA = new Date(a.conquistada_em || '').getTime()
-          const dataB = new Date(b.conquistada_em || '').getTime()
+          const medalhaA = medalhaRelacionada(a)
+          const medalhaB = medalhaRelacionada(b)
 
-          return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
+          return Number(medalhaA?.ordem || 0) - Number(medalhaB?.ordem || 0)
         })
 
-      const proximas = lista
-        .filter((item: MedalhaUsuario) => {
-          const status = normalizar(item.status)
-          return status === 'em_progresso' || status === 'bloqueada'
-        })
-        .sort((a: MedalhaUsuario, b: MedalhaUsuario) => progressoMedalha(b) - progressoMedalha(a))
+      const proxima =
+        lista
+          .filter((item: MedalhaUsuario) => normalizar(item.status) !== 'conquistada')
+          .sort((a: MedalhaUsuario, b: MedalhaUsuario) => progressoPercentual(b) - progressoPercentual(a))[0] || null
 
-      setMedalhasConquistadas(conquistadas.slice(0, 12))
-      setProximaMedalha(proximas[0] || null)
+      setMedalhasConquistadas(conquistadas)
+      setProximaMedalha(proxima)
 
       return conquistadas.length
     } catch (error) {
@@ -547,7 +564,7 @@ export default function ClienteDashboardPage() {
 
       const realizadas = reservasRealizadas.length
 
-      const totalMedalhas = await carregarMedalhasUsuario(userId)
+      const totalMedalhas = await carregarMedalhas(userId)
 
       const ultimaReserva = reservasComRoteiro[0]
 
@@ -877,6 +894,11 @@ export default function ClienteDashboardPage() {
     }
   }
 
+  const handleLogout = () => {
+    localStorage.removeItem('user')
+    router.replace('/login')
+  }
+
   const notificacoesFiltradas = useMemo(() => {
     if (abaNotificacao === 'all') return notificacoes
 
@@ -913,23 +935,6 @@ export default function ClienteDashboardPage() {
     if (confirmadas > 0) return `${confirmadas} confirmação(ões)`
 
     return `${total} reserva(s)`
-  }
-
-  const obterMedalha = (item: MedalhaUsuario): Medalha | null => {
-    if (!item.medalhas) return null
-    if (Array.isArray(item.medalhas)) return item.medalhas[0] || null
-    return item.medalhas
-  }
-
-  const progressoMedalha = (item: MedalhaUsuario) => {
-    const atual = Number(item.progresso_atual || 0)
-    const total = Number(item.progresso_total || 1)
-
-    if (!Number.isFinite(atual) || !Number.isFinite(total) || total <= 0) {
-      return 0
-    }
-
-    return Math.min(100, Math.max(0, Math.round((atual / total) * 100)))
   }
 
   const proximaReserva = proximasReservas[0] || null
@@ -1032,49 +1037,67 @@ export default function ClienteDashboardPage() {
         .headerInner {
           max-width: 1180px;
           margin: 0 auto;
-          display: grid;
-          grid-template-columns: 80px minmax(0, 1fr) 80px;
+          display: flex;
+          justify-content: space-between;
           align-items: center;
           gap: 12px;
         }
 
-        .headerSpacer {
-          min-height: 1px;
+        .brand {
+          display: inline-flex;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 12px;
+          min-width: 0;
+          flex: 1;
+          border: 0;
+          background: transparent;
+          padding: 0;
+          margin: 0;
+          cursor: pointer;
+          text-align: left;
         }
 
-        .brandLockup {
-          justify-self: center;
-          border: none;
-          background: transparent;
-          text-align: center;
-          cursor: pointer;
-          padding: 2px 8px 5px;
-          color: #080806;
+        .brand img {
+          height: 52px;
+          width: auto;
+          object-fit: contain;
+          display: block;
+          flex: 0 0 auto;
+        }
+
+        .brandText {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          justify-content: center;
+          line-height: 1;
         }
 
         .brandTitle {
-          font-family: Georgia, "Times New Roman", serif;
-          font-size: clamp(38px, 6vw, 62px);
-          font-weight: 500;
-          letter-spacing: -0.075em;
-          line-height: 0.82;
-          color: #080806;
+          font-size: clamp(30px, 4.1vw, 58px);
+          font-weight: 950;
+          color: #dc2626;
+          line-height: 0.9;
+          letter-spacing: -0.06em;
+          margin: 0;
         }
 
         .brandSub {
-          margin-top: 7px;
-          color: #080806;
-          font-size: clamp(16px, 2.8vw, 25px);
-          font-weight: 500;
-          letter-spacing: -0.045em;
+          color: #64748b;
+          font-size: clamp(13px, 1.6vw, 24px);
+          font-weight: 700;
+          margin-top: 5px;
           line-height: 1;
+          letter-spacing: -0.03em;
         }
 
         .headerActions {
           display: flex;
           gap: 6px;
           align-items: center;
-          justify-content: flex-end;
+          flex: 0 0 auto;
         }
 
         .iconBtn {
@@ -1575,17 +1598,19 @@ export default function ClienteDashboardPage() {
           margin-top: 3px;
         }
 
-        .medalShowcase {
+
+
+        .medalBox {
           margin-top: 14px;
-          border-radius: 24px;
           background:
-            radial-gradient(circle at top left, rgba(132, 204, 22, 0.14), transparent 32%),
+            radial-gradient(circle at top right, rgba(251, 146, 60, 0.10), transparent 34%),
             #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
+          border: 1px solid rgba(146, 64, 14, 0.10);
+          border-radius: 24px;
           padding: 14px;
         }
 
-        .medalShowcaseHeader {
+        .medalBoxHead {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
@@ -1593,134 +1618,105 @@ export default function ClienteDashboardPage() {
           margin-bottom: 12px;
         }
 
-        .medalShowcaseTitle {
+        .medalBoxHead strong {
+          display: block;
           color: #172018;
-          font-size: 13px;
+          font-size: 14px;
           font-weight: 950;
-          line-height: 1.25;
+          letter-spacing: -0.03em;
         }
 
-        .medalShowcaseText {
-          margin-top: 3px;
-          color: #64748b;
+        .medalBoxHead button {
+          border: 0;
+          background: transparent;
+          color: #16a34a;
           font-size: 11px;
-          font-weight: 750;
-          line-height: 1.35;
+          font-weight: 950;
+          cursor: pointer;
+          padding: 0;
+        }
+
+        .medalKicker {
+          color: #92400e;
+          font-size: 10px;
+          font-weight: 950;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-bottom: 3px;
         }
 
         .medalRail {
-          display: grid;
-          grid-template-columns: repeat(6, minmax(0, 1fr));
+          display: flex;
+          flex-wrap: wrap;
           gap: 8px;
+          margin-top: 12px;
         }
 
         .medalHex {
-          aspect-ratio: 1;
-          min-height: 42px;
+          width: 42px;
+          height: 42px;
           display: flex;
           align-items: center;
           justify-content: center;
           clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
-          border: 3px solid #92400e;
+          border: 2px solid #92400e;
           background:
-            radial-gradient(circle at 32% 18%, rgba(255,255,255,0.78), transparent 28%),
-            linear-gradient(145deg, #fff7ed, #e2e8ce);
-          box-shadow: inset 0 0 0 2px rgba(23, 32, 24, 0.10);
+            radial-gradient(circle at 30% 18%, rgba(255,255,255,0.76), transparent 28%),
+            linear-gradient(145deg, rgba(255,253,247,0.96), rgba(120,113,108,0.18));
+          box-shadow:
+            inset 0 0 0 2px rgba(29,38,24,0.08),
+            0 8px 18px rgba(25,35,18,0.12);
+          flex: 0 0 auto;
         }
 
         .medalHex span {
           font-size: 19px;
-          filter: drop-shadow(0 3px 4px rgba(15, 23, 42, 0.16));
+          filter: drop-shadow(0 2px 3px rgba(0,0,0,0.18));
         }
 
         .medalHex.locked {
-          opacity: 0.42;
+          opacity: 0.38;
           filter: grayscale(0.7);
-          border-color: rgba(100, 116, 139, 0.35);
-          background: linear-gradient(145deg, #f8fafc, #e2e8f0);
+          border-color: rgba(87, 83, 78, 0.34) !important;
         }
 
-        .nextMedalCard {
+        .nextMedalBox {
           margin-top: 12px;
-          border-radius: 20px;
-          background: #f8fafc;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          padding: 12px;
+          padding: 10px;
+          border-radius: 18px;
+          background: rgba(23, 32, 24, 0.04);
+          border: 1px solid rgba(15, 23, 42, 0.05);
         }
 
-        .nextMedalTop {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
-
-        .nextMedalName {
-          margin-top: 5px;
-          color: #172018;
-          font-size: 13px;
-          font-weight: 950;
-          line-height: 1.25;
-        }
-
-        .nextMedalProgress {
-          height: 8px;
-          border-radius: 999px;
-          background: #e2e8f0;
-          overflow: hidden;
-          margin-top: 10px;
-        }
-
-        .nextMedalProgress div {
-          height: 100%;
-          border-radius: inherit;
-          background: linear-gradient(90deg, #166534, #84cc16, #f97316);
-        }
-
-        .originFooter {
-          max-width: 1180px;
-          margin: 22px auto 0;
-          padding: 12px 0 4px;
-          display: flex;
-          justify-content: center;
-        }
-
-        .originSeal {
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(15, 23, 42, 0.07);
-          background: rgba(255, 255, 255, 0.68);
-          padding: 8px 14px 8px 9px;
-          color: #172018;
-          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
-        }
-
-        .originSeal img {
-          width: 32px;
-          height: 32px;
-          object-fit: contain;
-        }
-
-        .originSeal strong {
+        .nextMedalBox span {
           display: block;
+          color: #92400e;
+          font-size: 10px;
+          font-weight: 950;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .nextMedalBox strong {
+          display: block;
+          margin-top: 4px;
+          color: #172018;
           font-size: 12px;
           font-weight: 950;
-          line-height: 1.1;
         }
 
-        .originSeal span {
-          display: block;
-          margin-top: 2px;
-          color: #64748b;
-          font-size: 10px;
-          font-weight: 800;
+        .miniProgress {
+          height: 7px;
+          border-radius: 999px;
+          background: rgba(15, 23, 42, 0.08);
+          overflow: hidden;
+          margin-top: 8px;
+        }
+
+        .miniProgress div {
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #365314, #84cc16, #f97316);
         }
 
         .empty {
@@ -1734,240 +1730,11 @@ export default function ClienteDashboardPage() {
           font-weight: 700;
         }
 
-        .betaFeedbackTab {
-          position: fixed;
-          left: 50%;
-          bottom: 14px;
-          z-index: 80;
-          transform: translateX(-50%);
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          background: rgba(255, 253, 247, 0.92);
-          color: #172018;
-          border-radius: 999px;
-          padding: 10px 15px;
-          font-size: 12px;
-          font-weight: 900;
-          box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
-          backdrop-filter: blur(14px);
-          cursor: pointer;
-        }
-
-        .betaFeedbackDot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: #dc2626;
-          box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
-        }
-
-        .betaOverlay {
-          position: fixed;
-          inset: 0;
-          z-index: 100;
-          display: flex;
-          align-items: flex-end;
-          justify-content: center;
-          padding: 16px;
-          background: rgba(9, 12, 7, 0.52);
-          backdrop-filter: blur(8px);
-        }
-
-        .betaModal {
-          width: min(640px, 100%);
-          max-height: 88vh;
-          overflow: auto;
-          border-radius: 30px;
-          border: 1px solid rgba(255, 255, 255, 0.55);
-          background:
-            radial-gradient(circle at 8% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
-            linear-gradient(180deg, #fffdf7 0%, #f4f6ec 100%);
-          box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
-          padding: 22px;
-        }
-
-        .betaModalHeader {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 16px;
-          margin-bottom: 16px;
-        }
-
-        .betaKicker {
-          margin: 0 0 6px;
-          color: #dc2626;
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.12em;
-        }
-
-        .betaModal h2 {
-          margin: 0;
-          color: #172018;
-          font-size: 28px;
-          line-height: 0.98;
-          font-weight: 950;
-          letter-spacing: -0.055em;
-        }
-
-        .betaModal p {
-          margin: 8px 0 0;
-          color: #64748b;
-          font-size: 13px;
-          line-height: 1.5;
-          font-weight: 700;
-        }
-
-        .betaClose {
-          width: 38px;
-          height: 38px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.78);
-          color: #172018;
-          font-size: 24px;
-          cursor: pointer;
-        }
-
-        .betaTypeGrid {
-          display: grid;
-          grid-template-columns: repeat(5, 1fr);
-          gap: 8px;
-          margin: 16px 0;
-        }
-
-        .betaTypeCard {
-          min-height: 82px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.72);
-          padding: 10px;
-          text-align: left;
-          cursor: pointer;
-        }
-
-        .betaTypeCard.active {
-          border-color: rgba(220, 38, 38, 0.34);
-          background: rgba(220, 38, 38, 0.06);
-        }
-
-        .betaTypeCard strong {
-          display: block;
-          color: #172018;
-          font-size: 12px;
-          font-weight: 950;
-          margin-bottom: 4px;
-        }
-
-        .betaTypeCard span {
-          display: block;
-          color: #64748b;
-          font-size: 10px;
-          line-height: 1.35;
-          font-weight: 700;
-        }
-
-        .betaField {
-          display: block;
-          margin-top: 12px;
-        }
-
-        .betaField span {
-          display: block;
-          margin-bottom: 7px;
-          color: #172018;
-          font-size: 12px;
-          font-weight: 950;
-        }
-
-        .betaField input,
-        .betaField textarea {
-          width: 100%;
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          border-radius: 18px;
-          background: rgba(255, 255, 255, 0.82);
-          color: #172018;
-          outline: none;
-          padding: 12px 13px;
-          font-size: 13px;
-          line-height: 1.45;
-          font-family: inherit;
-        }
-
-        .betaField textarea {
-          resize: vertical;
-          min-height: 130px;
-        }
-
-        .betaError {
-          margin-top: 12px;
-          border-radius: 16px;
-          background: rgba(220, 38, 38, 0.08);
-          border: 1px solid rgba(220, 38, 38, 0.18);
-          color: #991b1b;
-          padding: 11px 12px;
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .betaSuccess {
-          text-align: center;
-          padding: 24px 10px 8px;
-        }
-
-        .betaSuccessIcon {
-          width: 56px;
-          height: 56px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 999px;
-          background: #dcfce7;
-          color: #166534;
-          font-size: 28px;
-          font-weight: 950;
-          margin-bottom: 12px;
-        }
-
-        .betaActions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 10px;
-          margin-top: 16px;
-        }
-
-        .betaPrimary,
-        .betaSecondary {
-          border-radius: 999px;
-          padding: 12px 16px;
-          font-size: 13px;
-          font-weight: 950;
-          cursor: pointer;
-        }
-
-        .betaPrimary {
-          border: none;
-          background: #172018;
-          color: #ffffff;
-        }
-
-        .betaSecondary {
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          background: rgba(255, 255, 255, 0.72);
-          color: #172018;
-        }
-
-        .betaPrimary:disabled,
-        .betaSecondary:disabled {
-          opacity: 0.62;
-          cursor: not-allowed;
-        }
-
         @media (max-width: 1040px) {
+          .headerInner {
+            grid-template-columns: 140px minmax(0, 1fr) 140px;
+          }
+
           .utilityGrid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
@@ -1983,16 +1750,21 @@ export default function ClienteDashboardPage() {
             padding: 9px 12px;
           }
 
-          .brandSub {
-            display: block;
+          .headerInner {
+            grid-template-columns: 36px minmax(0, 1fr) 36px;
+          }
+
+          .brand {
+            gap: 8px;
           }
 
           .brandTitle {
-            font-size: clamp(34px, 12vw, 50px);
+            font-size: 17px;
           }
 
           .brandSub {
-            font-size: clamp(15px, 5vw, 22px);
+            font-size: 10px;
+            margin-top: 2px;
           }
 
           .headerActions .hideMobile {
@@ -2038,7 +1810,7 @@ export default function ClienteDashboardPage() {
           }
 
           .brand img {
-            height: 38px;
+            height: 40px;
           }
 
           .miniStats {
@@ -2049,36 +1821,29 @@ export default function ClienteDashboardPage() {
 
       <header className="header">
         <div className="headerInner">
-          <div className="headerSpacer" />
-
           <button
             type="button"
-            className="brandLockup"
+            className="brand"
             onClick={() => router.push('/cliente/dashboard')}
-            aria-label="Ir para a dashboard PrussikTrails"
+            aria-label="PrussikTrails"
           >
-            <div className="brandTitle">PrussikTrails</div>
-            <div className="brandSub">Seu app de aventuras</div>
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+
+            <div className="brandText">
+              <div className="brandTitle">PrussikTrails</div>
+              <div className="brandSub">Seu app de aventuras</div>
+            </div>
           </button>
 
           <div className="headerActions">
             <button
               type="button"
-              className="iconBtn hideMobile"
-              onClick={atualizarDashboard}
-              disabled={atualizando}
-              title="Atualizar"
-            >
-              {atualizando ? '…' : '↻'}
-            </button>
-
-            <button
-              type="button"
               className="iconBtn"
               onClick={() => router.push('/cliente/perfil')}
-              title="Perfil e configurações"
+              title="Perfil"
+              aria-label="Abrir perfil e configurações"
             >
-              ⚙
+              👤
             </button>
           </div>
         </div>
@@ -2425,70 +2190,56 @@ export default function ClienteDashboardPage() {
                   </div>
                 </div>
 
-                <div className="medalShowcase">
-                  <div className="medalShowcaseHeader">
+                <div className="medalBox">
+                  <div className="medalBoxHead">
                     <div>
-                      <div className="medalShowcaseTitle">Coleção de medalhas</div>
-                      <div className="medalShowcaseText">
-                        Conquistas da sua jornada Prussik.
-                      </div>
+                      <div className="medalKicker">Coleção</div>
+                      <strong>Medalhas da jornada</strong>
                     </div>
 
                     <button
                       type="button"
-                      className="textLink"
                       onClick={() => router.push('/cliente/perfil')}
                     >
-                      Ver todas
+                      Ver perfil
                     </button>
                   </div>
 
-                  <div className="medalRail">
-                    {medalhasConquistadas.slice(0, 6).map((item: MedalhaUsuario) => {
-                      const medalha = obterMedalha(item)
+                  {medalhasConquistadas.length > 0 ? (
+                    <div className="medalRail">
+                      {medalhasConquistadas.slice(0, 8).map((item: MedalhaUsuario) => {
+                        const medalha = medalhaRelacionada(item)
 
-                      return (
-                        <div
-                          key={item.id}
-                          className="medalHex"
-                          title={medalha?.nome || 'Medalha conquistada'}
-                          style={{ borderColor: medalha?.cor || '#92400e' }}
-                        >
-                          <span>{medalha?.icone || '🏅'}</span>
-                        </div>
-                      )
-                    })}
+                        return (
+                          <div
+                            key={item.id}
+                            className="medalHex"
+                            title={medalha?.nome || 'Medalha conquistada'}
+                            style={{ borderColor: medalha?.cor || '#92400e' }}
+                          >
+                            <span>{medalha?.icone || '🏅'}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="medalRail">
+                      <div className="medalHex locked"><span>🔒</span></div>
+                      <div className="medalHex locked"><span>🔒</span></div>
+                      <div className="medalHex locked"><span>🔒</span></div>
+                      <div className="medalHex locked"><span>🔒</span></div>
+                    </div>
+                  )}
 
-                    {Array.from({ length: Math.max(0, 6 - medalhasConquistadas.length) }).map(
-                      (_item: unknown, index: number) => (
-                        <div key={`locked-medal-${index}`} className="medalHex locked">
-                          <span>🔒</span>
-                        </div>
-                      )
-                    )}
-                  </div>
-
-                  {proximaMedalha && (() => {
-                    const medalha = obterMedalha(proximaMedalha)
-                    const progresso = progressoMedalha(proximaMedalha)
-
-                    return (
-                      <div className="nextMedalCard">
-                        <div className="nextMedalTop">
-                          <span>Próxima conquista</span>
-                          <span>{progresso}%</span>
-                        </div>
-
-                        <div className="nextMedalName">
-                          {medalha?.nome || 'Nova medalha'}
-                        </div>
-
-                        <div className="nextMedalProgress">
-                          <div style={{ width: `${progresso}%` }} />
-                        </div>
+                  {proximaMedalha && (
+                    <div className="nextMedalBox">
+                      <span>Próxima conquista</span>
+                      <strong>{medalhaRelacionada(proximaMedalha)?.nome || 'Nova medalha'}</strong>
+                      <div className="miniProgress">
+                        <div style={{ width: `${progressoPercentual(proximaMedalha)}%` }} />
                       </div>
-                    )
-                  })()}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -2507,242 +2258,7 @@ export default function ClienteDashboardPage() {
             </section>
           </div>
         </section>
-
-        <footer className="originFooter">
-          <div className="originSeal">
-            <img src="/logo-prussik-display.png" alt="Símbolo de origem PrussikTrails" />
-            <div>
-              <strong>PrussikTrails</strong>
-              <span>Símbolo de origem · 2026</span>
-            </div>
-          </div>
-        </footer>
       </div>
-
-      <BetaFeedbackButton usuario={user} />
     </main>
-  )
-}
-type BetaFeedbackButtonProps = {
-  usuario: UsuarioLocal
-}
-
-type FeedbackTipo = 'feedback' | 'bug' | 'melhoria' | 'elogio' | 'duvida'
-type FeedbackPrioridade = 'baixa' | 'normal' | 'alta' | 'critica'
-type FeedbackTipoOption = { value: FeedbackTipo; label: string; descricao: string }
-
-const feedbackTipos: { value: FeedbackTipo; label: string; descricao: string }[] = [
-  {
-    value: 'feedback',
-    label: 'Feedback',
-    descricao: 'Algo que você sentiu usando o app.'
-  },
-  {
-    value: 'bug',
-    label: 'Bug',
-    descricao: 'Algo que não funcionou como deveria.'
-  },
-  {
-    value: 'melhoria',
-    label: 'Melhoria',
-    descricao: 'Uma ideia para melhorar a experiência.'
-  },
-  {
-    value: 'duvida',
-    label: 'Dúvida',
-    descricao: 'Algo que ficou confuso ou pouco claro.'
-  },
-  {
-    value: 'elogio',
-    label: 'Elogio',
-    descricao: 'Algo que você gostou.'
-  }
-]
-
-function detectarDispositivo() {
-  if (typeof window === 'undefined') return 'desconhecido'
-
-  const largura = window.innerWidth
-
-  if (largura <= 640) return 'mobile'
-  if (largura <= 1024) return 'tablet'
-
-  return 'desktop'
-}
-
-function prioridadePorTipo(tipo: FeedbackTipo): FeedbackPrioridade {
-  if (tipo === 'bug') return 'alta'
-  return 'normal'
-}
-
-function BetaFeedbackButton({ usuario }: BetaFeedbackButtonProps) {
-  const [aberto, setAberto] = useState(false)
-  const [tipo, setTipo] = useState<FeedbackTipo>('feedback')
-  const [titulo, setTitulo] = useState('')
-  const [mensagem, setMensagem] = useState('')
-  const [enviando, setEnviando] = useState(false)
-  const [erro, setErro] = useState('')
-  const [sucesso, setSucesso] = useState(false)
-
-  const tipoSelecionado = useMemo(() => {
-    return feedbackTipos.find((item) => item.value === tipo) || feedbackTipos[0]
-  }, [tipo])
-
-  const fechar = () => {
-    if (enviando) return
-    setAberto(false)
-    setErro('')
-    setSucesso(false)
-  }
-
-  const enviar = async () => {
-    try {
-      setErro('')
-      setSucesso(false)
-
-      const mensagemLimpa = mensagem.trim()
-      const tituloLimpo = titulo.trim()
-
-      if (!mensagemLimpa) {
-        setErro('Conte rapidamente o que aconteceu ou o que você gostaria de sugerir.')
-        return
-      }
-
-      setEnviando(true)
-
-      const resposta = await fetch('/api/beta/feedback', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          usuarioId: usuario.id,
-          tipo,
-          prioridade: prioridadePorTipo(tipo),
-          titulo: tituloLimpo || null,
-          mensagem: mensagemLimpa,
-          origem: 'dashboard_principal',
-          pagina: typeof window !== 'undefined' ? window.location.pathname : 'dashboard_principal',
-          navegador: typeof navigator !== 'undefined' ? navigator.userAgent : 'desconhecido',
-          dispositivo: detectarDispositivo()
-        })
-      })
-
-      const json = await resposta.json().catch(() => null)
-
-      if (!resposta.ok || !json?.ok) {
-        throw new Error(json?.error || 'Não foi possível enviar agora.')
-      }
-
-      setSucesso(true)
-      setTitulo('')
-      setMensagem('')
-      setTipo('feedback')
-    } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Não foi possível enviar agora.')
-    } finally {
-      setEnviando(false)
-    }
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        className="betaFeedbackTab"
-        onClick={() => {
-          setAberto(true)
-          setErro('')
-          setSucesso(false)
-        }}
-      >
-        <span className="betaFeedbackDot" />
-        <span>Beta · Feedback e Bug</span>
-      </button>
-
-      {aberto && (
-        <div className="betaOverlay" role="dialog" aria-modal="true">
-          <div className="betaModal">
-            <div className="betaModalHeader">
-              <div>
-                <p className="betaKicker">Fase Beta</p>
-                <h2>Ajude a melhorar a PrussikTrails</h2>
-                <p>
-                  Conte o que funcionou, o que travou ou o que poderia ficar mais claro.
-                </p>
-              </div>
-
-              <button type="button" className="betaClose" onClick={fechar} aria-label="Fechar">
-                ×
-              </button>
-            </div>
-
-            {sucesso ? (
-              <div className="betaSuccess">
-                <div className="betaSuccessIcon">✓</div>
-                <h2>Feedback enviado</h2>
-                <p>Obrigado por contribuir com a fase Beta.</p>
-                <button type="button" className="betaPrimary" onClick={fechar}>
-                  Fechar
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="betaTypeGrid">
-                  {feedbackTipos.map((item: FeedbackTipoOption) => (
-                    <button
-                      key={item.value}
-                      type="button"
-                      className={`betaTypeCard ${tipo === item.value ? 'active' : ''}`}
-                      onClick={() => setTipo(item.value)}
-                    >
-                      <strong>{item.label}</strong>
-                      <span>{item.descricao}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <p>
-                  Tipo selecionado: <strong>{tipoSelecionado.label}</strong>
-                </p>
-
-                <label className="betaField">
-                  <span>Título opcional</span>
-                  <input
-                    value={titulo}
-                    onChange={(event) => setTitulo(event.target.value)}
-                    placeholder="Ex.: botão de pagar não apareceu"
-                    maxLength={160}
-                  />
-                </label>
-
-                <label className="betaField">
-                  <span>Mensagem</span>
-                  <textarea
-                    value={mensagem}
-                    onChange={(event) => setMensagem(event.target.value)}
-                    placeholder="Descreva onde estava, o que tentou fazer e o que aconteceu."
-                    maxLength={3000}
-                    rows={6}
-                  />
-                </label>
-
-                {erro && <div className="betaError">{erro}</div>}
-
-                <div className="betaActions">
-                  <button type="button" className="betaSecondary" onClick={fechar} disabled={enviando}>
-                    Cancelar
-                  </button>
-
-                  <button type="button" className="betaPrimary" onClick={enviar} disabled={enviando}>
-                    {enviando ? 'Enviando...' : 'Enviar feedback'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </>
   )
 }

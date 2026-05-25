@@ -3,12 +3,16 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+import AvatarCropModal from '@/components/AvatarCropModal'
 
 type UsuarioLocal = {
   id: string
   nome?: string | null
   email?: string | null
   tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
 type Roteiro = {
@@ -109,6 +113,7 @@ export default function PerfilGuiaPage() {
   const [cadastur, setCadastur] = useState('')
 
   const [avatarPreview, setAvatarPreview] = useState('')
+  const [avatarCropSrc, setAvatarCropSrc] = useState('')
   const [enviandoAvatar, setEnviandoAvatar] = useState(false)
 
   const [stats, setStats] = useState<Stats>(statsInicial)
@@ -538,20 +543,24 @@ export default function PerfilGuiaPage() {
     setMensagem('')
 
     try {
-      const extensao = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const extensao =
+        file.type === 'image/webp'
+          ? 'webp'
+          : file.name.split('.').pop()?.toLowerCase() || 'jpg'
+
       const caminho = `guias/${user.id}/avatar-${Date.now()}.${extensao}`
 
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
+        .from('fotos-aventuras')
         .upload(caminho, file, {
           upsert: true,
-          contentType: file.type || 'image/jpeg'
+          contentType: file.type || 'image/webp'
         })
 
       if (uploadError) throw uploadError
 
       const { data } = supabase.storage
-        .from('avatars')
+        .from('fotos-aventuras')
         .getPublicUrl(caminho)
 
       const publicUrl = data?.publicUrl || ''
@@ -560,16 +569,28 @@ export default function PerfilGuiaPage() {
         throw new Error('Não foi possível gerar a URL pública da foto.')
       }
 
-      await atualizarUsuarioComFallback(user.id, {
+      const atualizado = await atualizarUsuarioComFallback(user.id, {
         avatar_url: publicUrl,
         foto_url: publicUrl,
         imagem_url: publicUrl,
         updated_at: new Date().toISOString()
       })
 
+      const usuarioAtualizado: UsuarioLocal = {
+        ...user,
+        ...(atualizado || {}),
+        avatar_url: publicUrl,
+        foto_url: publicUrl,
+        imagem_url: publicUrl
+      }
+
+      localStorage.setItem('user', JSON.stringify(usuarioAtualizado))
+      setUser(usuarioAtualizado)
       setAvatarPreview(publicUrl)
+
       setGuia((prev: any) => ({
         ...prev,
+        ...(atualizado || {}),
         avatar_url: publicUrl,
         foto_url: publicUrl,
         imagem_url: publicUrl
@@ -580,8 +601,10 @@ export default function PerfilGuiaPage() {
       console.error('Erro ao enviar avatar:', error)
       setErro(
         error?.message?.includes('Bucket not found')
-          ? 'O bucket avatars ainda não existe no Supabase Storage.'
-          : error?.message || 'Não foi possível atualizar a foto.'
+          ? 'O bucket fotos-aventuras ainda não existe no Supabase Storage.'
+          : error?.message?.includes('maximum allowed size')
+            ? 'A imagem ficou maior que o limite permitido. Tente aproximar menos ou usar uma foto menor.'
+            : error?.message || 'Não foi possível atualizar a foto.'
       )
     } finally {
       setEnviandoAvatar(false)
@@ -589,14 +612,41 @@ export default function PerfilGuiaPage() {
     }
   }
 
-  const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
+  const limparCropAvatar = () => {
+    if (avatarCropSrc) {
+      URL.revokeObjectURL(avatarCropSrc)
+    }
+
+    setAvatarCropSrc('')
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const confirmarCropAvatar = async (file: File) => {
+    await uploadAvatar(file)
+    limparCropAvatar()
+  }
+
+  const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
 
     if (!file) return
 
-    await uploadAvatar(file)
+    if (!file.type.startsWith('image/')) {
+      setErro('Selecione um arquivo de imagem válido.')
+      event.target.value = ''
+      return
+    }
 
-    event.target.value = ''
+    if (avatarCropSrc) {
+      URL.revokeObjectURL(avatarCropSrc)
+    }
+
+    setErro('')
+    setMensagem('')
+    setAvatarCropSrc(URL.createObjectURL(file))
   }
 
   const abrirAlterarSenha = () => {
@@ -2237,6 +2287,16 @@ export default function PerfilGuiaPage() {
           </aside>
         </section>
       </div>
+
+      {avatarCropSrc && (
+        <AvatarCropModal
+          open={Boolean(avatarCropSrc)}
+          imageSrc={avatarCropSrc}
+          title="Ajustar foto do guia"
+          onCancel={limparCropAvatar}
+          onConfirm={confirmarCropAvatar}
+        />
+      )}
 
       {modalSenhaAberto && (
         <div className="modalOverlay">
