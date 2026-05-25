@@ -12,9 +12,13 @@ function json(data: any, status = 200) {
 }
 
 function getSupabaseAdmin() {
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseUrl) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL ausente no ambiente.')
+  }
+
+  if (!supabaseServiceKey) {
     throw new Error(
-      'Credenciais Supabase ausentes. Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel.'
+      'SUPABASE_SERVICE_ROLE_KEY ausente no ambiente. Sem ela, o cadastro cai no bloqueio RLS da tabela users.'
     )
   }
 
@@ -152,6 +156,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'Informe o nome.'
         },
         400
@@ -162,6 +167,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'Informe um e-mail válido.'
         },
         400
@@ -172,6 +178,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'Informe o celular.'
         },
         400
@@ -182,6 +189,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'Informe um CPF válido.'
         },
         400
@@ -192,6 +200,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'Informe a data de nascimento.'
         },
         400
@@ -202,6 +211,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'A senha deve ter pelo menos 6 caracteres.'
         },
         400
@@ -212,6 +222,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'As senhas não conferem.'
         },
         400
@@ -232,6 +243,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'Já existe uma conta cadastrada com este e-mail ou CPF.'
         },
         409
@@ -262,6 +274,7 @@ export async function POST(request: NextRequest) {
       return json(
         {
           sucesso: false,
+          origem: 'api-cadastro-service-role',
           erro: 'Usuário não foi criado corretamente.'
         },
         500
@@ -270,6 +283,7 @@ export async function POST(request: NextRequest) {
 
     return json({
       sucesso: true,
+      origem: 'api-cadastro-service-role',
       mensagem: 'Cadastro realizado com sucesso.',
       usuario: {
         id: resultado.data.id,
@@ -285,6 +299,7 @@ export async function POST(request: NextRequest) {
     return json(
       {
         sucesso: false,
+        origem: 'api-cadastro-service-role',
         erro: error?.message || 'Erro interno ao cadastrar usuário.'
       },
       500
@@ -295,6 +310,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return json({
     sucesso: true,
+    origem: 'api-cadastro-service-role',
     rota: '/api/cadastro',
     metodo: 'POST',
     mensagem: 'Rota de cadastro ativa.'
