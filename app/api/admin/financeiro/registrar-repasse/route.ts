@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 export const runtime = 'nodejs'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -10,24 +11,22 @@ const supabaseServiceKey =
   process.env.SUPABASE_SERVICE_KEY ||
   ''
 
-type UsuarioBanco = {
-  id: string
-  nome?: string | null
-  email?: string | null
-  tipo?: string | null
-}
-
 function json(data: any, status = 200) {
-  return NextResponse.json(data, { status })
+  return NextResponse.json(data, {
+    status,
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+    }
+  })
 }
 
 function getSupabaseAdmin() {
   if (!supabaseUrl) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL ausente no ambiente.')
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL ausente.')
   }
 
   if (!supabaseServiceKey) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY ausente no ambiente.')
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY ausente.')
   }
 
   return createClient(supabaseUrl, supabaseServiceKey, {
@@ -50,351 +49,211 @@ function normalizar(valor: any) {
     .trim()
 }
 
-function normalizarNumero(valor: any) {
-  const limpo = String(valor || '')
-    .replace(/\./g, '')
-    .replace(',', '.')
-    .replace(/[^\d.]/g, '')
+function uuidValido(valor: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(valor || '')
+  )
+}
 
-  const numero = Number(limpo)
+function normalizarValorMonetario(valor: any) {
+  if (typeof valor === 'number') {
+    return Number.isFinite(valor) ? valor : 0
+  }
+
+  const textoOriginal = String(valor || '').trim()
+
+  if (!textoOriginal) return 0
+
+  let texto = textoOriginal
+    .replace(/\s/g, '')
+    .replace(/R\$/gi, '')
+
+  const temVirgula = texto.includes(',')
+  const temPonto = texto.includes('.')
+
+  if (temVirgula && temPonto) {
+    texto = texto.replace(/\./g, '').replace(',', '.')
+  } else if (temVirgula) {
+    texto = texto.replace(',', '.')
+  }
+
+  texto = texto.replace(/[^\d.]/g, '')
+
+  const numero = Number(texto)
 
   if (!Number.isFinite(numero)) return 0
 
   return numero
 }
 
-function uuidValido(valor: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
-    String(valor || '')
-  )
+function emCentavos(valor: any) {
+  return Math.round(Number(valor || 0) * 100)
 }
 
-function listaTextos(valor: any) {
-  if (!Array.isArray(valor)) return []
-
-  return valor
-    .map((item) => limparTexto(item))
-    .filter(Boolean)
+function deCentavos(valor: number) {
+  return Math.round(Number(valor || 0)) / 100
 }
 
-function ehAdmin(valor: any) {
-  const tipo = normalizar(valor)
+function pagamentoConfirmado(reserva: any) {
+  const pagamento = normalizar(reserva?.pagamento_status)
+  const status = normalizar(reserva?.status)
 
   return (
-    tipo === 'admin' ||
-    tipo === 'adm' ||
-    tipo === 'administrador' ||
-    tipo === 'superadmin' ||
-    tipo === 'super_admin'
+    pagamento === 'pago' ||
+    pagamento === 'confirmado' ||
+    pagamento === 'aprovado' ||
+    pagamento === 'paid' ||
+    pagamento === 'approved' ||
+    status === 'confirmada' ||
+    status === 'realizada' ||
+    status === 'pago' ||
+    status === 'paga'
   )
 }
 
-function erroDeColunaAusente(error: any) {
-  const texto = String(
-    error?.message ||
-      error?.details ||
-      error?.hint ||
-      ''
-  ).toLowerCase()
+function repasseCancelado(repasse: any) {
+  const status = normalizar(repasse?.status)
 
   return (
-    error?.code === '42703' ||
-    error?.code === 'PGRST204' ||
-    texto.includes('could not find') ||
-    texto.includes('schema cache') ||
-    texto.includes('column')
+    status === 'cancelado' ||
+    status === 'cancelada' ||
+    status === 'estornado' ||
+    status === 'estornada'
   )
 }
 
-function extrairColunaAusente(error: any) {
-  const texto = [error?.message, error?.details, error?.hint]
-    .filter(Boolean)
-    .join(' ')
-
-  const matchAspas = texto.match(/'([^']+)'/)
-
-  if (matchAspas?.[1]) return matchAspas[1]
-
-  const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
-
-  if (matchColumn?.[1]) return matchColumn[1]
-
-  return ''
-}
-
-function tabelaNaoExiste(error: any) {
-  const texto = String(
-    error?.message ||
-      error?.details ||
-      error?.hint ||
-      ''
-  ).toLowerCase()
-
-  return (
-    error?.code === '42P01' ||
-    error?.code === 'PGRST205' ||
-    texto.includes('does not exist') ||
-    texto.includes('not exist') ||
-    texto.includes('schema cache')
+function valorDoRepasse(repasse: any) {
+  return Number(
+    repasse?.valor_pago ||
+      repasse?.valor_repasse ||
+      repasse?.valor_repassado ||
+      repasse?.valor ||
+      0
   )
 }
 
-async function buscarUsuarioPorId(supabase: any, userId: string) {
-  if (!userId || !uuidValido(userId)) return null
+async function buscarRoteirosDoGuia(supabase: any, guiaId: string) {
+  const campos = ['id_guia', 'guia_id', 'user_id', 'usuario_id']
+  const mapa = new Map<string, any>()
 
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, nome, email, tipo')
-    .eq('id', userId)
-    .maybeSingle()
+  for (const campo of campos) {
+    const { data, error } = await supabase
+      .from('roteiros')
+      .select('*')
+      .eq(campo, guiaId)
 
-  if (error) {
-    console.warn('Erro ao buscar usuário por ID:', error)
-    return null
-  }
-
-  return (data || null) as UsuarioBanco | null
-}
-
-async function buscarUsuarioPorEmail(supabase: any, email: string) {
-  const emailLimpo = limparTexto(email).toLowerCase()
-
-  if (!emailLimpo) return null
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, nome, email, tipo')
-    .ilike('email', emailLimpo)
-    .maybeSingle()
-
-  if (error) {
-    console.warn('Erro ao buscar usuário por e-mail:', error)
-    return null
-  }
-
-  return (data || null) as UsuarioBanco | null
-}
-
-async function buscarUsuarioPorPrefixo(supabase: any, prefixo: string) {
-  const prefixoLimpo = limparTexto(prefixo)
-
-  if (!prefixoLimpo || prefixoLimpo.length < 6) return null
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, nome, email, tipo')
-    .limit(5000)
-
-  if (error) {
-    console.warn('Erro ao buscar usuários para resolver prefixo:', error)
-    return null
-  }
-
-  const usuarios = (data || []) as UsuarioBanco[]
-
-  return (
-    usuarios.find((usuario) => usuario.id?.startsWith(prefixoLimpo)) ||
-    null
-  )
-}
-
-async function buscarAdmin(
-  supabase: any,
-  adminId: string,
-  adminEmail: string,
-  adminTipo: string
-) {
-  let admin: UsuarioBanco | null = null
-
-  if (adminId && uuidValido(adminId)) {
-    admin = await buscarUsuarioPorId(supabase, adminId)
-  }
-
-  if (!admin && adminEmail) {
-    admin = await buscarUsuarioPorEmail(supabase, adminEmail)
-  }
-
-  if (admin?.id && ehAdmin(admin.tipo)) {
-    return admin
-  }
-
-  // fallback controlado para o padrão atual do app via localStorage
-  // só entra se o front enviou tipo admin e houver algum identificador mínimo
-  if (ehAdmin(adminTipo) && (uuidValido(adminId) || adminEmail)) {
-    return {
-      id: uuidValido(adminId) ? adminId : '',
-      nome: 'Admin',
-      email: adminEmail || null,
-      tipo: 'admin'
-    } as UsuarioBanco
-  }
-
-  return null
-}
-
-function guiaIdDoRoteiro(roteiro: any) {
-  return limparTexto(
-    roteiro?.id_guia ||
-      roteiro?.guia_id ||
-      roteiro?.user_id ||
-      roteiro?.usuario_id ||
-      ''
-  )
-}
-
-async function resolverGuiaPorRoteiros(
-  supabase: any,
-  roteiroIds: string[]
-) {
-  const idsValidos = roteiroIds.filter(uuidValido)
-
-  if (idsValidos.length === 0) return null
-
-  const { data, error } = await supabase
-    .from('roteiros')
-    .select('id, id_guia, guia_id, user_id, usuario_id')
-    .in('id', idsValidos)
-
-  if (error) {
-    console.warn('Erro ao resolver guia por roteiros:', error)
-    return null
-  }
-
-  const roteiros = data || []
-
-  for (const roteiro of roteiros) {
-    const guiaId = guiaIdDoRoteiro(roteiro)
-
-    if (uuidValido(guiaId)) {
-      const guia = await buscarUsuarioPorId(supabase, guiaId)
-
-      if (guia?.id) return guia
-    }
-
-    if (guiaId && !uuidValido(guiaId)) {
-      const guia = await buscarUsuarioPorPrefixo(supabase, guiaId)
-
-      if (guia?.id) return guia
+    if (!error && data) {
+      data.forEach((roteiro: any) => {
+        if (roteiro?.id) mapa.set(roteiro.id, roteiro)
+      })
     }
   }
 
-  return null
+  return Array.from(mapa.values())
 }
 
-async function resolverGuiaPorReservas(
-  supabase: any,
-  reservaIds: string[]
-) {
-  const idsValidos = reservaIds.filter(uuidValido)
-
-  if (idsValidos.length === 0) return null
-
-  const { data, error } = await supabase
-    .from('reservas')
-    .select('id, roteiro_id, guia_id, id_guia')
-    .in('id', idsValidos)
-
-  if (error) {
-    console.warn('Erro ao resolver guia por reservas:', error)
-    return null
-  }
-
-  const reservas = data || []
-
-  for (const reserva of reservas) {
-    const guiaDireto = limparTexto(reserva?.guia_id || reserva?.id_guia || '')
-
-    if (uuidValido(guiaDireto)) {
-      const guia = await buscarUsuarioPorId(supabase, guiaDireto)
-
-      if (guia?.id) return guia
-    }
-
-    if (guiaDireto && !uuidValido(guiaDireto)) {
-      const guia = await buscarUsuarioPorPrefixo(supabase, guiaDireto)
-
-      if (guia?.id) return guia
-    }
-  }
-
-  const roteiroIds = reservas
-    .map((reserva: any) => limparTexto(reserva?.roteiro_id))
-    .filter(Boolean)
-
-  return resolverGuiaPorRoteiros(supabase, roteiroIds)
-}
-
-async function resolverGuia(
+async function buscarReservasConfirmadasDoGuia(
   supabase: any,
   guiaId: string,
-  reservaIds: string[],
-  roteiroIds: string[]
+  roteiros: any[]
 ) {
-  if (guiaId && uuidValido(guiaId)) {
-    const guia = await buscarUsuarioPorId(supabase, guiaId)
+  const mapa = new Map<string, any>()
+  const roteiroIds = roteiros.map((roteiro) => roteiro.id).filter(Boolean)
 
-    if (guia?.id) return guia
+  if (roteiroIds.length > 0) {
+    const { data } = await supabase
+      .from('reservas')
+      .select('*')
+      .in('roteiro_id', roteiroIds)
+
+    ;(data || []).forEach((reserva: any) => {
+      if (reserva?.id) mapa.set(reserva.id, reserva)
+    })
   }
 
-  if (guiaId && !uuidValido(guiaId)) {
-    const guia = await buscarUsuarioPorPrefixo(supabase, guiaId)
+  const camposGuiaReserva = ['guia_id', 'id_guia', 'user_id', 'usuario_id']
 
-    if (guia?.id) return guia
+  for (const campo of camposGuiaReserva) {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .eq(campo, guiaId)
+
+    if (!error && data) {
+      data.forEach((reserva: any) => {
+        if (reserva?.id) mapa.set(reserva.id, reserva)
+      })
+    }
   }
 
-  const guiaPorRoteiro = await resolverGuiaPorRoteiros(supabase, roteiroIds)
-
-  if (guiaPorRoteiro?.id) return guiaPorRoteiro
-
-  const guiaPorReserva = await resolverGuiaPorReservas(supabase, reservaIds)
-
-  if (guiaPorReserva?.id) return guiaPorReserva
-
-  return null
+  return Array.from(mapa.values()).filter(pagamentoConfirmado)
 }
 
-async function inserirRepasseComFallback(
-  supabase: any,
-  payloadOriginal: Record<string, any>
-) {
-  let payloadAtual = { ...payloadOriginal }
-  const colunasIgnoradas: string[] = []
+async function buscarRepassesDoGuia(supabase: any, guiaId: string) {
+  const { data, error } = await supabase
+    .from('repasses_guias')
+    .select('*')
+    .or(`guia_id.eq.${guiaId},id_guia.eq.${guiaId}`)
+    .order('created_at', { ascending: false })
 
-  for (let tentativa = 0; tentativa < 15; tentativa++) {
-    const { data, error } = await supabase
-      .from('repasses_guias')
-      .insert(payloadAtual)
-      .select('*')
-      .maybeSingle()
-
-    if (!error) {
-      return {
-        data,
-        colunasIgnoradas
-      }
-    }
-
-    if (tabelaNaoExiste(error)) {
-      throw new Error(
-        'A tabela repasses_guias ainda não existe. Rode o SQL financeiro antes de registrar pagamentos.'
-      )
-    }
-
-    if (!erroDeColunaAusente(error)) {
-      throw error
-    }
-
-    const coluna = extrairColunaAusente(error)
-
-    if (!coluna || !(coluna in payloadAtual)) {
-      throw error
-    }
-
-    delete payloadAtual[coluna]
-    colunasIgnoradas.push(coluna)
+  if (error) {
+    throw new Error(error.message || 'Erro ao buscar repasses do guia.')
   }
 
-  throw new Error('Não foi possível registrar o repasse após ajustar colunas.')
+  return (data || []).filter((repasse: any) => !repasseCancelado(repasse))
+}
+
+async function calcularSaldoDoGuia(supabase: any, guiaId: string) {
+  const { data: guia, error: guiaError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', guiaId)
+    .maybeSingle()
+
+  if (guiaError) {
+    throw new Error(guiaError.message || 'Erro ao buscar guia.')
+  }
+
+  if (!guia) {
+    throw new Error('Guia não encontrado.')
+  }
+
+  const roteiros = await buscarRoteirosDoGuia(supabase, guiaId)
+  const reservasConfirmadas = await buscarReservasConfirmadasDoGuia(
+    supabase,
+    guiaId,
+    roteiros
+  )
+  const repasses = await buscarRepassesDoGuia(supabase, guiaId)
+
+  const receitaBruta = reservasConfirmadas.reduce(
+    (total: number, reserva: any) => total + Number(reserva.valor_total || 0),
+    0
+  )
+
+  const taxaPercentual = Number(guia?.taxa_plataforma_percentual || 5)
+  const taxaPlataforma = receitaBruta * (taxaPercentual / 100)
+  const valorLiquidoGuia = Math.max(0, receitaBruta - taxaPlataforma)
+
+  const valorPago = repasses.reduce(
+    (total: number, repasse: any) => total + valorDoRepasse(repasse),
+    0
+  )
+
+  const saldoPendente = Math.max(0, valorLiquidoGuia - valorPago)
+
+  return {
+    guia,
+    roteiros,
+    reservasConfirmadas,
+    repasses,
+    receitaBruta,
+    taxaPercentual,
+    taxaPlataforma,
+    valorLiquidoGuia,
+    valorPago,
+    saldoPendente
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -402,167 +261,154 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin()
     const body = await request.json().catch(() => ({}))
 
+    const guiaId = limparTexto(
+      body.guiaId ||
+        body.guia_id ||
+        body.id_guia ||
+        body.user_id ||
+        body.usuario_id ||
+        ''
+    )
+
     const adminId = limparTexto(
       body.adminId ||
         body.admin_id ||
-        body.userId ||
-        body.usuarioId ||
-        body.usuario_id
-    )
-
-    const adminEmail = limparTexto(
-      body.adminEmail ||
-        body.admin_email ||
-        body.email ||
+        body.criado_por ||
         ''
     )
 
-    const adminTipo = limparTexto(
-      body.adminTipo ||
-        body.admin_tipo ||
-        body.tipo ||
-        ''
-    )
-
-    const guiaIdOriginal = limparTexto(
-      body.guiaId ||
-        body.guia_id ||
-        body.id_guia
-    )
-
-    const guiaNomeEnviado = limparTexto(
-      body.guiaNome ||
-        body.guia_nome ||
-        ''
-    )
-
-    const reservaIds = listaTextos(body.reservaIds || body.reserva_ids)
-    const roteiroIds = listaTextos(body.roteiroIds || body.roteiro_ids)
-
-    const valor = normalizarNumero(
-      body.valor ||
-        body.valorPago ||
+    const observacao = limparTexto(body.observacao || body.descricao || '')
+    const valorSolicitado = normalizarValorMonetario(
+      body.valorPago ||
         body.valor_pago ||
-        body.valorRepassado ||
-        body.valor_repassado
+        body.valorRepasse ||
+        body.valor_repasse ||
+        body.valor ||
+        0
     )
 
-    const observacao = limparTexto(
-      body.observacao ||
-        body.descricao ||
-        ''
-    )
-
-    if ((!adminId || !uuidValido(adminId)) && !adminEmail && !ehAdmin(adminTipo)) {
+    if (!guiaId || !uuidValido(guiaId)) {
       return json(
         {
           sucesso: false,
-          erro: 'Admin inválido. Não foi enviado ID válido, e-mail ou tipo administrativo.'
+          erro: 'Guia inválido.'
         },
         400
       )
     }
 
-    if (valor <= 0) {
+    if (valorSolicitado <= 0) {
       return json(
         {
           sucesso: false,
-          erro: 'Informe um valor maior que zero.'
+          erro: 'Informe um valor de repasse maior que zero.'
         },
         400
       )
     }
 
-    const admin = await buscarAdmin(supabase, adminId, adminEmail, adminTipo)
+    const saldo = await calcularSaldoDoGuia(supabase, guiaId)
 
-    if (!admin) {
+    const valorSolicitadoCentavos = emCentavos(valorSolicitado)
+    const saldoPendenteCentavos = emCentavos(saldo.saldoPendente)
+
+    if (saldoPendenteCentavos <= 0) {
       return json(
         {
           sucesso: false,
-          erro: 'Usuário sem permissão administrativa ou admin não localizado.',
-          debug: {
-            adminIdRecebido: adminId || null,
-            adminEmailRecebido: adminEmail || null,
-            adminTipoRecebido: adminTipo || null
+          erro: 'Este guia não possui saldo pendente para repasse.',
+          resumo: {
+            saldo_pendente: 0,
+            valor_liquido_guia: saldo.valorLiquidoGuia,
+            valor_pago: saldo.valorPago,
+            repasses_total: saldo.repasses.length
           }
         },
-        403
+        400
       )
     }
 
-    const guia = await resolverGuia(
-      supabase,
-      guiaIdOriginal,
-      reservaIds,
-      roteiroIds
-    )
-
-    if (!guia?.id) {
+    if (valorSolicitadoCentavos > saldoPendenteCentavos) {
       return json(
         {
           sucesso: false,
-          erro:
-            'Guia não encontrado. O sistema recebeu um ID curto ou inválido e não conseguiu resolver pelo roteiro/reserva.',
-          debug: {
-            guiaIdRecebido: guiaIdOriginal || null,
-            guiaNomeEnviado: guiaNomeEnviado || null,
-            reservaIdsRecebidos: reservaIds.length,
-            roteiroIdsRecebidos: roteiroIds.length
+          erro: `O valor informado é maior que o saldo disponível do guia. Valor máximo permitido: ${deCentavos(saldoPendenteCentavos).toLocaleString('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+          })}.`,
+          valor_informado: deCentavos(valorSolicitadoCentavos),
+          valor_maximo_permitido: deCentavos(saldoPendenteCentavos),
+          resumo: {
+            receita_bruta: saldo.receitaBruta,
+            taxa_percentual: saldo.taxaPercentual,
+            taxa_plataforma: saldo.taxaPlataforma,
+            valor_liquido_guia: saldo.valorLiquidoGuia,
+            valor_pago: saldo.valorPago,
+            saldo_pendente: saldo.saldoPendente,
+            repasses_total: saldo.repasses.length
           }
         },
-        404
+        400
       )
     }
 
+    const valorFinal = deCentavos(valorSolicitadoCentavos)
     const agora = new Date().toISOString()
-    const nomeGuia = guia.nome || guia.email || guiaNomeEnviado || guia.id
 
     const payload = {
-      guia_id: guia.id,
-      id_guia: guia.id,
-
-      ...(admin?.id && uuidValido(admin.id)
-        ? {
-            admin_id: admin.id,
-            criado_por: admin.id
-          }
-        : {}),
-
-      valor,
-      valor_pago: valor,
-      valor_repassado: valor,
-
+      guia_id: guiaId,
+      id_guia: guiaId,
+      admin_id: adminId || null,
+      criado_por: adminId || null,
+      valor: valorFinal,
+      valor_pago: valorFinal,
+      valor_repasse: valorFinal,
       status: 'pago',
       tipo: 'repasse_guia',
-
       observacao: observacao || null,
-      descricao: observacao || `Repasse ao guia ${nomeGuia}`,
-
+      descricao:
+        observacao ||
+        `Repasse ao guia ${saldo.guia?.nome || saldo.guia?.email || guiaId}`,
       data_pagamento: agora,
       created_at: agora,
       updated_at: agora
     }
 
-    const resultado = await inserirRepasseComFallback(supabase, payload)
+    const { data: repasse, error: insertError } = await supabase
+      .from('repasses_guias')
+      .insert(payload)
+      .select('*')
+      .maybeSingle()
+
+    if (insertError) {
+      return json(
+        {
+          sucesso: false,
+          erro: insertError.message || 'Erro ao registrar repasse.'
+        },
+        500
+      )
+    }
+
+    const saldoAtualizado = await calcularSaldoDoGuia(supabase, guiaId)
 
     return json({
       sucesso: true,
       mensagem: 'Repasse registrado com sucesso.',
-      repasse: resultado.data,
-      admin: {
-        id: admin.id || null,
-        nome: admin.nome || admin.email || 'Admin',
-        email: admin.email || null
-      },
-      guia: {
-        id: guia.id,
-        nome: nomeGuia,
-        email: guia.email || null
-      },
-      colunasIgnoradas: resultado.colunasIgnoradas
+      repasse,
+      resumo: {
+        receita_bruta: saldoAtualizado.receitaBruta,
+        taxa_percentual: saldoAtualizado.taxaPercentual,
+        taxa_plataforma: saldoAtualizado.taxaPlataforma,
+        valor_liquido_guia: saldoAtualizado.valorLiquidoGuia,
+        valor_pago: saldoAtualizado.valorPago,
+        saldo_pendente: saldoAtualizado.saldoPendente,
+        reservas_confirmadas: saldoAtualizado.reservasConfirmadas.length,
+        repasses_total: saldoAtualizado.repasses.length
+      }
     })
   } catch (error: any) {
-    console.error('Erro em /api/admin/financeiro/registrar-repasse:', error)
+    console.error('Erro em registrar-repasse:', error)
 
     return json(
       {
@@ -572,12 +418,4 @@ export async function POST(request: NextRequest) {
       500
     )
   }
-}
-
-export async function GET() {
-  return json({
-    sucesso: true,
-    rota: '/api/admin/financeiro/registrar-repasse',
-    metodo: 'POST'
-  })
 }

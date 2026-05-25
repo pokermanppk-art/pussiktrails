@@ -5,24 +5,25 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
 type UsuarioLocal = {
-  id?: string | null
-  nome?: string | null
-  email?: string | null
-  tipo?: string | null
-  user_id?: string | null
-  usuario_id?: string | null
-  uid?: string | null
-  email_admin?: string | null
-}
-
-type UsuarioBanco = {
   id: string
   nome?: string | null
   email?: string | null
   tipo?: string | null
 }
 
-type Roteiro = {
+type UserRow = {
+  id: string
+  nome?: string | null
+  email?: string | null
+  tipo?: string | null
+  taxa_plataforma_percentual?: number | null
+  pix_tipo?: string | null
+  pix_chave?: string | null
+  cadastur?: string | null
+  [key: string]: any
+}
+
+type RoteiroRow = {
   id: string
   titulo?: string | null
   nome?: string | null
@@ -32,34 +33,38 @@ type Roteiro = {
   guia_id?: string | null
   user_id?: string | null
   usuario_id?: string | null
-  local?: string | null
-  localizacao?: string | null
+  status?: string | null
+  created_at?: string | null
+  [key: string]: any
 }
 
-type Reserva = {
+type ReservaRow = {
   id: string
-  cliente_id?: string | null
   roteiro_id?: string | null
+  cliente_id?: string | null
   guia_id?: string | null
   id_guia?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
   quantidade_pessoas?: number | null
   valor_total?: number | null
   status?: string | null
   pagamento_status?: string | null
-  order_id?: string | null
-  transaction_id?: string | null
   created_at?: string | null
-  updated_at?: string | null
+  [key: string]: any
 }
 
-type RepasseGuia = {
+type RepasseRow = {
   id: string
   guia_id?: string | null
   id_guia?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
   valor?: number | null
   valor_pago?: number | null
   valor_repassado?: number | null
   status?: string | null
+  tipo?: string | null
   observacao?: string | null
   descricao?: string | null
   data_pagamento?: string | null
@@ -68,99 +73,71 @@ type RepasseGuia = {
   [key: string]: any
 }
 
-type ReservaCompleta = Reserva & {
-  roteiro?: Roteiro | null
-  guia?: UsuarioBanco | null
-  guia_id_original?: string | null
-  guia_id_real?: string | null
-  guia_nome?: string
-  roteiro_titulo?: string
-}
-
 type GuiaFinanceiro = {
   guia_id: string
-  guia_nome: string
-  guia_email: string
-  reservas: ReservaCompleta[]
-  repasses: RepasseGuia[]
+  nome: string
+  email: string
+  pix_tipo: string
+  pix_chave: string
+  cadastur: string
+  taxa_percentual: number
   receita_bruta: number
   taxa_plataforma: number
-  taxa_paghiper: number
-  valor_liquido_guia: number
+  liquido_guia: number
   valor_pago: number
   saldo_pendente: number
+  excesso_repasse: number
   reservas_confirmadas: number
-  ultima_reserva_em?: string | null
+  roteiros_total: number
   ultimo_pagamento_em?: string | null
+  repasses: RepasseRow[]
+  reservas: ReservaRow[]
 }
 
-type Stats = {
-  receitaBrutaTotal: number
-  receitaBrutaMes: number
-  taxaPlataformaTotal: number
-  taxaPlataformaMes: number
-  taxaPagHiperTotal: number
-  taxaPagHiperMes: number
-  repasseGuiasTotal: number
-  repasseGuiasMes: number
-  pagoGuiasTotal: number
-  saldoGuiasTotal: number
-  resultadoPlataformaTotal: number
-  resultadoPlataformaMes: number
-  reservasConfirmadas: number
-  guiasComSaldo: number
+type ResumoFinanceiro = {
+  receita_bruta: number
+  taxa_plataforma: number
+  liquido_guias: number
+  valor_pago: number
+  saldo_pendente: number
+  excesso_repasse: number
+  reservas_confirmadas: number
+  repasses_total: number
+  guias_com_saldo: number
 }
 
-type FiltroFinanceiro = 'todos' | 'com_saldo' | 'quitados' | 'sem_repasses'
-
-const statsInicial: Stats = {
-  receitaBrutaTotal: 0,
-  receitaBrutaMes: 0,
-  taxaPlataformaTotal: 0,
-  taxaPlataformaMes: 0,
-  taxaPagHiperTotal: 0,
-  taxaPagHiperMes: 0,
-  repasseGuiasTotal: 0,
-  repasseGuiasMes: 0,
-  pagoGuiasTotal: 0,
-  saldoGuiasTotal: 0,
-  resultadoPlataformaTotal: 0,
-  resultadoPlataformaMes: 0,
-  reservasConfirmadas: 0,
-  guiasComSaldo: 0
+const resumoInicial: ResumoFinanceiro = {
+  receita_bruta: 0,
+  taxa_plataforma: 0,
+  liquido_guias: 0,
+  valor_pago: 0,
+  saldo_pendente: 0,
+  excesso_repasse: 0,
+  reservas_confirmadas: 0,
+  repasses_total: 0,
+  guias_com_saldo: 0
 }
 
 export default function AdminFinanceiroPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
 
-  const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [guiasFinanceiros, setGuiasFinanceiros] = useState<GuiaFinanceiro[]>([])
-  const [stats, setStats] = useState<Stats>(statsInicial)
+  const [admin, setAdmin] = useState<UsuarioLocal | null>(null)
+  const [guias, setGuias] = useState<GuiaFinanceiro[]>([])
+  const [resumo, setResumo] = useState<ResumoFinanceiro>(resumoInicial)
 
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
-  const [menuAberto, setMenuAberto] = useState(false)
-  const [repassesOk, setRepassesOk] = useState(true)
-
-  const [busca, setBusca] = useState('')
-  const [filtroFinanceiro, setFiltroFinanceiro] = useState<FiltroFinanceiro>('todos')
-
-  const [guiaSelecionado, setGuiaSelecionado] = useState<GuiaFinanceiro | null>(null)
-  const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false)
-  const [valorPagamento, setValorPagamento] = useState('')
-  const [observacaoPagamento, setObservacaoPagamento] = useState('')
-  const [registrandoPagamento, setRegistrandoPagamento] = useState(false)
-
-  const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
-  const [senhaAtual, setSenhaAtual] = useState('')
-  const [novaSenha, setNovaSenha] = useState('')
-  const [confirmarSenha, setConfirmarSenha] = useState('')
-  const [alterandoSenha, setAlterandoSenha] = useState(false)
-
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
+  const [aviso, setAviso] = useState('')
+  const [busca, setBusca] = useState('')
+
+  const [modalAberto, setModalAberto] = useState(false)
+  const [guiaSelecionado, setGuiaSelecionado] = useState<GuiaFinanceiro | null>(null)
+  const [valorPagamento, setValorPagamento] = useState('')
+  const [observacao, setObservacao] = useState('Pix')
+  const [registrando, setRegistrando] = useState(false)
 
   useEffect(() => {
     if (iniciouRef.current) return
@@ -171,6 +148,7 @@ export default function AdminFinanceiroPage() {
   const iniciar = async () => {
     setCarregando(true)
     setErro('')
+    setAviso('')
     setMensagem('')
 
     try {
@@ -181,14 +159,14 @@ export default function AdminFinanceiroPage() {
         return
       }
 
-      const parsedUser = JSON.parse(userData) as UsuarioLocal
+      const parsed = JSON.parse(userData) as UsuarioLocal
 
-      if (parsedUser.tipo !== 'admin') {
+      if (parsed.tipo !== 'admin') {
         router.replace('/login')
         return
       }
 
-      setUser(parsedUser)
+      setAdmin(parsed)
       await carregarFinanceiro()
     } catch (error) {
       console.error('Erro ao iniciar financeiro admin:', error)
@@ -198,7 +176,11 @@ export default function AdminFinanceiroPage() {
     }
   }
 
-  const normalizar = (valor?: string | null) => {
+  const limparTexto = (valor: any) => {
+    return String(valor || '').trim()
+  }
+
+  const normalizar = (valor: any) => {
     return String(valor || '')
       .toLowerCase()
       .normalize('NFD')
@@ -206,59 +188,72 @@ export default function AdminFinanceiroPage() {
       .trim()
   }
 
-  const normalizarNumero = (valor: string, fallback = 0) => {
-    const limpo = String(valor || '')
-      .replace(/\./g, '')
-      .replace(',', '.')
-      .replace(/[^\d.]/g, '')
+  const normalizarNumero = (valor: any, fallback = 0) => {
+    if (typeof valor === 'number') {
+      return Number.isFinite(valor) ? valor : fallback
+    }
 
-    const numero = Number(limpo)
+    let texto = String(valor || '')
+      .trim()
+      .replace(/\s/g, '')
+      .replace(/R\$/gi, '')
+
+    if (!texto) return fallback
+
+    const temVirgula = texto.includes(',')
+    const temPonto = texto.includes('.')
+
+    if (temVirgula && temPonto) {
+      texto = texto.replace(/\./g, '').replace(',', '.')
+    } else if (temVirgula) {
+      texto = texto.replace(',', '.')
+    }
+
+    texto = texto.replace(/[^\d.]/g, '')
+
+    const numero = Number(texto)
 
     if (!Number.isFinite(numero)) return fallback
 
     return numero
   }
 
-  const uuidValido = (valor?: string | null) => {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
-      String(valor || '')
-    )
+  const arredondarMoeda = (valor: any) => {
+    return Math.round(Number(valor || 0) * 100) / 100
   }
 
-  const nomeUsuario = (usuario?: UsuarioLocal | UsuarioBanco | null) => {
-    return usuario?.nome || usuario?.email || ''
+  const emCentavos = (valor: any) => {
+    return Math.round(Number(valor || 0) * 100)
   }
 
-  const tituloRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.titulo || roteiro?.nome || 'Roteiro'
+  const deCentavos = (valor: any) => {
+    return Math.round(Number(valor || 0)) / 100
   }
 
-  const guiaIdDoRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.id_guia || roteiro?.guia_id || roteiro?.user_id || roteiro?.usuario_id || ''
+  const formatarMoeda = (valor: any) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(Number(valor || 0))
   }
 
-  const guiaIdDaReserva = (reserva?: Reserva | null) => {
-    return reserva?.guia_id || reserva?.id_guia || ''
+  const formatarData = (valor?: string | null) => {
+    if (!valor) return '-'
+
+    const data = new Date(valor)
+
+    if (Number.isNaN(data.getTime())) return '-'
+
+    return data.toLocaleString('pt-BR')
   }
 
-  const guiaIdDoRepasse = (repasse?: RepasseGuia | null) => {
-    return repasse?.guia_id || repasse?.id_guia || ''
+  const formatarValorInput = (valor: any) => {
+    return Number(valor || 0)
+      .toFixed(2)
+      .replace('.', ',')
   }
 
-  const valorDoRepasse = (repasse?: RepasseGuia | null) => {
-    return Number(repasse?.valor_pago || repasse?.valor_repassado || repasse?.valor || 0)
-  }
-
-  const dataDoRepasse = (repasse?: RepasseGuia | null) => {
-    return repasse?.data_pagamento || repasse?.created_at || null
-  }
-
-  const repasseCancelado = (repasse?: RepasseGuia | null) => {
-    const status = normalizar(repasse?.status)
-    return status === 'cancelado' || status === 'cancelada' || status === 'estornado'
-  }
-
-  const pagamentoConfirmado = (reserva: Reserva) => {
+  const pagamentoConfirmado = (reserva: ReservaRow) => {
     const pagamento = normalizar(reserva.pagamento_status)
     const status = normalizar(reserva.status)
 
@@ -275,312 +270,304 @@ export default function AdminFinanceiroPage() {
     )
   }
 
-  const dentroDoMesAtual = (valor?: string | null) => {
-    if (!valor) return false
+  const repasseCancelado = (repasse: RepasseRow) => {
+    const status = normalizar(repasse.status)
 
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return false
-
-    const agora = new Date()
-
-    return data.getFullYear() === agora.getFullYear() && data.getMonth() === agora.getMonth()
+    return (
+      status === 'cancelado' ||
+      status === 'cancelada' ||
+      status === 'estornado' ||
+      status === 'estornada'
+    )
   }
 
-  const formatarData = (valor?: string | null) => {
-    if (!valor) return '-'
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return valor
-
-    return data.toLocaleDateString('pt-BR')
+  const guiaIdDoRoteiro = (roteiro?: RoteiroRow | null) => {
+    return limparTexto(
+      roteiro?.id_guia ||
+        roteiro?.guia_id ||
+        roteiro?.user_id ||
+        roteiro?.usuario_id ||
+        ''
+    )
   }
 
-  const formatarMoeda = (valor: any) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(Number(valor || 0))
+  const guiaIdDaReserva = (reserva: ReservaRow, roteiro?: RoteiroRow | null) => {
+    return limparTexto(
+      reserva.guia_id ||
+        reserva.id_guia ||
+        reserva.user_id ||
+        reserva.usuario_id ||
+        guiaIdDoRoteiro(roteiro)
+    )
   }
 
-  const localizarGuiaPorIdOuPrefixo = (guiaId: string, lista: UsuarioBanco[]) => {
-    const id = String(guiaId || '').trim()
-
-    if (!id) return null
-
-    const exato = lista.find((guia) => guia.id === id)
-
-    if (exato) return exato
-
-    if (!uuidValido(id)) {
-      return lista.find((guia) => guia.id?.startsWith(id)) || null
-    }
-
-    return null
+  const guiaIdDoRepasse = (repasse: RepasseRow) => {
+    return limparTexto(
+      repasse.guia_id ||
+        repasse.id_guia ||
+        repasse.user_id ||
+        repasse.usuario_id ||
+        repasse.guiaId ||
+        ''
+    )
   }
 
-  const nomeGuiaComFallback = (guiaId: string, guia?: UsuarioBanco | null) => {
-    const nome = nomeUsuario(guia)
-
-    if (nome) return nome
-    if (guiaId) return `Guia ${guiaId.slice(0, 8)}`
-
-    return 'Guia não identificado'
+  const valorDoRepasse = (repasse: RepasseRow) => {
+    return Number(
+      repasse.valor_pago ??
+        repasse.valor_repassado ??
+        repasse.valor ??
+        repasse.valor_total ??
+        0
+    )
   }
 
-  const carregarRepassesPelaApi = async () => {
+  const valorDaReserva = (reserva: ReservaRow, roteiro?: RoteiroRow | null) => {
+    const valorTotal = Number(reserva.valor_total || 0)
+
+    if (valorTotal > 0) return valorTotal
+
+    const preco = Number(roteiro?.preco || roteiro?.valor || 0)
+    const pessoas = Math.max(1, Number(reserva.quantidade_pessoas || 1))
+
+    return preco * pessoas
+  }
+
+  const nomeDoGuia = (guiaId: string, usuario?: UserRow | null) => {
+    return (
+      usuario?.nome ||
+      usuario?.email ||
+      `Guia ${guiaId.slice(0, 8)}`
+    )
+  }
+
+  const carregarRepassesViaBackend = async () => {
     try {
-      const response = await fetch('/api/admin/financeiro/repasses', {
+      const response = await fetch(`/api/admin/financeiro/repasses?_ts=${Date.now()}`, {
         method: 'GET',
-        cache: 'no-store'
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache'
+        }
       })
 
-      const json = await response.json().catch(() => null)
+      const data = await response.json().catch(() => null)
 
-      if (!response.ok || json?.sucesso === false) {
-        setRepassesOk(false)
-        console.warn('Erro ao carregar repasses pela rota backend:', json)
-        return [] as RepasseGuia[]
+      if (!response.ok || data?.sucesso === false) {
+        setAviso(
+          data?.erro ||
+            'A tabela de repasses não pôde ser lida diretamente. O registro de pagamento continuará usando a rota segura do backend.'
+        )
+        return [] as RepasseRow[]
       }
 
-      setRepassesOk(true)
-      return (json?.repasses || []) as RepasseGuia[]
+      const lista =
+        data?.repasses ||
+        data?.data ||
+        data?.registros ||
+        data?.items ||
+        data
+
+      return Array.isArray(lista) ? (lista as RepasseRow[]) : []
     } catch (error) {
-      setRepassesOk(false)
-      console.warn('Erro ao carregar repasses pela rota backend:', error)
-      return [] as RepasseGuia[]
+      console.warn('Erro ao carregar repasses via backend:', error)
+      setAviso(
+        'A lista de repasses não pôde ser carregada agora. O registro de pagamento continuará usando a rota segura do backend.'
+      )
+      return [] as RepasseRow[]
     }
   }
 
   const carregarFinanceiro = async () => {
     setErro('')
+    setAviso('')
 
-    const { data: reservasData, error: reservasError } = await supabase
-      .from('reservas')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(2500)
+    const [
+      usuariosResult,
+      roteirosResult,
+      reservasResult,
+      repassesBackend
+    ] = await Promise.all([
+      supabase.from('users').select('*'),
+      supabase.from('roteiros').select('*'),
+      supabase.from('reservas').select('*').order('created_at', { ascending: false }),
+      carregarRepassesViaBackend()
+    ])
 
-    if (reservasError) {
-      console.error('Erro ao carregar reservas:', reservasError)
-      setErro('Não foi possível carregar reservas para o financeiro.')
-      return
+    if (usuariosResult.error) {
+      throw usuariosResult.error
     }
 
-    const reservasBase = ((reservasData || []) as Reserva[]).filter(pagamentoConfirmado)
+    if (roteirosResult.error) {
+      throw roteirosResult.error
+    }
 
-    const roteiroIds = Array.from(
-      new Set(
-        reservasBase
-          .map((reserva) => reserva.roteiro_id)
-          .filter(Boolean) as string[]
-      )
-    )
+    if (reservasResult.error) {
+      throw reservasResult.error
+    }
 
-    let roteiros: Roteiro[] = []
-    let guias: UsuarioBanco[] = []
+    const usuarios = (usuariosResult.data || []) as UserRow[]
+    const roteiros = (roteirosResult.data || []) as RoteiroRow[]
+    const reservas = (reservasResult.data || []) as ReservaRow[]
+    const repasses = (repassesBackend || []) as RepasseRow[]
 
-    if (roteiroIds.length > 0) {
-      const { data: roteirosData, error: roteirosError } = await supabase
-        .from('roteiros')
-        .select('*')
-        .in('id', roteiroIds)
+    const usuariosPorId = new Map<string, UserRow>()
+    usuarios.forEach((usuario) => {
+      if (usuario?.id) usuariosPorId.set(usuario.id, usuario)
+    })
 
-      if (roteirosError) {
-        console.warn('Erro ao buscar roteiros do financeiro:', roteirosError)
+    const roteirosPorId = new Map<string, RoteiroRow>()
+    roteiros.forEach((roteiro) => {
+      if (roteiro?.id) roteirosPorId.set(roteiro.id, roteiro)
+    })
+
+    const guiasMap = new Map<string, GuiaFinanceiro>()
+
+    const garantirGuia = (guiaId: string) => {
+      const id = limparTexto(guiaId)
+
+      if (!id) return null
+
+      if (guiasMap.has(id)) {
+        return guiasMap.get(id) as GuiaFinanceiro
       }
 
-      roteiros = (roteirosData || []) as Roteiro[]
-    }
+      const usuario = usuariosPorId.get(id)
 
-    const guiaIdsDosRoteiros = roteiros.map(guiaIdDoRoteiro).filter(Boolean)
-    const guiaIdsDasReservas = reservasBase.map(guiaIdDaReserva).filter(Boolean)
-
-    const guiaIdsBrutos = Array.from(
-      new Set([...guiaIdsDosRoteiros, ...guiaIdsDasReservas])
-    ) as string[]
-
-    const guiaIdsUuid = guiaIdsBrutos.filter(uuidValido)
-    const guiaIdsCurtos = guiaIdsBrutos.filter((id) => id && !uuidValido(id))
-
-    if (guiaIdsUuid.length > 0) {
-      const { data: guiasData, error: guiasError } = await supabase
-        .from('users')
-        .select('id, nome, email, tipo')
-        .in('id', guiaIdsUuid)
-
-      if (guiasError) {
-        console.warn('Erro ao buscar guias por UUID:', guiasError)
+      const novo: GuiaFinanceiro = {
+        guia_id: id,
+        nome: nomeDoGuia(id, usuario),
+        email: usuario?.email || '',
+        pix_tipo: usuario?.pix_tipo || '',
+        pix_chave: usuario?.pix_chave || '',
+        cadastur: usuario?.cadastur || '',
+        taxa_percentual: Number(usuario?.taxa_plataforma_percentual || 5),
+        receita_bruta: 0,
+        taxa_plataforma: 0,
+        liquido_guia: 0,
+        valor_pago: 0,
+        saldo_pendente: 0,
+        excesso_repasse: 0,
+        reservas_confirmadas: 0,
+        roteiros_total: 0,
+        ultimo_pagamento_em: null,
+        repasses: [],
+        reservas: []
       }
 
-      guias = (guiasData || []) as UsuarioBanco[]
+      guiasMap.set(id, novo)
+      return novo
     }
 
-    if (guiaIdsCurtos.length > 0) {
-      const { data: usuariosData, error: usuariosError } = await supabase
-        .from('users')
-        .select('id, nome, email, tipo')
-        .limit(5000)
+    usuarios
+      .filter((usuario) => normalizar(usuario.tipo) === 'guia')
+      .forEach((usuario) => garantirGuia(usuario.id))
 
-      if (usuariosError) {
-        console.warn('Erro ao resolver guias por prefixo:', usuariosError)
-      } else {
-        const usuarios = (usuariosData || []) as UsuarioBanco[]
+    roteiros.forEach((roteiro) => {
+      const guiaId = guiaIdDoRoteiro(roteiro)
+      const guia = garantirGuia(guiaId)
 
-        const encontradosPorPrefixo = usuarios.filter((usuario) =>
-          guiaIdsCurtos.some((prefixo) => usuario.id?.startsWith(prefixo))
-        )
-
-        const mapa = new Map<string, UsuarioBanco>()
-
-        ;[...guias, ...encontradosPorPrefixo].forEach((guia) => {
-          mapa.set(guia.id, guia)
-        })
-
-        guias = Array.from(mapa.values())
-      }
-    }
-
-    const repasses = await carregarRepassesPelaApi()
-
-    const reservasCompletas: ReservaCompleta[] = reservasBase.map((reserva) => {
-      const roteiro = roteiros.find((item) => item.id === reserva.roteiro_id) || null
-      const guiaIdOriginal = guiaIdDoRoteiro(roteiro) || guiaIdDaReserva(reserva)
-      const guia = localizarGuiaPorIdOuPrefixo(guiaIdOriginal, guias)
-      const guiaIdReal = guia?.id || guiaIdOriginal
-
-      return {
-        ...reserva,
-        roteiro,
-        guia,
-        guia_id_original: guiaIdOriginal,
-        guia_id_real: guiaIdReal,
-        guia_nome: nomeGuiaComFallback(guiaIdReal, guia),
-        roteiro_titulo: tituloRoteiro(roteiro)
+      if (guia) {
+        guia.roteiros_total += 1
       }
     })
 
-    const reservasComGuia = reservasCompletas.filter((reserva) => reserva.guia_id_real)
+    reservas.forEach((reserva) => {
+      const roteiro = reserva.roteiro_id ? roteirosPorId.get(reserva.roteiro_id) : null
+      const guiaId = guiaIdDaReserva(reserva, roteiro)
+      const guia = garantirGuia(guiaId)
 
-    const guiasIdsFinanceiro = Array.from(
-      new Set(
-        reservasComGuia
-          .map((reserva) => reserva.guia_id_real)
-          .filter(Boolean) as string[]
-      )
-    )
+      if (!guia) return
 
-    const guiasCalculados: GuiaFinanceiro[] = guiasIdsFinanceiro.map((guiaId) => {
-      const guia = localizarGuiaPorIdOuPrefixo(guiaId, guias) || null
-      const reservasDoGuia = reservasComGuia.filter((reserva) => reserva.guia_id_real === guiaId)
+      if (!pagamentoConfirmado(reserva)) return
 
-      const repassesDoGuia = repasses.filter((repasse) => {
-        const idRepasse = guiaIdDoRepasse(repasse)
+      const valor = valorDaReserva(reserva, roteiro)
 
-        return (
-          !repasseCancelado(repasse) &&
-          (
-            idRepasse === guiaId ||
-            Boolean(idRepasse && guiaId && idRepasse.startsWith(guiaId)) ||
-            Boolean(idRepasse && guiaId && guiaId.startsWith(idRepasse))
-          )
-        )
+      guia.receita_bruta += valor
+      guia.reservas_confirmadas += 1
+      guia.reservas.push(reserva)
+    })
+
+    repasses
+      .filter((repasse) => !repasseCancelado(repasse))
+      .forEach((repasse) => {
+        const guiaId = guiaIdDoRepasse(repasse)
+        const guia = garantirGuia(guiaId)
+
+        if (!guia) return
+
+        const valor = valorDoRepasse(repasse)
+
+        guia.valor_pago += valor
+        guia.repasses.push(repasse)
+
+        const dataRepasse = repasse.data_pagamento || repasse.created_at || repasse.updated_at || null
+
+        if (!guia.ultimo_pagamento_em || (dataRepasse && new Date(dataRepasse) > new Date(guia.ultimo_pagamento_em))) {
+          guia.ultimo_pagamento_em = dataRepasse
+        }
       })
 
-      const receitaBruta = reservasDoGuia.reduce(
-        (total, reserva) => total + Number(reserva.valor_total || 0),
-        0
-      )
+    const listaGuias = Array.from(guiasMap.values()).map((guia) => {
+      const receita = arredondarMoeda(guia.receita_bruta)
+      const taxa = arredondarMoeda(receita * (guia.taxa_percentual / 100))
+      const liquido = arredondarMoeda(Math.max(0, receita - taxa))
+      const pago = arredondarMoeda(guia.valor_pago)
 
-      const taxaPlataforma = receitaBruta * 0.05
-      const taxaPagHiper = 0
-      const valorLiquidoGuia = Math.max(0, receitaBruta - taxaPlataforma - taxaPagHiper)
-
-      const valorPago = repassesDoGuia.reduce(
-        (total, repasse) => total + valorDoRepasse(repasse),
-        0
-      )
-
-      const saldoPendente = Math.max(0, valorLiquidoGuia - valorPago)
-
-      const reservasOrdenadas = reservasDoGuia
-        .slice()
-        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-
-      const repassesOrdenados = repassesDoGuia
-        .slice()
-        .sort((a, b) => new Date(dataDoRepasse(b) || 0).getTime() - new Date(dataDoRepasse(a) || 0).getTime())
+      const saldoCentavos = emCentavos(liquido) - emCentavos(pago)
 
       return {
-        guia_id: guia?.id || guiaId,
-        guia_nome: nomeGuiaComFallback(guia?.id || guiaId, guia),
-        guia_email: guia?.email || '',
-        reservas: reservasDoGuia,
-        repasses: repassesDoGuia,
-        receita_bruta: receitaBruta,
-        taxa_plataforma: taxaPlataforma,
-        taxa_paghiper: taxaPagHiper,
-        valor_liquido_guia: valorLiquidoGuia,
-        valor_pago: valorPago,
-        saldo_pendente: saldoPendente,
-        reservas_confirmadas: reservasDoGuia.length,
-        ultima_reserva_em: reservasOrdenadas[0]?.created_at || null,
-        ultimo_pagamento_em: dataDoRepasse(repassesOrdenados[0])
+        ...guia,
+        receita_bruta: receita,
+        taxa_plataforma: taxa,
+        liquido_guia: liquido,
+        valor_pago: pago,
+        saldo_pendente: deCentavos(Math.max(0, saldoCentavos)),
+        excesso_repasse: deCentavos(Math.max(0, Math.abs(Math.min(0, saldoCentavos))))
       }
     })
 
-    const receitaBrutaTotal = reservasComGuia.reduce(
-      (total, reserva) => total + Number(reserva.valor_total || 0),
-      0
-    )
+    listaGuias.sort((a, b) => {
+      if (b.saldo_pendente !== a.saldo_pendente) {
+        return b.saldo_pendente - a.saldo_pendente
+      }
 
-    const reservasDoMes = reservasComGuia.filter((reserva) => dentroDoMesAtual(reserva.created_at))
-
-    const receitaBrutaMes = reservasDoMes.reduce(
-      (total, reserva) => total + Number(reserva.valor_total || 0),
-      0
-    )
-
-    const taxaPlataformaTotal = receitaBrutaTotal * 0.05
-    const taxaPlataformaMes = receitaBrutaMes * 0.05
-
-    const taxaPagHiperTotal = 0
-    const taxaPagHiperMes = 0
-
-    const repasseGuiasTotal = Math.max(0, receitaBrutaTotal - taxaPlataformaTotal - taxaPagHiperTotal)
-    const repasseGuiasMes = Math.max(0, receitaBrutaMes - taxaPlataformaMes - taxaPagHiperMes)
-
-    const pagoGuiasTotal = guiasCalculados.reduce(
-      (total, guia) => total + guia.valor_pago,
-      0
-    )
-
-    const saldoGuiasTotal = guiasCalculados.reduce(
-      (total, guia) => total + guia.saldo_pendente,
-      0
-    )
-
-    setGuiasFinanceiros(guiasCalculados)
-
-    setStats({
-      receitaBrutaTotal,
-      receitaBrutaMes,
-      taxaPlataformaTotal,
-      taxaPlataformaMes,
-      taxaPagHiperTotal,
-      taxaPagHiperMes,
-      repasseGuiasTotal,
-      repasseGuiasMes,
-      pagoGuiasTotal,
-      saldoGuiasTotal,
-      resultadoPlataformaTotal: taxaPlataformaTotal - taxaPagHiperTotal,
-      resultadoPlataformaMes: taxaPlataformaMes - taxaPagHiperMes,
-      reservasConfirmadas: reservasComGuia.length,
-      guiasComSaldo: guiasCalculados.filter((guia) => guia.saldo_pendente > 0).length
+      return b.receita_bruta - a.receita_bruta
     })
 
-    setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
+    const resumoCalculado = listaGuias.reduce<ResumoFinanceiro>(
+      (acc, guia) => {
+        acc.receita_bruta += guia.receita_bruta
+        acc.taxa_plataforma += guia.taxa_plataforma
+        acc.liquido_guias += guia.liquido_guia
+        acc.valor_pago += guia.valor_pago
+        acc.saldo_pendente += guia.saldo_pendente
+        acc.excesso_repasse += guia.excesso_repasse
+        acc.reservas_confirmadas += guia.reservas_confirmadas
+        acc.repasses_total += guia.repasses.length
+
+        if (guia.saldo_pendente > 0) {
+          acc.guias_com_saldo += 1
+        }
+
+        return acc
+      },
+      { ...resumoInicial }
+    )
+
+    setGuias(listaGuias)
+    setResumo({
+      receita_bruta: arredondarMoeda(resumoCalculado.receita_bruta),
+      taxa_plataforma: arredondarMoeda(resumoCalculado.taxa_plataforma),
+      liquido_guias: arredondarMoeda(resumoCalculado.liquido_guias),
+      valor_pago: arredondarMoeda(resumoCalculado.valor_pago),
+      saldo_pendente: arredondarMoeda(resumoCalculado.saldo_pendente),
+      excesso_repasse: arredondarMoeda(resumoCalculado.excesso_repasse),
+      reservas_confirmadas: resumoCalculado.reservas_confirmadas,
+      repasses_total: resumoCalculado.repasses_total,
+      guias_com_saldo: resumoCalculado.guias_com_saldo
+    })
   }
 
   const atualizar = async () => {
@@ -591,229 +578,161 @@ export default function AdminFinanceiroPage() {
     try {
       await carregarFinanceiro()
       setMensagem('Financeiro atualizado.')
-    } catch (error) {
+      setTimeout(() => setMensagem(''), 2600)
+    } catch (error: any) {
       console.error('Erro ao atualizar financeiro:', error)
-      setErro('Não foi possível atualizar o financeiro agora.')
+      setErro(error?.message || 'Não foi possível atualizar o financeiro.')
     } finally {
       setAtualizando(false)
     }
   }
 
-  const abrirPagamento = (guia: GuiaFinanceiro, valorPadrao?: number) => {
-    setGuiaSelecionado(guia)
-    setValorPagamento(valorPadrao ? String(valorPadrao.toFixed(2)).replace('.', ',') : '')
-    setObservacaoPagamento('')
-    setModalPagamentoAberto(true)
+  const abrirModalRepasse = (guia: GuiaFinanceiro) => {
     setErro('')
     setMensagem('')
+    setGuiaSelecionado(guia)
+    setValorPagamento(formatarValorInput(guia.saldo_pendente))
+    setObservacao('Pix')
+    setModalAberto(true)
   }
 
-  const registrarPagamento = async (event: FormEvent) => {
-    event.preventDefault()
+  const fecharModal = () => {
+    if (registrando) return
 
-    if (!user?.id && !user?.email) {
-      router.replace('/login')
+    setModalAberto(false)
+    setGuiaSelecionado(null)
+    setValorPagamento('')
+    setObservacao('Pix')
+  }
+
+  const valorInformado = normalizarNumero(valorPagamento, 0)
+  const saldoDisponivel = Number(guiaSelecionado?.saldo_pendente || 0)
+  const valorMaiorQueSaldo =
+    guiaSelecionado && emCentavos(valorInformado) > emCentavos(saldoDisponivel)
+  const valorInvalido = valorInformado <= 0 || !Number.isFinite(valorInformado)
+
+  const registrarPagamento = async (event?: FormEvent) => {
+    event?.preventDefault()
+
+    if (!guiaSelecionado) {
+      setErro('Guia não selecionado.')
       return
     }
 
-    if (!guiaSelecionado?.guia_id) {
-      setErro('Selecione um guia para registrar o pagamento.')
-      return
-    }
-
-    const valor = normalizarNumero(valorPagamento, 0)
-
-    if (valor <= 0) {
-      setErro('Informe um valor de pagamento maior que zero.')
-      return
-    }
-
-    if (valor > guiaSelecionado.saldo_pendente + 0.01) {
-      setErro('O valor informado é maior que o saldo pendente do guia.')
-      return
-    }
-
-    setRegistrandoPagamento(true)
     setErro('')
     setMensagem('')
+
+    const valorNumero = arredondarMoeda(normalizarNumero(valorPagamento, 0))
+    const saldo = arredondarMoeda(guiaSelecionado.saldo_pendente)
+
+    if (valorNumero <= 0) {
+      setErro('Informe um valor maior que zero.')
+      return
+    }
+
+    if (emCentavos(saldo) <= 0) {
+      setErro('Este guia não possui saldo pendente para repasse.')
+      return
+    }
+
+    if (emCentavos(valorNumero) > emCentavos(saldo)) {
+      setErro(
+        `O valor informado é maior que o saldo disponível do guia. Valor máximo permitido: ${formatarMoeda(saldo)}.`
+      )
+      return
+    }
+
+    setRegistrando(true)
 
     try {
       const response = await fetch('/api/admin/financeiro/registrar-repasse', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
         },
         body: JSON.stringify({
-          adminId: user.id || user.user_id || user.usuario_id || user.uid || '',
-          adminEmail: user.email || user.email_admin || '',
-          adminTipo: user.tipo || '',
-
           guiaId: guiaSelecionado.guia_id,
-          guiaNome: guiaSelecionado.guia_nome,
-
-          valor,
-          observacao: observacaoPagamento || '',
-
-          reservaIds: guiaSelecionado.reservas
-            .map((reserva) => reserva.id)
-            .filter(Boolean),
-
-          roteiroIds: guiaSelecionado.reservas
-            .map((reserva) => reserva.roteiro_id)
-            .filter(Boolean)
+          guia_id: guiaSelecionado.guia_id,
+          id_guia: guiaSelecionado.guia_id,
+          adminId: admin?.id || null,
+          admin_id: admin?.id || null,
+          criado_por: admin?.id || null,
+          valorPago: valorNumero,
+          valor_pago: valorNumero,
+          valor: valorNumero,
+          observacao: limparTexto(observacao) || 'Repasse ao guia'
         })
       })
 
       const data = await response.json().catch(() => null)
 
       if (!response.ok || data?.sucesso === false) {
-        setErro(data?.erro || data?.message || 'Não foi possível registrar o pagamento.')
+        setErro(data?.erro || data?.message || 'Não foi possível registrar o repasse.')
         return
       }
 
-      setMensagem('Pagamento registrado com sucesso.')
-      setModalPagamentoAberto(false)
+      setMensagem('Repasse registrado com sucesso.')
+      setModalAberto(false)
       setGuiaSelecionado(null)
       setValorPagamento('')
-      setObservacaoPagamento('')
+      setObservacao('Pix')
 
       await carregarFinanceiro()
+      setTimeout(() => setMensagem(''), 2800)
     } catch (error: any) {
       console.error('Erro ao registrar pagamento:', error)
       setErro(error?.message || 'Erro ao registrar pagamento.')
     } finally {
-      setRegistrandoPagamento(false)
+      setRegistrando(false)
     }
-  }
-
-  const abrirAlterarSenha = () => {
-    setMenuAberto(false)
-    setErro('')
-    setMensagem('')
-    setSenhaAtual('')
-    setNovaSenha('')
-    setConfirmarSenha('')
-    setModalSenhaAberto(true)
-  }
-
-  const alterarSenha = async (event: FormEvent) => {
-    event.preventDefault()
-
-    if (!user?.id) {
-      router.replace('/login')
-      return
-    }
-
-    setErro('')
-    setMensagem('')
-
-    if (!senhaAtual) {
-      setErro('Informe a senha atual.')
-      return
-    }
-
-    if (!novaSenha || novaSenha.length < 6) {
-      setErro('A nova senha deve ter pelo menos 6 caracteres.')
-      return
-    }
-
-    if (novaSenha !== confirmarSenha) {
-      setErro('As senhas não conferem.')
-      return
-    }
-
-    setAlterandoSenha(true)
-
-    try {
-      const response = await fetch('/api/alterar-senha', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          userId: user.id,
-          usuarioId: user.id,
-          usuario_id: user.id,
-          senhaAtual,
-          senha_atual: senhaAtual,
-          novaSenha,
-          nova_senha: novaSenha
-        })
-      })
-
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || data?.sucesso === false) {
-        setErro(data?.erro || data?.message || 'Não foi possível alterar a senha.')
-        return
-      }
-
-      setMensagem('Senha alterada com sucesso.')
-      setModalSenhaAberto(false)
-      setSenhaAtual('')
-      setNovaSenha('')
-      setConfirmarSenha('')
-    } catch (error) {
-      console.error('Erro ao alterar senha:', error)
-      setErro('Erro ao alterar senha.')
-    } finally {
-      setAlterandoSenha(false)
-    }
-  }
-
-  const sair = async () => {
-    setMenuAberto(false)
-
-    try {
-      await supabase.auth.signOut()
-    } catch (error) {
-      console.warn('Aviso ao encerrar sessão Supabase:', error)
-    }
-
-    localStorage.removeItem('user')
-    localStorage.removeItem('usuario')
-    localStorage.removeItem('token')
-    localStorage.removeItem('session')
-
-    router.replace('/login')
   }
 
   const guiasFiltrados = useMemo(() => {
     const termo = normalizar(busca)
 
-    return guiasFinanceiros.filter((guia) => {
-      const passaFiltro =
-        filtroFinanceiro === 'todos' ||
-        (filtroFinanceiro === 'com_saldo' && guia.saldo_pendente > 0) ||
-        (filtroFinanceiro === 'quitados' && guia.saldo_pendente <= 0 && guia.valor_liquido_guia > 0) ||
-        (filtroFinanceiro === 'sem_repasses' && guia.valor_pago <= 0)
+    if (!termo) return guias
 
-      if (!passaFiltro) return false
-
-      if (!termo) return true
-
+    return guias.filter((guia) => {
       const texto = normalizar(
         [
+          guia.nome,
+          guia.email,
           guia.guia_id,
-          guia.guia_nome,
-          guia.guia_email,
-          guia.reservas.map((reserva) => reserva.roteiro_titulo).join(' ')
+          guia.pix_chave,
+          guia.cadastur
         ].join(' ')
       )
 
       return texto.includes(termo)
     })
-  }, [guiasFinanceiros, busca, filtroFinanceiro])
+  }, [guias, busca])
 
-  if (carregando || !user) {
+  if (carregando) {
     return (
       <main className="loading">
         <style>{`
           * { box-sizing: border-box; }
-          body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; }
-          .loading { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; color: #e5e7eb; background: radial-gradient(circle at top left, rgba(34,197,94,0.16), transparent 30%), linear-gradient(135deg, #020617, #0f172a); }
-          .loadingCard { background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 26px; padding: 28px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
-          .loadingCard img { height: 58px; width: auto; margin-bottom: 12px; }
+          body { margin: 0; background: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+          .loading {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8fafc;
+            color: #0f172a;
+          }
+          .loadingCard {
+            background: #ffffff;
+            border-radius: 28px;
+            padding: 28px;
+            text-align: center;
+            box-shadow: 0 18px 50px rgba(15,23,42,0.08);
+          }
+          .loadingCard img {
+            height: 64px;
+            margin-bottom: 12px;
+          }
         `}</style>
 
         <div className="loadingCard">
@@ -828,92 +747,659 @@ export default function AdminFinanceiroPage() {
     <main className="page">
       <style>{`
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; }
-        .page { min-height: 100vh; min-height: 100dvh; background: radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.10), transparent 30%), radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.10), transparent 30%), linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%); color: #0f172a; }
-        .header { position: sticky; top: 0; z-index: 50; background: rgba(248, 250, 252, 0.88); border-bottom: 1px solid rgba(15, 23, 42, 0.08); backdrop-filter: blur(18px); padding: 12px 18px; }
-        .headerInner { max-width: 1240px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-        .brand { display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; }
-        .brand img { height: 40px; width: auto; display: block; }
-        .brandTitle { font-size: 17px; font-weight: 950; color: #0f172a; letter-spacing: -0.045em; line-height: 1; }
-        .brandSub { color: #64748b; font-size: 11px; font-weight: 800; margin-top: 3px; }
-        .settingsWrap { position: relative; display: flex; align-items: center; justify-content: flex-end; }
-        .gearBtn { width: 42px; height: 42px; border: 1px solid rgba(15, 23, 42, 0.10); background: rgba(255, 255, 255, 0.86); color: #0f172a; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; transition: 0.2s ease; }
-        .settingsMenu { position: absolute; top: 50px; right: 0; width: 220px; background: #ffffff; border: 1px solid rgba(15, 23, 42, 0.10); border-radius: 22px; box-shadow: 0 22px 60px rgba(15, 23, 42, 0.16); padding: 8px; z-index: 80; }
-        .menuButton { width: 100%; border: none; background: transparent; color: #0f172a; padding: 12px 13px; border-radius: 16px; text-align: left; font-size: 13px; font-weight: 900; cursor: pointer; display: flex; align-items: center; gap: 8px; }
-        .menuButton:hover { background: #f8fafc; }
-        .menuButton.danger { color: #991b1b; }
-        .container { max-width: 1240px; margin: 0 auto; padding: 24px 18px 52px; }
-        .hero { background: radial-gradient(circle at top right, rgba(34, 197, 94, 0.18), transparent 30%), linear-gradient(135deg, #0f172a, #1e293b); color: #ffffff; border-radius: 34px; padding: 28px; box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22); margin-bottom: 18px; overflow: hidden; position: relative; }
-        .heroInner { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: end; }
-        .eyebrow { display: inline-flex; width: fit-content; border-radius: 999px; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08); color: #bbf7d0; font-size: 11px; font-weight: 950; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
-        .heroTitle { margin: 0; font-size: clamp(38px, 5.5vw, 66px); line-height: 0.94; font-weight: 950; letter-spacing: -0.08em; }
-        .heroTitle span { color: #86efac; }
-        .heroText { max-width: 720px; color: rgba(255,255,255,0.76); font-size: 14px; line-height: 1.6; font-weight: 650; margin: 16px 0 0; }
-        .heroCard { border-radius: 28px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.16); padding: 20px; backdrop-filter: blur(14px); }
-        .heroLabel { color: rgba(255,255,255,0.66); font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.10em; }
-        .heroValue { margin-top: 8px; color: #ffffff; font-size: 38px; line-height: 1; font-weight: 950; letter-spacing: -0.07em; }
-        .heroSmall { color: rgba(255,255,255,0.72); font-size: 12px; font-weight: 750; line-height: 1.45; margin-top: 8px; }
-        .alert { border-radius: 18px; padding: 13px 15px; margin-bottom: 16px; font-size: 13px; font-weight: 800; }
-        .alert.success { background: #ecfdf5; border: 1px solid #bbf7d0; color: #166534; }
-        .alert.error { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; }
-        .alert.warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
-        .statsGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
-        .statCard { background: rgba(255,255,255,0.88); border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 24px; padding: 15px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06); cursor: pointer; transition: 0.2s ease; }
-        .statCard:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(15, 23, 42, 0.10); }
-        .statIcon { width: 38px; height: 38px; border-radius: 16px; background: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 19px; margin-bottom: 11px; }
-        .statValue { font-size: 25px; font-weight: 950; line-height: 1; letter-spacing: -0.06em; color: #0f172a; }
-        .statLabel { color: #64748b; font-size: 12px; font-weight: 850; line-height: 1.35; margin-top: 7px; }
-        .toolbar { background: rgba(255,255,255,0.92); border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 26px; padding: 14px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-bottom: 18px; }
-        .input { width: 100%; border: 1px solid rgba(15, 23, 42, 0.10); background: #ffffff; color: #0f172a; border-radius: 999px; padding: 12px 14px; font-size: 13px; font-weight: 800; outline: none; }
-        .filters { display: flex; gap: 8px; flex-wrap: wrap; }
-        .filterBtn { border: 1px solid rgba(15, 23, 42, 0.10); background: #ffffff; color: #475569; border-radius: 999px; padding: 10px 13px; font-size: 12px; font-weight: 950; cursor: pointer; white-space: nowrap; }
-        .filterBtn.active { background: #0f172a; color: #ffffff; border-color: #0f172a; }
-        .panel { background: rgba(255,255,255,0.92); border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 28px; box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07); overflow: hidden; }
-        .panelHeader { padding: 16px 18px; border-bottom: 1px solid rgba(15, 23, 42, 0.08); display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
-        .panelTitle { margin: 0; color: #0f172a; font-size: 18px; line-height: 1.15; font-weight: 950; letter-spacing: -0.04em; }
-        .panelSub { color: #64748b; font-size: 12px; line-height: 1.45; font-weight: 750; margin-top: 4px; }
-        .panelBody { padding: 14px; }
-        .textLink { border: none; background: transparent; color: #16a34a; font-size: 12px; font-weight: 950; cursor: pointer; padding: 0; }
-        .guideList { display: grid; gap: 10px; }
-        .guideCard { background: #ffffff; border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 22px; padding: 13px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; transition: 0.2s ease; }
-        .guideCard:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08); }
-        .guideTitle { color: #0f172a; font-size: 15px; font-weight: 950; line-height: 1.3; }
-        .guideMeta { color: #64748b; font-size: 12px; line-height: 1.45; font-weight: 750; margin-top: 4px; }
-        .guideRows { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 11px; }
-        .miniMetric { background: #f8fafc; border: 1px solid rgba(15, 23, 42, 0.06); border-radius: 16px; padding: 10px; }
-        .miniLabel { color: #64748b; font-size: 10px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.06em; }
-        .miniValue { color: #0f172a; font-size: 13px; font-weight: 950; margin-top: 4px; }
-        .actions { display: grid; gap: 8px; min-width: 170px; }
-        .actionBtn { border: 1px solid rgba(15, 23, 42, 0.10); background: #ffffff; color: #0f172a; border-radius: 999px; padding: 9px 12px; font-size: 11px; font-weight: 950; cursor: pointer; transition: 0.2s ease; white-space: nowrap; }
-        .actionBtn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08); }
-        .actionBtn.primary { background: #0f172a; color: #ffffff; border-color: #0f172a; }
-        .actionBtn.green { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
-        .actionBtn:disabled { opacity: 0.55; cursor: not-allowed; }
-        .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 8px; font-size: 10px; font-weight: 950; margin-top: 8px; }
-        .badge.green { background: #dcfce7; color: #166534; }
-        .badge.yellow { background: #fef3c7; color: #92400e; }
-        .empty { padding: 24px; text-align: center; color: #64748b; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 22px; font-size: 13px; font-weight: 750; }
-        .modalOverlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.54); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 100; }
-        .modal { width: 100%; max-width: 470px; background: #ffffff; border-radius: 28px; box-shadow: 0 28px 90px rgba(15, 23, 42, 0.30); overflow: hidden; max-height: 90vh; overflow-y: auto; }
-        .modalHeader { padding: 20px; border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
-        .modalTitle { margin: 0; color: #0f172a; font-size: 20px; font-weight: 950; letter-spacing: -0.04em; }
-        .modalSub { color: #64748b; font-size: 12px; font-weight: 750; line-height: 1.45; margin-top: 5px; }
-        .modalBody { padding: 20px; display: grid; gap: 12px; }
-        .field { display: grid; gap: 6px; }
-        .label { color: #475569; font-size: 12px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.06em; }
-        .modalInput, .modalTextarea { width: 100%; border: 1px solid rgba(15, 23, 42, 0.10); background: #ffffff; color: #0f172a; border-radius: 16px; padding: 13px 14px; font-size: 14px; font-weight: 800; outline: none; }
-        .modalTextarea { min-height: 90px; resize: vertical; line-height: 1.45; }
-        .modalActions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
-        .btn { border: none; border-radius: 999px; padding: 12px 15px; font-size: 12px; font-weight: 950; cursor: pointer; transition: 0.2s ease; }
-        .btn.primary { background: #0f172a; color: #ffffff; }
-        .btn.light { background: #f1f5f9; color: #475569; }
-        .btn.green { background: #dcfce7; color: #166534; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .historyBox { background: #f8fafc; border: 1px solid rgba(15, 23, 42, 0.06); border-radius: 18px; padding: 12px; color: #475569; font-size: 12px; line-height: 1.45; font-weight: 750; }
-        @media (max-width: 1180px) { .statsGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .toolbar { grid-template-columns: 1fr; } .guideRows { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-        @media (max-width: 1040px) { .heroInner { grid-template-columns: 1fr; } .guideCard { grid-template-columns: 1fr; } .actions { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-        @media (max-width: 720px) { .header { padding: 10px 12px; } .brandTitle, .brandSub { display: none; } .container { padding: 16px 12px 42px; } .hero, .panel { border-radius: 24px; } .hero { padding: 22px; } .statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filters { display: grid; grid-template-columns: 1fr 1fr; } .filterBtn { width: 100%; } .guideRows { grid-template-columns: 1fr; } .actions { grid-template-columns: 1fr; } }
-        @media (max-width: 480px) { .heroTitle { font-size: 38px; } .statsGrid { grid-template-columns: 1fr; } .modalActions { display: grid; } .btn { width: 100%; } }
+
+        body {
+          margin: 0;
+          background: #f8fafc;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .page {
+          min-height: 100vh;
+          background:
+            radial-gradient(circle at top left, rgba(34,197,94,0.08), transparent 28%),
+            linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+          color: #0f172a;
+        }
+
+        .header {
+          position: sticky;
+          top: 0;
+          z-index: 40;
+          background: rgba(255,255,255,0.90);
+          border-bottom: 1px solid rgba(15,23,42,0.08);
+          backdrop-filter: blur(16px);
+          padding: 12px 18px;
+        }
+
+        .headerInner {
+          max-width: 1180px;
+          margin: 0 auto;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          cursor: pointer;
+          min-width: 0;
+        }
+
+        .brand img {
+          height: 42px;
+          width: auto;
+          display: block;
+        }
+
+        .brandTitle {
+          font-size: 18px;
+          font-weight: 950;
+          color: #0f172a;
+          letter-spacing: -0.05em;
+          line-height: 1;
+        }
+
+        .brandSub {
+          margin-top: 3px;
+          font-size: 11px;
+          color: #64748b;
+          font-weight: 800;
+        }
+
+        .headerActions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .iconBtn {
+          border: none;
+          border-radius: 999px;
+          padding: 10px 14px;
+          background: #e2e8f0;
+          color: #0f172a;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .iconBtn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 24px rgba(15,23,42,0.12);
+        }
+
+        .iconBtn.dark {
+          background: #0f172a;
+          color: #ffffff;
+        }
+
+        .iconBtn.green {
+          background: #16a34a;
+          color: #ffffff;
+        }
+
+        .iconBtn:disabled {
+          opacity: 0.62;
+          cursor: not-allowed;
+        }
+
+        .container {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 22px 16px 56px;
+        }
+
+        .hero {
+          border-radius: 34px;
+          padding: 30px;
+          background:
+            radial-gradient(circle at top right, rgba(34,197,94,0.22), transparent 36%),
+            linear-gradient(135deg, #0f172a 0%, #1e293b 58%, #334155 100%);
+          color: #ffffff;
+          box-shadow: 0 24px 70px rgba(15,23,42,0.22);
+          margin-bottom: 16px;
+          overflow: hidden;
+        }
+
+        .heroGrid {
+          display: grid;
+          grid-template-columns: minmax(0,1fr) 300px;
+          gap: 22px;
+          align-items: end;
+        }
+
+        .eyebrow {
+          display: inline-flex;
+          width: fit-content;
+          border-radius: 999px;
+          padding: 8px 12px;
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.16);
+          color: #bbf7d0;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-bottom: 12px;
+        }
+
+        .heroTitle {
+          margin: 0;
+          max-width: 760px;
+          font-size: clamp(42px, 6vw, 74px);
+          line-height: 0.92;
+          font-weight: 950;
+          letter-spacing: -0.085em;
+        }
+
+        .heroTitle span {
+          color: #86efac;
+        }
+
+        .heroText {
+          max-width: 680px;
+          margin: 14px 0 0;
+          color: rgba(255,255,255,0.76);
+          font-size: 14px;
+          line-height: 1.6;
+          font-weight: 650;
+        }
+
+        .heroCard {
+          border-radius: 28px;
+          padding: 18px;
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.16);
+          backdrop-filter: blur(14px);
+        }
+
+        .heroCardLabel {
+          color: rgba(255,255,255,0.68);
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+        }
+
+        .heroCardValue {
+          margin-top: 8px;
+          color: #86efac;
+          font-size: 32px;
+          font-weight: 950;
+          letter-spacing: -0.06em;
+        }
+
+        .heroCardText {
+          margin-top: 8px;
+          color: rgba(255,255,255,0.74);
+          font-size: 12px;
+          font-weight: 750;
+          line-height: 1.45;
+        }
+
+        .alert {
+          border-radius: 18px;
+          padding: 13px 15px;
+          margin-bottom: 16px;
+          font-size: 13px;
+          font-weight: 850;
+          line-height: 1.45;
+        }
+
+        .alert.success {
+          background: #dcfce7;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+        }
+
+        .alert.error {
+          background: #fee2e2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
+        }
+
+        .alert.warning {
+          background: #fef3c7;
+          color: #92400e;
+          border: 1px solid #fde68a;
+        }
+
+        .statsGrid {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0,1fr));
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .statCard {
+          background: rgba(255,255,255,0.92);
+          border: 1px solid rgba(15,23,42,0.07);
+          border-radius: 26px;
+          padding: 16px;
+          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+        }
+
+        .statIcon {
+          width: 40px;
+          height: 40px;
+          border-radius: 16px;
+          background: #ecfdf5;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 20px;
+          margin-bottom: 10px;
+        }
+
+        .statValue {
+          color: #0f172a;
+          font-size: 24px;
+          font-weight: 950;
+          letter-spacing: -0.06em;
+          line-height: 1;
+        }
+
+        .statLabel {
+          margin-top: 6px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 850;
+          line-height: 1.35;
+        }
+
+        .toolbar {
+          background: rgba(255,255,255,0.92);
+          border: 1px solid rgba(15,23,42,0.07);
+          border-radius: 28px;
+          padding: 14px;
+          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+          display: grid;
+          grid-template-columns: minmax(0,1fr) auto;
+          gap: 10px;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .input,
+        .textarea {
+          width: 100%;
+          border: 1px solid rgba(15,23,42,0.10);
+          background: #ffffff;
+          color: #0f172a;
+          border-radius: 18px;
+          padding: 13px 14px;
+          font-size: 14px;
+          font-weight: 750;
+          outline: none;
+        }
+
+        .input:focus,
+        .textarea:focus {
+          border-color: #16a34a;
+          box-shadow: 0 0 0 4px rgba(22,163,74,0.12);
+        }
+
+        .textarea {
+          min-height: 92px;
+          resize: vertical;
+          line-height: 1.5;
+        }
+
+        .panel {
+          background: rgba(255,255,255,0.92);
+          border: 1px solid rgba(15,23,42,0.07);
+          border-radius: 30px;
+          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+          overflow: hidden;
+        }
+
+        .panelHeader {
+          padding: 18px 20px;
+          border-bottom: 1px solid rgba(15,23,42,0.07);
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+
+        .panelTitle {
+          margin: 0;
+          color: #0f172a;
+          font-size: 20px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .panelSub {
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 750;
+        }
+
+        .panelBody {
+          padding: 16px;
+        }
+
+        .guideList {
+          display: grid;
+          gap: 12px;
+        }
+
+        .guideCard {
+          border: 1px solid rgba(15,23,42,0.08);
+          background: #ffffff;
+          border-radius: 24px;
+          padding: 15px;
+        }
+
+        .guideTop {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+
+        .guideName {
+          color: #0f172a;
+          font-size: 16px;
+          font-weight: 950;
+          letter-spacing: -0.03em;
+        }
+
+        .guideMeta {
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+        }
+
+        .badge {
+          display: inline-flex;
+          width: fit-content;
+          border-radius: 999px;
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 950;
+        }
+
+        .badge.green {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .badge.yellow {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .badge.red {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+
+        .guideMetrics {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0,1fr));
+          gap: 10px;
+          margin-top: 14px;
+        }
+
+        .metric {
+          background: #f8fafc;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 18px;
+          padding: 11px;
+        }
+
+        .metricLabel {
+          color: #64748b;
+          font-size: 10px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .metricValue {
+          margin-top: 6px;
+          color: #0f172a;
+          font-size: 14px;
+          font-weight: 950;
+        }
+
+        .guideActions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-top: 14px;
+        }
+
+        .smallBtn {
+          border: none;
+          border-radius: 999px;
+          padding: 10px 13px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .smallBtn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 22px rgba(15,23,42,0.10);
+        }
+
+        .smallBtn.green {
+          background: #16a34a;
+          color: #ffffff;
+        }
+
+        .smallBtn.dark {
+          background: #0f172a;
+          color: #ffffff;
+        }
+
+        .smallBtn.light {
+          background: #e2e8f0;
+          color: #0f172a;
+        }
+
+        .smallBtn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+
+        .history {
+          margin-top: 12px;
+          border-top: 1px solid rgba(15,23,42,0.07);
+          padding-top: 12px;
+          display: grid;
+          gap: 8px;
+        }
+
+        .historyItem {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          color: #475569;
+          font-size: 12px;
+          font-weight: 750;
+          background: #f8fafc;
+          border-radius: 14px;
+          padding: 9px 10px;
+        }
+
+        .empty {
+          border: 1px dashed rgba(15,23,42,0.16);
+          border-radius: 24px;
+          padding: 28px;
+          text-align: center;
+          color: #64748b;
+          font-weight: 750;
+          background: #ffffff;
+        }
+
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          background: rgba(15,23,42,0.56);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          padding: 18px;
+        }
+
+        .modal {
+          width: 100%;
+          max-width: 520px;
+          background: #ffffff;
+          border-radius: 30px;
+          box-shadow: 0 28px 90px rgba(15,23,42,0.30);
+          overflow: hidden;
+        }
+
+        .modalHeader {
+          padding: 21px;
+          border-bottom: 1px solid rgba(15,23,42,0.08);
+        }
+
+        .modalTitle {
+          margin: 0;
+          color: #0f172a;
+          font-size: 21px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .modalSub {
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 800;
+          line-height: 1.45;
+        }
+
+        .modalBody {
+          padding: 21px;
+          display: grid;
+          gap: 13px;
+        }
+
+        .field {
+          display: grid;
+          gap: 7px;
+        }
+
+        .label {
+          color: #475569;
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.07em;
+        }
+
+        .helperBox {
+          border-radius: 20px;
+          background: #f8fafc;
+          border: 1px solid rgba(15,23,42,0.07);
+          padding: 13px;
+          color: #475569;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+        }
+
+        .modalActions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 8px;
+        }
+
+        @media (max-width: 1100px) {
+          .heroGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .statsGrid {
+            grid-template-columns: repeat(3, minmax(0,1fr));
+          }
+
+          .guideMetrics {
+            grid-template-columns: repeat(2, minmax(0,1fr));
+          }
+        }
+
+        @media (max-width: 760px) {
+          .header {
+            padding: 10px 12px;
+          }
+
+          .brandTitle,
+          .brandSub {
+            display: none;
+          }
+
+          .container {
+            padding: 16px 12px 44px;
+          }
+
+          .hero,
+          .panel {
+            border-radius: 26px;
+          }
+
+          .hero {
+            padding: 22px;
+          }
+
+          .heroTitle {
+            font-size: 40px;
+          }
+
+          .statsGrid,
+          .guideMetrics,
+          .toolbar {
+            grid-template-columns: 1fr;
+          }
+
+          .headerActions {
+            justify-content: flex-end;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .guideTop {
+            display: grid;
+          }
+
+          .guideActions,
+          .modalActions {
+            display: grid;
+          }
+
+          .smallBtn,
+          .iconBtn {
+            width: 100%;
+          }
+        }
       `}</style>
 
       <header className="header">
@@ -922,111 +1408,97 @@ export default function AdminFinanceiroPage() {
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
 
             <div>
-              <div className="brandTitle">PrussikTrails Admin</div>
-              <div className="brandSub">Financeiro e repasses</div>
+              <div className="brandTitle">PrussikTrails</div>
+              <div className="brandSub">Financeiro administrativo</div>
             </div>
           </div>
 
-          <div className="settingsWrap">
+          <div className="headerActions">
             <button
               type="button"
-              className="gearBtn"
-              onClick={() => setMenuAberto((aberto) => !aberto)}
-              aria-label="Configurações"
+              className="iconBtn"
+              onClick={() => router.push('/admin/dashboard')}
             >
-              ⚙️
+              Dashboard
             </button>
 
-            {menuAberto && (
-              <div className="settingsMenu">
-                <button type="button" className="menuButton" onClick={abrirAlterarSenha}>
-                  🔐 Alterar senha
-                </button>
-
-                <button type="button" className="menuButton danger" onClick={sair}>
-                  🚪 Sair
-                </button>
-              </div>
-            )}
+            <button
+              type="button"
+              className="iconBtn green"
+              onClick={atualizar}
+              disabled={atualizando}
+            >
+              {atualizando ? 'Atualizando...' : 'Atualizar'}
+            </button>
           </div>
         </div>
       </header>
 
       <div className="container">
         <section className="hero">
-          <div className="heroInner">
+          <div className="heroGrid">
             <div>
-              <div className="eyebrow">Central financeira</div>
+              <div className="eyebrow">Financeiro ADMIN</div>
 
               <h1 className="heroTitle">
-                Receita, taxa da plataforma e repasses em <span>visão única.</span>
+                Receita, taxa, repasses e saldo em <span>visão única.</span>
               </h1>
 
               <p className="heroText">
-                Controle valores confirmados, taxa PrussikTrails de 5%, repasses aos guias, pagamentos registrados e saldo pendente.
-                {ultimaAtualizacao && (
-                  <>
-                    <br />
-                    Atualizado às {ultimaAtualizacao}.
-                  </>
-                )}
+                Controle valores confirmados, taxa da plataforma, repasses aos guias e saldo pendente.
+                O sistema bloqueia repasses maiores que o saldo disponível para evitar pagamentos duplicados ou superiores ao devido.
               </p>
             </div>
 
             <aside className="heroCard">
-              <div className="heroLabel">Resultado estimado do mês</div>
-              <div className="heroValue">{formatarMoeda(stats.resultadoPlataformaMes)}</div>
-              <div className="heroSmall">
-                Receita bruta do mês: {formatarMoeda(stats.receitaBrutaMes)} · taxa 5%: {formatarMoeda(stats.taxaPlataformaMes)}.
+              <div className="heroCardLabel">Saldo pendente geral</div>
+              <div className="heroCardValue">{formatarMoeda(resumo.saldo_pendente)}</div>
+              <div className="heroCardText">
+                {resumo.guias_com_saldo} guia(s) com saldo pendente · {resumo.repasses_total} repasse(s) registrado(s).
               </div>
             </aside>
           </div>
         </section>
 
-        {!repassesOk && (
-          <div className="alert warning">
-            A tela não conseguiu carregar os repasses pela rota segura. Confira se a rota /api/admin/financeiro/repasses existe e se a SERVICE_ROLE está configurada.
-          </div>
-        )}
-
         {mensagem && <div className="alert success">{mensagem}</div>}
         {erro && <div className="alert error">{erro}</div>}
+        {aviso && <div className="alert warning">{aviso}</div>}
 
         <section className="statsGrid">
-          <article className="statCard" onClick={() => router.push('/admin/reservas')}>
+          <article className="statCard">
             <div className="statIcon">💰</div>
-            <div className="statValue">{formatarMoeda(stats.receitaBrutaTotal)}</div>
+            <div className="statValue">{formatarMoeda(resumo.receita_bruta)}</div>
             <div className="statLabel">receita bruta confirmada</div>
           </article>
 
-          <article className="statCard" onClick={() => setFiltroFinanceiro('todos')}>
+          <article className="statCard">
             <div className="statIcon">🏷️</div>
-            <div className="statValue">{formatarMoeda(stats.taxaPlataformaTotal)}</div>
-            <div className="statLabel">taxa plataforma 5%</div>
+            <div className="statValue">{formatarMoeda(resumo.taxa_plataforma)}</div>
+            <div className="statLabel">taxa plataforma</div>
           </article>
 
-          <article className="statCard" onClick={() => setFiltroFinanceiro('todos')}>
+          <article className="statCard">
             <div className="statIcon">🧭</div>
-            <div className="statValue">{formatarMoeda(stats.repasseGuiasTotal)}</div>
-            <div className="statLabel">valor líquido estimado dos guias</div>
+            <div className="statValue">{formatarMoeda(resumo.liquido_guias)}</div>
+            <div className="statLabel">líquido dos guias</div>
           </article>
 
-          <article className="statCard" onClick={() => setFiltroFinanceiro('com_saldo')}>
-            <div className="statIcon">⏳</div>
-            <div className="statValue">{formatarMoeda(stats.saldoGuiasTotal)}</div>
-            <div className="statLabel">saldo pendente para guias</div>
-          </article>
-
-          <article className="statCard" onClick={() => setFiltroFinanceiro('quitados')}>
+          <article className="statCard">
             <div className="statIcon">✅</div>
-            <div className="statValue">{formatarMoeda(stats.pagoGuiasTotal)}</div>
-            <div className="statLabel">pagamentos registrados</div>
+            <div className="statValue">{formatarMoeda(resumo.valor_pago)}</div>
+            <div className="statLabel">já repassado</div>
           </article>
 
-          <article className="statCard" onClick={() => router.push('/admin/reservas')}>
-            <div className="statIcon">🎒</div>
-            <div className="statValue">{stats.reservasConfirmadas}</div>
-            <div className="statLabel">reservas pagas/confirmadas</div>
+          <article className="statCard">
+            <div className="statIcon">⏳</div>
+            <div className="statValue">{formatarMoeda(resumo.saldo_pendente)}</div>
+            <div className="statLabel">saldo pendente</div>
+          </article>
+
+          <article className="statCard">
+            <div className="statIcon">⚠️</div>
+            <div className="statValue">{formatarMoeda(resumo.excesso_repasse)}</div>
+            <div className="statLabel">excesso de repasse</div>
           </article>
         </section>
 
@@ -1035,24 +1507,26 @@ export default function AdminFinanceiroPage() {
             className="input"
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
-            placeholder="Buscar por guia, e-mail, roteiro ou ID..."
+            placeholder="Buscar por guia, e-mail, PIX, CADASTUR ou ID..."
           />
 
-          <div className="filters">
-            <button type="button" className={`filterBtn ${filtroFinanceiro === 'todos' ? 'active' : ''}`} onClick={() => setFiltroFinanceiro('todos')}>
-              Todos
-            </button>
+          <div className="headerActions">
+            {busca && (
+              <button
+                type="button"
+                className="iconBtn"
+                onClick={() => setBusca('')}
+              >
+                Limpar busca
+              </button>
+            )}
 
-            <button type="button" className={`filterBtn ${filtroFinanceiro === 'com_saldo' ? 'active' : ''}`} onClick={() => setFiltroFinanceiro('com_saldo')}>
-              Com saldo
-            </button>
-
-            <button type="button" className={`filterBtn ${filtroFinanceiro === 'quitados' ? 'active' : ''}`} onClick={() => setFiltroFinanceiro('quitados')}>
-              Quitados
-            </button>
-
-            <button type="button" className={`filterBtn ${filtroFinanceiro === 'sem_repasses' ? 'active' : ''}`} onClick={() => setFiltroFinanceiro('sem_repasses')}>
-              Sem repasses
+            <button
+              type="button"
+              className="iconBtn dark"
+              onClick={() => router.push('/admin/dashboard')}
+            >
+              Voltar
             </button>
           </div>
         </section>
@@ -1065,82 +1539,120 @@ export default function AdminFinanceiroPage() {
                 {guiasFiltrados.length} guia(s) encontrado(s) no filtro atual.
               </div>
             </div>
-
-            <button type="button" className="textLink" onClick={atualizar} disabled={atualizando}>
-              {atualizando ? 'Atualizando...' : 'Atualizar financeiro'}
-            </button>
           </div>
 
           <div className="panelBody">
             {guiasFiltrados.length === 0 ? (
-              <div className="empty">Nenhum guia encontrado com os filtros atuais.</div>
+              <div className="empty">
+                Nenhum guia encontrado com os filtros atuais.
+              </div>
             ) : (
               <div className="guideList">
                 {guiasFiltrados.map((guia) => (
                   <article className="guideCard" key={guia.guia_id}>
-                    <div>
-                      <div className="guideTitle">{guia.guia_nome}</div>
-
-                      <div className="guideMeta">
-                        {guia.guia_email || 'E-mail não informado'} · {guia.reservas_confirmadas} reserva(s) confirmada(s)
-                        <br />
-                        Última reserva: {formatarData(guia.ultima_reserva_em)} · último pagamento: {formatarData(guia.ultimo_pagamento_em)}
+                    <div className="guideTop">
+                      <div>
+                        <div className="guideName">{guia.nome}</div>
+                        <div className="guideMeta">
+                          {guia.email || 'E-mail não informado'} · {guia.reservas_confirmadas} reserva(s) confirmada(s)
+                          <br />
+                          ID: {guia.guia_id}
+                          {guia.pix_chave && (
+                            <>
+                              <br />
+                              PIX: {guia.pix_tipo ? `${guia.pix_tipo} · ` : ''}{guia.pix_chave}
+                            </>
+                          )}
+                          {guia.cadastur && (
+                            <>
+                              <br />
+                              CADASTUR: {guia.cadastur}
+                            </>
+                          )}
+                        </div>
                       </div>
 
-                      {guia.saldo_pendente > 0 ? (
-                        <span className="badge yellow">Saldo pendente</span>
-                      ) : (
-                        <span className="badge green">Sem saldo pendente</span>
-                      )}
-
-                      <div className="guideRows">
-                        <div className="miniMetric">
-                          <div className="miniLabel">Receita bruta</div>
-                          <div className="miniValue">{formatarMoeda(guia.receita_bruta)}</div>
-                        </div>
-
-                        <div className="miniMetric">
-                          <div className="miniLabel">Taxa 5%</div>
-                          <div className="miniValue">{formatarMoeda(guia.taxa_plataforma)}</div>
-                        </div>
-
-                        <div className="miniMetric">
-                          <div className="miniLabel">Líquido guia</div>
-                          <div className="miniValue">{formatarMoeda(guia.valor_liquido_guia)}</div>
-                        </div>
-
-                        <div className="miniMetric">
-                          <div className="miniLabel">Já pago</div>
-                          <div className="miniValue">{formatarMoeda(guia.valor_pago)}</div>
-                        </div>
-
-                        <div className="miniMetric">
-                          <div className="miniLabel">Saldo</div>
-                          <div className="miniValue">{formatarMoeda(guia.saldo_pendente)}</div>
-                        </div>
+                      <div>
+                        {guia.excesso_repasse > 0 ? (
+                          <span className="badge red">Excesso de repasse</span>
+                        ) : guia.saldo_pendente > 0 ? (
+                          <span className="badge yellow">Saldo pendente</span>
+                        ) : (
+                          <span className="badge green">Sem saldo pendente</span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="actions">
-                      <button type="button" className="actionBtn primary" onClick={() => abrirPagamento(guia)} disabled={guia.saldo_pendente <= 0}>
-                        Registrar pagamento
-                      </button>
+                    <div className="guideMetrics">
+                      <div className="metric">
+                        <div className="metricLabel">Receita bruta</div>
+                        <div className="metricValue">{formatarMoeda(guia.receita_bruta)}</div>
+                      </div>
 
-                      <button type="button" className="actionBtn green" onClick={() => abrirPagamento(guia, guia.saldo_pendente)} disabled={guia.saldo_pendente <= 0}>
-                        Pagar saldo total
+                      <div className="metric">
+                        <div className="metricLabel">Taxa {guia.taxa_percentual}%</div>
+                        <div className="metricValue">{formatarMoeda(guia.taxa_plataforma)}</div>
+                      </div>
+
+                      <div className="metric">
+                        <div className="metricLabel">Líquido guia</div>
+                        <div className="metricValue">{formatarMoeda(guia.liquido_guia)}</div>
+                      </div>
+
+                      <div className="metric">
+                        <div className="metricLabel">Já pago</div>
+                        <div className="metricValue">{formatarMoeda(guia.valor_pago)}</div>
+                      </div>
+
+                      <div className="metric">
+                        <div className="metricLabel">Saldo</div>
+                        <div className="metricValue">{formatarMoeda(guia.saldo_pendente)}</div>
+                      </div>
+                    </div>
+
+                    <div className="guideActions">
+                      <button
+                        type="button"
+                        className="smallBtn green"
+                        disabled={guia.saldo_pendente <= 0}
+                        onClick={() => abrirModalRepasse(guia)}
+                      >
+                        Registrar pagamento
                       </button>
 
                       <button
                         type="button"
-                        className="actionBtn"
+                        className="smallBtn light"
+                        onClick={() => router.push(`/guias/${guia.guia_id}`)}
+                      >
+                        Ver perfil público
+                      </button>
+
+                      <button
+                        type="button"
+                        className="smallBtn dark"
                         onClick={() => {
-                          setGuiaSelecionado(guia)
-                          setModalPagamentoAberto(false)
+                          setBusca(guia.guia_id)
                         }}
                       >
-                        Ver histórico
+                        Filtrar histórico
                       </button>
                     </div>
+
+                    {guia.repasses.length > 0 && (
+                      <div className="history">
+                        {guia.repasses.slice(0, 3).map((repasse) => (
+                          <div className="historyItem" key={repasse.id}>
+                            <span>
+                              {repasse.descricao || repasse.observacao || 'Repasse registrado'}
+                              <br />
+                              {formatarData(repasse.data_pagamento || repasse.created_at)}
+                            </span>
+                            <strong>{formatarMoeda(valorDoRepasse(repasse))}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -1149,13 +1661,13 @@ export default function AdminFinanceiroPage() {
         </section>
       </div>
 
-      {modalPagamentoAberto && guiaSelecionado && (
+      {modalAberto && guiaSelecionado && (
         <div className="modalOverlay">
           <form className="modal" onSubmit={registrarPagamento}>
             <div className="modalHeader">
               <h2 className="modalTitle">Registrar pagamento ao guia</h2>
               <div className="modalSub">
-                Guia: {guiaSelecionado.guia_nome} · saldo atual: {formatarMoeda(guiaSelecionado.saldo_pendente)}
+                Guia: {guiaSelecionado.nome} · saldo atual: {formatarMoeda(guiaSelecionado.saldo_pendente)}
               </div>
             </div>
 
@@ -1163,154 +1675,83 @@ export default function AdminFinanceiroPage() {
               <div className="field">
                 <label className="label">Valor pago</label>
                 <input
-                  className="modalInput"
+                  className="input"
                   value={valorPagamento}
-                  onChange={(event) => setValorPagamento(event.target.value)}
-                  placeholder="Ex.: 250,00"
+                  onChange={(event) => {
+                    setErro('')
+                    setValorPagamento(event.target.value)
+                  }}
+                  onBlur={() => {
+                    const valor = normalizarNumero(valorPagamento, 0)
+
+                    if (valor <= 0) {
+                      setValorPagamento('')
+                      return
+                    }
+
+                    if (emCentavos(valor) > emCentavos(saldoDisponivel)) {
+                      setValorPagamento(formatarValorInput(saldoDisponivel))
+                      setErro(
+                        `Valor ajustado ao saldo disponível: ${formatarMoeda(saldoDisponivel)}.`
+                      )
+                      return
+                    }
+
+                    setValorPagamento(formatarValorInput(valor))
+                  }}
                   inputMode="decimal"
+                  placeholder="0,00"
                 />
+
+                <div className="helperBox">
+                  Valor máximo permitido para este guia: <strong>{formatarMoeda(saldoDisponivel)}</strong>.
+                  {valorMaiorQueSaldo && (
+                    <>
+                      <br />
+                      <strong style={{ color: '#991b1b' }}>
+                        O valor informado ultrapassa o saldo disponível e não será enviado.
+                      </strong>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div className="field">
                 <label className="label">Observação</label>
                 <textarea
-                  className="modalTextarea"
-                  value={observacaoPagamento}
-                  onChange={(event) => setObservacaoPagamento(event.target.value)}
-                  placeholder="Ex.: Repasse parcial via Pix."
+                  className="textarea"
+                  value={observacao}
+                  onChange={(event) => setObservacao(event.target.value)}
+                  placeholder="Ex.: Pix, TED, pagamento parcial, comprovante..."
                 />
               </div>
 
-              <div className="historyBox">
-                Este pagamento reduzirá o saldo pendente do guia. Para evitar duplicidade, cada registro ficará no histórico de repasses.
+              <div className="helperBox">
+                Este pagamento reduzirá o saldo pendente do guia. Para evitar duplicidade,
+                cada registro ficará no histórico de repasses. O backend também bloqueia
+                qualquer valor maior que o saldo disponível.
               </div>
 
               <div className="modalActions">
-                <button type="submit" className="btn primary" disabled={registrandoPagamento}>
-                  {registrandoPagamento ? 'Registrando...' : 'Confirmar pagamento'}
-                </button>
-
-                <button type="button" className="btn light" disabled={registrandoPagamento} onClick={() => setModalPagamentoAberto(false)}>
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {guiaSelecionado && !modalPagamentoAberto && (
-        <div className="modalOverlay">
-          <div className="modal">
-            <div className="modalHeader">
-              <h2 className="modalTitle">Histórico do guia</h2>
-              <div className="modalSub">{guiaSelecionado.guia_nome}</div>
-            </div>
-
-            <div className="modalBody">
-              <div className="historyBox">
-                <strong>Reservas confirmadas:</strong>
-                <br />
-                {guiaSelecionado.reservas.length > 0 ? (
-                  guiaSelecionado.reservas.slice(0, 8).map((reserva) => (
-                    <div key={reserva.id} style={{ marginTop: 8 }}>
-                      {reserva.roteiro_titulo || 'Roteiro'} · {formatarMoeda(reserva.valor_total || 0)} · {formatarData(reserva.created_at)}
-                    </div>
-                  ))
-                ) : (
-                  <span style={{ display: 'block', marginTop: 8 }}>
-                    Nenhuma reserva confirmada encontrada.
-                  </span>
-                )}
-              </div>
-
-              <div className="historyBox">
-                <strong>Pagamentos registrados:</strong>
-                <br />
-                {guiaSelecionado.repasses.length > 0 ? (
-                  guiaSelecionado.repasses.slice(0, 8).map((repasse) => (
-                    <div key={repasse.id} style={{ marginTop: 8 }}>
-                      {formatarMoeda(valorDoRepasse(repasse))} · {formatarData(dataDoRepasse(repasse))} · {repasse.observacao || repasse.descricao || 'Sem observação'}
-                    </div>
-                  ))
-                ) : (
-                  <span style={{ display: 'block', marginTop: 8 }}>
-                    Nenhum pagamento registrado para este guia.
-                  </span>
-                )}
-              </div>
-
-              <div className="modalActions">
-                <button type="button" className="btn primary" onClick={() => setGuiaSelecionado(null)}>
-                  Fechar
+                <button
+                  type="submit"
+                  className="smallBtn dark"
+                  disabled={
+                    registrando ||
+                    valorInvalido ||
+                    Boolean(valorMaiorQueSaldo) ||
+                    saldoDisponivel <= 0
+                  }
+                >
+                  {registrando ? 'Registrando...' : 'Confirmar pagamento'}
                 </button>
 
                 <button
                   type="button"
-                  className="btn green"
-                  disabled={guiaSelecionado.saldo_pendente <= 0}
-                  onClick={() => {
-                    setValorPagamento(String(guiaSelecionado.saldo_pendente.toFixed(2)).replace('.', ','))
-                    setObservacaoPagamento('')
-                    setModalPagamentoAberto(true)
-                  }}
+                  className="smallBtn light"
+                  disabled={registrando}
+                  onClick={fecharModal}
                 >
-                  Registrar pagamento
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modalSenhaAberto && (
-        <div className="modalOverlay">
-          <form className="modal" onSubmit={alterarSenha}>
-            <div className="modalHeader">
-              <h2 className="modalTitle">Alterar senha</h2>
-              <div className="modalSub">Atualize sua senha de acesso administrativo.</div>
-            </div>
-
-            <div className="modalBody">
-              <div className="field">
-                <label className="label">Senha atual</label>
-                <input
-                  className="modalInput"
-                  type="password"
-                  value={senhaAtual}
-                  onChange={(event) => setSenhaAtual(event.target.value)}
-                  placeholder="Digite sua senha atual"
-                />
-              </div>
-
-              <div className="field">
-                <label className="label">Nova senha</label>
-                <input
-                  className="modalInput"
-                  type="password"
-                  value={novaSenha}
-                  onChange={(event) => setNovaSenha(event.target.value)}
-                  placeholder="Mínimo de 6 caracteres"
-                />
-              </div>
-
-              <div className="field">
-                <label className="label">Confirmar nova senha</label>
-                <input
-                  className="modalInput"
-                  type="password"
-                  value={confirmarSenha}
-                  onChange={(event) => setConfirmarSenha(event.target.value)}
-                  placeholder="Repita a nova senha"
-                />
-              </div>
-
-              <div className="modalActions">
-                <button type="submit" className="btn primary" disabled={alterandoSenha}>
-                  {alterandoSenha ? 'Alterando...' : 'Salvar nova senha'}
-                </button>
-
-                <button type="button" className="btn light" disabled={alterandoSenha} onClick={() => setModalSenhaAberto(false)}>
                   Cancelar
                 </button>
               </div>

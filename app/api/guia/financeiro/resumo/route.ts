@@ -15,7 +15,9 @@ function json(data: any, status = 200) {
   return NextResponse.json(data, {
     status,
     headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0'
     }
   })
 }
@@ -50,9 +52,29 @@ function normalizar(valor: any) {
 }
 
 function uuidValido(valor: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     String(valor || '')
   )
+}
+
+function numeroSeguro(valor: any) {
+  const numero = Number(valor || 0)
+
+  if (!Number.isFinite(numero)) return 0
+
+  return numero
+}
+
+function arredondarMoeda(valor: any) {
+  return Math.round(numeroSeguro(valor) * 100) / 100
+}
+
+function emCentavos(valor: any) {
+  return Math.round(numeroSeguro(valor) * 100)
+}
+
+function deCentavos(valor: any) {
+  return Math.round(numeroSeguro(valor)) / 100
 }
 
 function pagamentoConfirmado(reserva: any) {
@@ -84,11 +106,12 @@ function repasseCancelado(repasse: any) {
 }
 
 function valorDoRepasse(repasse: any) {
-  return Number(
-    repasse?.valor_pago ||
-      repasse?.valor_repassado ||
-      repasse?.valor ||
-      repasse?.valor_total ||
+  return numeroSeguro(
+    repasse?.valor_pago ??
+      repasse?.valor_repasse ??
+      repasse?.valor_repassado ??
+      repasse?.valor ??
+      repasse?.valor_total ??
       0
   )
 }
@@ -99,17 +122,31 @@ function guiaIdDoRepasse(repasse: any) {
       repasse?.id_guia ||
       repasse?.user_id ||
       repasse?.usuario_id ||
+      repasse?.guiaId ||
       ''
   )
 }
 
-function idsCompatíveis(idA: string, idB: string) {
-  const a = limparTexto(idA)
-  const b = limparTexto(idB)
+function idsCompativeis(idRepasse: string, guiaId: string) {
+  const repasse = limparTexto(idRepasse).toLowerCase()
+  const guia = limparTexto(guiaId).toLowerCase()
 
-  if (!a || !b) return false
+  if (!repasse || !guia) return false
 
-  return a === b || a.startsWith(b) || b.startsWith(a)
+  if (repasse === guia) return true
+
+  if (repasse.startsWith(guia) || guia.startsWith(repasse)) return true
+
+  if (repasse.includes(guia) || guia.includes(repasse)) return true
+
+  const prefixoGuia = guia.slice(0, 8)
+  const prefixoRepasse = repasse.slice(0, 8)
+
+  if (prefixoGuia && prefixoRepasse && prefixoGuia === prefixoRepasse) {
+    return true
+  }
+
+  return false
 }
 
 function tituloRoteiro(roteiro: any) {
@@ -118,6 +155,20 @@ function tituloRoteiro(roteiro: any) {
 
 function dataRepasse(repasse: any) {
   return repasse?.data_pagamento || repasse?.created_at || repasse?.updated_at || null
+}
+
+async function buscarGuia(supabase: any, guiaId: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', guiaId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao buscar guia.')
+  }
+
+  return data || null
 }
 
 async function buscarRoteirosDoGuia(supabase: any, guiaId: string) {
@@ -132,7 +183,9 @@ async function buscarRoteirosDoGuia(supabase: any, guiaId: string) {
 
     if (!error && data) {
       data.forEach((roteiro: any) => {
-        if (roteiro?.id) mapa.set(roteiro.id, roteiro)
+        if (roteiro?.id) {
+          mapa.set(roteiro.id, roteiro)
+        }
       })
     }
   }
@@ -149,14 +202,18 @@ async function buscarReservasDoGuia(
   const roteiroIds = roteiros.map((roteiro) => roteiro.id).filter(Boolean)
 
   if (roteiroIds.length > 0) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('reservas')
       .select('*')
       .in('roteiro_id', roteiroIds)
 
-    ;(data || []).forEach((reserva: any) => {
-      if (reserva?.id) mapa.set(reserva.id, reserva)
-    })
+    if (!error && data) {
+      data.forEach((reserva: any) => {
+        if (reserva?.id) {
+          mapa.set(reserva.id, reserva)
+        }
+      })
+    }
   }
 
   const camposGuiaReserva = ['guia_id', 'id_guia', 'user_id', 'usuario_id']
@@ -169,7 +226,9 @@ async function buscarReservasDoGuia(
 
     if (!error && data) {
       data.forEach((reserva: any) => {
-        if (reserva?.id) mapa.set(reserva.id, reserva)
+        if (reserva?.id) {
+          mapa.set(reserva.id, reserva)
+        }
       })
     }
   }
@@ -178,20 +237,116 @@ async function buscarReservasDoGuia(
 }
 
 async function buscarRepassesDoGuia(supabase: any, guiaId: string) {
-  const { data, error } = await supabase
-    .from('repasses_guias')
-    .select('*')
-    .order('created_at', { ascending: false })
+  const mapa = new Map<string, any>()
 
-  if (error) {
-    throw new Error(error.message || 'Erro ao buscar repasses_guias.')
+  const consultas = [
+    supabase
+      .from('repasses_guias')
+      .select('*')
+      .eq('guia_id', guiaId)
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('repasses_guias')
+      .select('*')
+      .eq('id_guia', guiaId)
+      .order('created_at', { ascending: false })
+  ]
+
+  for (const consulta of consultas) {
+    const { data, error } = await consulta
+
+    if (!error && data) {
+      data.forEach((repasse: any) => {
+        if (repasse?.id) {
+          mapa.set(repasse.id, repasse)
+        }
+      })
+    }
   }
 
-  return (data || []).filter((repasse: any) => {
-    const idRepasse = guiaIdDoRepasse(repasse)
+  if (mapa.size === 0) {
+    const { data, error } = await supabase
+      .from('repasses_guias')
+      .select('*')
+      .order('created_at', { ascending: false })
 
-    return !repasseCancelado(repasse) && idsCompatíveis(idRepasse, guiaId)
+    if (error) {
+      throw new Error(error.message || 'Erro ao buscar repasses_guias.')
+    }
+
+    ;(data || []).forEach((repasse: any) => {
+      if (!repasse?.id) return
+
+      const idRepasse = guiaIdDoRepasse(repasse)
+
+      if (idsCompativeis(idRepasse, guiaId)) {
+        mapa.set(repasse.id, repasse)
+      }
+    })
+  }
+
+  return Array.from(mapa.values()).filter((repasse) => !repasseCancelado(repasse))
+}
+
+function montarReservasCompletas(
+  reservasConfirmadas: any[],
+  roteiros: any[],
+  guiaId: string
+) {
+  return reservasConfirmadas.map((reserva) => {
+    const roteiro = roteiros.find((item) => item.id === reserva.roteiro_id) || null
+
+    return {
+      ...reserva,
+      roteiro,
+      roteiro_titulo: tituloRoteiro(roteiro),
+      guia_id_real: guiaId
+    }
   })
+}
+
+function calcularResumoFinanceiro(guia: any, reservasCompletas: any[], repasses: any[]) {
+  const receitaBruta = arredondarMoeda(
+    reservasCompletas.reduce(
+      (total: number, reserva: any) => total + numeroSeguro(reserva.valor_total),
+      0
+    )
+  )
+
+  const taxaPercentual = numeroSeguro(guia?.taxa_plataforma_percentual || 5)
+
+  const taxaPlataforma = arredondarMoeda(
+    receitaBruta * (taxaPercentual / 100)
+  )
+
+  const taxaPagHiper = 0
+
+  const valorLiquidoGuia = arredondarMoeda(
+    Math.max(0, receitaBruta - taxaPlataforma - taxaPagHiper)
+  )
+
+  const valorPago = arredondarMoeda(
+    repasses.reduce(
+      (total: number, repasse: any) => total + valorDoRepasse(repasse),
+      0
+    )
+  )
+
+  const saldoCentavos = emCentavos(valorLiquidoGuia) - emCentavos(valorPago)
+  const saldoPendente = deCentavos(Math.max(0, saldoCentavos))
+  const excessoRepasse = deCentavos(Math.max(0, Math.abs(Math.min(0, saldoCentavos))))
+
+  return {
+    receitaBruta,
+    taxaPercentual,
+    taxaPlataforma,
+    taxaPagHiper,
+    valorLiquidoGuia,
+    valorPago,
+    saldoPendente,
+    excessoRepasse
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -216,21 +371,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { data: guia, error: guiaError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', guiaId)
-      .maybeSingle()
-
-    if (guiaError) {
-      return json(
-        {
-          sucesso: false,
-          erro: guiaError.message || 'Erro ao buscar guia.'
-        },
-        500
-      )
-    }
+    const guia = await buscarGuia(supabase, guiaId)
 
     if (!guia) {
       return json(
@@ -247,66 +388,49 @@ export async function GET(request: NextRequest) {
     const repasses = await buscarRepassesDoGuia(supabase, guiaId)
 
     const reservasConfirmadas = reservas.filter(pagamentoConfirmado)
-
-    const reservasCompletas = reservasConfirmadas.map((reserva: any) => {
-      const roteiro =
-        roteiros.find((item: any) => item.id === reserva.roteiro_id) || null
-
-      return {
-        ...reserva,
-        roteiro,
-        roteiro_titulo: tituloRoteiro(roteiro),
-        guia_id_real: guiaId
-      }
-    })
-
-    const receitaBruta = reservasCompletas.reduce(
-      (total: number, reserva: any) => total + Number(reserva.valor_total || 0),
-      0
+    const reservasCompletas = montarReservasCompletas(
+      reservasConfirmadas,
+      roteiros,
+      guiaId
     )
 
-    const taxaPercentual = Number(guia?.taxa_plataforma_percentual || 5)
-    const taxaPlataforma = receitaBruta * (taxaPercentual / 100)
-    const taxaPagHiper = 0
-
-    const valorLiquidoGuia = Math.max(
-      0,
-      receitaBruta - taxaPlataforma - taxaPagHiper
+    const resumoCalculado = calcularResumoFinanceiro(
+      guia,
+      reservasCompletas,
+      repasses
     )
 
-    const valorPago = repasses.reduce(
-      (total: number, repasse: any) => total + valorDoRepasse(repasse),
-      0
-    )
-
-    const saldoPendente = Math.max(0, valorLiquidoGuia - valorPago)
+    const ultimoRepasse = repasses[0] || null
 
     return json({
       sucesso: true,
       guia: {
         id: guia.id,
-        nome: guia.nome || guia.name || guia.email || 'Guia',
+        nome: guia.nome || guia.email || 'Guia',
         email: guia.email || null,
         pix_tipo: guia.pix_tipo || null,
         pix_chave: guia.pix_chave || null,
         cadastur: guia.cadastur || null,
         guia_beta: Boolean(guia.guia_beta),
         guia_pioneiro_beta: Boolean(guia.guia_pioneiro_beta),
+        medalha_guia_pioneiro_beta: Boolean(guia.medalha_guia_pioneiro_beta),
         beneficio_taxa_beta_ativo: Boolean(guia.beneficio_taxa_beta_ativo),
-        taxa_plataforma_percentual: taxaPercentual
+        taxa_plataforma_percentual: resumoCalculado.taxaPercentual
       },
       resumo: {
-        receita_bruta: receitaBruta,
-        taxa_percentual: taxaPercentual,
-        taxa_plataforma: taxaPlataforma,
-        taxa_paghiper: taxaPagHiper,
-        valor_liquido_guia: valorLiquidoGuia,
-        valor_pago: valorPago,
-        saldo_pendente: saldoPendente,
+        receita_bruta: resumoCalculado.receitaBruta,
+        taxa_percentual: resumoCalculado.taxaPercentual,
+        taxa_plataforma: resumoCalculado.taxaPlataforma,
+        taxa_paghiper: resumoCalculado.taxaPagHiper,
+        valor_liquido_guia: resumoCalculado.valorLiquidoGuia,
+        valor_pago: resumoCalculado.valorPago,
+        saldo_pendente: resumoCalculado.saldoPendente,
+        excesso_repasse: resumoCalculado.excessoRepasse,
         reservas_confirmadas: reservasCompletas.length,
+        reservas_total: reservas.length,
         roteiros_total: roteiros.length,
         repasses_total: repasses.length,
-        ultimo_pagamento_em: dataRepasse(repasses[0])
+        ultimo_pagamento_em: dataRepasse(ultimoRepasse)
       },
       reservas: reservasCompletas,
       repasses,
@@ -316,8 +440,21 @@ export async function GET(request: NextRequest) {
         reservas_encontradas: reservas.length,
         reservas_confirmadas: reservasCompletas.length,
         repasses_encontrados: repasses.length,
-        valor_pago_repasses: valorPago,
-        saldo_pendente: saldoPendente
+        valor_pago_repasses: resumoCalculado.valorPago,
+        valor_liquido_guia: resumoCalculado.valorLiquidoGuia,
+        saldo_pendente: resumoCalculado.saldoPendente,
+        excesso_repasse: resumoCalculado.excessoRepasse,
+        ids_repasses: repasses.map((repasse: any) => ({
+          id: repasse.id,
+          guia_id: repasse.guia_id || null,
+          id_guia: repasse.id_guia || null,
+          valor: repasse.valor || null,
+          valor_pago: repasse.valor_pago || null,
+          valor_repasse: repasse.valor_repasse || null,
+          status: repasse.status || null,
+          tipo: repasse.tipo || null,
+          data_pagamento: repasse.data_pagamento || null
+        }))
       }
     })
   } catch (error: any) {
