@@ -11,23 +11,31 @@ const inter = Inter({
 export const metadata: Metadata = {
   metadataBase: new URL('https://prussiktrails.vercel.app'),
 
-  title: 'PrussikTrails - Sua Aventura Começa Aqui',
+  title: {
+    default: 'PrussikTrails - Sua Aventura Começa Aqui',
+    template: '%s | PrussikTrails'
+  },
+
   description:
     'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros em busca de experiências únicas na natureza.',
 
   keywords: [
+    'PrussikTrails',
     'trilhas',
     'aventura',
     'ecoturismo',
     'guia de montanha',
     'trekking',
     'natureza',
-    'PrussikTrails'
+    'roteiros',
+    'outdoor'
   ],
 
   authors: [{ name: 'PrussikTrails' }],
   creator: 'PrussikTrails',
   publisher: 'PrussikTrails',
+
+  applicationName: 'PrussikTrails',
 
   manifest: '/manifest.webmanifest',
 
@@ -48,10 +56,16 @@ export const metadata: Metadata = {
         type: 'image/png'
       }
     ],
+    shortcut: [
+      {
+        url: '/favicon.ico',
+        sizes: 'any'
+      }
+    ],
     apple: [
       {
-        url: '/icon-192.png',
-        sizes: '192x192',
+        url: '/apple-touch-icon.png',
+        sizes: '180x180',
         type: 'image/png'
       }
     ]
@@ -110,7 +124,8 @@ export const metadata: Metadata = {
 
   other: {
     'mobile-web-app-capable': 'yes',
-    'msapplication-TileColor': '#dc2626'
+    'msapplication-TileColor': '#dc2626',
+    'msapplication-TileImage': '/icon-192.png'
   }
 }
 
@@ -119,6 +134,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: true,
+  viewportFit: 'cover',
   themeColor: '#dc2626',
   colorScheme: 'light'
 }
@@ -129,7 +145,7 @@ export default function RootLayout({
   children: ReactNode
 }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <body
         className={inter.className}
         style={{
