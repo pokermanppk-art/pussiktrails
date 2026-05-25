@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
@@ -75,15 +75,31 @@ type Stats = {
   clientesTotal: number
   guiasTotal: number
   adminsTotal: number
+  usuariosNovosMes: number
+
   roteirosTotal: number
   roteirosAtivos: number
   roteirosPendentes: number
+  roteirosMes: number
+
   reservasTotal: number
   reservasConfirmadas: number
   reservasPendentes: number
-  receitaBruta: number
-  taxaPlataforma: number
-  repasseGuias: number
+  reservasCanceladas: number
+  reservasMes: number
+
+  receitaBrutaTotal: number
+  taxaPlataformaTotal: number
+  taxaPagHiperTotal: number
+  repasseGuiasTotal: number
+  resultadoPlataformaTotal: number
+
+  receitaBrutaMes: number
+  taxaPlataformaMes: number
+  taxaPagHiperMes: number
+  repasseGuiasMes: number
+  resultadoPlataformaMes: number
+
   gruposTotal: number
   gruposAtivos: number
 }
@@ -93,15 +109,31 @@ const statsInicial: Stats = {
   clientesTotal: 0,
   guiasTotal: 0,
   adminsTotal: 0,
+  usuariosNovosMes: 0,
+
   roteirosTotal: 0,
   roteirosAtivos: 0,
   roteirosPendentes: 0,
+  roteirosMes: 0,
+
   reservasTotal: 0,
   reservasConfirmadas: 0,
   reservasPendentes: 0,
-  receitaBruta: 0,
-  taxaPlataforma: 0,
-  repasseGuias: 0,
+  reservasCanceladas: 0,
+  reservasMes: 0,
+
+  receitaBrutaTotal: 0,
+  taxaPlataformaTotal: 0,
+  taxaPagHiperTotal: 0,
+  repasseGuiasTotal: 0,
+  resultadoPlataformaTotal: 0,
+
+  receitaBrutaMes: 0,
+  taxaPlataformaMes: 0,
+  taxaPagHiperMes: 0,
+  repasseGuiasMes: 0,
+  resultadoPlataformaMes: 0,
+
   gruposTotal: 0,
   gruposAtivos: 0
 }
@@ -127,8 +159,17 @@ export default function AdminDashboardPage() {
   const [grupos, setGrupos] = useState<GrupoRoteiro[]>([])
   const [stats, setStats] = useState<Stats>(statsInicial)
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoResumo>(avaliacaoInicial)
+
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
+  const [menuAberto, setMenuAberto] = useState(false)
+
+  const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
+  const [senhaAtual, setSenhaAtual] = useState('')
+  const [novaSenha, setNovaSenha] = useState('')
+  const [confirmarSenha, setConfirmarSenha] = useState('')
+  const [alterandoSenha, setAlterandoSenha] = useState(false)
+
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
@@ -233,6 +274,21 @@ export default function AdminDashboardPage() {
       .join('')
   }
 
+  const dentroDoMesAtual = (valor?: string | null) => {
+    if (!valor) return false
+
+    const data = new Date(valor)
+
+    if (Number.isNaN(data.getTime())) return false
+
+    const agora = new Date()
+
+    return (
+      data.getFullYear() === agora.getFullYear() &&
+      data.getMonth() === agora.getMonth()
+    )
+  }
+
   const pagamentoConfirmado = (reserva: Reserva) => {
     const pagamento = normalizar(reserva.pagamento_status)
     const status = normalizar(reserva.status)
@@ -248,6 +304,12 @@ export default function AdminDashboardPage() {
       status === 'pago' ||
       status === 'paga'
     )
+  }
+
+  const reservaCancelada = (reserva: Reserva) => {
+    const status = normalizar(reserva.status)
+
+    return status === 'cancelada' || status === 'cancelado' || status === 'cancelled'
   }
 
   const statusRoteiro = (roteiro: Roteiro) => {
@@ -317,22 +379,22 @@ export default function AdminDashboardPage() {
         .from('users')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(500),
+        .limit(800),
       supabase
         .from('roteiros')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(500),
+        .limit(800),
       supabase
         .from('reservas')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(500),
+        .limit(800),
       supabase
         .from('grupos_roteiros')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(500)
+        .limit(800)
     ])
 
     if (usuariosResult.error) {
@@ -362,33 +424,70 @@ export default function AdminDashboardPage() {
     setGrupos(gruposData)
 
     const reservasConfirmadas = reservasData.filter(pagamentoConfirmado)
-    const reservasPendentes = reservasData.filter((reserva) => !pagamentoConfirmado(reserva))
+    const reservasPendentes = reservasData.filter(
+      (reserva) => !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
+    )
+    const reservasCanceladas = reservasData.filter(reservaCancelada)
 
-    const receitaBruta = reservasConfirmadas.reduce(
+    const reservasConfirmadasMes = reservasConfirmadas.filter((reserva) =>
+      dentroDoMesAtual(reserva.created_at)
+    )
+
+    const receitaBrutaTotal = reservasConfirmadas.reduce(
       (total, reserva) => total + Number(reserva.valor_total || 0),
       0
     )
 
-    const taxaPlataforma = receitaBruta * 0.05
-    const repasseGuias = receitaBruta - taxaPlataforma
+    const receitaBrutaMes = reservasConfirmadasMes.reduce(
+      (total, reserva) => total + Number(reserva.valor_total || 0),
+      0
+    )
+
+    const taxaPlataformaTotal = receitaBrutaTotal * 0.05
+    const taxaPlataformaMes = receitaBrutaMes * 0.05
+
+    const taxaPagHiperTotal = 0
+    const taxaPagHiperMes = 0
+
+    const repasseGuiasTotal = receitaBrutaTotal - taxaPlataformaTotal - taxaPagHiperTotal
+    const repasseGuiasMes = receitaBrutaMes - taxaPlataformaMes - taxaPagHiperMes
+
+    const resultadoPlataformaTotal = receitaBrutaTotal - repasseGuiasTotal - taxaPagHiperTotal
+    const resultadoPlataformaMes = receitaBrutaMes - repasseGuiasMes - taxaPagHiperMes
 
     const statsCalculados: Stats = {
       usuariosTotal: usuariosData.length,
       clientesTotal: usuariosData.filter((item) => normalizar(item.tipo) === 'cliente').length,
       guiasTotal: usuariosData.filter((item) => normalizar(item.tipo) === 'guia').length,
       adminsTotal: usuariosData.filter((item) => normalizar(item.tipo) === 'admin').length,
+      usuariosNovosMes: usuariosData.filter((item) => dentroDoMesAtual(item.created_at)).length,
+
       roteirosTotal: roteirosData.length,
       roteirosAtivos: roteirosData.filter((item) => statusRoteiro(item) === 'ativo').length,
       roteirosPendentes: roteirosData.filter((item) => {
         const status = statusRoteiro(item)
         return status === 'pendente' || status === 'aguardando' || status === 'em_analise'
       }).length,
+      roteirosMes: roteirosData.filter((item) => dentroDoMesAtual(item.created_at)).length,
+
       reservasTotal: reservasData.length,
       reservasConfirmadas: reservasConfirmadas.length,
       reservasPendentes: reservasPendentes.length,
-      receitaBruta,
-      taxaPlataforma,
-      repasseGuias,
+      reservasCanceladas: reservasCanceladas.length,
+      reservasMes: reservasData.filter((item) => dentroDoMesAtual(item.created_at)).length,
+
+      receitaBrutaTotal,
+      taxaPlataformaTotal,
+      taxaPagHiperTotal,
+      repasseGuiasTotal,
+      resultadoPlataformaTotal,
+
+      receitaBrutaMes,
+      taxaPlataformaMes,
+      taxaPagHiperMes,
+      repasseGuiasMes,
+      resultadoPlataformaMes,
+
       gruposTotal: gruposData.length,
       gruposAtivos: gruposData.filter((item) => normalizar(item.status) === 'ativo').length
     }
@@ -414,16 +513,108 @@ export default function AdminDashboardPage() {
     }
   }
 
+  const abrirAlterarSenha = () => {
+    setMenuAberto(false)
+    setErro('')
+    setMensagem('')
+    setSenhaAtual('')
+    setNovaSenha('')
+    setConfirmarSenha('')
+    setModalSenhaAberto(true)
+  }
+
+  const alterarSenha = async (event: FormEvent) => {
+    event.preventDefault()
+
+    if (!user?.id) {
+      router.replace('/login')
+      return
+    }
+
+    setErro('')
+    setMensagem('')
+
+    if (!senhaAtual) {
+      setErro('Informe a senha atual.')
+      return
+    }
+
+    if (!novaSenha || novaSenha.length < 6) {
+      setErro('A nova senha deve ter pelo menos 6 caracteres.')
+      return
+    }
+
+    if (novaSenha !== confirmarSenha) {
+      setErro('As senhas não conferem.')
+      return
+    }
+
+    setAlterandoSenha(true)
+
+    try {
+      const response = await fetch('/api/alterar-senha', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          usuarioId: user.id,
+          usuario_id: user.id,
+          senhaAtual,
+          senha_atual: senhaAtual,
+          novaSenha,
+          nova_senha: novaSenha
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        setErro(data?.erro || data?.message || 'Não foi possível alterar a senha.')
+        return
+      }
+
+      setMensagem('Senha alterada com sucesso.')
+      setModalSenhaAberto(false)
+      setSenhaAtual('')
+      setNovaSenha('')
+      setConfirmarSenha('')
+    } catch (error) {
+      console.error('Erro ao alterar senha:', error)
+      setErro('Erro ao alterar senha.')
+    } finally {
+      setAlterandoSenha(false)
+    }
+  }
+
+  const sair = async () => {
+    setMenuAberto(false)
+
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.warn('Aviso ao encerrar sessão Supabase:', error)
+    }
+
+    localStorage.removeItem('user')
+    localStorage.removeItem('usuario')
+    localStorage.removeItem('token')
+    localStorage.removeItem('session')
+
+    router.replace('/login')
+  }
+
   const roteirosRecentes = useMemo(() => {
-    return roteiros.slice(0, 6)
+    return roteiros.slice(0, 4)
   }, [roteiros])
 
   const reservasRecentes = useMemo(() => {
-    return reservas.slice(0, 6)
+    return reservas.slice(0, 5)
   }, [reservas])
 
   const usuariosRecentes = useMemo(() => {
-    return usuarios.slice(0, 5)
+    return usuarios.slice(0, 4)
   }, [usuarios])
 
   const badgeRoteiro = (roteiro: Roteiro) => {
@@ -438,6 +629,7 @@ export default function AdminDashboardPage() {
 
   const badgeReserva = (reserva: Reserva) => {
     if (pagamentoConfirmado(reserva)) return <span className="badge green">Confirmada</span>
+    if (reservaCancelada(reserva)) return <span className="badge red">Cancelada</span>
 
     return <span className="badge yellow">Pendente</span>
   }
@@ -530,7 +722,7 @@ export default function AdminDashboardPage() {
         .header {
           position: sticky;
           top: 0;
-          z-index: 40;
+          z-index: 50;
           background: rgba(248, 250, 252, 0.88);
           border-bottom: 1px solid rgba(15, 23, 42, 0.08);
           backdrop-filter: blur(18px);
@@ -575,42 +767,68 @@ export default function AdminDashboardPage() {
           margin-top: 3px;
         }
 
-        .headerActions {
+        .settingsWrap {
+          position: relative;
           display: flex;
-          gap: 8px;
           align-items: center;
-          flex-wrap: wrap;
           justify-content: flex-end;
         }
 
-        .iconBtn {
-          min-height: 38px;
+        .gearBtn {
+          width: 42px;
+          height: 42px;
           border: 1px solid rgba(15, 23, 42, 0.10);
-          background: rgba(255, 255, 255, 0.78);
+          background: rgba(255, 255, 255, 0.86);
           color: #0f172a;
           border-radius: 999px;
-          padding: 9px 13px;
-          font-size: 12px;
-          font-weight: 900;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
           cursor: pointer;
           transition: 0.2s ease;
-          white-space: nowrap;
         }
 
-        .iconBtn:hover:not(:disabled) {
+        .gearBtn:hover {
           transform: translateY(-1px);
           box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
         }
 
-        .iconBtn.primary {
-          background: #0f172a;
-          color: #ffffff;
-          border-color: #0f172a;
+        .settingsMenu {
+          position: absolute;
+          top: 50px;
+          right: 0;
+          width: 220px;
+          background: #ffffff;
+          border: 1px solid rgba(15, 23, 42, 0.10);
+          border-radius: 22px;
+          box-shadow: 0 22px 60px rgba(15, 23, 42, 0.16);
+          padding: 8px;
+          z-index: 80;
         }
 
-        .iconBtn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
+        .menuButton {
+          width: 100%;
+          border: none;
+          background: transparent;
+          color: #0f172a;
+          padding: 12px 13px;
+          border-radius: 16px;
+          text-align: left;
+          font-size: 13px;
+          font-weight: 900;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .menuButton:hover {
+          background: #f8fafc;
+        }
+
+        .menuButton.danger {
+          color: #991b1b;
         }
 
         .container {
@@ -648,7 +866,7 @@ export default function AdminDashboardPage() {
           position: relative;
           z-index: 2;
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 330px;
+          grid-template-columns: minmax(0, 1fr) 360px;
           gap: 22px;
           align-items: end;
         }
@@ -689,12 +907,19 @@ export default function AdminDashboardPage() {
           margin: 16px 0 0;
         }
 
-        .heroCard {
+        .revenueHeroCard {
           border-radius: 28px;
           background: rgba(255,255,255,0.10);
           border: 1px solid rgba(255,255,255,0.16);
           padding: 20px;
           backdrop-filter: blur(14px);
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .revenueHeroCard:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.20);
         }
 
         .heroLabel {
@@ -708,25 +933,37 @@ export default function AdminDashboardPage() {
         .heroValue {
           margin-top: 8px;
           color: #ffffff;
-          font-size: 36px;
+          font-size: 38px;
           line-height: 1;
           font-weight: 950;
           letter-spacing: -0.07em;
         }
 
         .heroSmall {
-          color: rgba(255,255,255,0.70);
+          color: rgba(255,255,255,0.72);
           font-size: 12px;
           font-weight: 750;
           line-height: 1.45;
           margin-top: 8px;
         }
 
-        .heroStars {
+        .heroRows {
+          display: grid;
+          gap: 7px;
+          margin-top: 14px;
+        }
+
+        .heroRow {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          color: rgba(255,255,255,0.82);
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .heroRow strong {
           color: #86efac;
-          font-size: 18px;
-          letter-spacing: 1px;
-          margin-top: 8px;
         }
 
         .alert {
@@ -764,6 +1001,7 @@ export default function AdminDashboardPage() {
           box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
           cursor: pointer;
           transition: 0.2s ease;
+          min-height: 150px;
         }
 
         .statCard:hover {
@@ -799,9 +1037,16 @@ export default function AdminDashboardPage() {
           margin-top: 7px;
         }
 
+        .statHint {
+          color: #16a34a;
+          font-size: 11px;
+          font-weight: 950;
+          margin-top: 9px;
+        }
+
         .mainGrid {
           display: grid;
-          grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+          grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
           gap: 18px;
           align-items: start;
         }
@@ -815,7 +1060,7 @@ export default function AdminDashboardPage() {
         }
 
         .panelHeader {
-          padding: 18px 20px;
+          padding: 16px 18px;
           border-bottom: 1px solid rgba(15, 23, 42, 0.08);
           display: flex;
           justify-content: space-between;
@@ -827,7 +1072,7 @@ export default function AdminDashboardPage() {
         .panelTitle {
           margin: 0;
           color: #0f172a;
-          font-size: 19px;
+          font-size: 18px;
           line-height: 1.15;
           font-weight: 950;
           letter-spacing: -0.04em;
@@ -842,7 +1087,7 @@ export default function AdminDashboardPage() {
         }
 
         .panelBody {
-          padding: 16px;
+          padding: 14px;
         }
 
         .textLink {
@@ -855,34 +1100,34 @@ export default function AdminDashboardPage() {
           padding: 0;
         }
 
-        .list {
+        .compactList {
           display: grid;
-          gap: 12px;
+          gap: 8px;
         }
 
-        .itemCard {
+        .compactItem {
           background: #ffffff;
           border: 1px solid rgba(15, 23, 42, 0.08);
-          border-radius: 22px;
-          padding: 13px;
+          border-radius: 18px;
+          padding: 10px 11px;
           display: grid;
-          grid-template-columns: 72px minmax(0, 1fr);
-          gap: 12px;
+          grid-template-columns: 42px minmax(0, 1fr);
+          gap: 10px;
           align-items: center;
           cursor: pointer;
           transition: 0.2s ease;
         }
 
-        .itemCard:hover {
+        .compactItem:hover {
           transform: translateY(-1px);
-          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
         }
 
-        .thumb {
-          width: 72px;
-          height: 72px;
-          border-radius: 20px;
-          background: #e2e8f0;
+        .compactIcon {
+          width: 42px;
+          height: 42px;
+          border-radius: 15px;
+          background: #f1f5f9;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -892,40 +1137,43 @@ export default function AdminDashboardPage() {
           overflow: hidden;
         }
 
-        .thumb img {
+        .compactIcon img {
           width: 100%;
           height: 100%;
           object-fit: cover;
           display: block;
         }
 
-        .itemTitle {
+        .compactTitle {
           color: #0f172a;
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 950;
-          line-height: 1.32;
+          line-height: 1.25;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
-        .itemMeta {
+        .compactMeta {
           color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
+          font-size: 11px;
+          line-height: 1.35;
           font-weight: 750;
-          margin-top: 4px;
+          margin-top: 3px;
         }
 
-        .itemFooter {
+        .compactFooter {
           display: flex;
-          justify-content: space-between;
           align-items: center;
+          justify-content: space-between;
           gap: 8px;
+          margin-top: 5px;
           flex-wrap: wrap;
-          margin-top: 9px;
         }
 
         .price {
           color: #16a34a;
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 950;
         }
 
@@ -933,8 +1181,8 @@ export default function AdminDashboardPage() {
           display: inline-flex;
           align-items: center;
           border-radius: 999px;
-          padding: 6px 9px;
-          font-size: 11px;
+          padding: 4px 7px;
+          font-size: 10px;
           font-weight: 950;
         }
 
@@ -963,7 +1211,7 @@ export default function AdminDashboardPage() {
           gap: 18px;
         }
 
-        .reviewBox,
+        .insightBox,
         .financeBox {
           background:
             radial-gradient(circle at top right, rgba(34,197,94,0.24), transparent 34%),
@@ -972,9 +1220,17 @@ export default function AdminDashboardPage() {
           border-radius: 28px;
           padding: 22px;
           box-shadow: 0 16px 40px rgba(15, 23, 42, 0.20);
+          cursor: pointer;
+          transition: 0.2s ease;
         }
 
-        .reviewBox {
+        .insightBox:hover,
+        .financeBox:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 22px 52px rgba(15, 23, 42, 0.24);
+        }
+
+        .insightBox {
           background:
             radial-gradient(circle at top right, rgba(251,146,60,0.18), transparent 34%),
             radial-gradient(circle at bottom left, rgba(34,197,94,0.16), transparent 30%),
@@ -996,6 +1252,13 @@ export default function AdminDashboardPage() {
           font-weight: 950;
           letter-spacing: -0.07em;
           line-height: 1;
+        }
+
+        .heroStars {
+          color: #86efac;
+          font-size: 18px;
+          letter-spacing: 1px;
+          margin-top: 8px;
         }
 
         .boxText {
@@ -1076,14 +1339,123 @@ export default function AdminDashboardPage() {
         }
 
         .empty {
-          padding: 24px;
+          padding: 20px;
           text-align: center;
           color: #64748b;
           background: #ffffff;
           border: 1px dashed #cbd5e1;
-          border-radius: 22px;
+          border-radius: 20px;
           font-size: 13px;
           font-weight: 750;
+        }
+
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.54);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          z-index: 100;
+        }
+
+        .modal {
+          width: 100%;
+          max-width: 430px;
+          background: #ffffff;
+          border-radius: 28px;
+          box-shadow: 0 28px 90px rgba(15, 23, 42, 0.30);
+          overflow: hidden;
+        }
+
+        .modalHeader {
+          padding: 20px;
+          border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+        }
+
+        .modalTitle {
+          margin: 0;
+          color: #0f172a;
+          font-size: 20px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .modalSub {
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 750;
+          line-height: 1.45;
+          margin-top: 5px;
+        }
+
+        .modalBody {
+          padding: 20px;
+          display: grid;
+          gap: 12px;
+        }
+
+        .field {
+          display: grid;
+          gap: 6px;
+        }
+
+        .label {
+          color: #475569;
+          font-size: 12px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .input {
+          width: 100%;
+          border: 1px solid rgba(15, 23, 42, 0.10);
+          background: #ffffff;
+          color: #0f172a;
+          border-radius: 16px;
+          padding: 13px 14px;
+          font-size: 14px;
+          font-weight: 800;
+          outline: none;
+        }
+
+        .input:focus {
+          border-color: #22c55e;
+          box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.10);
+        }
+
+        .modalActions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 8px;
+        }
+
+        .btn {
+          border: none;
+          border-radius: 999px;
+          padding: 12px 15px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .btn.primary {
+          background: #0f172a;
+          color: #ffffff;
+        }
+
+        .btn.light {
+          background: #f1f5f9;
+          color: #475569;
+        }
+
+        .btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
         @media (max-width: 1180px) {
@@ -1109,22 +1481,13 @@ export default function AdminDashboardPage() {
             display: none;
           }
 
-          .headerActions {
-            gap: 6px;
-          }
-
-          .headerActions .iconBtn {
-            padding: 8px 10px;
-            font-size: 11px;
-          }
-
           .container {
             padding: 16px 12px 42px;
           }
 
           .hero,
           .panel,
-          .reviewBox,
+          .insightBox,
           .financeBox {
             border-radius: 24px;
           }
@@ -1140,6 +1503,10 @@ export default function AdminDashboardPage() {
           .quickGrid {
             grid-template-columns: 1fr;
           }
+
+          .settingsMenu {
+            right: 0;
+          }
         }
 
         @media (max-width: 480px) {
@@ -1151,13 +1518,21 @@ export default function AdminDashboardPage() {
             grid-template-columns: 1fr;
           }
 
-          .itemCard {
-            grid-template-columns: 1fr;
+          .compactItem {
+            grid-template-columns: 38px minmax(0, 1fr);
           }
 
-          .thumb {
+          .compactIcon {
+            width: 38px;
+            height: 38px;
+          }
+
+          .modalActions {
+            display: grid;
+          }
+
+          .btn {
             width: 100%;
-            height: 150px;
           }
         }
       `}</style>
@@ -1176,39 +1551,35 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          <div className="headerActions">
+          <div className="settingsWrap">
             <button
               type="button"
-              className="iconBtn"
-              onClick={() => router.push('/admin/roteiros')}
+              className="gearBtn"
+              onClick={() => setMenuAberto((aberto) => !aberto)}
+              aria-label="Configurações"
             >
-              Roteiros
+              ⚙️
             </button>
 
-            <button
-              type="button"
-              className="iconBtn"
-              onClick={() => router.push('/admin/avaliacoes')}
-            >
-              Avaliações
-            </button>
+            {menuAberto && (
+              <div className="settingsMenu">
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={abrirAlterarSenha}
+                >
+                  🔐 Alterar senha
+                </button>
 
-            <button
-              type="button"
-              className="iconBtn"
-              onClick={() => router.push('/admin/financeiro')}
-            >
-              Financeiro
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn primary"
-              onClick={atualizar}
-              disabled={atualizando}
-            >
-              {atualizando ? 'Atualizando...' : 'Atualizar'}
-            </button>
+                <button
+                  type="button"
+                  className="menuButton danger"
+                  onClick={sair}
+                >
+                  🚪 Sair
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -1226,7 +1597,7 @@ export default function AdminDashboardPage() {
               </h1>
 
               <p className="heroText">
-                Acompanhe usuários, roteiros, reservas, grupos, financeiro e avaliações da plataforma.
+                Receita, repasses, roteiros, reservas, usuários, grupos e avaliações em uma central administrativa objetiva.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1236,11 +1607,36 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            <aside className="heroCard">
-              <div className="heroLabel">Receita confirmada</div>
-              <div className="heroValue">{formatarMoeda(stats.receitaBruta)}</div>
+            <aside
+              className="revenueHeroCard"
+              onClick={() => router.push('/admin/financeiro')}
+            >
+              <div className="heroLabel">Resultado estimado do mês</div>
+              <div className="heroValue">{formatarMoeda(stats.resultadoPlataformaMes)}</div>
               <div className="heroSmall">
-                Taxa estimada da plataforma: {formatarMoeda(stats.taxaPlataforma)}.
+                Receita do mês com abatimento estimado dos repasses aos guias e taxa da plataforma.
+              </div>
+
+              <div className="heroRows">
+                <div className="heroRow">
+                  <span>Receita bruta</span>
+                  <strong>{formatarMoeda(stats.receitaBrutaMes)}</strong>
+                </div>
+
+                <div className="heroRow">
+                  <span>Repasse guias</span>
+                  <strong>{formatarMoeda(stats.repasseGuiasMes)}</strong>
+                </div>
+
+                <div className="heroRow">
+                  <span>Taxa Prussik 5%</span>
+                  <strong>{formatarMoeda(stats.taxaPlataformaMes)}</strong>
+                </div>
+
+                <div className="heroRow">
+                  <span>Taxas PH</span>
+                  <strong>{formatarMoeda(stats.taxaPagHiperMes)}</strong>
+                </div>
               </div>
             </aside>
           </div>
@@ -1257,13 +1653,26 @@ export default function AdminDashboardPage() {
         <section className="statsGrid">
           <article
             className="statCard"
+            onClick={() => router.push('/admin/financeiro')}
+          >
+            <div className="statIcon">💰</div>
+            <div className="statValue">{formatarMoeda(stats.receitaBrutaMes)}</div>
+            <div className="statLabel">
+              receita bruta do mês · resultado {formatarMoeda(stats.resultadoPlataformaMes)}
+            </div>
+            <div className="statHint">Abrir financeiro</div>
+          </article>
+
+          <article
+            className="statCard"
             onClick={() => router.push('/admin/usuarios')}
           >
             <div className="statIcon">👥</div>
             <div className="statValue">{stats.usuariosTotal}</div>
             <div className="statLabel">
-              usuários · {stats.clientesTotal} clientes · {stats.guiasTotal} guias
+              usuários · {stats.clientesTotal} clientes · {stats.guiasTotal} guias · {stats.usuariosNovosMes} novos no mês
             </div>
+            <div className="statHint">Gerenciar usuários</div>
           </article>
 
           <article
@@ -1273,8 +1682,9 @@ export default function AdminDashboardPage() {
             <div className="statIcon">🧭</div>
             <div className="statValue">{stats.roteirosTotal}</div>
             <div className="statLabel">
-              roteiros · {stats.roteirosAtivos} ativos · {stats.roteirosPendentes} em análise
+              roteiros · {stats.roteirosAtivos} ativos · {stats.roteirosPendentes} em análise · {stats.roteirosMes} novos no mês
             </div>
+            <div className="statHint">Revisar roteiros</div>
           </article>
 
           <article
@@ -1284,19 +1694,9 @@ export default function AdminDashboardPage() {
             <div className="statIcon">🎒</div>
             <div className="statValue">{stats.reservasTotal}</div>
             <div className="statLabel">
-              reservas · {stats.reservasConfirmadas} confirmadas
+              reservas · {stats.reservasConfirmadas} confirmadas · {stats.reservasPendentes} pendentes · {stats.reservasCanceladas} canceladas
             </div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => router.push('/admin/grupos')}
-          >
-            <div className="statIcon">💬</div>
-            <div className="statValue">{stats.gruposTotal}</div>
-            <div className="statLabel">
-              grupos internos · {stats.gruposAtivos} ativos
-            </div>
+            <div className="statHint">Acompanhar reservas</div>
           </article>
 
           <article
@@ -1306,19 +1706,21 @@ export default function AdminDashboardPage() {
             <div className="statIcon">⭐</div>
             <div className="statValue">{formatarNota(avaliacoes.mediaNota)}</div>
             <div className="statLabel">
-              avaliações · {avaliacoes.total} registro(s) · {avaliacoes.notasBaixas} atenção
+              avaliações · {avaliacoes.total} registro(s) · {avaliacoes.notasBaixas} atenção · {formatarPercentual(avaliacoes.segurancaAltaPercentual)} segurança
             </div>
+            <div className="statHint">Moderar avaliações</div>
           </article>
 
           <article
             className="statCard"
-            onClick={() => router.push('/admin/financeiro')}
+            onClick={() => router.push('/admin/grupos')}
           >
-            <div className="statIcon">💰</div>
-            <div className="statValue">{formatarMoeda(stats.taxaPlataforma)}</div>
+            <div className="statIcon">💬</div>
+            <div className="statValue">{stats.gruposTotal}</div>
             <div className="statLabel">
-              taxa 5% estimada · repasse {formatarMoeda(stats.repasseGuias)}
+              grupos internos · {stats.gruposAtivos} ativos · acesso pós-pagamento confirmado
             </div>
+            <div className="statHint">Administrar grupos</div>
           </article>
         </section>
 
@@ -1327,9 +1729,93 @@ export default function AdminDashboardPage() {
             <section className="panel">
               <div className="panelHeader">
                 <div>
+                  <h2 className="panelTitle">Central operacional</h2>
+                  <div className="panelSub">
+                    Atalhos administrativos com função real.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="textLink"
+                  onClick={atualizar}
+                  disabled={atualizando}
+                >
+                  {atualizando ? 'Atualizando...' : 'Atualizar painel'}
+                </button>
+              </div>
+
+              <div className="panelBody">
+                <div className="quickGrid">
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/financeiro')}
+                  >
+                    <div className="quickIcon">💰</div>
+                    <div className="quickTitle">Financeiro</div>
+                    <div className="quickText">Receitas, taxa 5%, repasses e futuro controle PH.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/roteiros')}
+                  >
+                    <div className="quickIcon">🧭</div>
+                    <div className="quickTitle">Roteiros</div>
+                    <div className="quickText">Aprovar, revisar, ativar e acompanhar experiências.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/reservas')}
+                  >
+                    <div className="quickIcon">🎒</div>
+                    <div className="quickTitle">Reservas</div>
+                    <div className="quickText">Pagamentos, confirmações e movimentação de clientes.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/avaliacoes')}
+                  >
+                    <div className="quickIcon">⭐</div>
+                    <div className="quickTitle">Avaliações</div>
+                    <div className="quickText">Reputação, qualidade, segurança e moderação.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/usuarios')}
+                  >
+                    <div className="quickIcon">👥</div>
+                    <div className="quickTitle">Usuários</div>
+                    <div className="quickText">Clientes, guias, admins e crescimento da base.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/grupos')}
+                  >
+                    <div className="quickIcon">💬</div>
+                    <div className="quickTitle">Grupos</div>
+                    <div className="quickText">Comunidades internas por roteiro e acesso pós-pagamento.</div>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="panel" style={{ marginTop: 18 }}>
+              <div className="panelHeader">
+                <div>
                   <h2 className="panelTitle">Roteiros recentes</h2>
                   <div className="panelSub">
-                    Últimos roteiros cadastrados na plataforma.
+                    Lista compacta para não ocupar o painel.
                   </div>
                 </div>
 
@@ -1338,7 +1824,7 @@ export default function AdminDashboardPage() {
                   className="textLink"
                   onClick={() => router.push('/admin/roteiros')}
                 >
-                  Ver roteiros
+                  Ver todos
                 </button>
               </div>
 
@@ -1348,17 +1834,17 @@ export default function AdminDashboardPage() {
                     Nenhum roteiro cadastrado ainda.
                   </div>
                 ) : (
-                  <div className="list">
+                  <div className="compactList">
                     {roteirosRecentes.map((roteiro) => {
                       const imagem = imagemRoteiro(roteiro)
 
                       return (
                         <article
-                          className="itemCard"
+                          className="compactItem"
                           key={roteiro.id}
                           onClick={() => router.push('/admin/roteiros')}
                         >
-                          <div className="thumb">
+                          <div className="compactIcon">
                             {imagem ? (
                               <img src={imagem} alt={tituloRoteiro(roteiro)} />
                             ) : (
@@ -1367,17 +1853,15 @@ export default function AdminDashboardPage() {
                           </div>
 
                           <div>
-                            <div className="itemTitle">
+                            <div className="compactTitle">
                               {tituloRoteiro(roteiro)}
                             </div>
 
-                            <div className="itemMeta">
-                              {localRoteiro(roteiro)}
-                              <br />
-                              Criado em {formatarData(roteiro.created_at)}
+                            <div className="compactMeta">
+                              {localRoteiro(roteiro)} · {formatarData(roteiro.created_at)}
                             </div>
 
-                            <div className="itemFooter">
+                            <div className="compactFooter">
                               <span className="price">
                                 {formatarMoeda(roteiro.preco || roteiro.valor || 0)}
                               </span>
@@ -1392,69 +1876,58 @@ export default function AdminDashboardPage() {
                 )}
               </div>
             </section>
-
-            <section className="panel" style={{ marginTop: 18 }}>
-              <div className="panelHeader">
-                <div>
-                  <h2 className="panelTitle">Reservas recentes</h2>
-                  <div className="panelSub">
-                    Últimas movimentações de reservas.
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="textLink"
-                  onClick={() => router.push('/admin/reservas')}
-                >
-                  Ver reservas
-                </button>
-              </div>
-
-              <div className="panelBody">
-                {reservasRecentes.length === 0 ? (
-                  <div className="empty">
-                    Nenhuma reserva encontrada ainda.
-                  </div>
-                ) : (
-                  <div className="list">
-                    {reservasRecentes.map((reserva) => (
-                      <article
-                        className="itemCard"
-                        key={reserva.id}
-                        onClick={() => router.push('/admin/reservas')}
-                      >
-                        <div className="thumb">RS</div>
-
-                        <div>
-                          <div className="itemTitle">
-                            Reserva {reserva.id.slice(0, 8)}
-                          </div>
-
-                          <div className="itemMeta">
-                            Pessoas: {reserva.quantidade_pessoas || 1}
-                            <br />
-                            Criada em {formatarData(reserva.created_at)}
-                          </div>
-
-                          <div className="itemFooter">
-                            <span className="price">
-                              {formatarMoeda(reserva.valor_total || 0)}
-                            </span>
-
-                            {badgeReserva(reserva)}
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
           </div>
 
           <div className="sideGrid">
-            <section className="reviewBox">
+            <section
+              className="financeBox"
+              onClick={() => router.push('/admin/financeiro')}
+            >
+              <div className="boxLabel">Receita do mês</div>
+              <div className="boxValue">{formatarMoeda(stats.receitaBrutaMes)}</div>
+
+              <div className="boxText">
+                Visão financeira mensal com cálculo de taxa da plataforma e repasse estimado aos guias.
+              </div>
+
+              <div className="boxRows">
+                <div className="boxRow">
+                  <span>Taxa Prussik 5%</span>
+                  <strong>{formatarMoeda(stats.taxaPlataformaMes)}</strong>
+                </div>
+
+                <div className="boxRow">
+                  <span>Repasse guias 95%</span>
+                  <strong>{formatarMoeda(stats.repasseGuiasMes)}</strong>
+                </div>
+
+                <div className="boxRow">
+                  <span>Taxas PH</span>
+                  <strong>{formatarMoeda(stats.taxaPagHiperMes)}</strong>
+                </div>
+
+                <div className="boxRow">
+                  <span>Resultado plataforma</span>
+                  <strong>{formatarMoeda(stats.resultadoPlataformaMes)}</strong>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="boxButton"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  router.push('/admin/financeiro')
+                }}
+              >
+                Abrir financeiro
+              </button>
+            </section>
+
+            <section
+              className="insightBox"
+              onClick={() => router.push('/admin/avaliacoes')}
+            >
               <div className="boxLabel">Qualidade da plataforma</div>
               <div className="boxValue">{formatarNota(avaliacoes.mediaNota)}</div>
               <div className="heroStars">{estrelas(avaliacoes.mediaNota)}</div>
@@ -1488,98 +1961,69 @@ export default function AdminDashboardPage() {
               <button
                 type="button"
                 className="boxButton"
-                onClick={() => router.push('/admin/avaliacoes')}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  router.push('/admin/avaliacoes')
+                }}
               >
-                Abrir painel de avaliações
-              </button>
-            </section>
-
-            <section className="financeBox">
-              <div className="boxLabel">Financeiro estimado</div>
-              <div className="boxValue">{formatarMoeda(stats.taxaPlataforma)}</div>
-
-              <div className="boxText">
-                Taxa estimada da plataforma sobre reservas confirmadas. Cálculo com base em 5% por reserva paga.
-              </div>
-
-              <div className="boxRows">
-                <div className="boxRow">
-                  <span>Receita bruta confirmada</span>
-                  <strong>{formatarMoeda(stats.receitaBruta)}</strong>
-                </div>
-
-                <div className="boxRow">
-                  <span>Repasse estimado aos guias</span>
-                  <strong>{formatarMoeda(stats.repasseGuias)}</strong>
-                </div>
-
-                <div className="boxRow">
-                  <span>Taxa plataforma</span>
-                  <strong>{formatarMoeda(stats.taxaPlataforma)}</strong>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="boxButton"
-                onClick={() => router.push('/admin/financeiro')}
-              >
-                Abrir financeiro
+                Abrir avaliações
               </button>
             </section>
 
             <section className="panel">
               <div className="panelHeader">
                 <div>
-                  <h2 className="panelTitle">Ações rápidas</h2>
+                  <h2 className="panelTitle">Reservas recentes</h2>
                   <div className="panelSub">
-                    Atalhos de controle operacional.
+                    Compacto e clicável.
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  className="textLink"
+                  onClick={() => router.push('/admin/reservas')}
+                >
+                  Ver todas
+                </button>
               </div>
 
               <div className="panelBody">
-                <div className="quickGrid">
-                  <button
-                    type="button"
-                    className="quickBtn"
-                    onClick={() => router.push('/admin/roteiros')}
-                  >
-                    <div className="quickIcon">🧭</div>
-                    <div className="quickTitle">Roteiros</div>
-                    <div className="quickText">Aprovar, revisar e acompanhar.</div>
-                  </button>
+                {reservasRecentes.length === 0 ? (
+                  <div className="empty">
+                    Nenhuma reserva encontrada ainda.
+                  </div>
+                ) : (
+                  <div className="compactList">
+                    {reservasRecentes.map((reserva) => (
+                      <article
+                        className="compactItem"
+                        key={reserva.id}
+                        onClick={() => router.push('/admin/reservas')}
+                      >
+                        <div className="compactIcon">RS</div>
 
-                  <button
-                    type="button"
-                    className="quickBtn"
-                    onClick={() => router.push('/admin/avaliacoes')}
-                  >
-                    <div className="quickIcon">⭐</div>
-                    <div className="quickTitle">Avaliações</div>
-                    <div className="quickText">Reputação, qualidade e moderação.</div>
-                  </button>
+                        <div>
+                          <div className="compactTitle">
+                            Reserva {reserva.id.slice(0, 8)}
+                          </div>
 
-                  <button
-                    type="button"
-                    className="quickBtn"
-                    onClick={() => router.push('/admin/financeiro')}
-                  >
-                    <div className="quickIcon">💰</div>
-                    <div className="quickTitle">Financeiro</div>
-                    <div className="quickText">Taxa, repasses e saldos.</div>
-                  </button>
+                          <div className="compactMeta">
+                            {reserva.quantidade_pessoas || 1} pessoa(s) · {formatarData(reserva.created_at)}
+                          </div>
 
-                  <button
-                    type="button"
-                    className="quickBtn"
-                    onClick={() => router.push('/admin/usuarios')}
-                  >
-                    <div className="quickIcon">👥</div>
-                    <div className="quickTitle">Usuários</div>
-                    <div className="quickText">Clientes, guias e admins.</div>
-                  </button>
-                </div>
+                          <div className="compactFooter">
+                            <span className="price">
+                              {formatarMoeda(reserva.valor_total || 0)}
+                            </span>
+
+                            {badgeReserva(reserva)}
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </div>
             </section>
 
@@ -1591,6 +2035,14 @@ export default function AdminDashboardPage() {
                     Últimos cadastros encontrados.
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  className="textLink"
+                  onClick={() => router.push('/admin/usuarios')}
+                >
+                  Ver todos
+                </button>
               </div>
 
               <div className="panelBody">
@@ -1599,27 +2051,25 @@ export default function AdminDashboardPage() {
                     Nenhum usuário encontrado.
                   </div>
                 ) : (
-                  <div className="list">
+                  <div className="compactList">
                     {usuariosRecentes.map((usuario) => (
                       <article
-                        className="itemCard"
+                        className="compactItem"
                         key={usuario.id}
                         onClick={() => router.push('/admin/usuarios')}
                       >
-                        <div className="thumb">US</div>
+                        <div className="compactIcon">US</div>
 
                         <div>
-                          <div className="itemTitle">
+                          <div className="compactTitle">
                             {nomeUsuario(usuario)}
                           </div>
 
-                          <div className="itemMeta">
-                            {usuario.email || 'E-mail não informado'}
-                            <br />
-                            Criado em {formatarData(usuario.created_at)}
+                          <div className="compactMeta">
+                            {usuario.email || 'E-mail não informado'} · {formatarData(usuario.created_at)}
                           </div>
 
-                          <div className="itemFooter">
+                          <div className="compactFooter">
                             <span className="price">
                               {usuario.tipo || 'usuário'}
                             </span>
@@ -1638,6 +2088,73 @@ export default function AdminDashboardPage() {
           </div>
         </section>
       </div>
+
+      {modalSenhaAberto && (
+        <div className="modalOverlay">
+          <form className="modal" onSubmit={alterarSenha}>
+            <div className="modalHeader">
+              <h2 className="modalTitle">Alterar senha</h2>
+              <div className="modalSub">
+                Atualize sua senha de acesso administrativo.
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <div className="field">
+                <label className="label">Senha atual</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={senhaAtual}
+                  onChange={(event) => setSenhaAtual(event.target.value)}
+                  placeholder="Digite sua senha atual"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Nova senha</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={novaSenha}
+                  onChange={(event) => setNovaSenha(event.target.value)}
+                  placeholder="Mínimo de 6 caracteres"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Confirmar nova senha</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={confirmarSenha}
+                  onChange={(event) => setConfirmarSenha(event.target.value)}
+                  placeholder="Repita a nova senha"
+                />
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={alterandoSenha}
+                >
+                  {alterandoSenha ? 'Alterando...' : 'Salvar nova senha'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn light"
+                  disabled={alterandoSenha}
+                  onClick={() => setModalSenhaAberto(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   )
 }
