@@ -1,389 +1,713 @@
-'use client'
-
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-
-// Componentes de ícone SVG internos (sem dependências externas)
-const IconMountain = () => (
-  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-  </svg>
-)
-
-const IconFootprints = () => (
-  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/>
-    <path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/>
-  </svg>
-)
-
-const IconCamera = () => (
-  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
-    <circle cx="12" cy="13" r="3"/>
-  </svg>
-)
-
-const IconStar = () => (
-  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-  </svg>
-)
-
-const IconCalendar = () => (
-  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-    <line x1="16" y1="2" x2="16" y2="6"/>
-    <line x1="8" y1="2" x2="8" y2="6"/>
-    <line x1="3" y1="10" x2="21" y2="10"/>
-  </svg>
-)
-
-const IconTrophy = () => (
-  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
-    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
-    <path d="M4 22h16"/>
-    <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
-    <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
-    <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
-  </svg>
-)
-
-const IconTrendingUp = () => (
-  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <polyline points="23 6 13.5 15.5 8 10 1 18"/>
-    <polyline points="17 6 23 6 23 12"/>
-  </svg>
-)
-
-const IconAward = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <circle cx="12" cy="8" r="6"/>
-    <path d="M5.5 18L8 14M18.5 18L16 14"/>
-    <path d="M12 22v-8"/>
-    <path d="M8 22h8"/>
-  </svg>
-)
-
-const IconLock = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-  </svg>
-)
-
-const IconSparkles = () => (
-  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M12 3L14 8L19 10L14 12L12 17L10 12L5 10L10 8L12 3Z"/>
-    <path d="M19 4L20 7L23 8L20 9L19 12L18 9L15 8L18 7L19 4Z"/>
-  </svg>
-)
-
-const IconHeart = () => (
-  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-  </svg>
-)
-
-const IconMapPin = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-    <circle cx="12" cy="10" r="3"/>
-  </svg>
-)
-
-const IconChevronRight = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <polyline points="9 18 15 12 9 6"/>
-  </svg>
-)
-
-export default function PremiumDemo() {
-  const router = useRouter()
-  const [user, setUser] = useState<any>(null)
-  const [animando, setAnimando] = useState(false)
-  const [periodo, setPeriodo] = useState('ALL_TIME')
-
-  useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (userData) {
-      setUser(JSON.parse(userData))
-    }
-  }, [])
-
-  const handleTestarPremium = () => {
-    setAnimando(true)
-    setTimeout(() => {
-      setAnimando(false)
-      alert('🚀 Em breve! Assine o Premium para acessar todos os recursos.\n\nBenefícios:\n• Estatísticas avançadas\n• Layout exclusivo\n• Ícones personalizados\n• Filtros por período\n• Medalhas especiais\n• E muito mais!')
-    }, 1000)
-  }
-
-  const periodos = [
-    { id: 'ALL_TIME', label: 'ALL TIME' },
-    { id: 'MONTH', label: 'MÊS' },
-    { id: 'WEEK', label: 'SEMANA' },
-    { id: 'TODAY', label: 'HOJE' }
+export default function PremiumDemoPage() {
+  const stats = [
+    { label: 'Nível', value: '28' },
+    { label: 'XP', value: '84%' },
+    { label: 'Trilhas', value: '37' },
+    { label: 'Ranking', value: '#12' }
   ]
 
-  const medalhas = [
-    { nome: 'Trilhas', icone: <IconMountain />, valor: 47, meta: 100, cor: '#10b981' },
-    { nome: 'KM', icone: <IconFootprints />, valor: 1250, meta: 5000, cor: '#3b82f6' },
-    { nome: 'Fotos', icone: <IconCamera />, valor: 89, meta: 200, cor: '#ec4899' },
-    { nome: 'Avaliações', icone: <IconStar />, valor: 34, meta: 100, cor: '#fbbf24' },
-    { nome: 'Reservas', icone: <IconCalendar />, valor: 12, meta: 50, cor: '#8b5cf6' },
+  const achievements = [
+    { title: 'Altitude', text: '5 trilhas acima de 1.500m', icon: '▲' },
+    { title: 'Explorador', text: '10 destinos concluídos', icon: '◆' },
+    { title: 'Resistência', text: '100km acumulados', icon: '⬢' },
+    { title: 'Elite', text: 'Badge premium ativo', icon: '✦' }
+  ]
+
+  const trilhasRecentes = [
+    {
+      nome: 'Pico da Neblina Urbana',
+      local: 'Serra Experimental',
+      status: 'Concluída',
+      xp: '+420 XP'
+    },
+    {
+      nome: 'Travessia Aurora',
+      local: 'Vale das Pedras',
+      status: 'Em progresso',
+      xp: '+180 XP'
+    },
+    {
+      nome: 'Circuito Prussik Pro',
+      local: 'Montanha Técnica',
+      status: 'Desafio aberto',
+      xp: '+650 XP'
+    }
+  ]
+
+  const ranking = [
+    { posicao: '01', nome: 'Lobo Norte', pontos: '18.900' },
+    { posicao: '02', nome: 'Maya Rock', pontos: '16.440' },
+    { posicao: '03', nome: 'Sr. Brito', pontos: '15.870' }
   ]
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0f172a' }}>
-      <style jsx global>{`
-        @keyframes glow {
-          0% { box-shadow: 0 0 5px rgba(139, 92, 246, 0.3); }
-          100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.6); }
+    <main className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
         }
-        @keyframes float {
-          0% { transform: translateY(0px); }
-          100% { transform: translateY(-5px); }
+
+        body {
+          margin: 0;
+          background: #020617;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
         }
-        .premium-card {
-          transition: all 0.3s ease;
-          cursor: pointer;
+
+        .page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at top left, rgba(0, 255, 102, 0.16), transparent 26%),
+            radial-gradient(circle at bottom right, rgba(220, 38, 38, 0.18), transparent 28%),
+            linear-gradient(135deg, #000000 0%, #020617 48%, #0f172a 100%);
+          color: #ffffff;
+          overflow-x: hidden;
         }
-        .premium-card:hover {
-          animation: float 0.3s ease forwards;
-          filter: brightness(1.05);
+
+        .shell {
+          display: grid;
+          grid-template-columns: 96px minmax(0, 1fr);
+          min-height: 100vh;
         }
-        .glow-effect {
-          animation: glow 1.5s ease-in-out infinite alternate;
+
+        .sidebar {
+          border-right: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgba(0, 0, 0, 0.48);
+          backdrop-filter: blur(18px);
+          padding: 22px 14px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 22px;
+          position: sticky;
+          top: 0;
+          height: 100vh;
+        }
+
+        .sideLogo {
+          width: 58px;
+          height: 58px;
+          border-radius: 22px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+        }
+
+        .sideLogo img {
+          width: 46px;
+          height: auto;
+          display: block;
+          object-fit: contain;
+        }
+
+        .nav {
+          display: grid;
+          gap: 12px;
+          width: 100%;
+        }
+
+        .navItem {
+          height: 54px;
+          border-radius: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #94a3b8;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          font-weight: 900;
+          text-decoration: none;
+        }
+
+        .navItem.active {
+          color: #00ff66;
+          border-color: rgba(0, 255, 102, 0.44);
+          box-shadow: 0 0 28px rgba(0, 255, 102, 0.18);
+        }
+
+        .content {
+          padding: 24px;
+        }
+
+        .hero {
+          min-height: 360px;
+          border-radius: 36px;
+          padding: 28px;
+          background:
+            linear-gradient(90deg, rgba(0,0,0,0.78), rgba(0,0,0,0.38)),
+            url('/premium/demo-bg.jpg');
+          background-size: cover;
+          background-position: center;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          box-shadow: 0 24px 80px rgba(0,0,0,0.38);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .hero::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+          background-size: 44px 44px;
+          mask-image: linear-gradient(to bottom, black, transparent);
+          pointer-events: none;
+        }
+
+        .heroInner {
+          position: relative;
+          z-index: 2;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 300px;
+          gap: 24px;
+          align-items: end;
+          min-height: 300px;
+        }
+
+        .brandRow {
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 28px;
+        }
+
+        .brandRow img {
+          height: 54px;
+          width: auto;
+          object-fit: contain;
+        }
+
+        .brandText {
+          font-size: 13px;
+          text-transform: uppercase;
+          letter-spacing: 0.24em;
+          color: #cbd5e1;
+          font-weight: 800;
+        }
+
+        .heroTag {
+          display: inline-flex;
+          border: 1px solid rgba(0, 255, 102, 0.36);
+          color: #00ff66;
+          border-radius: 999px;
+          padding: 8px 12px;
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.14em;
+          margin-bottom: 14px;
+          background: rgba(0, 255, 102, 0.08);
+        }
+
+        .heroTitle {
+          margin: 0;
+          font-size: clamp(42px, 7vw, 84px);
+          line-height: 0.92;
+          letter-spacing: -0.08em;
+          font-weight: 950;
+          max-width: 760px;
+        }
+
+        .heroTitle span {
+          color: #00ff66;
+          text-shadow: 0 0 28px rgba(0, 255, 102, 0.42);
+        }
+
+        .heroText {
+          margin: 18px 0 0;
+          color: #cbd5e1;
+          line-height: 1.65;
+          max-width: 620px;
+          font-size: 15px;
+        }
+
+        .profileCard {
+          background: rgba(15, 23, 42, 0.72);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 30px;
+          padding: 20px;
+          backdrop-filter: blur(18px);
+        }
+
+        .avatarWrap {
+          width: 112px;
+          height: 112px;
+          margin: 0 auto 14px;
+          border-radius: 34px;
+          padding: 3px;
+          background: linear-gradient(135deg, #00ff66, #dc2626);
+          box-shadow: 0 0 34px rgba(0, 255, 102, 0.28);
+        }
+
+        .avatar {
+          width: 100%;
+          height: 100%;
+          border-radius: 31px;
+          background: #020617;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 42px;
+          font-weight: 950;
+          color: #ffffff;
+        }
+
+        .profileName {
+          text-align: center;
+          font-size: 22px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .profileId {
+          text-align: center;
+          color: #94a3b8;
+          font-size: 12px;
+          margin-top: 4px;
+        }
+
+        .status {
+          margin: 14px auto 0;
+          width: fit-content;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #00ff66;
+          background: rgba(0, 255, 102, 0.08);
+          border: 1px solid rgba(0, 255, 102, 0.24);
+          border-radius: 999px;
+          padding: 8px 12px;
+          font-size: 12px;
+          font-weight: 900;
+        }
+
+        .pulse {
+          width: 8px;
+          height: 8px;
+          background: #00ff66;
+          border-radius: 999px;
+          box-shadow: 0 0 14px rgba(0, 255, 102, 0.85);
+        }
+
+        .statsGrid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
+          margin: 20px 0;
+        }
+
+        .statCard {
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          border-radius: 26px;
+          padding: 18px;
+          min-height: 112px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+
+        .statLabel {
+          color: #94a3b8;
+          font-size: 12px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.14em;
+        }
+
+        .statValue {
+          font-size: 34px;
+          font-weight: 950;
+          letter-spacing: -0.07em;
+          color: #ffffff;
+        }
+
+        .mainGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+          gap: 20px;
+        }
+
+        .panel {
+          background: rgba(15, 23, 42, 0.72);
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          border-radius: 30px;
+          padding: 22px;
+          backdrop-filter: blur(18px);
+          box-shadow: 0 18px 50px rgba(0,0,0,0.22);
+        }
+
+        .panelHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 18px;
+        }
+
+        .panelTitle {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .panelBadge {
+          color: #00ff66;
+          border: 1px solid rgba(0, 255, 102, 0.28);
+          background: rgba(0, 255, 102, 0.08);
+          border-radius: 999px;
+          padding: 7px 10px;
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+
+        .achievements {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .hexCard {
+          min-height: 170px;
+          clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0% 50%);
+          background:
+            linear-gradient(145deg, rgba(0, 255, 102, 0.16), rgba(255,255,255,0.05));
+          border: 1px solid rgba(0, 255, 102, 0.30);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 26px;
+          position: relative;
+        }
+
+        .hexIcon {
+          color: #00ff66;
+          font-size: 30px;
+          font-weight: 950;
+          margin-bottom: 8px;
+        }
+
+        .hexTitle {
+          font-size: 14px;
+          font-weight: 950;
+        }
+
+        .hexText {
+          margin-top: 6px;
+          color: #cbd5e1;
+          font-size: 11px;
+          line-height: 1.35;
+        }
+
+        .trailList,
+        .rankingList {
+          display: grid;
+          gap: 12px;
+        }
+
+        .trailItem,
+        .rankingItem {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 14px;
+          align-items: center;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 22px;
+          padding: 15px;
+        }
+
+        .trailName,
+        .rankName {
+          font-weight: 950;
+          color: #ffffff;
+        }
+
+        .trailMeta,
+        .rankMeta {
+          color: #94a3b8;
+          font-size: 12px;
+          margin-top: 4px;
+        }
+
+        .xp,
+        .rankPoints {
+          color: #00ff66;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .premiumBox {
+          margin-top: 20px;
+          background:
+            linear-gradient(135deg, rgba(0, 255, 102, 0.18), rgba(220, 38, 38, 0.14));
+          border: 1px solid rgba(0, 255, 102, 0.24);
+          border-radius: 30px;
+          padding: 24px;
+        }
+
+        .premiumTitle {
+          font-size: 24px;
+          font-weight: 950;
+          letter-spacing: -0.05em;
+          margin-bottom: 8px;
+        }
+
+        .premiumText {
+          color: #cbd5e1;
+          font-size: 14px;
+          line-height: 1.6;
+          margin-bottom: 18px;
+        }
+
+        .cta {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid rgba(0, 255, 102, 0.50);
+          background: rgba(0, 255, 102, 0.10);
+          color: #00ff66;
+          border-radius: 999px;
+          padding: 13px 18px;
+          font-size: 13px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+          text-decoration: none;
+        }
+
+        @media (max-width: 980px) {
+          .shell {
+            grid-template-columns: 1fr;
+          }
+
+          .sidebar {
+            height: auto;
+            position: relative;
+            flex-direction: row;
+            justify-content: space-between;
+            padding: 14px;
+          }
+
+          .nav {
+            display: flex;
+            width: auto;
+          }
+
+          .navItem {
+            width: 48px;
+            height: 48px;
+          }
+
+          .content {
+            padding: 14px;
+          }
+
+          .heroInner,
+          .mainGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .statsGrid,
+          .achievements {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 560px) {
+          .navItem:nth-child(n+4) {
+            display: none;
+          }
+
+          .hero {
+            border-radius: 28px;
+            padding: 20px;
+          }
+
+          .heroTitle {
+            font-size: 44px;
+          }
+
+          .statsGrid,
+          .achievements {
+            grid-template-columns: 1fr;
+          }
+
+          .hexCard {
+            clip-path: none;
+            border-radius: 24px;
+            min-height: auto;
+          }
+
+          .panel {
+            border-radius: 26px;
+            padding: 18px;
+          }
         }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ backgroundColor: '#1e293b', borderBottom: '1px solid #334155', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div className="glow-effect" style={{ color: '#fbbf24' }}>
-              <IconSparkles />
-            </div>
-            <div>
-              <h1 style={{ fontSize: '18px', fontWeight: 'bold', color: '#fbbf24', margin: 0 }}>PussikTrails</h1>
-              <p style={{ margin: 0, fontSize: '10px', color: '#94a3b8' }}>Experiência Premium</p>
-            </div>
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="sideLogo">
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {user && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#334155', padding: '4px 12px', borderRadius: '40px' }}>
-                <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: 'white' }}>
-                  {user.nome?.charAt(0) || 'U'}
+
+          <nav className="nav" aria-label="Menu premium">
+            <a className="navItem active" href="#perfil">P</a>
+            <a className="navItem" href="#achievements">A</a>
+            <a className="navItem" href="#trilhas">T</a>
+            <a className="navItem" href="#ranking">R</a>
+            <a className="navItem" href="#premium">+</a>
+          </nav>
+        </aside>
+
+        <section className="content">
+          <section className="hero" id="perfil">
+            <div className="heroInner">
+              <div>
+                <div className="brandRow">
+                  <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+                  <div className="brandText">Outdoor Gaming Profile</div>
                 </div>
-                <span style={{ fontSize: '12px', color: '#cbd5e1' }}>{user.nome || user.email}</span>
+
+                <div className="heroTag">Perfil Premium Demo</div>
+
+                <h1 className="heroTitle">
+                  O amanhã pertence aos <span>selvagens.</span>
+                </h1>
+
+                <p className="heroText">
+                  Uma proposta de perfil premium para o aventureiro PrussikTrails:
+                  progressão, conquistas, ranking, comunidade e assinatura em uma
+                  experiência visual mais imersiva.
+                </p>
               </div>
-            )}
-            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#334155', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '40px', cursor: 'pointer', fontSize: '12px' }}>← Dashboard</button>
-          </div>
-        </div>
-      </div>
 
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px 16px' }}>
-        
-        {/* BANNER PREMIUM */}
-        <div className="premium-card" style={{ background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', borderRadius: '28px', padding: '32px 24px', marginBottom: '32px', textAlign: 'center', color: 'white' }}>
-          <div style={{ display: 'inline-block', marginBottom: '16px', color: '#fbbf24' }}>
-            <IconTrophy />
-          </div>
-          <h2 style={{ fontSize: '26px', fontWeight: 'bold', marginBottom: '8px' }}>Plano Premium</h2>
-          <p style={{ fontSize: '14px', opacity: 0.9, marginBottom: '24px', maxWidth: '500px', marginLeft: 'auto', marginRight: 'auto' }}>
-            Desbloqueie uma experiência completa com estatísticas avançadas, medalhas exclusivas e design personalizado
-          </p>
-          <button
-            onClick={handleTestarPremium}
-            disabled={animando}
-            style={{
-              backgroundColor: 'white',
-              color: '#8b5cf6',
-              border: 'none',
-              padding: '12px 32px',
-              borderRadius: '40px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              transition: 'transform 0.2s',
-              opacity: animando ? 0.7 : 1
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            {animando ? '🚀 Processando...' : '⭐ Tornar-se Premium'}
-          </button>
-          <p style={{ fontSize: '11px', marginTop: '16px', opacity: 0.7 }}>A partir de R$ 9,90/mês • Cancele quando quiser</p>
-        </div>
+              <div className="profileCard">
+                <div className="avatarWrap">
+                  <div className="avatar">SB</div>
+                </div>
 
-        {/* CARDS DE ESTATÍSTICAS */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '32px' }}>
-          <div className="premium-card" style={{ backgroundColor: '#1e293b', borderRadius: '20px', padding: '20px', textAlign: 'center' }}>
-            <div style={{ color: '#10b981', marginBottom: '8px', display: 'flex', justifyContent: 'center' }}>
-              <IconTrendingUp />
+                <div className="profileName">Sr. Brito</div>
+                <div className="profileId">@prussik.pro #0037</div>
+
+                <div className="status">
+                  <span className="pulse" />
+                  Explorando agora
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#10b981' }}>1.250</div>
-            <div style={{ fontSize: '11px', color: '#94a3b8' }}>KM percorridos</div>
-          </div>
-          <div className="premium-card" style={{ backgroundColor: '#1e293b', borderRadius: '20px', padding: '20px', textAlign: 'center' }}>
-            <div style={{ color: '#fbbf24', marginBottom: '8px', display: 'flex', justifyContent: 'center' }}>
-              <IconTrophy />
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#fbbf24' }}>47</div>
-            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Medalhas conquistadas</div>
-          </div>
-        </div>
+          </section>
 
-        {/* SELETOR DE PERÍODO */}
-        <div style={{ backgroundColor: '#1e293b', borderRadius: '20px', padding: '12px', marginBottom: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-around', gap: '8px', flexWrap: 'wrap' }}>
-            {periodos.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setPeriodo(p.id)}
-                style={{
-                  backgroundColor: periodo === p.id ? '#8b5cf6' : '#334155',
-                  color: periodo === p.id ? 'white' : '#cbd5e1',
-                  border: 'none',
-                  padding: '8px 20px',
-                  borderRadius: '40px',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {p.label}
-              </button>
+          <section className="statsGrid">
+            {stats.map((stat) => (
+              <article className="statCard" key={stat.label}>
+                <div className="statLabel">{stat.label}</div>
+                <div className="statValue">{stat.value}</div>
+              </article>
             ))}
-          </div>
-        </div>
+          </section>
 
-        {/* MEDALHAS PREMIUM */}
-        <div style={{ backgroundColor: '#1e293b', borderRadius: '24px', padding: '24px', marginBottom: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', borderBottom: '1px solid #334155', paddingBottom: '12px' }}>
-            <div style={{ color: '#fbbf24' }}><IconAward /></div>
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: 'white', margin: 0 }}>Medalhas Especiais</h3>
-            <div style={{ marginLeft: 'auto', color: '#94a3b8' }}><IconLock /></div>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', justifyContent: 'space-around' }}>
-            {medalhas.map((medalha, idx) => {
-              const progresso = Math.min(100, (medalha.valor / medalha.meta) * 100)
-              const nivelCor = progresso >= 100 ? '#fbbf24' : progresso >= 50 ? '#94a3b8' : '#cd7f32'
-              
-              return (
-                <div key={idx} className="premium-card" style={{ textAlign: 'center', width: '90px' }}>
-                  <div style={{ 
-                    backgroundColor: progresso >= 100 ? '#fbbf2420' : '#334155', 
-                    borderRadius: '50%', 
-                    width: '64px', 
-                    height: '64px', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    marginBottom: '8px',
-                    border: progresso >= 100 ? '2px solid #fbbf24' : 'none',
-                    color: medalha.cor
-                  }}>
-                    {medalha.icone}
-                  </div>
-                  <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'white' }}>{medalha.nome}</div>
-                  <div style={{ fontSize: '9px', color: '#94a3b8' }}>{medalha.valor}/{medalha.meta}</div>
-                  <div style={{ backgroundColor: '#334155', borderRadius: '10px', height: '3px', marginTop: '8px', overflow: 'hidden' }}>
-                    <div style={{ width: `${progresso}%`, backgroundColor: medalha.cor, height: '100%', borderRadius: '10px' }} />
-                  </div>
-                  <div style={{ fontSize: '8px', color: nivelCor, marginTop: '4px' }}>
-                    {progresso >= 100 ? '🏆 OURO' : progresso >= 50 ? '🥈 PRATA' : '🥉 BRONZE'}
-                  </div>
+          <section className="mainGrid">
+            <div>
+              <section className="panel" id="achievements">
+                <div className="panelHeader">
+                  <h2 className="panelTitle">Achievements</h2>
+                  <span className="panelBadge">Hex Badges</span>
                 </div>
-              )
-            })}
-          </div>
-        </div>
 
-        {/* PRÓXIMAS AVENTURAS */}
-        <div style={{ backgroundColor: '#1e293b', borderRadius: '24px', padding: '24px', marginBottom: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
-            <div style={{ color: '#fbbf24' }}><IconCalendar /></div>
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', color: 'white', margin: 0 }}>Próximas Aventuras</h3>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#0f172a', padding: '12px', borderRadius: '16px' }}>
-              <div style={{ color: '#10b981' }}><IconMapPin /></div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 'bold', fontSize: '14px', color: 'white' }}>Trilha da Pedra do Lagarto</div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>25 de Maio, 2026 • 8km</div>
-              </div>
-              <div style={{ color: '#94a3b8' }}><IconChevronRight /></div>
+                <div className="achievements">
+                  {achievements.map((item) => (
+                    <article className="hexCard" key={item.title}>
+                      <div>
+                        <div className="hexIcon">{item.icon}</div>
+                        <div className="hexTitle">{item.title}</div>
+                        <div className="hexText">{item.text}</div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="premiumBox" id="premium">
+                <div className="premiumTitle">Prussik Premium</div>
+
+                <div className="premiumText">
+                  Área futura para assinatura: badges exclusivos, ranking avançado,
+                  comunidade fechada, histórico expandido, rotas salvas e experiências
+                  premium com guias selecionados.
+                </div>
+
+                <a className="cta" href="/login">
+                  Iniciar expedição
+                </a>
+              </section>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#0f172a', padding: '12px', borderRadius: '16px' }}>
-              <div style={{ color: '#10b981' }}><IconMapPin /></div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 'bold', fontSize: '14px', color: 'white' }}>Cachoeira do Salto</div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>15 de Junho, 2026 • 5km</div>
-              </div>
-              <div style={{ color: '#94a3b8' }}><IconChevronRight /></div>
+
+            <div>
+              <section className="panel" id="trilhas">
+                <div className="panelHeader">
+                  <h2 className="panelTitle">Trilhas recentes</h2>
+                  <span className="panelBadge">XP ativo</span>
+                </div>
+
+                <div className="trailList">
+                  {trilhasRecentes.map((trilha) => (
+                    <article className="trailItem" key={trilha.nome}>
+                      <div>
+                        <div className="trailName">{trilha.nome}</div>
+                        <div className="trailMeta">
+                          {trilha.local} · {trilha.status}
+                        </div>
+                      </div>
+
+                      <div className="xp">{trilha.xp}</div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel" id="ranking" style={{ marginTop: 20 }}>
+                <div className="panelHeader">
+                  <h2 className="panelTitle">Ranking</h2>
+                  <span className="panelBadge">Temporada 01</span>
+                </div>
+
+                <div className="rankingList">
+                  {ranking.map((item) => (
+                    <article className="rankingItem" key={item.posicao}>
+                      <div>
+                        <div className="rankName">
+                          {item.posicao}. {item.nome}
+                        </div>
+                        <div className="rankMeta">Pontuação outdoor</div>
+                      </div>
+
+                      <div className="rankPoints">{item.pontos}</div>
+                    </article>
+                  ))}
+                </div>
+              </section>
             </div>
-          </div>
-        </div>
-
-        {/* BENEFÍCIOS */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-          <div className="premium-card" style={{ backgroundColor: '#1e293b', borderRadius: '20px', padding: '20px' }}>
-            <div style={{ fontSize: '28px', marginBottom: '12px' }}>📊</div>
-            <h4 style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Estatísticas Avançadas</h4>
-            <p style={{ fontSize: '12px', color: '#94a3b8' }}>Gráficos e análises detalhadas da sua evolução</p>
-          </div>
-          <div className="premium-card" style={{ backgroundColor: '#1e293b', borderRadius: '20px', padding: '20px' }}>
-            <div style={{ fontSize: '28px', marginBottom: '12px' }}>🎨</div>
-            <h4 style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Design Exclusivo</h4>
-            <p style={{ fontSize: '12px', color: '#94a3b8' }}>Layout premium com ícones e animações</p>
-          </div>
-          <div className="premium-card" style={{ backgroundColor: '#1e293b', borderRadius: '20px', padding: '20px' }}>
-            <div style={{ fontSize: '28px', marginBottom: '12px' }}>🏆</div>
-            <h4 style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Badges Exclusivas</h4>
-            <p style={{ fontSize: '12px', color: '#94a3b8' }}>Medalhas especiais para assinantes</p>
-          </div>
-          <div className="premium-card" style={{ backgroundColor: '#1e293b', borderRadius: '20px', padding: '20px' }}>
-            <div style={{ fontSize: '28px', marginBottom: '12px' }}>🔔</div>
-            <h4 style={{ fontSize: '15px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Alertas Prioritários</h4>
-            <p style={{ fontSize: '12px', color: '#94a3b8' }}>Receba notificações sobre novas trilhas</p>
-          </div>
-        </div>
-
-        {/* CTA FINAL */}
-        <div className="premium-card" style={{ textAlign: 'center', padding: '32px', backgroundColor: '#1e293b', borderRadius: '28px' }}>
-          <div style={{ display: 'inline-block', marginBottom: '16px', color: '#ec4899' }}>
-            <IconHeart />
-          </div>
-          <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Faça parte do Clube Premium</h3>
-          <p style={{ color: '#94a3b8', marginBottom: '24px', fontSize: '14px', maxWidth: '400px', marginLeft: 'auto', marginRight: 'auto' }}>
-            Seja um apoiador e tenha acesso a recursos exclusivos enquanto ajuda a plataforma a crescer
-          </p>
-          <button
-            onClick={handleTestarPremium}
-            style={{
-              background: 'linear-gradient(135deg, #8b5cf6, #ec4899)',
-              color: 'white',
-              border: 'none',
-              padding: '14px 32px',
-              borderRadius: '40px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              transition: 'transform 0.2s'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            🔥 Quero ser Premium
-          </button>
-        </div>
+          </section>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }

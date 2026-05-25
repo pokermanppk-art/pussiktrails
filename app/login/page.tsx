@@ -115,7 +115,6 @@ export default function LoginPage() {
       }
 
       const usuario = data as Usuario
-
       const senhaBanco = normalizarTexto(usuario.senha || usuario.password)
 
       if (senhaBanco !== senhaFinal) {
@@ -232,13 +231,18 @@ export default function LoginPage() {
           letter-spacing: -0.04em;
         }
 
-        .subtitle {
-          margin: 10px auto 26px;
+        .heroPhrase {
+          margin: 12px auto 28px;
           text-align: center;
-          color: #6b7280;
-          font-size: 14px;
-          line-height: 1.6;
-          max-width: 400px;
+          color: #111827;
+          font-size: 28px;
+          line-height: 1.08;
+          font-weight: 900;
+          letter-spacing: -0.05em;
+        }
+
+        .heroPhrase span {
+          color: #16a34a;
         }
 
         .form {
@@ -396,6 +400,10 @@ export default function LoginPage() {
             font-size: 28px;
           }
 
+          .heroPhrase {
+            font-size: 26px;
+          }
+
           input {
             font-size: 16px;
             padding: 14px 15px;
@@ -422,8 +430,12 @@ export default function LoginPage() {
 
           <h1 className="title">Entrar</h1>
 
-          <p className="subtitle">
-            Acesse sua conta para acompanhar reservas, roteiros e aventuras no PrussikTrails.
+          <p className="heroPhrase">
+            Sua próxima
+            <br />
+            aventura começa
+            <br />
+            <span>aqui.</span>
           </p>
 
           <form className="form" onSubmit={entrar}>
