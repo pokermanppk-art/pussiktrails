@@ -55,6 +55,9 @@ type Roteiro = {
   local?: string | null
   status?: string | null
   created_at?: string | null
+  hot_score?: number
+  hot_reservas?: number
+  hot_confirmadas?: number
 }
 
 type Atividade = {
@@ -88,7 +91,7 @@ export default function ClienteDashboardPage() {
   const [reconciliando, setReconciliando] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [stats, setStats] = useState<Stats>(statsInicial)
-  const [roteirosRecomendados, setRoteirosRecomendados] = useState<Roteiro[]>([])
+  const [roteirosQuentes, setRoteirosQuentes] = useState<Roteiro[]>([])
   const [proximasReservas, setProximasReservas] = useState<Reserva[]>([])
   const [atividades, setAtividades] = useState<Atividade[]>([])
   const [abaAtividade, setAbaAtividade] = useState<'all' | 'com'>('all')
@@ -252,6 +255,137 @@ export default function ClienteDashboardPage() {
     return (data || []) as Roteiro[]
   }
 
+  const buscarRoteirosAtivos = async () => {
+    const { data, error } = await supabase
+      .from('roteiros')
+      .select('*')
+      .eq('status', 'ativo')
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    if (error) {
+      console.warn('Erro ao buscar roteiros ativos:', error)
+      return []
+    }
+
+    return (data || []) as Roteiro[]
+  }
+
+  const carregarRoteirosQuentes = async () => {
+    try {
+      const roteirosAtivos = await buscarRoteirosAtivos()
+
+      if (roteirosAtivos.length === 0) {
+        setRoteirosQuentes([])
+        return
+      }
+
+      const roteiroIds = roteirosAtivos.map((roteiro) => roteiro.id)
+
+      const { data: reservasData, error: reservasError } = await supabase
+        .from('reservas')
+        .select('id, roteiro_id, status, pagamento_status, created_at')
+        .in('roteiro_id', roteiroIds)
+        .order('created_at', { ascending: false })
+
+      if (reservasError) {
+        console.warn('Erro ao buscar reservas para calcular roteiros quentes:', reservasError)
+
+        setRoteirosQuentes(
+          roteirosAtivos.slice(0, 6).map((roteiro) => ({
+            ...roteiro,
+            hot_score: 0,
+            hot_reservas: 0,
+            hot_confirmadas: 0
+          }))
+        )
+
+        return
+      }
+
+      const reservas = (reservasData || []) as Reserva[]
+      const agora = Date.now()
+      const trintaDias = 1000 * 60 * 60 * 24 * 30
+
+      const mapa = new Map<
+        string,
+        {
+          score: number
+          total: number
+          confirmadas: number
+        }
+      >()
+
+      reservas.forEach((reserva) => {
+        if (!reserva.roteiro_id) return
+        if (reservaCancelada(reserva)) return
+
+        const atual = mapa.get(reserva.roteiro_id) || {
+          score: 0,
+          total: 0,
+          confirmadas: 0
+        }
+
+        atual.total += 1
+
+        if (pagamentoConfirmado(reserva)) {
+          atual.score += 8
+          atual.confirmadas += 1
+        } else {
+          atual.score += 3
+        }
+
+        const data = new Date(reserva.created_at || '').getTime()
+
+        if (!Number.isNaN(data)) {
+          const idade = agora - data
+
+          if (idade <= trintaDias) {
+            atual.score += 4
+          }
+
+          if (idade <= trintaDias / 2) {
+            atual.score += 2
+          }
+        }
+
+        mapa.set(reserva.roteiro_id, atual)
+      })
+
+      const ordenados = roteirosAtivos
+        .map((roteiro) => {
+          const info = mapa.get(roteiro.id) || {
+            score: 0,
+            total: 0,
+            confirmadas: 0
+          }
+
+          return {
+            ...roteiro,
+            hot_score: info.score,
+            hot_reservas: info.total,
+            hot_confirmadas: info.confirmadas
+          }
+        })
+        .sort((a, b) => {
+          if (Number(b.hot_score || 0) !== Number(a.hot_score || 0)) {
+            return Number(b.hot_score || 0) - Number(a.hot_score || 0)
+          }
+
+          const dataA = new Date(a.created_at || '').getTime()
+          const dataB = new Date(b.created_at || '').getTime()
+
+          return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
+        })
+        .slice(0, 6)
+
+      setRoteirosQuentes(ordenados)
+    } catch (error) {
+      console.warn('Erro inesperado ao carregar roteiros quentes:', error)
+      setRoteirosQuentes([])
+    }
+  }
+
   const carregarDados = async (userId: string) => {
     try {
       const reservasBase = await buscarReservasCliente(userId)
@@ -320,25 +454,18 @@ export default function ClienteDashboardPage() {
           if (reservaCancelada(reserva)) return false
 
           const status = normalizar(reserva.status)
-          return status === 'confirmada' || status === 'pendente' || status === 'aguardando'
+
+          return (
+            status === 'confirmada' ||
+            status === 'pendente' ||
+            status === 'aguardando'
+          )
         })
         .slice(0, 5)
 
       setProximasReservas(proximas)
 
-      const { data: recomendados, error: recomendadosError } = await supabase
-        .from('roteiros')
-        .select('*')
-        .eq('status', 'ativo')
-        .order('created_at', { ascending: false })
-        .limit(6)
-
-      if (recomendadosError) {
-        console.warn('Erro ao buscar roteiros recomendados:', recomendadosError)
-        setRoteirosRecomendados([])
-      } else {
-        setRoteirosRecomendados((recomendados || []) as Roteiro[])
-      }
+      await carregarRoteirosQuentes()
 
       setStats({
         totalKm: kmTotal,
@@ -403,7 +530,7 @@ export default function ClienteDashboardPage() {
         return
       }
     } catch {
-      // Se a tabela logs_atividades não existir ou não estiver liberada, usa fallback.
+      // fallback abaixo
     }
 
     const fallback: Atividade[] = reservasFallback.slice(0, 12).map((reserva) => ({
@@ -579,6 +706,21 @@ export default function ClienteDashboardPage() {
     if (d.includes('dificil') || d.includes('extremo')) return 'badge-red'
 
     return 'badge-neutral'
+  }
+
+  const hotLabel = (roteiro: Roteiro) => {
+    const total = Number(roteiro.hot_reservas || 0)
+    const confirmadas = Number(roteiro.hot_confirmadas || 0)
+
+    if (total === 0) {
+      return 'Novo roteiro'
+    }
+
+    if (confirmadas > 0) {
+      return `${confirmadas} confirmação(ões)`
+    }
+
+    return `${total} reserva(s)`
   }
 
   if (carregando || !user) {
@@ -998,6 +1140,13 @@ export default function ClienteDashboardPage() {
           align-items: center;
         }
 
+        .hotCard {
+          background:
+            radial-gradient(circle at top right, rgba(249, 115, 22, 0.12), transparent 34%),
+            #f8fafc;
+          border-color: #fed7aa;
+        }
+
         .thumb {
           width: 82px;
           height: 82px;
@@ -1046,6 +1195,19 @@ export default function ClienteDashboardPage() {
           color: #16a34a;
           font-weight: 950;
           font-size: 14px;
+        }
+
+        .hotPill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: #ffedd5;
+          color: #9a3412;
+          border: 1px solid #fed7aa;
+          border-radius: 999px;
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 950;
         }
 
         .badge {
@@ -1287,7 +1449,7 @@ export default function ClienteDashboardPage() {
 
               <p className="heroText">
                 Acompanhe suas reservas, atividades, conquistas, recomendações e
-                tudo que está acontecendo na comunidade PrussikTrails.
+                os roteiros mais quentes da comunidade PrussikTrails.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1376,6 +1538,82 @@ export default function ClienteDashboardPage() {
             <section className="panel">
               <div className="panelHeader">
                 <div>
+                  <h2 className="panelTitle">Roteiros mais quentes</h2>
+                  <div className="panelSub">
+                    Experiências com mais movimento na comunidade.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-green"
+                  onClick={() => router.push('/roteiros')}
+                >
+                  Ver todos
+                </button>
+              </div>
+
+              <div className="panelBody">
+                {roteirosQuentes.length === 0 ? (
+                  <div className="empty">
+                    Nenhum roteiro ativo encontrado no momento.
+                  </div>
+                ) : (
+                  <div className="list">
+                    {roteirosQuentes.map((roteiro) => {
+                      const foto = fotoRoteiro(roteiro)
+
+                      return (
+                        <article
+                          className="trailCard hotCard"
+                          key={roteiro.id}
+                          onClick={() => router.push('/roteiros')}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="thumb">
+                            {foto ? (
+                              <img src={foto} alt={tituloRoteiro(roteiro)} />
+                            ) : (
+                              'HOT'
+                            )}
+                          </div>
+
+                          <div>
+                            <div className="itemTitle">{tituloRoteiro(roteiro)}</div>
+
+                            <div className="itemMeta">
+                              {roteiro.localizacao || roteiro.local || 'Local a confirmar'}
+                              {roteiro.km || roteiro.distancia_km
+                                ? ` · ${kmRoteiro(roteiro)} km`
+                                : ''}
+                              {roteiro.duracao_horas
+                                ? ` · ${roteiro.duracao_horas}h`
+                                : roteiro.duracao
+                                  ? ` · ${roteiro.duracao}`
+                                  : ''}
+                            </div>
+
+                            <div className="itemFooter">
+                              <span className="price">
+                                {formatarMoeda(precoRoteiro(roteiro))}
+                              </span>
+
+                              <span className="hotPill">
+                                🔥 {hotLabel(roteiro)}
+                              </span>
+                            </div>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="panel" style={{ marginTop: 18 }}>
+              <div className="panelHeader">
+                <div>
                   <h2 className="panelTitle">Próximas reservas</h2>
                   <div className="panelSub">
                     Acompanhe o que está pendente ou confirmado.
@@ -1433,77 +1671,6 @@ export default function ClienteDashboardPage() {
                         </div>
                       </article>
                     ))}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="panel" style={{ marginTop: 18 }}>
-              <div className="panelHeader">
-                <div>
-                  <h2 className="panelTitle">Roteiros recomendados</h2>
-                  <div className="panelSub">
-                    Sugestões ativas para sua próxima aventura.
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn btn-green"
-                  onClick={() => router.push('/roteiros')}
-                >
-                  Explorar
-                </button>
-              </div>
-
-              <div className="panelBody">
-                {roteirosRecomendados.length === 0 ? (
-                  <div className="empty">
-                    Nenhum roteiro ativo encontrado no momento.
-                  </div>
-                ) : (
-                  <div className="list">
-                    {roteirosRecomendados.map((roteiro) => {
-                      const foto = fotoRoteiro(roteiro)
-
-                      return (
-                        <article className="trailCard" key={roteiro.id}>
-                          <div className="thumb">
-                            {foto ? (
-                              <img src={foto} alt={tituloRoteiro(roteiro)} />
-                            ) : (
-                              'RT'
-                            )}
-                          </div>
-
-                          <div>
-                            <div className="itemTitle">{tituloRoteiro(roteiro)}</div>
-
-                            <div className="itemMeta">
-                              {roteiro.localizacao || roteiro.local || 'Local a confirmar'}
-                              {roteiro.km || roteiro.distancia_km
-                                ? ` · ${kmRoteiro(roteiro)} km`
-                                : ''}
-                              {roteiro.duracao_horas
-                                ? ` · ${roteiro.duracao_horas}h`
-                                : roteiro.duracao
-                                  ? ` · ${roteiro.duracao}`
-                                  : ''}
-                            </div>
-
-                            <div className="itemFooter">
-                              <span className="price">
-                                {formatarMoeda(precoRoteiro(roteiro))}
-                              </span>
-
-                              <span className={`badge ${dificuldadeClass(roteiro.dificuldade)}`}>
-                                {roteiro.dificuldade || 'Nível livre'}
-                              </span>
-                            </div>
-                          </div>
-                        </article>
-                      )
-                    })}
                   </div>
                 )}
               </div>
