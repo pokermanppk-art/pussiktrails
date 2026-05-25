@@ -180,6 +180,65 @@ const METAS_JORNADA: TierJornada[] = [
   }
 ]
 
+const BETA_MEDALHAS_SVG: Record<string, string> = {
+  inicio_jornada_beta: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
+  primeiros_passos: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
+  botinha_beta_oficial: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
+  aventureiro_pioneiro_beta: '/medalhas/iniciais_jornada/02_aventureiro_pioneiro_beta.svg',
+  voz_da_trilha_beta: '/medalhas/iniciais_jornada/03_voz_da_trilha_beta.svg',
+  guia_pioneiro_beta: '/medalhas/iniciais_jornada/04_guia_pioneiro_beta.svg',
+  construtor_da_jornada_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg',
+  construtor_da_trilha_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg'
+}
+
+function normalizarChaveMedalha(valor?: string | null) {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function obterSvgMedalhaBeta(medalha?: MedalhaBanco['medalhas'] | null) {
+  const codigo = normalizarChaveMedalha(medalha?.codigo)
+  const nome = normalizarChaveMedalha(medalha?.nome)
+
+  if (BETA_MEDALHAS_SVG[codigo]) return BETA_MEDALHAS_SVG[codigo]
+  if (BETA_MEDALHAS_SVG[nome]) return BETA_MEDALHAS_SVG[nome]
+
+  if (nome.includes('inicio') && nome.includes('beta')) {
+    return BETA_MEDALHAS_SVG.inicio_jornada_beta
+  }
+
+  if (nome.includes('botinha') && nome.includes('beta')) {
+    return BETA_MEDALHAS_SVG.botinha_beta_oficial
+  }
+
+  if (nome.includes('aventureiro') && nome.includes('pioneiro') && nome.includes('beta')) {
+    return BETA_MEDALHAS_SVG.aventureiro_pioneiro_beta
+  }
+
+  if (nome.includes('voz') && nome.includes('trilha') && nome.includes('beta')) {
+    return BETA_MEDALHAS_SVG.voz_da_trilha_beta
+  }
+
+  if (nome.includes('guia') && nome.includes('pioneiro') && nome.includes('beta')) {
+    return BETA_MEDALHAS_SVG.guia_pioneiro_beta
+  }
+
+  if (nome.includes('construtor') && nome.includes('beta')) {
+    return BETA_MEDALHAS_SVG.construtor_da_jornada_beta
+  }
+
+  return ''
+}
+
+function obterFallbackSvgMedalhaBeta(svg: string) {
+  if (!svg.startsWith('/medalhas/iniciais_jornada/')) return ''
+  return svg.replace('/medalhas/iniciais_jornada/', '/medalhas/prussik_svg_pack/iniciais_jornada/')
+}
+
 const ALTURA_TARGET = 200
 
 function normalizar(valor?: string | null) {
@@ -953,11 +1012,35 @@ export default function PerfilCliente() {
 
                   {medalhasBanco.slice(0, 12).map((item) => {
                     const medalha = item.medalhas
+                    const svgBeta = obterSvgMedalhaBeta(medalha)
+                    const fallbackSvgBeta = obterFallbackSvgMedalhaBeta(svgBeta)
+
                     return (
-                      <article key={item.id} className="tierCard unlocked specialUnified">
-                        <div className="hexMedal" style={{ borderColor: medalha?.cor || '#991b1b' }}>
-                          <span>{medalha?.icone || '🏅'}</span>
-                        </div>
+                      <article
+                        key={item.id}
+                        className={svgBeta ? 'tierCard unlocked specialUnified betaUnified' : 'tierCard unlocked specialUnified'}
+                      >
+                        {svgBeta ? (
+                          <div className="hexMedal svgMedalWrap betaSvgMedalWrap" style={{ borderColor: medalha?.cor || '#991b1b' }}>
+                            <img
+                              src={svgBeta}
+                              alt={medalha?.nome || 'Medalha Beta'}
+                              className="medalSvg betaMedalSvg"
+                              data-fallback={fallbackSvgBeta}
+                              onError={(event) => {
+                                const fallback = event.currentTarget.dataset.fallback
+                                if (fallback) {
+                                  event.currentTarget.src = fallback
+                                  event.currentTarget.dataset.fallback = ''
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="hexMedal" style={{ borderColor: medalha?.cor || '#991b1b' }}>
+                            <span>{medalha?.icone || '🏅'}</span>
+                          </div>
+                        )}
                         <strong>{medalha?.nome || 'Medalha'}</strong>
                         <small>{medalha?.categoria || 'Especial'}</small>
                       </article>
@@ -1447,6 +1530,18 @@ const styles = `
     box-shadow: inset 0 0 0 2px rgba(29,38,24,0.08), 0 8px 18px rgba(25,35,18,0.12);
   }
 
+  /* SVGs premium já vêm com moldura própria.
+     Este wrapper remove a moldura artificial do layout para não cortar nem criar bordas. */
+  .hexMedal.svgMedalWrap,
+  .hexMedal.betaSvgMedalWrap,
+  .hexMedal.nextSvgMedal {
+    clip-path: none;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: visible;
+  }
+
   .rankMedal {
     width: 76px;
     height: 76px;
@@ -1663,6 +1758,24 @@ const styles = `
       #fffdf7;
   }
 
+  .tierCard.betaUnified {
+    border-color: rgba(153,27,27,0.10);
+    background:
+      radial-gradient(circle at 50% 0%, rgba(245,158,11,0.10), transparent 34%),
+      radial-gradient(circle at 100% 0%, rgba(153,27,27,0.055), transparent 34%),
+      rgba(255,253,247,0.92);
+  }
+
+
+  .tierCard.betaUnified .tierCard,
+  .tierCard.betaUnified {
+    overflow: visible;
+  }
+
+  .tierCard.betaUnified strong {
+    margin-top: -2px;
+  }
+
   .hexMedal {
     width: 74px;
     height: 74px;
@@ -1678,13 +1791,21 @@ const styles = `
   }
 
   .svgMedalWrap {
-    width: 86px;
-    height: 86px;
+    width: 104px;
+    height: 104px;
+    margin-bottom: 6px;
+  }
+
+  .betaSvgMedalWrap {
+    width: 112px;
+    height: 112px;
+    margin-top: -4px;
+    margin-bottom: 2px;
   }
 
   .nextSvgMedal {
-    width: 108px;
-    height: 108px;
+    width: 126px;
+    height: 126px;
   }
 
   .medalSvg {
@@ -1692,12 +1813,21 @@ const styles = `
     height: 100%;
     object-fit: contain;
     display: block;
-    filter: drop-shadow(0 8px 14px rgba(15,23,42,0.14));
+    transform: translateZ(0);
+    filter: drop-shadow(0 10px 18px rgba(15,23,42,0.16));
+  }
+
+  .betaMedalSvg {
+    width: 116%;
+    height: 116%;
+    max-width: none;
+    transform: translateY(-4px);
+    filter: drop-shadow(0 12px 22px rgba(80,36,12,0.20));
   }
 
   .lockedSvg {
-    opacity: 0.24;
-    filter: grayscale(1) saturate(0.15) contrast(0.82) brightness(1.05);
+    opacity: 0.22;
+    filter: grayscale(1) saturate(0.12) contrast(0.82) brightness(1.08);
   }
 
   .tierCard strong {
