@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
+
 type UsuarioLocal = {
   id: string
   nome?: string | null
@@ -70,6 +71,28 @@ type Notificacao = {
   created_at?: string | null
 }
 
+type Medalha = {
+  id?: string
+  codigo?: string | null
+  nome?: string | null
+  descricao?: string | null
+  categoria?: string | null
+  nivel?: string | null
+  icone?: string | null
+  cor?: string | null
+  especial?: boolean | null
+  ordem?: number | null
+}
+
+type MedalhaUsuario = {
+  id: string
+  status?: string | null
+  progresso_atual?: number | null
+  progresso_total?: number | null
+  conquistada_em?: string | null
+  medalhas?: Medalha | Medalha[] | null
+}
+
 const statsInicial: Stats = {
   totalKm: 0,
   totalTrilhas: 0,
@@ -94,6 +117,8 @@ export default function ClienteDashboardPage() {
   const [roteirosQuentes, setRoteirosQuentes] = useState<Roteiro[]>([])
   const [proximasReservas, setProximasReservas] = useState<Reserva[]>([])
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([])
+  const [medalhasConquistadas, setMedalhasConquistadas] = useState<MedalhaUsuario[]>([])
+  const [proximaMedalha, setProximaMedalha] = useState<MedalhaUsuario | null>(null)
   const [abaNotificacao, setAbaNotificacao] = useState<'all' | 'com'>('all')
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
 
@@ -309,7 +334,7 @@ export default function ClienteDashboardPage() {
         return
       }
 
-      const roteiroIds = roteirosAtivos.map((roteiro) => roteiro.id)
+      const roteiroIds = roteirosAtivos.map((roteiro: Roteiro) => roteiro.id)
 
       const { data: reservasData, error: reservasError } = await supabase
         .from('reservas')
@@ -321,7 +346,7 @@ export default function ClienteDashboardPage() {
         console.warn('Erro ao buscar reservas para roteiros quentes:', reservasError)
 
         setRoteirosQuentes(
-          roteirosAtivos.slice(0, 5).map((roteiro) => ({
+          roteirosAtivos.slice(0, 5).map((roteiro: Roteiro) => ({
             ...roteiro,
             hot_score: 0,
             hot_reservas: 0,
@@ -345,7 +370,7 @@ export default function ClienteDashboardPage() {
         }
       >()
 
-      reservas.forEach((reserva) => {
+      reservas.forEach((reserva: Reserva) => {
         if (!reserva.roteiro_id) return
         if (reservaCancelada(reserva)) return
 
@@ -377,7 +402,7 @@ export default function ClienteDashboardPage() {
       })
 
       const ordenados = roteirosAtivos
-        .map((roteiro) => {
+        .map((roteiro: Roteiro) => {
           const info = mapa.get(roteiro.id) || {
             score: 0,
             total: 0,
@@ -391,7 +416,7 @@ export default function ClienteDashboardPage() {
             hot_confirmadas: info.confirmadas
           }
         })
-        .sort((a, b) => {
+        .sort((a: Roteiro, b: Roteiro) => {
           if (Number(b.hot_score || 0) !== Number(a.hot_score || 0)) {
             return Number(b.hot_score || 0) - Number(a.hot_score || 0)
           }
@@ -410,6 +435,70 @@ export default function ClienteDashboardPage() {
     }
   }
 
+  const carregarMedalhasUsuario = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('usuarios_medalhas')
+        .select(`
+          id,
+          status,
+          progresso_atual,
+          progresso_total,
+          conquistada_em,
+          medalhas (
+            id,
+            codigo,
+            nome,
+            descricao,
+            categoria,
+            nivel,
+            icone,
+            cor,
+            especial,
+            ordem
+          )
+        `)
+        .eq('usuario_id', userId)
+
+      if (error) {
+        console.warn('Erro ao buscar medalhas do usuário:', error)
+        setMedalhasConquistadas([])
+        setProximaMedalha(null)
+        return 0
+      }
+
+      const lista = ((data || []) as unknown as MedalhaUsuario[]).filter(
+        (item: MedalhaUsuario) => Boolean(item.id)
+      )
+
+      const conquistadas = lista
+        .filter((item: MedalhaUsuario) => normalizar(item.status) === 'conquistada')
+        .sort((a: MedalhaUsuario, b: MedalhaUsuario) => {
+          const dataA = new Date(a.conquistada_em || '').getTime()
+          const dataB = new Date(b.conquistada_em || '').getTime()
+
+          return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
+        })
+
+      const proximas = lista
+        .filter((item: MedalhaUsuario) => {
+          const status = normalizar(item.status)
+          return status === 'em_progresso' || status === 'bloqueada'
+        })
+        .sort((a: MedalhaUsuario, b: MedalhaUsuario) => progressoMedalha(b) - progressoMedalha(a))
+
+      setMedalhasConquistadas(conquistadas.slice(0, 12))
+      setProximaMedalha(proximas[0] || null)
+
+      return conquistadas.length
+    } catch (error) {
+      console.warn('Erro inesperado ao carregar medalhas:', error)
+      setMedalhasConquistadas([])
+      setProximaMedalha(null)
+      return 0
+    }
+  }
+
   const carregarDados = async (userId: string) => {
     try {
       const reservasBase = await buscarReservasCliente(userId)
@@ -417,16 +506,16 @@ export default function ClienteDashboardPage() {
       const roteiroIds = Array.from(
         new Set(
           reservasBase
-            .map((reserva) => reserva.roteiro_id)
+            .map((reserva: Reserva) => reserva.roteiro_id)
             .filter(Boolean) as string[]
         )
       )
 
       const roteirosReservados = await buscarRoteirosPorIds(roteiroIds)
 
-      const reservasComRoteiro = reservasBase.map((reserva) => {
+      const reservasComRoteiro = reservasBase.map((reserva: Reserva) => {
         const roteiro =
-          roteirosReservados.find((item) => item.id === reserva.roteiro_id) ||
+          roteirosReservados.find((item: Roteiro) => item.id === reserva.roteiro_id) ||
           null
 
         return {
@@ -438,43 +527,32 @@ export default function ClienteDashboardPage() {
       })
 
       const reservasRealizadas = reservasComRoteiro.filter(
-        (reserva) => normalizar(reserva.status) === 'realizada'
+        (reserva: Reserva) => normalizar(reserva.status) === 'realizada'
       )
 
       const kmTotal = reservasRealizadas.reduce(
-        (soma, reserva) => soma + kmRoteiro(reserva.roteiro),
+        (soma: number, reserva: Reserva) => soma + kmRoteiro(reserva.roteiro),
         0
       )
 
-      const pendentes = reservasComRoteiro.filter((reserva) => {
+      const pendentes = reservasComRoteiro.filter((reserva: Reserva) => {
         const status = normalizar(reserva.status)
         return status === 'pendente' || status === 'aguardando'
       }).length
 
-      const confirmadas = reservasComRoteiro.filter((reserva) => {
+      const confirmadas = reservasComRoteiro.filter((reserva: Reserva) => {
         const status = normalizar(reserva.status)
         return status === 'confirmada'
       }).length
 
       const realizadas = reservasRealizadas.length
 
-      let totalMedalhas = 0
-
-      try {
-        const { count } = await supabase
-          .from('usuarios_medalhas')
-          .select('*', { count: 'exact', head: true })
-          .eq('usuario_id', userId)
-
-        totalMedalhas = count || 0
-      } catch {
-        totalMedalhas = 0
-      }
+      const totalMedalhas = await carregarMedalhasUsuario(userId)
 
       const ultimaReserva = reservasComRoteiro[0]
 
       const proximas = reservasComRoteiro
-        .filter((reserva) => {
+        .filter((reserva: Reserva) => {
           if (reservaCancelada(reserva)) return false
 
           const status = normalizar(reserva.status)
@@ -652,7 +730,7 @@ export default function ClienteDashboardPage() {
 
     const fallback: Notificacao[] = []
 
-    reservasFallback.slice(0, 6).forEach((reserva) => {
+    reservasFallback.slice(0, 6).forEach((reserva: Reserva) => {
       fallback.push({
         id: `reserva-${reserva.id}`,
         titulo: pagamentoConfirmado(reserva)
@@ -799,15 +877,10 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('user')
-    router.replace('/login')
-  }
-
   const notificacoesFiltradas = useMemo(() => {
     if (abaNotificacao === 'all') return notificacoes
 
-    return notificacoes.filter((notificacao) => notificacao.tipo === 'com')
+    return notificacoes.filter((notificacao: Notificacao) => notificacao.tipo === 'com')
   }, [notificacoes, abaNotificacao])
 
   const badgeStatusReserva = (reserva: Reserva) => {
@@ -840,6 +913,23 @@ export default function ClienteDashboardPage() {
     if (confirmadas > 0) return `${confirmadas} confirmação(ões)`
 
     return `${total} reserva(s)`
+  }
+
+  const obterMedalha = (item: MedalhaUsuario): Medalha | null => {
+    if (!item.medalhas) return null
+    if (Array.isArray(item.medalhas)) return item.medalhas[0] || null
+    return item.medalhas
+  }
+
+  const progressoMedalha = (item: MedalhaUsuario) => {
+    const atual = Number(item.progresso_atual || 0)
+    const total = Number(item.progresso_total || 1)
+
+    if (!Number.isFinite(atual) || !Number.isFinite(total) || total <= 0) {
+      return 0
+    }
+
+    return Math.min(100, Math.max(0, Math.round((atual / total) * 100)))
   }
 
   const proximaReserva = proximasReservas[0] || null
@@ -942,49 +1032,49 @@ export default function ClienteDashboardPage() {
         .headerInner {
           max-width: 1180px;
           margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: 80px minmax(0, 1fr) 80px;
           align-items: center;
           gap: 12px;
         }
 
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          min-width: 0;
+        .headerSpacer {
+          min-height: 1px;
         }
 
-        .brand img {
-          height: 42px;
-          width: auto;
-          object-fit: contain;
-          display: block;
-        }
-
-        .brandText {
-          min-width: 0;
+        .brandLockup {
+          justify-self: center;
+          border: none;
+          background: transparent;
+          text-align: center;
+          cursor: pointer;
+          padding: 2px 8px 5px;
+          color: #080806;
         }
 
         .brandTitle {
-          font-size: 18px;
-          font-weight: 950;
-          color: #dc2626;
-          line-height: 1;
-          letter-spacing: -0.05em;
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: clamp(38px, 6vw, 62px);
+          font-weight: 500;
+          letter-spacing: -0.075em;
+          line-height: 0.82;
+          color: #080806;
         }
 
         .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 700;
-          margin-top: 3px;
+          margin-top: 7px;
+          color: #080806;
+          font-size: clamp(16px, 2.8vw, 25px);
+          font-weight: 500;
+          letter-spacing: -0.045em;
+          line-height: 1;
         }
 
         .headerActions {
           display: flex;
           gap: 6px;
           align-items: center;
+          justify-content: flex-end;
         }
 
         .iconBtn {
@@ -1485,6 +1575,154 @@ export default function ClienteDashboardPage() {
           margin-top: 3px;
         }
 
+        .medalShowcase {
+          margin-top: 14px;
+          border-radius: 24px;
+          background:
+            radial-gradient(circle at top left, rgba(132, 204, 22, 0.14), transparent 32%),
+            #fffdf7;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          padding: 14px;
+        }
+
+        .medalShowcaseHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+
+        .medalShowcaseTitle {
+          color: #172018;
+          font-size: 13px;
+          font-weight: 950;
+          line-height: 1.25;
+        }
+
+        .medalShowcaseText {
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 750;
+          line-height: 1.35;
+        }
+
+        .medalRail {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        .medalHex {
+          aspect-ratio: 1;
+          min-height: 42px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
+          border: 3px solid #92400e;
+          background:
+            radial-gradient(circle at 32% 18%, rgba(255,255,255,0.78), transparent 28%),
+            linear-gradient(145deg, #fff7ed, #e2e8ce);
+          box-shadow: inset 0 0 0 2px rgba(23, 32, 24, 0.10);
+        }
+
+        .medalHex span {
+          font-size: 19px;
+          filter: drop-shadow(0 3px 4px rgba(15, 23, 42, 0.16));
+        }
+
+        .medalHex.locked {
+          opacity: 0.42;
+          filter: grayscale(0.7);
+          border-color: rgba(100, 116, 139, 0.35);
+          background: linear-gradient(145deg, #f8fafc, #e2e8f0);
+        }
+
+        .nextMedalCard {
+          margin-top: 12px;
+          border-radius: 20px;
+          background: #f8fafc;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          padding: 12px;
+        }
+
+        .nextMedalTop {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+
+        .nextMedalName {
+          margin-top: 5px;
+          color: #172018;
+          font-size: 13px;
+          font-weight: 950;
+          line-height: 1.25;
+        }
+
+        .nextMedalProgress {
+          height: 8px;
+          border-radius: 999px;
+          background: #e2e8f0;
+          overflow: hidden;
+          margin-top: 10px;
+        }
+
+        .nextMedalProgress div {
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #166534, #84cc16, #f97316);
+        }
+
+        .originFooter {
+          max-width: 1180px;
+          margin: 22px auto 0;
+          padding: 12px 0 4px;
+          display: flex;
+          justify-content: center;
+        }
+
+        .originSeal {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(15, 23, 42, 0.07);
+          background: rgba(255, 255, 255, 0.68);
+          padding: 8px 14px 8px 9px;
+          color: #172018;
+          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+        }
+
+        .originSeal img {
+          width: 32px;
+          height: 32px;
+          object-fit: contain;
+        }
+
+        .originSeal strong {
+          display: block;
+          font-size: 12px;
+          font-weight: 950;
+          line-height: 1.1;
+        }
+
+        .originSeal span {
+          display: block;
+          margin-top: 2px;
+          color: #64748b;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
         .empty {
           padding: 24px;
           text-align: center;
@@ -1494,6 +1732,239 @@ export default function ClienteDashboardPage() {
           border-radius: 22px;
           border: 1px dashed #cbd5e1;
           font-weight: 700;
+        }
+
+        .betaFeedbackTab {
+          position: fixed;
+          left: 50%;
+          bottom: 14px;
+          z-index: 80;
+          transform: translateX(-50%);
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          border: 1px solid rgba(15, 23, 42, 0.10);
+          background: rgba(255, 253, 247, 0.92);
+          color: #172018;
+          border-radius: 999px;
+          padding: 10px 15px;
+          font-size: 12px;
+          font-weight: 900;
+          box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+          backdrop-filter: blur(14px);
+          cursor: pointer;
+        }
+
+        .betaFeedbackDot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #dc2626;
+          box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+        }
+
+        .betaOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          padding: 16px;
+          background: rgba(9, 12, 7, 0.52);
+          backdrop-filter: blur(8px);
+        }
+
+        .betaModal {
+          width: min(640px, 100%);
+          max-height: 88vh;
+          overflow: auto;
+          border-radius: 30px;
+          border: 1px solid rgba(255, 255, 255, 0.55);
+          background:
+            radial-gradient(circle at 8% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f4f6ec 100%);
+          box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+          padding: 22px;
+        }
+
+        .betaModalHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+          margin-bottom: 16px;
+        }
+
+        .betaKicker {
+          margin: 0 0 6px;
+          color: #dc2626;
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+        }
+
+        .betaModal h2 {
+          margin: 0;
+          color: #172018;
+          font-size: 28px;
+          line-height: 0.98;
+          font-weight: 950;
+          letter-spacing: -0.055em;
+        }
+
+        .betaModal p {
+          margin: 8px 0 0;
+          color: #64748b;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 700;
+        }
+
+        .betaClose {
+          width: 38px;
+          height: 38px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.78);
+          color: #172018;
+          font-size: 24px;
+          cursor: pointer;
+        }
+
+        .betaTypeGrid {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 8px;
+          margin: 16px 0;
+        }
+
+        .betaTypeCard {
+          min-height: 82px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.72);
+          padding: 10px;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .betaTypeCard.active {
+          border-color: rgba(220, 38, 38, 0.34);
+          background: rgba(220, 38, 38, 0.06);
+        }
+
+        .betaTypeCard strong {
+          display: block;
+          color: #172018;
+          font-size: 12px;
+          font-weight: 950;
+          margin-bottom: 4px;
+        }
+
+        .betaTypeCard span {
+          display: block;
+          color: #64748b;
+          font-size: 10px;
+          line-height: 1.35;
+          font-weight: 700;
+        }
+
+        .betaField {
+          display: block;
+          margin-top: 12px;
+        }
+
+        .betaField span {
+          display: block;
+          margin-bottom: 7px;
+          color: #172018;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .betaField input,
+        .betaField textarea {
+          width: 100%;
+          border: 1px solid rgba(15, 23, 42, 0.10);
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.82);
+          color: #172018;
+          outline: none;
+          padding: 12px 13px;
+          font-size: 13px;
+          line-height: 1.45;
+          font-family: inherit;
+        }
+
+        .betaField textarea {
+          resize: vertical;
+          min-height: 130px;
+        }
+
+        .betaError {
+          margin-top: 12px;
+          border-radius: 16px;
+          background: rgba(220, 38, 38, 0.08);
+          border: 1px solid rgba(220, 38, 38, 0.18);
+          color: #991b1b;
+          padding: 11px 12px;
+          font-size: 13px;
+          font-weight: 800;
+        }
+
+        .betaSuccess {
+          text-align: center;
+          padding: 24px 10px 8px;
+        }
+
+        .betaSuccessIcon {
+          width: 56px;
+          height: 56px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          background: #dcfce7;
+          color: #166534;
+          font-size: 28px;
+          font-weight: 950;
+          margin-bottom: 12px;
+        }
+
+        .betaActions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 16px;
+        }
+
+        .betaPrimary,
+        .betaSecondary {
+          border-radius: 999px;
+          padding: 12px 16px;
+          font-size: 13px;
+          font-weight: 950;
+          cursor: pointer;
+        }
+
+        .betaPrimary {
+          border: none;
+          background: #172018;
+          color: #ffffff;
+        }
+
+        .betaSecondary {
+          border: 1px solid rgba(15, 23, 42, 0.10);
+          background: rgba(255, 255, 255, 0.72);
+          color: #172018;
+        }
+
+        .betaPrimary:disabled,
+        .betaSecondary:disabled {
+          opacity: 0.62;
+          cursor: not-allowed;
         }
 
         @media (max-width: 1040px) {
@@ -1513,7 +1984,15 @@ export default function ClienteDashboardPage() {
           }
 
           .brandSub {
-            display: none;
+            display: block;
+          }
+
+          .brandTitle {
+            font-size: clamp(34px, 12vw, 50px);
+          }
+
+          .brandSub {
+            font-size: clamp(15px, 5vw, 22px);
           }
 
           .headerActions .hideMobile {
@@ -1570,34 +2049,19 @@ export default function ClienteDashboardPage() {
 
       <header className="header">
         <div className="headerInner">
-          <div className="brand">
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          <div className="headerSpacer" />
 
-            <div className="brandText">
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Seu app de aventuras</div>
-            </div>
-          </div>
+          <button
+            type="button"
+            className="brandLockup"
+            onClick={() => router.push('/cliente/dashboard')}
+            aria-label="Ir para a dashboard PrussikTrails"
+          >
+            <div className="brandTitle">PrussikTrails</div>
+            <div className="brandSub">Seu app de aventuras</div>
+          </button>
 
           <div className="headerActions">
-            <button
-              type="button"
-              className="iconBtn primaryMini"
-              onClick={() => router.push('/roteiros')}
-              title="Explorar roteiros"
-            >
-              Explorar
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/cliente/minhas-reservas')}
-              title="Minhas reservas"
-            >
-              🎒
-            </button>
-
             <button
               type="button"
               className="iconBtn hideMobile"
@@ -1612,18 +2076,9 @@ export default function ClienteDashboardPage() {
               type="button"
               className="iconBtn"
               onClick={() => router.push('/cliente/perfil')}
-              title="Perfil"
+              title="Perfil e configurações"
             >
-              👤
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn"
-              onClick={handleLogout}
-              title="Sair"
-            >
-              ⎋
+              ⚙
             </button>
           </div>
         </div>
@@ -1752,7 +2207,7 @@ export default function ClienteDashboardPage() {
                   </div>
                 ) : (
                   <div className="list">
-                    {roteirosQuentes.map((roteiro) => {
+                    {roteirosQuentes.map((roteiro: Roteiro) => {
                       const foto = fotoRoteiro(roteiro)
 
                       return (
@@ -1827,7 +2282,7 @@ export default function ClienteDashboardPage() {
                   </div>
                 ) : (
                   <div className="list">
-                    {proximasReservas.map((reserva) => (
+                    {proximasReservas.map((reserva: Reserva) => (
                       <article
                         className="reservationCard"
                         key={reserva.id}
@@ -1908,7 +2363,7 @@ export default function ClienteDashboardPage() {
                   </div>
                 ) : (
                   <div className="notificationList">
-                    {notificacoesFiltradas.map((notificacao) => (
+                    {notificacoesFiltradas.map((notificacao: Notificacao) => (
                       <article
                         className="notification"
                         key={notificacao.id}
@@ -1970,6 +2425,72 @@ export default function ClienteDashboardPage() {
                   </div>
                 </div>
 
+                <div className="medalShowcase">
+                  <div className="medalShowcaseHeader">
+                    <div>
+                      <div className="medalShowcaseTitle">Coleção de medalhas</div>
+                      <div className="medalShowcaseText">
+                        Conquistas da sua jornada Prussik.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="textLink"
+                      onClick={() => router.push('/cliente/perfil')}
+                    >
+                      Ver todas
+                    </button>
+                  </div>
+
+                  <div className="medalRail">
+                    {medalhasConquistadas.slice(0, 6).map((item: MedalhaUsuario) => {
+                      const medalha = obterMedalha(item)
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="medalHex"
+                          title={medalha?.nome || 'Medalha conquistada'}
+                          style={{ borderColor: medalha?.cor || '#92400e' }}
+                        >
+                          <span>{medalha?.icone || '🏅'}</span>
+                        </div>
+                      )
+                    })}
+
+                    {Array.from({ length: Math.max(0, 6 - medalhasConquistadas.length) }).map(
+                      (_item: unknown, index: number) => (
+                        <div key={`locked-medal-${index}`} className="medalHex locked">
+                          <span>🔒</span>
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {proximaMedalha && (() => {
+                    const medalha = obterMedalha(proximaMedalha)
+                    const progresso = progressoMedalha(proximaMedalha)
+
+                    return (
+                      <div className="nextMedalCard">
+                        <div className="nextMedalTop">
+                          <span>Próxima conquista</span>
+                          <span>{progresso}%</span>
+                        </div>
+
+                        <div className="nextMedalName">
+                          {medalha?.nome || 'Nova medalha'}
+                        </div>
+
+                        <div className="nextMedalProgress">
+                          <div style={{ width: `${progresso}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+
                 <button
                   type="button"
                   className="iconBtn primaryMini"
@@ -1986,7 +2507,242 @@ export default function ClienteDashboardPage() {
             </section>
           </div>
         </section>
+
+        <footer className="originFooter">
+          <div className="originSeal">
+            <img src="/logo-prussik-display.png" alt="Símbolo de origem PrussikTrails" />
+            <div>
+              <strong>PrussikTrails</strong>
+              <span>Símbolo de origem · 2026</span>
+            </div>
+          </div>
+        </footer>
       </div>
+
+      <BetaFeedbackButton usuario={user} />
     </main>
+  )
+}
+type BetaFeedbackButtonProps = {
+  usuario: UsuarioLocal
+}
+
+type FeedbackTipo = 'feedback' | 'bug' | 'melhoria' | 'elogio' | 'duvida'
+type FeedbackPrioridade = 'baixa' | 'normal' | 'alta' | 'critica'
+type FeedbackTipoOption = { value: FeedbackTipo; label: string; descricao: string }
+
+const feedbackTipos: { value: FeedbackTipo; label: string; descricao: string }[] = [
+  {
+    value: 'feedback',
+    label: 'Feedback',
+    descricao: 'Algo que você sentiu usando o app.'
+  },
+  {
+    value: 'bug',
+    label: 'Bug',
+    descricao: 'Algo que não funcionou como deveria.'
+  },
+  {
+    value: 'melhoria',
+    label: 'Melhoria',
+    descricao: 'Uma ideia para melhorar a experiência.'
+  },
+  {
+    value: 'duvida',
+    label: 'Dúvida',
+    descricao: 'Algo que ficou confuso ou pouco claro.'
+  },
+  {
+    value: 'elogio',
+    label: 'Elogio',
+    descricao: 'Algo que você gostou.'
+  }
+]
+
+function detectarDispositivo() {
+  if (typeof window === 'undefined') return 'desconhecido'
+
+  const largura = window.innerWidth
+
+  if (largura <= 640) return 'mobile'
+  if (largura <= 1024) return 'tablet'
+
+  return 'desktop'
+}
+
+function prioridadePorTipo(tipo: FeedbackTipo): FeedbackPrioridade {
+  if (tipo === 'bug') return 'alta'
+  return 'normal'
+}
+
+function BetaFeedbackButton({ usuario }: BetaFeedbackButtonProps) {
+  const [aberto, setAberto] = useState(false)
+  const [tipo, setTipo] = useState<FeedbackTipo>('feedback')
+  const [titulo, setTitulo] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState('')
+  const [sucesso, setSucesso] = useState(false)
+
+  const tipoSelecionado = useMemo(() => {
+    return feedbackTipos.find((item) => item.value === tipo) || feedbackTipos[0]
+  }, [tipo])
+
+  const fechar = () => {
+    if (enviando) return
+    setAberto(false)
+    setErro('')
+    setSucesso(false)
+  }
+
+  const enviar = async () => {
+    try {
+      setErro('')
+      setSucesso(false)
+
+      const mensagemLimpa = mensagem.trim()
+      const tituloLimpo = titulo.trim()
+
+      if (!mensagemLimpa) {
+        setErro('Conte rapidamente o que aconteceu ou o que você gostaria de sugerir.')
+        return
+      }
+
+      setEnviando(true)
+
+      const resposta = await fetch('/api/beta/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          usuarioId: usuario.id,
+          tipo,
+          prioridade: prioridadePorTipo(tipo),
+          titulo: tituloLimpo || null,
+          mensagem: mensagemLimpa,
+          origem: 'dashboard_principal',
+          pagina: typeof window !== 'undefined' ? window.location.pathname : 'dashboard_principal',
+          navegador: typeof navigator !== 'undefined' ? navigator.userAgent : 'desconhecido',
+          dispositivo: detectarDispositivo()
+        })
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.ok) {
+        throw new Error(json?.error || 'Não foi possível enviar agora.')
+      }
+
+      setSucesso(true)
+      setTitulo('')
+      setMensagem('')
+      setTipo('feedback')
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : 'Não foi possível enviar agora.')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="betaFeedbackTab"
+        onClick={() => {
+          setAberto(true)
+          setErro('')
+          setSucesso(false)
+        }}
+      >
+        <span className="betaFeedbackDot" />
+        <span>Beta · Feedback e Bug</span>
+      </button>
+
+      {aberto && (
+        <div className="betaOverlay" role="dialog" aria-modal="true">
+          <div className="betaModal">
+            <div className="betaModalHeader">
+              <div>
+                <p className="betaKicker">Fase Beta</p>
+                <h2>Ajude a melhorar a PrussikTrails</h2>
+                <p>
+                  Conte o que funcionou, o que travou ou o que poderia ficar mais claro.
+                </p>
+              </div>
+
+              <button type="button" className="betaClose" onClick={fechar} aria-label="Fechar">
+                ×
+              </button>
+            </div>
+
+            {sucesso ? (
+              <div className="betaSuccess">
+                <div className="betaSuccessIcon">✓</div>
+                <h2>Feedback enviado</h2>
+                <p>Obrigado por contribuir com a fase Beta.</p>
+                <button type="button" className="betaPrimary" onClick={fechar}>
+                  Fechar
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="betaTypeGrid">
+                  {feedbackTipos.map((item: FeedbackTipoOption) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className={`betaTypeCard ${tipo === item.value ? 'active' : ''}`}
+                      onClick={() => setTipo(item.value)}
+                    >
+                      <strong>{item.label}</strong>
+                      <span>{item.descricao}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <p>
+                  Tipo selecionado: <strong>{tipoSelecionado.label}</strong>
+                </p>
+
+                <label className="betaField">
+                  <span>Título opcional</span>
+                  <input
+                    value={titulo}
+                    onChange={(event) => setTitulo(event.target.value)}
+                    placeholder="Ex.: botão de pagar não apareceu"
+                    maxLength={160}
+                  />
+                </label>
+
+                <label className="betaField">
+                  <span>Mensagem</span>
+                  <textarea
+                    value={mensagem}
+                    onChange={(event) => setMensagem(event.target.value)}
+                    placeholder="Descreva onde estava, o que tentou fazer e o que aconteceu."
+                    maxLength={3000}
+                    rows={6}
+                  />
+                </label>
+
+                {erro && <div className="betaError">{erro}</div>}
+
+                <div className="betaActions">
+                  <button type="button" className="betaSecondary" onClick={fechar} disabled={enviando}>
+                    Cancelar
+                  </button>
+
+                  <button type="button" className="betaPrimary" onClick={enviar} disabled={enviando}>
+                    {enviando ? 'Enviando...' : 'Enviar feedback'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
