@@ -1,301 +1,494 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
+
+type Usuario = {
+  id: string
+  nome?: string | null
+  name?: string | null
+  email?: string | null
+  senha?: string | null
+  password?: string | null
+  tipo?: string | null
+  status?: string | null
+  ativo?: boolean | null
+}
 
 export default function LoginPage() {
   const router = useRouter()
-  const [cpf, setCpf] = useState('')
+
+  const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
-  const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
+  const [mensagem, setMensagem] = useState('')
 
-  // Testar conexão com Supabase ao carregar a página (opcional)
   useEffect(() => {
-    const testarConexao = async () => {
-      try {
-        const { error } = await supabase.from('users').select('id', { count: 'exact', head: true })
-        if (error) {
-          console.error('❌ Erro de conexão com Supabase:', error)
-        } else {
-          console.log('✅ Conexão com Supabase OK')
-        }
-      } catch (err) {
-        console.error('❌ Erro ao testar conexão:', err)
-      }
-    }
-    testarConexao()
-  }, [])
+    const userData = localStorage.getItem('user')
 
-  // Função para formatar CPF visualmente
-  const formatarCPF = (valor: string) => {
-    let numeros = valor.replace(/\D/g, '')
-    if (numeros.length > 11) numeros = numeros.slice(0, 11)
-    
-    if (numeros.length <= 3) return numeros
-    if (numeros.length <= 6) return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
-    if (numeros.length <= 9) return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
-    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
-  }
-
-  // Extrai apenas números do CPF
-  const extrairNumerosCPF = (cpfFormatado: string) => cpfFormatado.replace(/\D/g, '')
-
-  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCpf(formatarCPF(e.target.value))
-  }
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErro('')
-    setCarregando(true)
-
-    const cpfLimpo = extrairNumerosCPF(cpf)
+    if (!userData) return
 
     try {
-      // Buscar usuário pelo CPF
-      const { data: user, error } = await supabase
+      const user = JSON.parse(userData)
+
+      if (user?.tipo === 'cliente') {
+        router.replace('/cliente/dashboard')
+        return
+      }
+
+      if (user?.tipo === 'guia') {
+        router.replace('/guia/dashboard')
+        return
+      }
+
+      if (user?.tipo === 'admin') {
+        router.replace('/admin/dashboard')
+      }
+    } catch {
+      localStorage.removeItem('user')
+    }
+  }, [router])
+
+  const normalizarTexto = (valor: any) => {
+    return String(valor || '').trim()
+  }
+
+  const normalizarEmail = (valor: string) => {
+    return normalizarTexto(valor).toLowerCase()
+  }
+
+  const validarEmail = (valor: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)
+  }
+
+  const redirecionarUsuario = (tipo: string) => {
+    if (tipo === 'admin') {
+      router.replace('/admin/dashboard')
+      return
+    }
+
+    if (tipo === 'guia') {
+      router.replace('/guia/dashboard')
+      return
+    }
+
+    router.replace('/cliente/dashboard')
+  }
+
+  const entrar = async (event: FormEvent) => {
+    event.preventDefault()
+
+    setMensagem('')
+
+    const emailFinal = normalizarEmail(email)
+    const senhaFinal = normalizarTexto(senha)
+
+    if (!emailFinal || !validarEmail(emailFinal)) {
+      setMensagem('Informe um e-mail válido.')
+      return
+    }
+
+    if (!senhaFinal) {
+      setMensagem('Informe sua senha.')
+      return
+    }
+
+    setCarregando(true)
+
+    try {
+      const { data, error } = await supabase
         .from('users')
-        .select('id, nome, email, tipo, status, senha')
-        .eq('cpf', cpfLimpo)
+        .select('*')
+        .eq('email', emailFinal)
         .maybeSingle()
 
       if (error) {
-        console.error('❌ Erro na consulta:', error)
-        setErro(`Erro: ${error.message || 'Erro ao buscar usuário'}`)
-        setCarregando(false)
+        console.error('Erro ao buscar usuário:', error)
+        setMensagem('Erro ao acessar sua conta. Tente novamente.')
         return
       }
 
-      if (!user) {
-        setErro('CPF não encontrado')
-        setCarregando(false)
+      if (!data) {
+        setMensagem('E-mail ou senha inválidos.')
         return
       }
 
-      if (user.senha !== senha) {
-        setErro('Senha incorreta')
-        setCarregando(false)
+      const usuario = data as Usuario
+
+      const senhaBanco = normalizarTexto(usuario.senha || usuario.password)
+
+      if (senhaBanco !== senhaFinal) {
+        setMensagem('E-mail ou senha inválidos.')
         return
       }
 
-      // Verifica o status do usuário com mensagens específicas
-      if (user.status !== 'ativo') {
-        if (user.status === 'pendente') {
-          setErro('⏳ Seu cadastro está pendente de aprovação. Aguarde o administrador.')
-        } else if (user.status === 'suspenso') {
-          setErro('⚠️ Sua conta está suspensa. Entre em contato com o suporte.')
-        } else {
-          setErro('❌ Usuário inativo. Entre em contato com o suporte.')
-        }
-        setCarregando(false)
+      const status = normalizarTexto(usuario.status).toLowerCase()
+
+      if (status === 'inativo' || usuario.ativo === false) {
+        setMensagem('Sua conta está inativa. Entre em contato com o suporte.')
         return
       }
 
-      // Salva sessão
-      localStorage.setItem('user', JSON.stringify({
-        id: user.id,
-        nome: user.nome,
-        email: user.email,
-        tipo: user.tipo,
-      }))
+      const tipo = normalizarTexto(usuario.tipo || 'cliente').toLowerCase()
 
-      // Redireciona conforme o tipo
-      if (user.tipo === 'cliente') {
-        router.push('/cliente/dashboard')
-      } else if (user.tipo === 'guia') {
-        router.push('/guia/dashboard')
-      } else {
-        router.push('/admin/dashboard')
+      const usuarioLocal = {
+        id: usuario.id,
+        nome: usuario.nome || usuario.name || 'Usuário',
+        email: usuario.email || emailFinal,
+        tipo
       }
 
-    } catch (err: any) {
-      console.error('❌ Erro no login:', err)
-      setErro(`Erro: ${err.message || 'Erro ao fazer login'}`)
+      localStorage.setItem('user', JSON.stringify(usuarioLocal))
+
+      redirecionarUsuario(tipo)
+    } catch (error) {
+      console.error('Erro no login:', error)
+      setMensagem('Erro ao fazer login. Tente novamente.')
     } finally {
       setCarregando(false)
     }
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px', width: '100%', display: 'flex', justifyContent: 'center' }}>
-        <div style={{ 
-          backgroundColor: 'white', 
-          borderRadius: '24px', 
-          padding: '40px', 
-          maxWidth: '450px', 
-          width: '100%',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.08)'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{ fontSize: '56px', marginBottom: '16px' }}>🏔️</div>
-            <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
-            <p style={{ color: '#6b7280', marginTop: '8px', fontSize: '14px' }}>Acesse sua conta para continuar</p>
+    <main className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          background: #f3f4f6;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at top left, rgba(22, 163, 74, 0.12), transparent 30%),
+            linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
+          color: #111827;
+        }
+
+        .topBar {
+          height: 64px;
+          background: #dc2626;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 16px;
+        }
+
+        .topLogo {
+          height: 42px;
+          width: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .container {
+          width: 100%;
+          max-width: 520px;
+          margin: 0 auto;
+          padding: 34px 18px 44px;
+        }
+
+        .card {
+          background: #ffffff;
+          border-radius: 32px;
+          padding: 30px;
+          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
+          border: 1px solid #eef2f7;
+        }
+
+        .brand {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 18px;
+        }
+
+        .brand img {
+          height: 78px;
+          width: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .title {
+          margin: 0;
+          text-align: center;
+          font-size: 32px;
+          font-weight: 900;
+          color: #111827;
+          letter-spacing: -0.04em;
+        }
+
+        .subtitle {
+          margin: 10px auto 26px;
+          text-align: center;
+          color: #6b7280;
+          font-size: 14px;
+          line-height: 1.6;
+          max-width: 400px;
+        }
+
+        .form {
+          display: grid;
+          gap: 16px;
+        }
+
+        .formGroup {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+
+        label {
+          font-size: 13px;
+          font-weight: 800;
+          color: #374151;
+        }
+
+        input {
+          width: 100%;
+          border: 1px solid #e5e7eb;
+          border-radius: 18px;
+          padding: 15px 16px;
+          font-size: 16px;
+          color: #111827;
+          background: #ffffff;
+          outline: none;
+          transition: 0.2s ease;
+        }
+
+        input:focus {
+          border-color: #16a34a;
+          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+        }
+
+        input::placeholder {
+          color: #9ca3af;
+        }
+
+        .message {
+          padding: 14px 16px;
+          border-radius: 18px;
+          font-size: 14px;
+          line-height: 1.45;
+          text-align: center;
+          font-weight: 700;
+          background: #fee2e2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
+        }
+
+        .submitButton {
+          width: 100%;
+          border: none;
+          border-radius: 999px;
+          padding: 16px;
+          background: #15803d;
+          color: #ffffff;
+          font-size: 18px;
+          font-weight: 900;
+          cursor: pointer;
+          transition: 0.2s ease;
+          margin-top: 4px;
+        }
+
+        .submitButton:hover:not(:disabled) {
+          background: #166534;
+          transform: translateY(-1px);
+          box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
+        }
+
+        .submitButton:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .linkRow {
+          display: flex;
+          justify-content: center;
+          margin-top: 14px;
+        }
+
+        .textButton {
+          border: none;
+          background: transparent;
+          color: #16a34a;
+          font-size: 14px;
+          font-weight: 900;
+          cursor: pointer;
+          text-decoration: none;
+        }
+
+        .divider {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          align-items: center;
+          gap: 14px;
+          margin: 22px 0;
+          color: #9ca3af;
+          font-size: 14px;
+        }
+
+        .divider::before,
+        .divider::after {
+          content: "";
+          height: 1px;
+          background: #e5e7eb;
+        }
+
+        .secondaryButton {
+          width: 100%;
+          border: 1px solid #16a34a;
+          border-radius: 999px;
+          padding: 15px;
+          background: #ffffff;
+          color: #16a34a;
+          font-size: 17px;
+          font-weight: 900;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .secondaryButton:hover {
+          background: #f0fdf4;
+        }
+
+        .hint {
+          margin: 16px 0 0;
+          text-align: center;
+          color: #9ca3af;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        @media (max-width: 520px) {
+          .topBar {
+            height: 62px;
+          }
+
+          .container {
+            padding: 24px 14px 34px;
+          }
+
+          .card {
+            border-radius: 28px;
+            padding: 24px 18px;
+          }
+
+          .brand img {
+            height: 68px;
+          }
+
+          .title {
+            font-size: 28px;
+          }
+
+          input {
+            font-size: 16px;
+            padding: 14px 15px;
+          }
+        }
+      `}</style>
+
+      <header className="topBar">
+        <img
+          src="/logo-prussik-display.png"
+          alt="PrussikTrails"
+          className="topLogo"
+        />
+      </header>
+
+      <div className="container">
+        <section className="card">
+          <div className="brand">
+            <img
+              src="/logo-prussik-display.png"
+              alt="PrussikTrails"
+            />
           </div>
 
-          <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-                CPF
-              </label>
+          <h1 className="title">Entrar</h1>
+
+          <p className="subtitle">
+            Acesse sua conta para acompanhar reservas, roteiros e aventuras no PrussikTrails.
+          </p>
+
+          <form className="form" onSubmit={entrar}>
+            <div className="formGroup">
+              <label>E-mail *</label>
               <input
-                type="text"
-                required
-                placeholder="000.000.000-00"
-                value={cpf}
-                onChange={handleCpfChange}
-                maxLength={14}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#16a34a'
-                  e.target.style.boxShadow = '0 0 0 3px rgba(22,163,74,0.1)'
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#e5e7eb'
-                  e.target.style.boxShadow = 'none'
-                }}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="seuemail@email.com"
+                type="email"
+                autoComplete="email"
               />
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-                Senha
-              </label>
+            <div className="formGroup">
+              <label>Senha *</label>
               <input
-                type="password"
-                required
-                placeholder="Digite sua senha"
                 value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#16a34a'
-                  e.target.style.boxShadow = '0 0 0 3px rgba(22,163,74,0.1)'
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#e5e7eb'
-                  e.target.style.boxShadow = 'none'
-                }}
+                onChange={(event) => setSenha(event.target.value)}
+                placeholder="Digite sua senha"
+                type="password"
+                autoComplete="current-password"
               />
             </div>
 
-            {erro && (
-              <div style={{ 
-                backgroundColor: '#fee2e2', 
-                color: '#dc2626', 
-                padding: '12px', 
-                borderRadius: '12px', 
-                fontSize: '13px',
-                textAlign: 'center',
-                marginBottom: '16px'
-              }}>
-                {erro}
+            {mensagem && (
+              <div className="message">
+                {mensagem}
               </div>
             )}
 
             <button
               type="submit"
+              className="submitButton"
               disabled={carregando}
-              style={{
-                width: '100%',
-                backgroundColor: '#16a34a',
-                color: 'white',
-                padding: '12px 24px',
-                borderRadius: '40px',
-                border: 'none',
-                cursor: carregando ? 'not-allowed' : 'pointer',
-                fontSize: '16px',
-                fontWeight: '600',
-                opacity: carregando ? 0.6 : 1,
-                transition: 'background-color 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (!carregando) e.currentTarget.style.backgroundColor = '#15803d'
-              }}
-              onMouseLeave={(e) => {
-                if (!carregando) e.currentTarget.style.backgroundColor = '#16a34a'
-              }}
             >
               {carregando ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
 
-          {/* Link para recuperar senha */}
-          <div style={{ textAlign: 'center', marginTop: '16px' }}>
-            <Link href="/recuperar-senha" style={{ fontSize: '13px', color: '#16a34a', textDecoration: 'none' }}>
-              Esqueci minha senha
-            </Link>
-          </div>
-
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '16px', 
-            margin: '24px 0',
-            color: '#d1d5db'
-          }}>
-            <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
-            <span style={{ fontSize: '12px', color: '#9ca3af' }}>ou</span>
-            <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
-          </div>
-
-          <Link href="/cadastro" style={{ textDecoration: 'none' }}>
+          <div className="linkRow">
             <button
-              style={{
-                width: '100%',
-                backgroundColor: 'transparent',
-                color: '#16a34a',
-                padding: '12px 24px',
-                borderRadius: '40px',
-                border: '1px solid #16a34a',
-                cursor: 'pointer',
-                fontSize: '16px',
-                fontWeight: '600',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#16a34a'
-                e.currentTarget.style.color = 'white'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent'
-                e.currentTarget.style.color = '#16a34a'
-              }}
+              type="button"
+              className="textButton"
+              onClick={() => router.push('/recuperar-senha')}
             >
-              Criar nova conta
+              Esqueci minha senha
             </button>
-          </Link>
+          </div>
 
-          <p style={{ 
-            textAlign: 'center', 
-            fontSize: '11px', 
-            color: '#9ca3af', 
-            marginTop: '24px',
-            marginBottom: 0
-          }}>
-            Ao continuar, você concorda com nossos Termos de Uso
+          <div className="divider">ou</div>
+
+          <button
+            type="button"
+            className="secondaryButton"
+            onClick={() => router.push('/cadastro')}
+          >
+            Criar conta
+          </button>
+
+          <p className="hint">
+            Use o mesmo e-mail cadastrado no app.
           </p>
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
