@@ -1,70 +1,58 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { FormEvent, Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 function ResetarSenhaContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const [email, setEmail] = useState('')
-  const [novaSenha, setNovaSenha] = useState('')
-  const [confirmarSenha, setConfirmarSenha] = useState('')
   const [token, setToken] = useState('')
+  const [senha, setSenha] = useState('')
+  const [confirmarSenha, setConfirmarSenha] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [mensagem, setMensagem] = useState('')
-  const [sucesso, setSucesso] = useState(false)
+  const [tipoMensagem, setTipoMensagem] = useState<'erro' | 'sucesso' | ''>('')
 
   useEffect(() => {
-    const tokenUrl =
-      searchParams.get('token') ||
-      searchParams.get('code') ||
-      ''
+    const tokenUrl = searchParams.get('token') || ''
+    setToken(tokenUrl)
 
-    const emailUrl =
-      searchParams.get('email') ||
-      ''
-
-    if (tokenUrl) {
-      setToken(tokenUrl)
-    }
-
-    if (emailUrl) {
-      setEmail(emailUrl)
+    if (!tokenUrl) {
+      setMensagem('Link inválido. Solicite uma nova recuperação de senha.')
+      setTipoMensagem('erro')
     }
   }, [searchParams])
 
   const validarFormulario = () => {
-    if (!email.trim()) {
-      setMensagem('Informe o e-mail cadastrado.')
-      return false
+    if (!token) {
+      return 'Token de recuperação ausente. Solicite uma nova recuperação de senha.'
     }
 
-    if (!novaSenha.trim()) {
-      setMensagem('Informe a nova senha.')
-      return false
+    if (!senha || senha.length < 6) {
+      return 'A nova senha deve ter pelo menos 6 caracteres.'
     }
 
-    if (novaSenha.length < 6) {
-      setMensagem('A senha deve ter pelo menos 6 caracteres.')
-      return false
+    if (senha !== confirmarSenha) {
+      return 'As senhas não conferem.'
     }
 
-    if (novaSenha !== confirmarSenha) {
-      setMensagem('As senhas não conferem.')
-      return false
-    }
-
-    return true
+    return ''
   }
 
-  const handleResetarSenha = async (event: React.FormEvent) => {
+  const resetarSenha = async (event: FormEvent) => {
     event.preventDefault()
 
     setMensagem('')
-    setSucesso(false)
+    setTipoMensagem('')
 
-    if (!validarFormulario()) return
+    const erroValidacao = validarFormulario()
+
+    if (erroValidacao) {
+      setMensagem(erroValidacao)
+      setTipoMensagem('erro')
+      return
+    }
 
     setCarregando(true)
 
@@ -75,322 +63,404 @@ function ResetarSenhaContent() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          email,
-          novaSenha,
-          token
+          token,
+          senha,
+          password: senha,
+          confirmar_senha: confirmarSenha,
+          confirmarSenha
         })
       })
 
-      const data = await response.json()
+      const texto = await response.text()
 
-      if (!response.ok) {
+      let data: any = null
+
+      try {
+        data = texto ? JSON.parse(texto) : null
+      } catch {
+        throw new Error('A rota de redefinição retornou uma resposta inválida.')
+      }
+
+      if (!response.ok || !data?.sucesso) {
         throw new Error(
-          data?.message ||
-          data?.error ||
-          'Erro ao resetar senha.'
+          data?.erro ||
+            data?.message ||
+            'Não foi possível redefinir a senha.'
         )
       }
 
-      setSucesso(true)
-      setMensagem('Senha alterada com sucesso. Você já pode fazer login.')
+      setMensagem('Senha atualizada com sucesso. Você já pode fazer login.')
+      setTipoMensagem('sucesso')
+
+      setSenha('')
+      setConfirmarSenha('')
 
       setTimeout(() => {
-        router.push('/login')
-      }, 1800)
-
+        router.replace('/login')
+      }, 1400)
     } catch (error: any) {
-      console.error('Erro ao resetar senha:', error)
+      console.error('Erro ao redefinir senha:', error)
 
       setMensagem(
         error?.message ||
-        'Não foi possível resetar a senha. Tente novamente.'
+          'Erro ao redefinir senha. Solicite um novo link e tente novamente.'
       )
-
+      setTipoMensagem('erro')
     } finally {
       setCarregando(false)
     }
   }
 
   return (
-    <>
-      <style jsx global>{`
-        .reset-page {
-          min-height: 100vh;
-          min-height: 100dvh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: linear-gradient(135deg, #111827 0%, #1f2937 45%, #dc2626 100%);
-          padding: 20px;
-        }
-
-        .reset-card {
-          width: 100%;
-          max-width: 440px;
-          background: #ffffff;
-          border-radius: 24px;
-          padding: 28px;
-          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
-        }
-
-        .reset-logo {
-          text-align: center;
-          margin-bottom: 22px;
-        }
-
-        .reset-logo h1 {
-          color: #dc2626;
-          font-size: 28px;
-          font-weight: 800;
-          margin: 0;
-        }
-
-        .reset-logo p {
-          color: #6b7280;
-          font-size: 13px;
-          margin: 6px 0 0;
-        }
-
-        .reset-title {
-          font-size: 22px;
-          font-weight: 800;
-          color: #111827;
-          margin: 0 0 8px;
-          text-align: center;
-        }
-
-        .reset-subtitle {
-          color: #6b7280;
-          font-size: 14px;
-          line-height: 1.5;
-          text-align: center;
-          margin: 0 0 22px;
-        }
-
-        .reset-form {
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-        }
-
-        .field-group {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .field-group label {
-          font-size: 13px;
-          font-weight: 700;
-          color: #374151;
-        }
-
-        .field-group input {
-          width: 100%;
-          border: 1px solid #d1d5db;
-          border-radius: 14px;
-          padding: 13px 14px;
-          font-size: 14px;
-          outline: none;
+    <main className="page">
+      <style>{`
+        * {
           box-sizing: border-box;
         }
 
-        .field-group input:focus {
-          border-color: #dc2626;
-          box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+        body {
+          margin: 0;
+          background: #f3f4f6;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
         }
 
-        .reset-button {
+        .page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
+            linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
+          color: #111827;
+        }
+
+        .topBar {
+          height: 64px;
+          background: #dc2626;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 16px;
+        }
+
+        .topLogo {
+          height: 42px;
+          width: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .container {
+          width: 100%;
+          max-width: 560px;
+          margin: 0 auto;
+          padding: 34px 18px 44px;
+        }
+
+        .card {
+          background: #ffffff;
+          border-radius: 32px;
+          padding: 30px;
+          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
+          border: 1px solid #eef2f7;
+        }
+
+        .brand {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 18px;
+        }
+
+        .brand img {
+          height: 72px;
+          width: auto;
+          object-fit: contain;
+        }
+
+        .title {
+          margin: 0;
+          text-align: center;
+          font-size: 30px;
+          font-weight: 900;
+          color: #111827;
+          letter-spacing: -0.04em;
+        }
+
+        .subtitle {
+          margin: 10px auto 26px;
+          text-align: center;
+          color: #6b7280;
+          font-size: 14px;
+          line-height: 1.6;
+          max-width: 430px;
+        }
+
+        .form {
+          display: grid;
+          gap: 16px;
+        }
+
+        .formGroup {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+
+        label {
+          font-size: 13px;
+          font-weight: 800;
+          color: #374151;
+        }
+
+        input {
+          width: 100%;
+          border: 1px solid #e5e7eb;
+          border-radius: 18px;
+          padding: 15px 16px;
+          font-size: 16px;
+          color: #111827;
+          background: #ffffff;
+          outline: none;
+          transition: 0.2s ease;
+        }
+
+        input:focus {
+          border-color: #16a34a;
+          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+        }
+
+        input::placeholder {
+          color: #9ca3af;
+        }
+
+        .message {
+          padding: 14px 16px;
+          border-radius: 18px;
+          font-size: 14px;
+          line-height: 1.45;
+          text-align: center;
+          font-weight: 700;
+        }
+
+        .message.erro {
+          background: #fee2e2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
+        }
+
+        .message.sucesso {
+          background: #dcfce7;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+        }
+
+        .submitButton {
           width: 100%;
           border: none;
           border-radius: 999px;
-          background: #dc2626;
+          padding: 16px;
+          background: #15803d;
           color: #ffffff;
-          padding: 14px 18px;
-          font-size: 15px;
-          font-weight: 800;
+          font-size: 17px;
+          font-weight: 900;
           cursor: pointer;
-          margin-top: 8px;
-          min-height: 50px;
+          transition: 0.2s ease;
+          margin-top: 4px;
         }
 
-        .reset-button:disabled {
-          background: #9ca3af;
+        .submitButton:hover:not(:disabled) {
+          background: #166534;
+          transform: translateY(-1px);
+          box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
+        }
+
+        .submitButton:disabled {
+          opacity: 0.7;
           cursor: not-allowed;
         }
 
-        .reset-message {
-          margin-top: 16px;
-          padding: 13px 14px;
-          border-radius: 14px;
-          font-size: 13px;
-          line-height: 1.45;
-          text-align: center;
-        }
-
-        .reset-message.success {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .reset-message.error {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-
-        .reset-footer {
-          margin-top: 20px;
-          text-align: center;
-        }
-
-        .reset-footer button {
-          background: transparent;
-          border: none;
-          color: #dc2626;
-          font-size: 13px;
-          font-weight: 700;
+        .secondaryButton {
+          width: 100%;
+          border: 1px solid #16a34a;
+          border-radius: 999px;
+          padding: 15px;
+          background: #ffffff;
+          color: #16a34a;
+          font-size: 16px;
+          font-weight: 900;
           cursor: pointer;
+          transition: 0.2s ease;
+          margin-top: 12px;
         }
 
-        @media (max-width: 480px) {
-          .reset-page {
-            padding: 14px;
-            align-items: flex-start;
-            padding-top: 44px;
+        .secondaryButton:hover {
+          background: #f0fdf4;
+        }
+
+        .hint {
+          margin: 16px 0 0;
+          text-align: center;
+          color: #9ca3af;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        .tokenBox {
+          margin-bottom: 18px;
+          padding: 12px 14px;
+          border-radius: 16px;
+          background: #f9fafb;
+          border: 1px solid #e5e7eb;
+          color: #6b7280;
+          font-size: 12px;
+          line-height: 1.45;
+          word-break: break-all;
+        }
+
+        @media (max-width: 520px) {
+          .topBar {
+            height: 62px;
           }
 
-          .reset-card {
-            border-radius: 20px;
-            padding: 22px;
+          .container {
+            padding: 24px 14px 34px;
           }
 
-          .reset-logo h1 {
-            font-size: 25px;
+          .card {
+            border-radius: 28px;
+            padding: 24px 18px;
           }
 
-          .reset-title {
-            font-size: 20px;
+          .brand img {
+            height: 62px;
+          }
+
+          .title {
+            font-size: 26px;
+          }
+
+          input {
+            font-size: 16px;
+            padding: 14px 15px;
           }
         }
       `}</style>
 
-      <main className="reset-page">
-        <section className="reset-card">
-          <div className="reset-logo">
-            <h1>PrussikTrails</h1>
-            <p>Sua aventura começa aqui</p>
+      <header className="topBar">
+        <img
+          src="/logo-prussik-display.png"
+          alt="PrussikTrails"
+          className="topLogo"
+        />
+      </header>
+
+      <div className="container">
+        <section className="card">
+          <div className="brand">
+            <img
+              src="/logo-prussik-display.png"
+              alt="PrussikTrails"
+            />
           </div>
 
-          <h2 className="reset-title">
-            Redefinir senha
-          </h2>
+          <h1 className="title">Criar nova senha</h1>
 
-          <p className="reset-subtitle">
-            Informe seu e-mail e cadastre uma nova senha de acesso.
+          <p className="subtitle">
+            Digite sua nova senha abaixo. Depois da confirmação, você será
+            redirecionado para o login.
           </p>
 
-          <form
-            className="reset-form"
-            onSubmit={handleResetarSenha}
-          >
-            <div className="field-group">
-              <label htmlFor="email">
-                E-mail
-              </label>
-
-              <input
-                id="email"
-                type="email"
-                value={email}
-                placeholder="seuemail@exemplo.com"
-                autoComplete="email"
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </div>
-
-            <div className="field-group">
-              <label htmlFor="novaSenha">
-                Nova senha
-              </label>
-
-              <input
-                id="novaSenha"
-                type="password"
-                value={novaSenha}
-                placeholder="Digite sua nova senha"
-                autoComplete="new-password"
-                onChange={(event) => setNovaSenha(event.target.value)}
-              />
-            </div>
-
-            <div className="field-group">
-              <label htmlFor="confirmarSenha">
-                Confirmar nova senha
-              </label>
-
-              <input
-                id="confirmarSenha"
-                type="password"
-                value={confirmarSenha}
-                placeholder="Confirme sua nova senha"
-                autoComplete="new-password"
-                onChange={(event) => setConfirmarSenha(event.target.value)}
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="reset-button"
-              disabled={carregando}
-            >
-              {carregando
-                ? 'Alterando senha...'
-                : 'Alterar senha'}
-            </button>
-          </form>
-
-          {mensagem && (
-            <div
-              className={`reset-message ${
-                sucesso ? 'success' : 'error'
-              }`}
-            >
-              {mensagem}
+          {token && (
+            <div className="tokenBox">
+              Link de recuperação identificado.
             </div>
           )}
 
-          <div className="reset-footer">
+          <form className="form" onSubmit={resetarSenha}>
+            <div className="formGroup">
+              <label>Nova senha *</label>
+              <input
+                value={senha}
+                onChange={(event) => setSenha(event.target.value)}
+                type="password"
+                placeholder="Mínimo de 6 caracteres"
+                autoComplete="new-password"
+                disabled={!token || carregando}
+              />
+            </div>
+
+            <div className="formGroup">
+              <label>Confirmar nova senha *</label>
+              <input
+                value={confirmarSenha}
+                onChange={(event) => setConfirmarSenha(event.target.value)}
+                type="password"
+                placeholder="Digite novamente a nova senha"
+                autoComplete="new-password"
+                disabled={!token || carregando}
+              />
+            </div>
+
+            {mensagem && (
+              <div className={`message ${tipoMensagem}`}>
+                {mensagem}
+              </div>
+            )}
+
             <button
-              type="button"
-              onClick={() => router.push('/login')}
+              type="submit"
+              className="submitButton"
+              disabled={!token || carregando}
             >
-              Voltar para o login
+              {carregando ? 'Atualizando senha...' : 'Atualizar senha'}
             </button>
-          </div>
+          </form>
+
+          <button
+            type="button"
+            className="secondaryButton"
+            onClick={() => router.push('/login')}
+          >
+            Voltar para login
+          </button>
+
+          <p className="hint">
+            Se o link estiver expirado, solicite uma nova recuperação de senha.
+          </p>
         </section>
-      </main>
-    </>
+      </div>
+    </main>
+  )
+}
+
+function LoadingResetarSenha() {
+  return (
+    <main
+      style={{
+        minHeight: '100dvh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#f3f4f6',
+        color: '#374151',
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      }}
+    >
+      Carregando redefinição de senha...
+    </main>
   )
 }
 
 export default function ResetarSenhaPage() {
   return (
-    <Suspense
-      fallback={
-        <div
-          style={{
-            minHeight: '100dvh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: '#f3f4f6',
-            color: '#374151'
-          }}
-        >
-          Carregando...
-        </div>
-      }
-    >
+    <Suspense fallback={<LoadingResetarSenha />}>
       <ResetarSenhaContent />
     </Suspense>
   )
