@@ -1,17 +1,18 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
 type UsuarioLocal = {
   id: string
-  nome?: string
-  email?: string
-  tipo?: string
+  nome?: string | null
+  name?: string | null
+  email?: string | null
+  tipo?: string | null
 }
 
-type ReservaRaw = {
+type Reserva = {
   id: string
   cliente_id?: string | null
   roteiro_id?: string | null
@@ -19,109 +20,250 @@ type ReservaRaw = {
   valor_total?: number | null
   status?: string | null
   pagamento_status?: string | null
-  chat_id?: string | null
-  created_at?: string | null
-  paghiper_order_id?: string | null
-  paghiper_transaction_id?: string | null
   order_id?: string | null
   transaction_id?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  roteiro?: Roteiro | null
+  guia_nome?: string
+  roteiro_titulo?: string
+  valor_calculado?: number
 }
 
 type Roteiro = {
   id: string
   titulo?: string | null
+  nome?: string | null
+  descricao?: string | null
   preco?: number | null
+  valor?: number | null
   id_guia?: string | null
+  guia_id?: string | null
   local?: string | null
   localizacao?: string | null
-  data_roteiro?: string | null
-  hora_roteiro?: string | null
   local_encontro?: string | null
+  ponto_encontro?: string | null
+  data_roteiro?: string | null
+  data_saida?: string | null
+  data?: string | null
+  hora_roteiro?: string | null
+  hora_saida?: string | null
+  hora?: string | null
+  foto_capa?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
+  imagem?: string | null
 }
 
-type Guia = {
+type UsuarioBanco = {
   id: string
   nome?: string | null
+  name?: string | null
   email?: string | null
 }
 
-type ReservaCompleta = ReservaRaw & {
-  roteiro?: Roteiro | null
-  guia_nome?: string
-  roteiro_titulo?: string
-  valor_final: number
-}
-
-export default function MinhasReservasPage() {
+export default function ClienteMinhasReservasPage() {
   const router = useRouter()
-
-  const carregouRef = useRef(false)
-  const reconciliacaoEmCursoRef = useRef(false)
+  const iniciouRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [reservas, setReservas] = useState<ReservaCompleta[]>([])
+  const [reservas, setReservas] = useState<Reserva[]>([])
   const [carregando, setCarregando] = useState(true)
-  const [reconciliando, setReconciliando] = useState(false)
+  const [atualizando, setAtualizando] = useState(false)
+  const [abrindoGrupoId, setAbrindoGrupoId] = useState('')
+  const [verificandoId, setVerificandoId] = useState('')
+  const [cancelandoId, setCancelandoId] = useState('')
   const [mensagem, setMensagem] = useState('')
-  const [ultimaVerificacao, setUltimaVerificacao] = useState('')
+  const [erro, setErro] = useState('')
+  const [filtro, setFiltro] = useState<'todas' | 'pendentes' | 'pagas' | 'canceladas'>('todas')
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
 
   useEffect(() => {
-    if (carregouRef.current) return
+    if (iniciouRef.current) return
 
-    carregouRef.current = true
-    iniciarPagina()
+    iniciouRef.current = true
+    iniciar()
   }, [])
 
-  useEffect(() => {
-    if (!user?.id) return
-
-    const interval = setInterval(() => {
-      reconciliarPagHiperPorCliente(true)
-    }, 15000)
-
-    return () => clearInterval(interval)
-  }, [user?.id])
-
-  const iniciarPagina = async () => {
+  const iniciar = async () => {
     setCarregando(true)
+    setErro('')
     setMensagem('')
 
     try {
       const userData = localStorage.getItem('user')
 
       if (!userData) {
-        router.push('/login')
+        router.replace('/login')
         return
       }
 
-      const parsedUser: UsuarioLocal = JSON.parse(userData)
+      const parsedUser = JSON.parse(userData) as UsuarioLocal
 
       if (parsedUser.tipo !== 'cliente') {
-        router.push('/login')
+        router.replace('/login')
         return
       }
 
       setUser(parsedUser)
 
+      await reconciliarCliente(parsedUser.id, true)
       await carregarReservas(parsedUser.id)
-
-      const atualizou = await reconciliarPagHiperPorClienteInterno(
-        parsedUser.id,
-        true
-      )
-
-      if (atualizou) {
-        await carregarReservas(parsedUser.id)
-      }
     } catch (error) {
       console.error('Erro ao iniciar minhas reservas:', error)
-      setMensagem('Erro ao carregar suas reservas.')
+      setErro('Não foi possível carregar suas reservas agora.')
     } finally {
       setCarregando(false)
     }
   }
 
+  const normalizar = (valor?: string | null) => {
+    return String(valor || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+  }
+
+  const primeiroNome = (valor?: string | null) => {
+    const nome = String(valor || 'Aventureiro').trim()
+    return nome.split(' ')[0] || 'Aventureiro'
+  }
+
+  const nomeUsuario = (usuario?: UsuarioLocal | null) => {
+    return usuario?.nome || usuario?.name || usuario?.email || 'Aventureiro'
+  }
+
+  const tituloRoteiro = (roteiro?: Roteiro | null) => {
+    return roteiro?.titulo || roteiro?.nome || 'Roteiro'
+  }
+
+  const imagemRoteiro = (roteiro?: Roteiro | null) => {
+    return (
+      roteiro?.foto_capa ||
+      roteiro?.foto_url ||
+      roteiro?.imagem_url ||
+      roteiro?.imagem ||
+      ''
+    )
+  }
+
+  const localRoteiro = (roteiro?: Roteiro | null) => {
+    return (
+      roteiro?.local ||
+      roteiro?.localizacao ||
+      roteiro?.local_encontro ||
+      roteiro?.ponto_encontro ||
+      'Local a confirmar'
+    )
+  }
+
+  const dataRoteiro = (roteiro?: Roteiro | null) => {
+    return roteiro?.data_roteiro || roteiro?.data_saida || roteiro?.data || null
+  }
+
+  const horaRoteiro = (roteiro?: Roteiro | null) => {
+    return roteiro?.hora_roteiro || roteiro?.hora_saida || roteiro?.hora || ''
+  }
+
+  const precoRoteiro = (roteiro?: Roteiro | null) => {
+    return Number(roteiro?.preco || roteiro?.valor || 0)
+  }
+
+  const guiaIdRoteiro = (roteiro?: Roteiro | null) => {
+    return roteiro?.id_guia || roteiro?.guia_id || ''
+  }
+
+  const formatarData = (valor?: string | null) => {
+    if (!valor) return '-'
+
+    const data = new Date(valor)
+
+    if (Number.isNaN(data.getTime())) return valor
+
+    return data.toLocaleDateString('pt-BR')
+  }
+
+  const formatarMoeda = (valor: any) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(Number(valor || 0))
+  }
+
+  const pagamentoConfirmado = (reserva?: Reserva | null) => {
+    const pagamento = normalizar(reserva?.pagamento_status)
+    const status = normalizar(reserva?.status)
+
+    return (
+      pagamento === 'pago' ||
+      pagamento === 'confirmado' ||
+      pagamento === 'aprovado' ||
+      pagamento === 'paid' ||
+      pagamento === 'approved' ||
+      status === 'confirmada' ||
+      status === 'realizada' ||
+      status === 'pago' ||
+      status === 'paga'
+    )
+  }
+
+  const reservaCancelada = (reserva?: Reserva | null) => {
+    const status = normalizar(reserva?.status)
+
+    return status === 'cancelada' || status === 'cancelado' || status === 'cancelled'
+  }
+
+  const reconciliarCliente = async (clienteId: string, silencioso = false) => {
+    try {
+      const response = await fetch('/api/paghiper/reconciliar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          clienteId
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        if (!silencioso) {
+          setErro(data?.erro || data?.message || 'Não foi possível verificar seus pagamentos.')
+        }
+
+        return null
+      }
+
+      if (!silencioso) {
+        const atualizadas = Number(data?.atualizadas || 0)
+        const gruposLiberados = Number(data?.gruposLiberados || 0)
+
+        if (atualizadas > 0 || gruposLiberados > 0) {
+          setMensagem(
+            `Pagamentos verificados. ${atualizadas} reserva(s) atualizada(s) e ${gruposLiberados} grupo(s) liberado(s).`
+          )
+        } else {
+          setMensagem('Pagamentos verificados. Nenhuma nova confirmação encontrada agora.')
+        }
+      }
+
+      return data
+    } catch (error) {
+      console.warn('Erro ao reconciliar cliente:', error)
+
+      if (!silencioso) {
+        setErro('Não foi possível verificar seus pagamentos agora.')
+      }
+
+      return null
+    }
+  }
+
   const carregarReservas = async (clienteId: string) => {
+    setErro('')
+
     const { data: reservasData, error: reservasError } = await supabase
       .from('reservas')
       .select('*')
@@ -130,16 +272,17 @@ export default function MinhasReservasPage() {
 
     if (reservasError) {
       console.error('Erro ao buscar reservas:', reservasError)
-      setMensagem('Erro ao buscar reservas.')
+      setErro('Não foi possível buscar suas reservas.')
       setReservas([])
-      return []
+      return
     }
 
-    const reservasBase = (reservasData || []) as ReservaRaw[]
+    const reservasBase = (reservasData || []) as Reserva[]
 
     if (reservasBase.length === 0) {
       setReservas([])
-      return []
+      setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
+      return
     }
 
     const roteiroIds = Array.from(
@@ -155,14 +298,10 @@ export default function MinhasReservasPage() {
     if (roteiroIds.length > 0) {
       const { data: roteirosData, error: roteirosError } = await supabase
         .from('roteiros')
-        .select(
-          'id, titulo, preco, id_guia, local, localizacao, data_roteiro, hora_roteiro, local_encontro'
-        )
+        .select('*')
         .in('id', roteiroIds)
 
-      if (roteirosError) {
-        console.warn('Erro ao buscar roteiros:', roteirosError)
-      } else {
+      if (!roteirosError) {
         roteiros = (roteirosData || []) as Roteiro[]
       }
     }
@@ -170,114 +309,76 @@ export default function MinhasReservasPage() {
     const guiaIds = Array.from(
       new Set(
         roteiros
-          .map((roteiro) => roteiro.id_guia)
+          .map((roteiro) => guiaIdRoteiro(roteiro))
           .filter(Boolean) as string[]
       )
     )
 
-    let guias: Guia[] = []
+    let guias: UsuarioBanco[] = []
 
     if (guiaIds.length > 0) {
       const { data: guiasData, error: guiasError } = await supabase
         .from('users')
-        .select('id, nome, email')
+        .select('id, nome, name, email')
         .in('id', guiaIds)
 
-      if (guiasError) {
-        console.warn('Erro ao buscar guias:', guiasError)
-      } else {
-        guias = (guiasData || []) as Guia[]
+      if (!guiasError) {
+        guias = (guiasData || []) as UsuarioBanco[]
       }
     }
 
-    const reservasCompletas: ReservaCompleta[] = reservasBase.map((reserva) => {
+    const reservasCompletas = reservasBase.map((reserva) => {
       const roteiro =
-        roteiros.find((item) => item.id === reserva.roteiro_id) || null
+        roteiros.find((item) => item.id === reserva.roteiro_id) ||
+        null
 
-      const guia =
-        guias.find((item) => item.id === roteiro?.id_guia) || null
+      const guiaId = guiaIdRoteiro(roteiro)
+      const guia = guias.find((item) => item.id === guiaId)
 
       const quantidade = Number(reserva.quantidade_pessoas || 1)
-      const valorReserva = Number(reserva.valor_total || 0)
-      const valorRoteiro = Number(roteiro?.preco || 0)
-
-      const valorFinal =
-        valorReserva > 0
-          ? valorReserva
-          : valorRoteiro > 0
-            ? valorRoteiro * quantidade
-            : 0
+      const valorCalculado =
+        Number(reserva.valor_total || 0) ||
+        precoRoteiro(roteiro) * quantidade ||
+        0
 
       return {
         ...reserva,
         roteiro,
-        guia_nome: guia?.nome || 'Guia',
-        roteiro_titulo: roteiro?.titulo || 'Roteiro não encontrado',
-        valor_final: valorFinal
+        roteiro_titulo: tituloRoteiro(roteiro),
+        guia_nome:
+          guia?.nome ||
+          guia?.name ||
+          guia?.email ||
+          'Guia',
+        valor_calculado: valorCalculado
       }
     })
 
     setReservas(reservasCompletas)
-
-    return reservasCompletas
+    setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
   }
 
-  const parseJsonSeguro = async (response: Response) => {
-    const texto = await response.text()
+  const atualizarTudo = async () => {
+    if (!user?.id) return
+
+    setAtualizando(true)
+    setErro('')
+    setMensagem('')
 
     try {
-      return texto ? JSON.parse(texto) : null
-    } catch {
-      return {
-        sucesso: false,
-        erro: `Resposta inválida da rota. Status HTTP ${response.status}.`
-      }
+      await reconciliarCliente(user.id, false)
+      await carregarReservas(user.id)
+    } finally {
+      setAtualizando(false)
     }
   }
 
-  const normalizarStatus = (status?: string | null) => {
-    return String(status || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-  }
+  const verificarReserva = async (reserva: Reserva) => {
+    if (!reserva?.id || !user?.id) return
 
-  const pagamentoConfirmado = (reserva: ReservaCompleta | ReservaRaw) => {
-    const pagamento = normalizarStatus(reserva.pagamento_status)
-    const status = normalizarStatus(reserva.status)
-
-    return (
-      pagamento === 'pago' ||
-      pagamento === 'confirmado' ||
-      status === 'confirmada'
-    )
-  }
-
-  const reservaCancelada = (reserva: ReservaCompleta | ReservaRaw) => {
-    return normalizarStatus(reserva.status) === 'cancelada'
-  }
-
-  const existeReservaPendente = (lista: ReservaCompleta[]) => {
-    return lista.some(
-      (reserva) => !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
-    )
-  }
-
-  const reconciliarPagHiperPorClienteInterno = async (
-    clienteId: string,
-    silencioso = false
-  ) => {
-    if (!clienteId) return false
-
-    if (reconciliacaoEmCursoRef.current) return false
-
-    reconciliacaoEmCursoRef.current = true
-
-    if (!silencioso) {
-      setReconciliando(true)
-      setMensagem('Consultando pagamentos na PagHiper...')
-    }
+    setVerificandoId(reserva.id)
+    setErro('')
+    setMensagem('')
 
     try {
       const response = await fetch('/api/paghiper/reconciliar', {
@@ -286,183 +387,149 @@ export default function MinhasReservasPage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          clienteId
+          reservaId: reserva.id
         })
       })
 
-      const data = await parseJsonSeguro(response)
+      const data = await response.json().catch(() => null)
 
-      setUltimaVerificacao(new Date().toLocaleTimeString('pt-BR'))
-
-      if (!response.ok || !data?.sucesso) {
-        const erro = String(data?.erro || data?.message || '')
-
-        const erroSemPendencias =
-          response.status === 404 ||
-          erro.toLowerCase().includes('nenhuma reserva')
-
-        if (!silencioso && !erroSemPendencias) {
-          setMensagem(
-            erro ||
-              'Não foi possível consultar a PagHiper neste momento.'
-          )
-        }
-
-        return false
+      if (!response.ok || data?.sucesso === false) {
+        setErro(data?.erro || data?.message || 'Pagamento ainda não confirmado.')
+        return
       }
 
+      await carregarReservas(user.id)
+
+      const gruposLiberados = Number(data?.gruposLiberados || 0)
       const atualizadas = Number(data?.atualizadas || 0)
       const jaConfirmadas = Number(data?.jaConfirmadas || 0)
 
-      const atualizou = atualizadas > 0 || jaConfirmadas > 0
-
-      if (!silencioso) {
-        if (atualizadas > 0) {
-          setMensagem('Pagamento confirmado e reserva atualizada.')
-        } else if (jaConfirmadas > 0) {
-          setMensagem('A reserva já estava confirmada.')
-        } else {
-          setMensagem(
-            'Consulta realizada. A PagHiper ainda não confirmou novos pagamentos.'
-          )
-        }
+      if (gruposLiberados > 0 || atualizadas > 0 || jaConfirmadas > 0) {
+        setMensagem('Reserva verificada. Se o pagamento estiver confirmado, o grupo já foi liberado.')
+      } else {
+        setMensagem('Ainda não encontramos confirmação para esta reserva.')
       }
-
-      return atualizou
-    } catch (error: any) {
-      console.warn('Erro ao reconciliar PagHiper por cliente:', error)
-
-      if (!silencioso) {
-        setMensagem(
-          error?.message ||
-            'Não foi possível consultar a PagHiper neste momento.'
-        )
-      }
-
-      return false
+    } catch (error) {
+      console.error('Erro ao verificar reserva:', error)
+      setErro('Não foi possível verificar esta reserva agora.')
     } finally {
-      reconciliacaoEmCursoRef.current = false
-
-      if (!silencioso) {
-        setReconciliando(false)
-      }
+      setVerificandoId('')
     }
   }
 
-  const reconciliarPagHiperPorCliente = async (silencioso = false) => {
-    if (!user?.id) return
+  const entrarNoGrupo = async (reserva: Reserva) => {
+    if (!reserva?.id) return
 
-    if (!existeReservaPendente(reservas)) {
+    if (!pagamentoConfirmado(reserva)) {
+      setErro('O grupo é liberado apenas após confirmação do pagamento.')
       return
     }
 
-    const atualizou = await reconciliarPagHiperPorClienteInterno(
-      user.id,
-      silencioso
-    )
-
-    if (atualizou) {
-      await carregarReservas(user.id)
-    }
-  }
-
-  const recarregar = async () => {
-    if (!user?.id) return
-
-    setCarregando(true)
-    setMensagem('')
+    setAbrindoGrupoId(reserva.id)
+    setErro('')
+    setMensagem('Abrindo grupo da sua aventura...')
 
     try {
-      await carregarReservas(user.id)
+      const response = await fetch('/api/grupos/garantir-acesso', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          reservaId: reserva.id
+        })
+      })
 
-      const atualizou = await reconciliarPagHiperPorClienteInterno(
-        user.id,
-        false
-      )
+      const data = await response.json().catch(() => null)
 
-      if (atualizou) {
-        await carregarReservas(user.id)
-      } else {
-        await carregarReservas(user.id)
+      if (!response.ok || !data?.sucesso) {
+        const diagnostico = await fetch('/api/grupos/diagnostico-reserva', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            reservaId: reserva.id,
+            corrigir: true
+          })
+        })
+
+        const diagnosticoData = await diagnostico.json().catch(() => null)
+
+        if (diagnostico.ok && diagnosticoData?.grupo?.id) {
+          router.push(`/cliente/grupos/${diagnosticoData.grupo.id}`)
+          return
+        }
+
+        setErro(
+          data?.erro ||
+            diagnosticoData?.erro ||
+            'Não foi possível abrir o grupo agora. Tente atualizar suas reservas.'
+        )
+        return
       }
+
+      const redirectUrl =
+        data?.redirectUrl ||
+        (data?.grupo?.id ? `/cliente/grupos/${data.grupo.id}` : '')
+
+      if (redirectUrl) {
+        router.push(redirectUrl)
+        return
+      }
+
+      setErro('Grupo liberado, mas não foi possível localizar o endereço.')
+    } catch (error) {
+      console.error('Erro ao abrir grupo:', error)
+      setErro('Não foi possível abrir o grupo agora.')
     } finally {
-      setCarregando(false)
+      setAbrindoGrupoId('')
     }
   }
 
-  const cancelarReserva = async (reservaId: string, e: React.MouseEvent) => {
-    e.stopPropagation() // Impede o clique de propagar para o card
+  const cancelarReserva = async (reserva: Reserva) => {
+    if (!reserva?.id || !user?.id) return
 
-    const confirmar = window.confirm(
-      'Tem certeza que deseja cancelar esta reserva? Esta ação deve ser usada apenas quando realmente necessário.'
-    )
+    if (pagamentoConfirmado(reserva)) {
+      setErro('Reservas pagas/confirmadas não podem ser canceladas por aqui.')
+      return
+    }
+
+    const confirmar = window.confirm('Deseja cancelar esta reserva?')
 
     if (!confirmar) return
 
+    setCancelandoId(reserva.id)
+    setErro('')
     setMensagem('')
 
     try {
       const { error } = await supabase
         .from('reservas')
         .update({
-          status: 'cancelada'
+          status: 'cancelada',
+          updated_at: new Date().toISOString()
         })
-        .eq('id', reservaId)
+        .eq('id', reserva.id)
+        .eq('cliente_id', user.id)
 
       if (error) {
         console.error('Erro ao cancelar reserva:', error)
-        setMensagem('Erro ao cancelar reserva.')
+        setErro('Não foi possível cancelar a reserva.')
         return
       }
 
-      if (user?.id) {
-        await carregarReservas(user.id)
-      }
-
       setMensagem('Reserva cancelada.')
+      await carregarReservas(user.id)
     } catch (error) {
-      console.error('Erro ao cancelar reserva:', error)
-      setMensagem('Erro ao cancelar reserva.')
+      console.error('Erro inesperado ao cancelar reserva:', error)
+      setErro('Erro ao cancelar reserva.')
+    } finally {
+      setCancelandoId('')
     }
   }
 
-  const abrirPagamento = (reservaId: string, e: React.MouseEvent) => {
-    e.stopPropagation() // Impede o clique de propagar para o card
-    router.push(`/cliente/pagamento/${reservaId}`)
-  }
-
-  const abrirDetalhesRoteiro = (roteiroId: string | null | undefined) => {
-    if (roteiroId) {
-      router.push(`/roteiros/${roteiroId}`)
-    }
-  }
-
-  const sair = () => {
-    localStorage.removeItem('user')
-    router.push('/login')
-  }
-
-  const formatarData = (data?: string | null) => {
-    if (!data) return '-'
-
-    const date = new Date(data)
-
-    if (Number.isNaN(date.getTime())) {
-      return data
-    }
-
-    return date.toLocaleDateString('pt-BR')
-  }
-
-  const badgePagamento = (reserva: ReservaCompleta) => {
-    if (pagamentoConfirmado(reserva)) {
-      return <span className="badge badge-green">Pago</span>
-    }
-
-    return <span className="badge badge-yellow">Pendente</span>
-  }
-
-  const badgeStatus = (reserva: ReservaCompleta) => {
+  const badgeStatus = (reserva: Reserva) => {
     if (reservaCancelada(reserva)) {
       return <span className="badge badge-red">Cancelada</span>
     }
@@ -471,20 +538,58 @@ export default function MinhasReservasPage() {
       return <span className="badge badge-green">Confirmada</span>
     }
 
-    return <span className="badge badge-yellow">Aguardando pagamento</span>
+    return <span className="badge badge-yellow">Aguardando</span>
   }
 
-  if (carregando) {
+  const badgePagamento = (reserva: Reserva) => {
+    if (pagamentoConfirmado(reserva)) {
+      return <span className="badge badge-green">Pago</span>
+    }
+
+    if (reservaCancelada(reserva)) {
+      return <span className="badge badge-neutral">Cancelado</span>
+    }
+
+    return <span className="badge badge-yellow">Pendente</span>
+  }
+
+  const reservasFiltradas = useMemo(() => {
+    return reservas.filter((reserva) => {
+      if (filtro === 'todas') return true
+      if (filtro === 'pagas') return pagamentoConfirmado(reserva)
+      if (filtro === 'canceladas') return reservaCancelada(reserva)
+      if (filtro === 'pendentes') {
+        return !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
+      }
+
+      return true
+    })
+  }, [reservas, filtro])
+
+  const stats = useMemo(() => {
+    const pagas = reservas.filter(pagamentoConfirmado)
+    const pendentes = reservas.filter(
+      (reserva) => !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
+    )
+    const canceladas = reservas.filter(reservaCancelada)
+
+    return {
+      total: reservas.length,
+      pagas: pagas.length,
+      pendentes: pendentes.length,
+      canceladas: canceladas.length
+    }
+  }, [reservas])
+
+  if (carregando || !user) {
     return (
-      <main className="loadingPage">
+      <main className="loading">
         <style>{`
-          * {
-            box-sizing: border-box;
-          }
+          * { box-sizing: border-box; }
 
           body {
             margin: 0;
-            background: #f3f4f6;
+            background: #f6f7f1;
             font-family:
               Inter,
               ui-sans-serif,
@@ -495,39 +600,37 @@ export default function MinhasReservasPage() {
               sans-serif;
           }
 
-          .loadingPage {
+          .loading {
             min-height: 100vh;
             min-height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #f3f4f6;
+            background:
+              radial-gradient(circle at top left, rgba(132, 204, 22, 0.18), transparent 30%),
+              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
             color: #374151;
           }
 
           .loadingCard {
             background: #ffffff;
-            border-radius: 24px;
-            padding: 26px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            border: 1px solid rgba(15, 23, 42, 0.06);
+            border-radius: 30px;
+            padding: 28px;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
             text-align: center;
           }
 
-          .logoImg {
-            height: 52px;
+          .loadingCard img {
+            height: 68px;
             width: auto;
-            object-fit: contain;
             margin-bottom: 12px;
           }
         `}</style>
 
         <div className="loadingCard">
-          <img
-            src="/logo-prussik-display.png"
-            alt="PrussikTrails"
-            className="logoImg"
-          />
-          <p>Carregando suas reservas...</p>
+          <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          <div>Carregando suas reservas...</div>
         </div>
       </main>
     )
@@ -542,7 +645,7 @@ export default function MinhasReservasPage() {
 
         body {
           margin: 0;
-          background: #f3f4f6;
+          background: #f6f7f1;
           font-family:
             Inter,
             ui-sans-serif,
@@ -557,219 +660,398 @@ export default function MinhasReservasPage() {
           min-height: 100vh;
           min-height: 100dvh;
           background:
-            radial-gradient(circle at top left, rgba(22, 163, 74, 0.08), transparent 32%),
-            linear-gradient(180deg, #f9fafb 0%, #eef2f7 100%);
-          color: #111827;
+            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
+          color: #172018;
         }
 
         .header {
-          background: #ffffff;
-          border-bottom: 1px solid #e5e7eb;
-          padding: 14px 18px;
           position: sticky;
           top: 0;
-          z-index: 30;
+          z-index: 40;
+          background: rgba(255, 253, 247, 0.86);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+          backdrop-filter: blur(18px);
+          padding: 10px 16px;
         }
 
         .headerInner {
-          max-width: 1240px;
+          max-width: 1180px;
           margin: 0 auto;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 14px;
-          flex-wrap: wrap;
+          gap: 12px;
         }
 
         .brand {
           display: flex;
           align-items: center;
           gap: 10px;
+          cursor: pointer;
+          min-width: 0;
         }
 
         .brand img {
-          height: 44px;
+          height: 42px;
           width: auto;
           object-fit: contain;
           display: block;
         }
 
-        .brandText {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
         .brandTitle {
+          font-size: 18px;
+          font-weight: 950;
           color: #dc2626;
-          font-weight: 900;
-          font-size: 20px;
           line-height: 1;
+          letter-spacing: -0.05em;
         }
 
-        .brandSubtitle {
-          color: #6b7280;
+        .brandSub {
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 700;
+          margin-top: 3px;
+        }
+
+        .headerActions {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+        }
+
+        .iconBtn {
+          height: 38px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: rgba(255,255,255,0.78);
+          border-radius: 999px;
+          padding: 0 13px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
           font-size: 12px;
+          font-weight: 900;
+          transition: 0.2s ease;
+          color: #172018;
+          white-space: nowrap;
         }
 
-        .actions {
+        .iconBtn.primary {
+          background: #172018;
+          color: #ffffff;
+          border-color: #172018;
+        }
+
+        .iconBtn:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+        }
+
+        .container {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 22px 16px 48px;
+        }
+
+        .hero {
+          position: relative;
+          overflow: hidden;
+          border-radius: 38px;
+          padding: 30px;
+          min-height: 310px;
+          background:
+            linear-gradient(135deg, rgba(23, 32, 24, 0.76), rgba(23, 32, 24, 0.34)),
+            radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 34%),
+            linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
+          color: #ffffff;
+          box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
+          margin-bottom: 16px;
+        }
+
+        .hero::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+          background-size: 46px 46px;
+          mask-image: linear-gradient(to bottom, black, transparent);
+          pointer-events: none;
+        }
+
+        .heroContent {
+          position: relative;
+          z-index: 2;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 280px;
+          gap: 24px;
+          align-items: end;
+          min-height: 245px;
+        }
+
+        .eyebrow {
+          display: inline-flex;
+          width: fit-content;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.26);
+          background: rgba(255, 255, 255, 0.12);
+          color: #f7fee7;
+          padding: 8px 12px;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-bottom: 14px;
+        }
+
+        .heroTitle {
+          margin: 0;
+          max-width: 760px;
+          font-size: clamp(42px, 6vw, 72px);
+          line-height: 0.92;
+          font-weight: 950;
+          letter-spacing: -0.085em;
+        }
+
+        .heroTitle span {
+          color: #bef264;
+          text-shadow: 0 0 28px rgba(190, 242, 100, 0.32);
+        }
+
+        .heroText {
+          max-width: 650px;
+          color: rgba(255,255,255,0.82);
+          line-height: 1.62;
+          margin: 16px 0 0;
+          font-size: 14px;
+        }
+
+        .heroCard {
+          background: rgba(255, 255, 255, 0.14);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          border-radius: 30px;
+          padding: 20px;
+          backdrop-filter: blur(16px);
+        }
+
+        .heroCardLabel {
+          color: rgba(255,255,255,0.76);
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+        }
+
+        .heroCardValue {
+          margin-top: 9px;
+          color: #ffffff;
+          font-size: 34px;
+          line-height: 1.05;
+          font-weight: 950;
+          letter-spacing: -0.07em;
+        }
+
+        .heroCardText {
+          margin-top: 8px;
+          color: rgba(255,255,255,0.78);
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+        }
+
+        .alert {
+          border-radius: 18px;
+          padding: 13px 15px;
+          margin-bottom: 16px;
+          font-size: 13px;
+          font-weight: 800;
+          line-height: 1.45;
+        }
+
+        .alert.success {
+          background: #ecfdf5;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+        }
+
+        .alert.error {
+          background: #fee2e2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
+        }
+
+        .statsGrid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .statCard {
+          background: rgba(255,255,255,0.86);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 28px;
+          padding: 16px;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+          cursor: pointer;
+        }
+
+        .statValue {
+          color: #172018;
+          font-size: 30px;
+          font-weight: 950;
+          letter-spacing: -0.07em;
+        }
+
+        .statLabel {
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 850;
+          margin-top: 3px;
+          line-height: 1.35;
+        }
+
+        .toolbar {
+          background: rgba(255,255,255,0.88);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 30px;
+          padding: 14px;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+
+        .tabs {
           display: flex;
           gap: 8px;
           flex-wrap: wrap;
         }
 
-        .btn {
-          border: none;
+        .tab {
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: #fffdf7;
+          color: #475569;
           border-radius: 999px;
-          padding: 10px 14px;
+          padding: 10px 13px;
           font-size: 12px;
-          font-weight: 800;
+          font-weight: 950;
           cursor: pointer;
-          transition: 0.2s ease;
-          white-space: nowrap;
         }
 
-        .btn:disabled {
-          opacity: 0.65;
-          cursor: not-allowed;
-        }
-
-        .btn-light {
-          background: #f3f4f6;
-          color: #374151;
-        }
-
-        .btn-dark {
-          background: #111827;
+        .tab.active {
+          background: #172018;
           color: #ffffff;
+          border-color: #172018;
         }
 
-        .btn-green {
-          background: #16a34a;
-          color: #ffffff;
+        .grid {
+          display: grid;
+          gap: 16px;
         }
 
-        .btn-red {
-          background: #dc2626;
-          color: #ffffff;
-        }
-
-        .btn-soft-red {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-
-        .btn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 8px 20px rgba(0,0,0,0.08);
-        }
-
-        .container {
-          max-width: 1240px;
-          margin: 0 auto;
-          padding: 22px 16px 46px;
-        }
-
-        .pageTitle {
-          margin-bottom: 18px;
-        }
-
-        .pageTitle h1 {
-          margin: 0;
-          font-size: 28px;
-          font-weight: 900;
-          color: #111827;
-        }
-
-        .pageTitle p {
-          margin: 6px 0 0;
-          color: #6b7280;
-          font-size: 14px;
-          line-height: 1.5;
-        }
-
-        .message {
-          margin-bottom: 16px;
-          padding: 13px 14px;
-          border-radius: 16px;
-          font-size: 13px;
-          background: #eff6ff;
-          color: #1e40af;
-          border: 1px solid #bfdbfe;
-        }
-
-        .empty {
-          background: #ffffff;
-          border-radius: 26px;
-          border: 1px solid #eef2f7;
-          padding: 32px;
-          text-align: center;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-        }
-
-        .empty h2 {
-          margin: 0 0 8px;
-          color: #111827;
-          font-size: 22px;
-        }
-
-        .empty p {
-          margin: 0 0 18px;
-          color: #6b7280;
-        }
-
-        .tableCard {
-          background: #ffffff;
-          border-radius: 26px;
-          border: 1px solid #eef2f7;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        .card {
+          background: rgba(255,255,255,0.90);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 32px;
           overflow: hidden;
+          box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+          display: grid;
+          grid-template-columns: 230px minmax(0, 1fr);
         }
 
-        /* Linha clicável */
-        .clickable-row {
-          cursor: pointer;
-          transition: background 0.15s ease;
+        .imageBox {
+          min-height: 230px;
+          background:
+            radial-gradient(circle at top right, rgba(251, 146, 60, 0.20), transparent 38%),
+            linear-gradient(135deg, #dbe7c8, #aebf8d);
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #64748b;
+          font-weight: 950;
         }
 
-        .clickable-row:hover {
-          background: #f0fdf4;
-        }
-
-        .desktopTable {
+        .imageBox img {
           width: 100%;
-          border-collapse: collapse;
+          height: 100%;
+          object-fit: cover;
+          display: block;
         }
 
-        .desktopTable th {
-          text-align: left;
-          padding: 14px 12px;
-          color: #6b7280;
-          font-size: 12px;
-          border-bottom: 1px solid #e5e7eb;
-          background: #f9fafb;
+        .cardBody {
+          padding: 18px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          gap: 14px;
         }
 
-        .desktopTable td {
-          padding: 14px 12px;
-          border-bottom: 1px solid #f3f4f6;
+        .cardTitle {
+          color: #172018;
+          font-size: 24px;
+          line-height: 1.08;
+          font-weight: 950;
+          letter-spacing: -0.055em;
+          margin: 0;
+        }
+
+        .meta {
+          color: #64748b;
           font-size: 13px;
-          color: #374151;
-          vertical-align: middle;
+          line-height: 1.5;
+          font-weight: 750;
+          margin-top: 8px;
         }
 
-        .desktopTable tr:last-child td {
-          border-bottom: none;
+        .infoGrid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 8px;
         }
 
-        .roteiroNome {
-          color: #111827;
+        .infoItem {
+          background: #fffdf7;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 18px;
+          padding: 10px;
+        }
+
+        .infoLabel {
+          color: #64748b;
+          font-size: 10px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .infoValue {
+          color: #172018;
+          font-size: 12px;
           font-weight: 900;
+          margin-top: 4px;
+          line-height: 1.35;
         }
 
-        .valor {
-          color: #16a34a;
-          font-weight: 900;
+        .cardFooter {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+
+        .badges {
+          display: flex;
+          gap: 7px;
+          flex-wrap: wrap;
         }
 
         .badge {
@@ -777,9 +1059,9 @@ export default function MinhasReservasPage() {
           align-items: center;
           justify-content: center;
           border-radius: 999px;
-          padding: 6px 10px;
+          padding: 7px 10px;
           font-size: 11px;
-          font-weight: 900;
+          font-weight: 950;
           white-space: nowrap;
         }
 
@@ -798,129 +1080,171 @@ export default function MinhasReservasPage() {
           color: #991b1b;
         }
 
-        .rowActions {
+        .badge-neutral {
+          background: #f1f5f9;
+          color: #475569;
+        }
+
+        .actions {
           display: flex;
           gap: 8px;
-          justify-content: flex-end;
           flex-wrap: wrap;
         }
 
-        .mobileList {
-          display: none;
-        }
-
-        /* Card mobile clicável */
-        .mobile-card-clickable {
+        .btn {
+          border: none;
+          border-radius: 999px;
+          padding: 12px 14px;
+          font-size: 12px;
+          font-weight: 950;
           cursor: pointer;
-          transition: background 0.15s ease, transform 0.1s ease;
+          transition: 0.2s ease;
         }
 
-        .mobile-card-clickable:active {
-          transform: scale(0.99);
+        .btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.10);
         }
 
-        .mobileCard {
-          background: #ffffff;
-          border-radius: 22px;
-          border: 1px solid #eef2f7;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-          padding: 16px;
-          margin-bottom: 12px;
+        .btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
-        .mobileTop {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: flex-start;
-          margin-bottom: 12px;
+        .btn.primary {
+          background: #16a34a;
+          color: #ffffff;
         }
 
-        .mobileTitle {
-          color: #111827;
-          font-weight: 900;
-          font-size: 15px;
+        .btn.dark {
+          background: #172018;
+          color: #ffffff;
         }
 
-        .mobileMeta {
-          display: grid;
-          gap: 6px;
-          color: #6b7280;
-          font-size: 13px;
-          margin-bottom: 12px;
+        .btn.light {
+          background: #eef2e5;
+          color: #475569;
         }
 
-        .mobileMeta strong {
-          color: #374151;
+        .btn.danger {
+          background: #fee2e2;
+          color: #991b1b;
         }
 
-        @media (max-width: 860px) {
-          .desktopWrap {
+        .empty {
+          padding: 34px;
+          text-align: center;
+          color: #64748b;
+          font-size: 14px;
+          background: rgba(255,255,255,0.86);
+          border-radius: 28px;
+          border: 1px dashed #cbd5e1;
+          font-weight: 700;
+        }
+
+        @media (max-width: 1040px) {
+          .heroContent {
+            grid-template-columns: 1fr;
+          }
+
+          .statsGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .card {
+            grid-template-columns: 1fr;
+          }
+
+          .imageBox {
+            min-height: 220px;
+          }
+        }
+
+        @media (max-width: 720px) {
+          .header {
+            padding: 9px 12px;
+          }
+
+          .brandTitle,
+          .brandSub {
             display: none;
           }
 
-          .mobileList {
-            display: block;
+          .headerActions .hideMobile {
+            display: none;
           }
 
-          .headerInner {
-            align-items: flex-start;
+          .container {
+            padding: 16px 12px 42px;
           }
 
-          .actions {
+          .hero {
+            border-radius: 28px;
+            padding: 22px;
+            min-height: auto;
+          }
+
+          .heroContent {
+            min-height: auto;
+          }
+
+          .statsGrid,
+          .infoGrid {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .toolbar {
+            align-items: stretch;
+          }
+
+          .toolbar .iconBtn {
             width: 100%;
           }
 
-          .actions .btn {
-            flex: 1;
+          .actions {
+            display: grid;
+            width: 100%;
           }
 
-          .pageTitle h1 {
-            font-size: 24px;
+          .btn {
+            width: 100%;
           }
         }
 
-        @media (max-width: 520px) {
-          .container {
-            padding: 16px 12px 38px;
-          }
-
-          .header {
-            padding: 12px;
+        @media (max-width: 480px) {
+          .heroTitle {
+            font-size: 40px;
           }
 
           .brand img {
             height: 38px;
           }
 
-          .brandTitle {
-            font-size: 18px;
-          }
-
-          .rowActions {
-            justify-content: stretch;
-          }
-
-          .rowActions .btn {
-            flex: 1;
+          .statsGrid,
+          .infoGrid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
 
       <header className="header">
         <div className="headerInner">
-          <div className="brand">
+          <div
+            className="brand"
+            onClick={() => router.push('/cliente/dashboard')}
+          >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <div className="brandText">
+
+            <div>
               <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSubtitle">Minhas Reservas</div>
+              <div className="brandSub">Minhas reservas</div>
             </div>
           </div>
 
-          <div className="actions">
+          <div className="headerActions">
             <button
               type="button"
-              className="btn btn-light"
+              className="iconBtn hideMobile"
               onClick={() => router.push('/cliente/dashboard')}
             >
               Dashboard
@@ -928,220 +1252,254 @@ export default function MinhasReservasPage() {
 
             <button
               type="button"
-              className="btn btn-dark"
+              className="iconBtn hideMobile"
+              onClick={() => router.push('/roteiros')}
+            >
+              Roteiros
+            </button>
+
+            <button
+              type="button"
+              className="iconBtn"
+              onClick={atualizarTudo}
+              disabled={atualizando}
+            >
+              {atualizando ? '…' : '↻'}
+            </button>
+
+            <button
+              type="button"
+              className="iconBtn primary"
               onClick={() => router.push('/cliente/perfil')}
             >
               Perfil
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-green"
-              onClick={recarregar}
-              disabled={reconciliando}
-            >
-              {reconciliando ? 'Verificando...' : 'Recarregar'}
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-red"
-              onClick={sair}
-            >
-              Sair
             </button>
           </div>
         </div>
       </header>
 
       <div className="container">
-        <section className="pageTitle">
-          <h1>Minhas Reservas</h1>
-          <p>
-            Acompanhe suas aventuras. O sistema verifica automaticamente pagamentos pendentes na PagHiper.
-            {ultimaVerificacao && (
-              <>
-                {' '}
-                Última verificação: {ultimaVerificacao}.
-              </>
-            )}
-          </p>
+        <section className="hero">
+          <div className="heroContent">
+            <div>
+              <div className="eyebrow">Suas aventuras</div>
+
+              <h1 className="heroTitle">
+                Oi, {primeiroNome(nomeUsuario(user))}.
+                <br />
+                Suas reservas ficam <span>organizadas aqui.</span>
+              </h1>
+
+              <p className="heroText">
+                Acompanhe pagamento, confirmação e acesso ao grupo interno do roteiro.
+                Quando o pagamento for confirmado, o botão Entrar no grupo aparecerá na reserva.
+                {ultimaAtualizacao && (
+                  <>
+                    <br />
+                    Atualizado às {ultimaAtualizacao}.
+                  </>
+                )}
+              </p>
+            </div>
+
+            <aside className="heroCard">
+              <div className="heroCardLabel">Reservas confirmadas</div>
+              <div className="heroCardValue">{stats.pagas}</div>
+              <div className="heroCardText">
+                Reservas pagas liberam acesso automático ao grupo da aventura.
+              </div>
+            </aside>
+          </div>
         </section>
 
         {mensagem && (
-          <div className="message">
-            {mensagem}
-          </div>
+          <div className="alert success">{mensagem}</div>
         )}
 
-        {reservas.length === 0 ? (
-          <section className="empty">
-            <h2>Nenhuma reserva encontrada</h2>
-            <p>Você ainda não possui reservas cadastradas.</p>
+        {erro && (
+          <div className="alert error">{erro}</div>
+        )}
+
+        <section className="statsGrid">
+          <article className="statCard" onClick={() => setFiltro('todas')}>
+            <div className="statValue">{stats.total}</div>
+            <div className="statLabel">reservas totais</div>
+          </article>
+
+          <article className="statCard" onClick={() => setFiltro('pagas')}>
+            <div className="statValue">{stats.pagas}</div>
+            <div className="statLabel">pagas/confirmadas</div>
+          </article>
+
+          <article className="statCard" onClick={() => setFiltro('pendentes')}>
+            <div className="statValue">{stats.pendentes}</div>
+            <div className="statLabel">aguardando pagamento</div>
+          </article>
+
+          <article className="statCard" onClick={() => setFiltro('canceladas')}>
+            <div className="statValue">{stats.canceladas}</div>
+            <div className="statLabel">canceladas</div>
+          </article>
+        </section>
+
+        <section className="toolbar">
+          <div className="tabs">
+            <button
+              type="button"
+              className={`tab ${filtro === 'todas' ? 'active' : ''}`}
+              onClick={() => setFiltro('todas')}
+            >
+              Todas
+            </button>
 
             <button
               type="button"
-              className="btn btn-green"
-              onClick={() => router.push('/roteiros')}
+              className={`tab ${filtro === 'pagas' ? 'active' : ''}`}
+              onClick={() => setFiltro('pagas')}
             >
-              Explorar roteiros
+              Pagas
             </button>
-          </section>
+
+            <button
+              type="button"
+              className={`tab ${filtro === 'pendentes' ? 'active' : ''}`}
+              onClick={() => setFiltro('pendentes')}
+            >
+              Pendentes
+            </button>
+
+            <button
+              type="button"
+              className={`tab ${filtro === 'canceladas' ? 'active' : ''}`}
+              onClick={() => setFiltro('canceladas')}
+            >
+              Canceladas
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="iconBtn primary"
+            onClick={atualizarTudo}
+            disabled={atualizando}
+          >
+            {atualizando ? 'Verificando...' : 'Verificar pagamentos'}
+          </button>
+        </section>
+
+        {reservasFiltradas.length === 0 ? (
+          <div className="empty">
+            Nenhuma reserva encontrada neste filtro.
+          </div>
         ) : (
-          <>
-            {/* VERSÃO DESKTOP */}
-            <section className="tableCard desktopWrap">
-              <table className="desktopTable">
-                <thead>
-                  <tr>
-                    <th>Roteiro</th>
-                    <th>Guia</th>
-                    <th>Data</th>
-                    <th>Pessoas</th>
-                    <th>Valor</th>
-                    <th>Pagamento</th>
-                    <th>Status</th>
-                    <th style={{ textAlign: 'right' }}>Ações</th>
-                  </tr>
-                </thead>
+          <section className="grid">
+            {reservasFiltradas.map((reserva) => {
+              const roteiro = reserva.roteiro
+              const foto = imagemRoteiro(roteiro)
+              const paga = pagamentoConfirmado(reserva)
+              const cancelada = reservaCancelada(reserva)
 
-                <tbody>
-                  {reservas.map((reserva) => {
-                    const podePagar =
-                      !pagamentoConfirmado(reserva) &&
-                      !reservaCancelada(reserva)
+              return (
+                <article className="card" key={reserva.id}>
+                  <div className="imageBox">
+                    {foto ? (
+                      <img src={foto} alt={tituloRoteiro(roteiro)} />
+                    ) : (
+                      'Roteiro'
+                    )}
+                  </div>
 
-                    const podeCancelar =
-                      !reservaCancelada(reserva) &&
-                      !pagamentoConfirmado(reserva)
+                  <div className="cardBody">
+                    <div>
+                      <h2 className="cardTitle">
+                        {reserva.roteiro_titulo || tituloRoteiro(roteiro)}
+                      </h2>
 
-                    return (
-                      <tr
-                        key={reserva.id}
-                        className="clickable-row"
-                        onClick={() => abrirDetalhesRoteiro(reserva.roteiro_id)}
-                      >
-                        <td>
-                          <div className="roteiroNome">
-                            {reserva.roteiro_titulo}
-                          </div>
-                        </td>
-                        <td>{reserva.guia_nome}</td>
-                        <td>{formatarData(reserva.created_at)}</td>
-                        <td>{reserva.quantidade_pessoas || 1}</td>
-                        <td>
-                          <span className="valor">
-                            R$ {reserva.valor_final.toFixed(2)}
-                          </span>
-                        </td>
-                        <td>{badgePagamento(reserva)}</td>
-                        <td>{badgeStatus(reserva)}</td>
-                        <td>
-                          <div className="rowActions">
-                            {podePagar && (
-                              <button
-                                type="button"
-                                className="btn btn-green"
-                                onClick={(e) => abrirPagamento(reserva.id, e)}
-                              >
-                                Pagar
-                              </button>
-                            )}
-
-                            {podeCancelar && (
-                              <button
-                                type="button"
-                                className="btn btn-soft-red"
-                                onClick={(e) => cancelarReserva(reserva.id, e)}
-                              >
-                                Cancelar
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </section>
-
-            {/* VERSÃO MOBILE */}
-            <section className="mobileList">
-              {reservas.map((reserva) => {
-                const podePagar =
-                  !pagamentoConfirmado(reserva) &&
-                  !reservaCancelada(reserva)
-
-                const podeCancelar =
-                  !reservaCancelada(reserva) &&
-                  !pagamentoConfirmado(reserva)
-
-                return (
-                  <article
-                    key={reserva.id}
-                    className="mobileCard mobile-card-clickable"
-                    onClick={() => abrirDetalhesRoteiro(reserva.roteiro_id)}
-                  >
-                    <div className="mobileTop">
-                      <div className="mobileTitle">
-                        {reserva.roteiro_titulo}
-                      </div>
-
-                      {badgeStatus(reserva)}
-                    </div>
-
-                    <div className="mobileMeta">
-                      <div>
-                        <strong>Guia:</strong> {reserva.guia_nome}
-                      </div>
-
-                      <div>
-                        <strong>Data:</strong> {formatarData(reserva.created_at)}
-                      </div>
-
-                      <div>
-                        <strong>Pessoas:</strong> {reserva.quantidade_pessoas || 1}
-                      </div>
-
-                      <div>
-                        <strong>Valor:</strong>{' '}
-                        <span className="valor">
-                          R$ {reserva.valor_final.toFixed(2)}
-                        </span>
-                      </div>
-
-                      <div>
-                        <strong>Pagamento:</strong> {badgePagamento(reserva)}
+                      <div className="meta">
+                        Guia: {reserva.guia_nome || 'Guia'}
+                        <br />
+                        {localRoteiro(roteiro)}
                       </div>
                     </div>
 
-                    <div className="rowActions">
-                      {podePagar && (
-                        <button
-                          type="button"
-                          className="btn btn-green"
-                          onClick={(e) => abrirPagamento(reserva.id, e)}
-                        >
-                          Pagar
-                        </button>
-                      )}
+                    <div className="infoGrid">
+                      <div className="infoItem">
+                        <div className="infoLabel">Data</div>
+                        <div className="infoValue">{formatarData(dataRoteiro(roteiro))}</div>
+                      </div>
 
-                      {podeCancelar && (
-                        <button
-                          type="button"
-                          className="btn btn-soft-red"
-                          onClick={(e) => cancelarReserva(reserva.id, e)}
-                        >
-                          Cancelar
-                        </button>
-                      )}
+                      <div className="infoItem">
+                        <div className="infoLabel">Hora</div>
+                        <div className="infoValue">{horaRoteiro(roteiro) || '-'}</div>
+                      </div>
+
+                      <div className="infoItem">
+                        <div className="infoLabel">Pessoas</div>
+                        <div className="infoValue">{reserva.quantidade_pessoas || 1}</div>
+                      </div>
+
+                      <div className="infoItem">
+                        <div className="infoLabel">Valor</div>
+                        <div className="infoValue">
+                          {formatarMoeda(reserva.valor_calculado || reserva.valor_total || 0)}
+                        </div>
+                      </div>
                     </div>
-                  </article>
-                )
-              })}
-            </section>
-          </>
+
+                    <div className="cardFooter">
+                      <div className="badges">
+                        {badgeStatus(reserva)}
+                        {badgePagamento(reserva)}
+                      </div>
+
+                      <div className="actions">
+                        {paga ? (
+                          <button
+                            type="button"
+                            className="btn primary"
+                            onClick={() => entrarNoGrupo(reserva)}
+                            disabled={abrindoGrupoId === reserva.id}
+                          >
+                            {abrindoGrupoId === reserva.id ? 'Abrindo...' : 'Entrar no grupo'}
+                          </button>
+                        ) : !cancelada ? (
+                          <>
+                            <button
+                              type="button"
+                              className="btn dark"
+                              onClick={() => router.push(`/cliente/pagamento/${reserva.id}`)}
+                            >
+                              Pagar
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn light"
+                              onClick={() => verificarReserva(reserva)}
+                              disabled={verificandoId === reserva.id}
+                            >
+                              {verificandoId === reserva.id ? 'Verificando...' : 'Já paguei'}
+                            </button>
+                          </>
+                        ) : null}
+
+                        {!paga && !cancelada && (
+                          <button
+                            type="button"
+                            className="btn danger"
+                            onClick={() => cancelarReserva(reserva)}
+                            disabled={cancelandoId === reserva.id}
+                          >
+                            {cancelandoId === reserva.id ? 'Cancelando...' : 'Cancelar'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </section>
         )}
       </div>
     </main>
