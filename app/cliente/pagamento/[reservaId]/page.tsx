@@ -4,6 +4,17 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
+type UsuarioLocal = {
+  id: string
+  nome?: string | null
+  name?: string | null
+  email?: string | null
+  cpf?: string | null
+  telefone?: string | null
+  celular?: string | null
+  tipo?: string | null
+}
+
 type Reserva = {
   id: string
   cliente_id?: string | null
@@ -12,154 +23,206 @@ type Reserva = {
   valor_total?: number | null
   status?: string | null
   pagamento_status?: string | null
-  paghiper_order_id?: string | null
-  paghiper_transaction_id?: string | null
-  transaction_id?: string | null
   order_id?: string | null
+  transaction_id?: string | null
+  pix_code?: string | null
   pix_qr_code?: string | null
-  pix_copia_cola?: string | null
-  qr_code_base64?: string | null
-  codigo_pix?: string | null
   created_at?: string | null
 }
 
 type Roteiro = {
   id: string
   titulo?: string | null
-  preco?: number | null
-}
-
-type Cliente = {
-  id: string
   nome?: string | null
-  email?: string | null
-  telefone?: string | null
-  cpf?: string | null
+  preco?: number | null
+  valor?: number | null
+  local?: string | null
+  localizacao?: string | null
+  data_roteiro?: string | null
+  data_saida?: string | null
+  data?: string | null
+  hora_roteiro?: string | null
+  hora_saida?: string | null
+  hora?: string | null
+  foto_capa?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
-export default function PagamentoPIXPage() {
-  const params = useParams()
+type PixData = {
+  order_id?: string
+  transaction_id?: string
+  digitable_line?: string
+  pix_code?: string
+  qr_code?: string
+  qrcode?: string
+  qr_code_base64?: string
+  pix_qr_code?: string
+  url_slip?: string
+  url?: string
+  [key: string]: any
+}
+
+export default function ClientePagamentoPage() {
   const router = useRouter()
+  const params = useParams()
+  const iniciouRef = useRef(false)
+  const verificandoRef = useRef(false)
 
   const reservaId = String(params?.reservaId || '')
 
-  const carregouRef = useRef(false)
-  const redirecionouRef = useRef(false)
-  const gerandoPixRef = useRef(false)
-  const verificacaoEmCursoRef = useRef(false)
+  const [user, setUser] = useState<UsuarioLocal | null>(null)
+  const [reserva, setReserva] = useState<Reserva | null>(null)
+  const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
+  const [pix, setPix] = useState<PixData | null>(null)
 
   const [carregando, setCarregando] = useState(true)
   const [gerandoPix, setGerandoPix] = useState(false)
-  const [verificandoPagamento, setVerificandoPagamento] = useState(false)
-
-  const [qrCode, setQrCode] = useState('')
-  const [codigoPix, setCodigoPix] = useState('')
-
-  const [valor, setValor] = useState(0)
-  const [roteiroTitulo, setRoteiroTitulo] = useState('Reserva PrussikTrails')
-  const [pagamentoStatus, setPagamentoStatus] = useState('pendente')
-  const [reservaStatus, setReservaStatus] = useState('pendente')
+  const [verificando, setVerificando] = useState(false)
+  const [pagamentoConfirmado, setPagamentoConfirmado] = useState(false)
+  const [redirecionandoGrupo, setRedirecionandoGrupo] = useState(false)
 
   const [mensagem, setMensagem] = useState('')
-  const [copiado, setCopiado] = useState(false)
+  const [erro, setErro] = useState('')
   const [ultimaVerificacao, setUltimaVerificacao] = useState('')
-  const [tentativasAuto, setTentativasAuto] = useState(0)
 
   useEffect(() => {
-    if (!reservaId) return
+    if (iniciouRef.current) return
 
-    if (carregouRef.current) return
-    carregouRef.current = true
-
-    carregarPagamento()
-  }, [reservaId])
+    iniciouRef.current = true
+    iniciar()
+  }, [])
 
   useEffect(() => {
-    if (!reservaId) return
-
-    const primeiraVerificacao = setTimeout(() => {
-      reconciliarPagamentoAgora(true)
-    }, 3500)
+    if (!reserva?.id || pagamentoConfirmado) return
 
     const interval = setInterval(() => {
-      reconciliarPagamentoAgora(true)
-    }, 7000)
+      verificarPagamento(true)
+    }, 9000)
 
-    return () => {
-      clearTimeout(primeiraVerificacao)
-      clearInterval(interval)
-    }
-  }, [reservaId])
+    return () => clearInterval(interval)
+  }, [reserva?.id, pagamentoConfirmado])
 
-  const parseJsonSeguro = async (response: Response) => {
-    const texto = await response.text()
+  const iniciar = async () => {
+    setCarregando(true)
+    setErro('')
+    setMensagem('')
 
     try {
-      return texto ? JSON.parse(texto) : null
-    } catch {
-      throw new Error(
-        `A rota retornou uma resposta inválida. Status ${response.status}. Verifique se a API existe e não está retornando HTML/404.`
-      )
-    }
-  }
+      const userData = localStorage.getItem('user')
 
-  const procurarCampoRecursivo = (obj: any, nomes: string[]): string => {
-    if (!obj || typeof obj !== 'object') return ''
-
-    for (const nome of nomes) {
-      const valor = obj[nome]
-
-      if (typeof valor === 'string' && valor.trim()) {
-        return valor
+      if (!userData) {
+        router.replace('/login')
+        return
       }
 
-      if (typeof valor === 'number') {
-        return String(valor)
+      const parsedUser = JSON.parse(userData) as UsuarioLocal
+
+      if (parsedUser.tipo !== 'cliente') {
+        router.replace('/login')
+        return
       }
+
+      setUser(parsedUser)
+
+      const reservaAtual = await carregarReserva(parsedUser.id)
+
+      if (reservaAtual) {
+        const jaPago = pagamentoEstaConfirmado(reservaAtual)
+
+        if (jaPago) {
+          setPagamentoConfirmado(true)
+          await direcionarParaGrupo(reservaAtual.id)
+          return
+        }
+
+        await gerarPixSeNecessario(reservaAtual, parsedUser)
+        await verificarPagamento(true)
+      }
+    } catch (error) {
+      console.error('Erro ao iniciar pagamento:', error)
+      setErro('Não foi possível carregar o pagamento agora.')
+    } finally {
+      setCarregando(false)
     }
-
-    for (const key of Object.keys(obj)) {
-      const encontrado = procurarCampoRecursivo(obj[key], nomes)
-
-      if (encontrado) return encontrado
-    }
-
-    return ''
   }
 
-  const formatarQrCode = (valorQr: string) => {
-    if (!valorQr) return ''
-
-    if (valorQr.startsWith('data:image')) {
-      return valorQr
-    }
-
-    return `data:image/png;base64,${valorQr}`
-  }
-
-  const normalizarStatus = (status?: string | null) => {
-    return String(status || '')
+  const normalizar = (valor?: string | null) => {
+    return String(valor || '')
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .trim()
   }
 
-  const pagamentoConfirmado = (
-    pagamento?: string | null,
-    status?: string | null
-  ) => {
-    const pagamentoNormalizado = normalizarStatus(pagamento)
-    const statusNormalizado = normalizarStatus(status)
+  const somenteNumeros = (valor?: string | null) => {
+    return String(valor || '').replace(/\D/g, '')
+  }
+
+  const nomeUsuario = (usuario?: UsuarioLocal | null) => {
+    return usuario?.nome || usuario?.name || 'Cliente'
+  }
+
+  const tituloRoteiro = (item?: Roteiro | null) => {
+    return item?.titulo || item?.nome || 'Roteiro'
+  }
+
+  const imagemRoteiro = (item?: Roteiro | null) => {
+    return item?.foto_capa || item?.foto_url || item?.imagem_url || ''
+  }
+
+  const localRoteiro = (item?: Roteiro | null) => {
+    return item?.local || item?.localizacao || 'Local a confirmar'
+  }
+
+  const dataRoteiro = (item?: Roteiro | null) => {
+    return item?.data_roteiro || item?.data_saida || item?.data || null
+  }
+
+  const horaRoteiro = (item?: Roteiro | null) => {
+    return item?.hora_roteiro || item?.hora_saida || item?.hora || ''
+  }
+
+  const formatarMoeda = (valor: any) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(Number(valor || 0))
+  }
+
+  const formatarData = (valor?: string | null) => {
+    if (!valor) return '-'
+
+    const data = new Date(valor)
+
+    if (Number.isNaN(data.getTime())) return valor
+
+    return data.toLocaleDateString('pt-BR')
+  }
+
+  const pagamentoEstaConfirmado = (item?: Reserva | null) => {
+    const pagamento = normalizar(item?.pagamento_status)
+    const status = normalizar(item?.status)
 
     return (
-      pagamentoNormalizado === 'pago' ||
-      pagamentoNormalizado === 'confirmado' ||
-      statusNormalizado === 'confirmada'
+      pagamento === 'pago' ||
+      pagamento === 'confirmado' ||
+      pagamento === 'aprovado' ||
+      pagamento === 'paid' ||
+      pagamento === 'approved' ||
+      status === 'confirmada' ||
+      status === 'realizada' ||
+      status === 'pago' ||
+      status === 'paga'
     )
   }
 
-  const buscarReserva = async () => {
+  const carregarReserva = async (clienteId: string) => {
+    if (!reservaId) {
+      setErro('Reserva não identificada.')
+      return null
+    }
+
     const { data, error } = await supabase
       .from('reservas')
       .select('*')
@@ -168,263 +231,170 @@ export default function PagamentoPIXPage() {
 
     if (error) {
       console.error('Erro ao buscar reserva:', error)
-      throw new Error('Erro ao buscar reserva.')
-    }
-
-    if (!data) {
-      throw new Error('Reserva não encontrada.')
-    }
-
-    return data as Reserva
-  }
-
-  const buscarRoteiro = async (roteiroId?: string | null) => {
-    if (!roteiroId) return null
-
-    const { data, error } = await supabase
-      .from('roteiros')
-      .select('id, titulo, preco')
-      .eq('id', roteiroId)
-      .maybeSingle()
-
-    if (error) {
-      console.warn('Erro ao buscar roteiro:', error)
+      setErro('Não foi possível localizar a reserva.')
       return null
     }
 
-    return data as Roteiro | null
-  }
-
-  const buscarCliente = async (clienteId?: string | null) => {
-    if (!clienteId) return null
-
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, nome, email, telefone, cpf')
-      .eq('id', clienteId)
-      .maybeSingle()
-
-    if (error) {
-      console.warn('Erro ao buscar cliente:', error)
+    if (!data?.id) {
+      setErro('Reserva não encontrada.')
       return null
     }
 
-    return data as Cliente | null
+    if (data.cliente_id && data.cliente_id !== clienteId) {
+      setErro('Esta reserva não pertence ao cliente logado.')
+      return null
+    }
+
+    const reservaData = data as Reserva
+    setReserva(reservaData)
+
+    if (reservaData.roteiro_id) {
+      const { data: roteiroData, error: roteiroError } = await supabase
+        .from('roteiros')
+        .select('*')
+        .eq('id', reservaData.roteiro_id)
+        .maybeSingle()
+
+      if (!roteiroError && roteiroData) {
+        setRoteiro(roteiroData as Roteiro)
+      }
+    }
+
+    if (
+      reservaData.pix_code ||
+      reservaData.pix_qr_code ||
+      reservaData.transaction_id ||
+      reservaData.order_id
+    ) {
+      setPix({
+        order_id: reservaData.order_id || '',
+        transaction_id: reservaData.transaction_id || '',
+        pix_code: reservaData.pix_code || '',
+        pix_qr_code: reservaData.pix_qr_code || '',
+        qr_code: reservaData.pix_qr_code || ''
+      })
+    }
+
+    return reservaData
   }
 
-  const atualizarReservaComFallback = async (
-    reservaIdAtual: string,
-    payloadOriginal: Record<string, any>
+  const extrairPixDaResposta = (data: any): PixData => {
+    const raiz = data || {}
+    const response = raiz.response || raiz.data || raiz.pix || raiz.invoice || raiz.result || raiz
+
+    return {
+      order_id:
+        raiz.order_id ||
+        response.order_id ||
+        response.orderId ||
+        response.order ||
+        '',
+      transaction_id:
+        raiz.transaction_id ||
+        response.transaction_id ||
+        response.transactionId ||
+        response.transaction ||
+        '',
+      digitable_line:
+        raiz.digitable_line ||
+        response.digitable_line ||
+        response.pix_code ||
+        response.emv ||
+        '',
+      pix_code:
+        raiz.pix_code ||
+        response.pix_code ||
+        response.digitable_line ||
+        response.emv ||
+        response.qr_code_text ||
+        '',
+      qr_code:
+        raiz.qr_code ||
+        raiz.qrcode ||
+        response.qr_code ||
+        response.qrcode ||
+        response.qr_code_base64 ||
+        response.pix_qr_code ||
+        '',
+      qrcode:
+        raiz.qrcode ||
+        response.qrcode ||
+        '',
+      qr_code_base64:
+        raiz.qr_code_base64 ||
+        response.qr_code_base64 ||
+        '',
+      pix_qr_code:
+        raiz.pix_qr_code ||
+        response.pix_qr_code ||
+        response.qr_code_base64 ||
+        response.qr_code ||
+        '',
+      url_slip:
+        raiz.url_slip ||
+        response.url_slip ||
+        response.url ||
+        '',
+      raw: raiz
+    }
+  }
+
+  const atualizarReservaComPix = async (
+    reservaAtual: Reserva,
+    pixData: PixData
   ) => {
-    let payloadAtual = { ...payloadOriginal }
+    const payloads: Record<string, any>[] = [
+      {
+        order_id: pixData.order_id || `RESERVA-${reservaAtual.id}`,
+        transaction_id: pixData.transaction_id || null,
+        pix_code: pixData.pix_code || pixData.digitable_line || null,
+        pix_qr_code:
+          pixData.pix_qr_code ||
+          pixData.qr_code_base64 ||
+          pixData.qr_code ||
+          pixData.qrcode ||
+          null,
+        updated_at: new Date().toISOString()
+      },
+      {
+        order_id: pixData.order_id || `RESERVA-${reservaAtual.id}`,
+        transaction_id: pixData.transaction_id || null,
+        updated_at: new Date().toISOString()
+      },
+      {
+        updated_at: new Date().toISOString()
+      }
+    ]
 
-    for (let tentativa = 0; tentativa < 12; tentativa++) {
+    for (const payload of payloads) {
       const { error } = await supabase
         .from('reservas')
-        .update(payloadAtual)
-        .eq('id', reservaIdAtual)
+        .update(payload)
+        .eq('id', reservaAtual.id)
 
       if (!error) return
 
-      const textoErro = String(
-        error.message ||
-          error.details ||
-          error.hint ||
-          ''
-      ).toLowerCase()
-
-      const erroColuna =
-        error.code === '42703' ||
-        error.code === 'PGRST204' ||
-        textoErro.includes('could not find') ||
-        textoErro.includes('schema cache') ||
-        textoErro.includes('column')
-
-      if (!erroColuna) {
-        throw error
-      }
-
-      const textoCompleto = [
-        error.message,
-        error.details,
-        error.hint
-      ]
-        .filter(Boolean)
-        .join(' ')
-
-      const matchAspas = textoCompleto.match(/'([^']+)'/)
-      const coluna = matchAspas?.[1]
-
-      if (!coluna || !(coluna in payloadAtual)) {
-        throw error
-      }
-
-      delete payloadAtual[coluna]
+      console.warn('Não foi possível atualizar alguns dados PIX na reserva:', error)
     }
   }
 
-  const consultarStatusReserva = async (mostrarLoading = true) => {
-    if (!reservaId || redirecionouRef.current) return
+  const gerarPixSeNecessario = async (
+    reservaAtual: Reserva,
+    usuarioAtual: UsuarioLocal
+  ) => {
+    if (pagamentoEstaConfirmado(reservaAtual)) return
 
-    if (mostrarLoading) {
-      setVerificandoPagamento(true)
-    }
+    if (pix?.pix_code || pix?.qr_code || pix?.pix_qr_code) return
 
-    try {
-      const { data, error } = await supabase
-        .from('reservas')
-        .select('id, status, pagamento_status, chat_id')
-        .eq('id', reservaId)
-        .maybeSingle()
-
-      if (error) {
-        console.warn('Erro ao consultar status da reserva:', error)
-        return
-      }
-
-      if (!data) return
-
-      const novoPagamentoStatus = String(data.pagamento_status || 'pendente')
-      const novoReservaStatus = String(data.status || 'pendente')
-
-      setPagamentoStatus(novoPagamentoStatus)
-      setReservaStatus(novoReservaStatus)
-
-      if (
-        pagamentoConfirmado(novoPagamentoStatus, novoReservaStatus) &&
-        !redirecionouRef.current
-      ) {
-        redirecionarPagamentoConfirmado()
-      }
-    } catch (error) {
-      console.warn('Erro ao verificar pagamento:', error)
-    } finally {
-      setVerificandoPagamento(false)
-    }
-  }
-
-  const redirecionarPagamentoConfirmado = () => {
-    if (redirecionouRef.current) return
-
-    redirecionouRef.current = true
-
-    setMensagem(
-      '✅ Pagamento confirmado! Estamos redirecionando você para suas reservas.'
-    )
-
-    setTimeout(() => {
-      router.replace('/cliente/minhas-reservas?pagamento=confirmado')
-    }, 1400)
-  }
-
-  const carregarPagamento = async () => {
-    setCarregando(true)
-    setMensagem('')
-
-    try {
-      const reserva = await buscarReserva()
-
-      const statusPagamentoInicial = String(
-        reserva.pagamento_status || 'pendente'
-      )
-
-      const statusReservaInicial = String(reserva.status || 'pendente')
-
-      setPagamentoStatus(statusPagamentoInicial)
-      setReservaStatus(statusReservaInicial)
-
-      if (pagamentoConfirmado(statusPagamentoInicial, statusReservaInicial)) {
-        redirecionarPagamentoConfirmado()
-        return
-      }
-
-      const roteiro = await buscarRoteiro(reserva.roteiro_id)
-      const cliente = await buscarCliente(reserva.cliente_id)
-
-      const tituloRoteiro =
-        roteiro?.titulo ||
-        'Reserva PrussikTrails'
-
-      const valorReserva =
-        Number(reserva.valor_total || 0) ||
-        Number(roteiro?.preco || 0) ||
-        0
-
-      setRoteiroTitulo(tituloRoteiro)
-      setValor(valorReserva)
-
-      const qrSalvo =
-        reserva.qr_code_base64 ||
-        reserva.pix_qr_code ||
-        ''
-
-      const codigoSalvo =
-        reserva.pix_copia_cola ||
-        reserva.codigo_pix ||
-        ''
-
-      if (qrSalvo) {
-        setQrCode(formatarQrCode(qrSalvo))
-      }
-
-      if (codigoSalvo) {
-        setCodigoPix(codigoSalvo)
-      }
-
-      if (qrSalvo || codigoSalvo) {
-        await reconciliarPagamentoAgora(true)
-        return
-      }
-
-      await gerarPix({
-        reserva,
-        roteiro,
-        cliente,
-        valorReserva,
-        tituloRoteiro
-      })
-
-      setTimeout(() => {
-        reconciliarPagamentoAgora(true)
-      }, 3000)
-    } catch (error: any) {
-      console.error('Erro ao carregar pagamento:', error)
-
-      setMensagem(
-        error?.message || 'Erro ao carregar pagamento PIX.'
-      )
-    } finally {
-      setCarregando(false)
-    }
-  }
-
-  const gerarPix = async ({
-    reserva,
-    roteiro,
-    cliente,
-    valorReserva,
-    tituloRoteiro
-  }: {
-    reserva: Reserva
-    roteiro: Roteiro | null
-    cliente: Cliente | null
-    valorReserva: number
-    tituloRoteiro: string
-  }) => {
-    if (gerandoPixRef.current) return
-
-    gerandoPixRef.current = true
     setGerandoPix(true)
 
     try {
-      if (!valorReserva || valorReserva <= 0) {
-        throw new Error('Valor da reserva inválido para gerar PIX.')
-      }
+      const valor = Number(reservaAtual.valor_total || 0)
 
-      const orderId =
-        reserva.paghiper_order_id ||
-        reserva.order_id ||
-        `RESERVA-${reserva.id}`
+      if (valor <= 0) {
+        setErro('Valor da reserva inválido para gerar PIX.')
+        return
+      }
 
       const response = await fetch('/api/paghiper/create-pix', {
         method: 'POST',
@@ -432,229 +402,240 @@ export default function PagamentoPIXPage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          reservaId: reserva.id,
-          reserva_id: reserva.id,
-          order_id: orderId,
-          valor: valorReserva,
-          descricao: `Reserva PrussikTrails - ${tituloRoteiro}`,
-          notification_url:
-            'https://prussiktrails.vercel.app/api/paghiper/webhook',
-          roteiro: {
-            id: roteiro?.id || reserva.roteiro_id || null,
-            titulo: tituloRoteiro
-          },
-          cliente: {
-            id: cliente?.id || reserva.cliente_id || null,
-            nome: cliente?.nome || 'Cliente PrussikTrails',
-            email: cliente?.email || 'cliente@prussiktrails.com',
-            telefone: cliente?.telefone || '',
-            cpf: cliente?.cpf || ''
-          },
-          payer_name: cliente?.nome || 'Cliente PrussikTrails',
-          payer_email: cliente?.email || 'cliente@prussiktrails.com',
-          payer_cpf_cnpj: cliente?.cpf || '',
-          payer_phone: cliente?.telefone || ''
+          reservaId: reservaAtual.id,
+          reserva_id: reservaAtual.id,
+          order_id: `RESERVA-${reservaAtual.id}`,
+          valor,
+          nome: nomeUsuario(usuarioAtual),
+          email: usuarioAtual.email || '',
+          cpf: somenteNumeros(usuarioAtual.cpf),
+          telefone: somenteNumeros(usuarioAtual.telefone || usuarioAtual.celular),
+          descricao: `Reserva PrussikTrails - ${tituloRoteiro(roteiro)}`
         })
       })
 
-      const data = await parseJsonSeguro(response)
+      const data = await response.json().catch(() => null)
 
-      console.log('Resposta PagHiper create-pix:', data)
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            data?.erro ||
-            data?.message ||
-            data?.details ||
-            'Erro ao gerar PIX PagHiper.'
-        )
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Erro ao gerar PIX:', data)
+        setErro(data?.erro || data?.message || 'Não foi possível gerar o PIX.')
+        return
       }
 
-      const qrCodeBase64 = procurarCampoRecursivo(data, [
-        'qr_code_base64',
-        'qrCodeBase64',
-        'pix_qr_code_base64',
-        'qrcode_base64',
-        'qrcode_image',
-        'pix_qrcode',
-        'qr_code'
-      ])
+      const pixData = extrairPixDaResposta(data)
 
-      const codigoPixRecebido = procurarCampoRecursivo(data, [
-        'qr_code_text',
-        'qrCodeText',
-        'pix_copia_cola',
-        'codigo_pix',
-        'copy_paste',
-        'emv',
-        'pix_code',
-        'qrcode'
-      ])
+      setPix(pixData)
+      await atualizarReservaComPix(reservaAtual, pixData)
 
-      const transactionId = procurarCampoRecursivo(data, [
-        'transaction_id',
-        'transactionId',
-        'paghiper_transaction_id',
-        'id_transacao'
-      ])
-
-      const orderIdRetornado = procurarCampoRecursivo(data, [
-        'order_id',
-        'orderId',
-        'paghiper_order_id'
-      ])
-
-      if (qrCodeBase64) {
-        setQrCode(formatarQrCode(qrCodeBase64))
-      }
-
-      if (codigoPixRecebido) {
-        setCodigoPix(codigoPixRecebido)
-      }
-
-      await atualizarReservaComFallback(reserva.id, {
-        paghiper_order_id: orderIdRetornado || orderId,
-        order_id: orderIdRetornado || orderId,
-        paghiper_transaction_id: transactionId || null,
-        transaction_id: transactionId || null,
-        qr_code_base64: qrCodeBase64 || null,
-        pix_qr_code: qrCodeBase64 || null,
-        pix_copia_cola: codigoPixRecebido || null,
-        codigo_pix: codigoPixRecebido || null,
-        pagamento_status: 'pendente',
-        status: 'pendente',
-        updated_at: new Date().toISOString()
-      })
-
-      if (!qrCodeBase64 && !codigoPixRecebido) {
-        setMensagem(
-          'Cobrança criada, mas o QR Code PIX não foi retornado pela API. Aguarde alguns segundos ou verifique a reserva no painel.'
-        )
-      }
-    } catch (error: any) {
+      setMensagem('PIX gerado. Após o pagamento, o sistema verificará automaticamente.')
+    } catch (error) {
       console.error('Erro ao gerar PIX:', error)
-
-      setMensagem(
-        error?.message || 'Erro ao gerar pagamento PIX.'
-      )
+      setErro('Erro ao gerar PIX.')
     } finally {
-      gerandoPixRef.current = false
       setGerandoPix(false)
     }
   }
 
-  const reconciliarPagamentoAgora = async (silencioso = false) => {
-    if (!reservaId || redirecionouRef.current) return
+  const verificarPagamento = async (silencioso = false) => {
+    if (!reserva?.id && !reservaId) return
+    if (verificandoRef.current) return
 
-    if (verificacaoEmCursoRef.current) return
-    verificacaoEmCursoRef.current = true
+    verificandoRef.current = true
 
     if (!silencioso) {
-      setMensagem('Consultando a PagHiper...')
+      setVerificando(true)
+      setMensagem('Verificando pagamento...')
+      setErro('')
     }
 
-    setVerificandoPagamento(true)
-
     try {
-      if (silencioso) {
-        setTentativasAuto((prev) => prev + 1)
-      }
-
       const response = await fetch('/api/paghiper/reconciliar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          reservaId
+          reservaId: reserva?.id || reservaId
         })
       })
 
-      const data = await parseJsonSeguro(response)
+      const data = await response.json().catch(() => null)
 
       setUltimaVerificacao(new Date().toLocaleTimeString('pt-BR'))
 
-      if (!response.ok || !data?.sucesso) {
+      if (!response.ok || data?.sucesso === false) {
         if (!silencioso) {
-          setMensagem(
-            data?.erro ||
-              data?.message ||
-              'A PagHiper ainda não confirmou este pagamento.'
-          )
+          setErro(data?.erro || data?.message || 'Pagamento ainda não confirmado.')
         }
 
-        await consultarStatusReserva(false)
         return
       }
 
-      const algumAtualizado = Array.isArray(data.resultados)
-        ? data.resultados.some(
-            (item: any) => item.atualizado || item.jaEstavaConfirmada
-          )
-        : false
+      const reservaAtualizada = await recarregarReserva()
 
-      if (algumAtualizado) {
-        await consultarStatusReserva(false)
-        redirecionarPagamentoConfirmado()
+      if (pagamentoEstaConfirmado(reservaAtualizada)) {
+        setPagamentoConfirmado(true)
+        setMensagem('Pagamento confirmado. Preparando o grupo da sua aventura...')
+        await direcionarParaGrupo(reservaAtualizada?.id || reserva?.id || reservaId)
         return
       }
 
-      await consultarStatusReserva(false)
+      const atualizadas = Number(data?.atualizadas || 0)
+      const jaConfirmadas = Number(data?.jaConfirmadas || 0)
 
-      if (!silencioso) {
-        setMensagem(
-          'A PagHiper ainda não retornou o pagamento como confirmado. Aguarde alguns instantes e tente novamente.'
-        )
-      }
-    } catch (error: any) {
-      console.error('Erro ao reconciliar pagamento:', error)
+      if (atualizadas > 0 || jaConfirmadas > 0) {
+        const novaReserva = await recarregarReserva()
 
-      if (!silencioso) {
-        setMensagem(
-          error?.message ||
-            'Não foi possível consultar a PagHiper neste momento.'
-        )
+        if (pagamentoEstaConfirmado(novaReserva)) {
+          setPagamentoConfirmado(true)
+          setMensagem('Pagamento confirmado. Preparando o grupo da sua aventura...')
+          await direcionarParaGrupo(novaReserva?.id || reserva?.id || reservaId)
+          return
+        }
       }
 
-      await consultarStatusReserva(false)
+      if (!silencioso) {
+        setMensagem('Ainda não encontramos a confirmação. Tente novamente em alguns instantes.')
+      }
+    } catch (error) {
+      console.error('Erro ao verificar pagamento:', error)
+
+      if (!silencioso) {
+        setErro('Não foi possível verificar o pagamento agora.')
+      }
     } finally {
-      verificacaoEmCursoRef.current = false
-      setVerificandoPagamento(false)
+      verificandoRef.current = false
+
+      if (!silencioso) {
+        setVerificando(false)
+      }
     }
   }
 
-  const copiarCodigo = async () => {
+  const recarregarReserva = async () => {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .eq('id', reserva?.id || reservaId)
+      .maybeSingle()
+
+    if (!error && data) {
+      setReserva(data as Reserva)
+      return data as Reserva
+    }
+
+    return reserva
+  }
+
+  const direcionarParaGrupo = async (idReserva: string) => {
+    if (!idReserva) return
+
+    setRedirecionandoGrupo(true)
+
     try {
-      if (!codigoPix) {
-        setMensagem('Código PIX não disponível.')
+      const response = await fetch('/api/grupos/garantir-acesso', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          reservaId: idReserva
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.sucesso) {
+        console.warn('Não foi possível garantir acesso ao grupo:', data)
+        setMensagem(
+          'Pagamento confirmado. O grupo será liberado em instantes nas suas reservas.'
+        )
+
+        setTimeout(() => {
+          router.push('/cliente/minhas-reservas')
+        }, 1400)
+
         return
       }
 
-      await navigator.clipboard.writeText(codigoPix)
+      const redirectUrl =
+        data?.redirectUrl ||
+        (data?.grupo?.id ? `/cliente/grupos/${data.grupo.id}` : '')
 
-      setCopiado(true)
-      setMensagem('✅ Código PIX copiado.')
+      if (redirectUrl) {
+        router.push(redirectUrl)
+        return
+      }
+
+      router.push('/cliente/minhas-reservas')
+    } catch (error) {
+      console.error('Erro ao direcionar para grupo:', error)
+
+      setMensagem(
+        'Pagamento confirmado. Não foi possível abrir o grupo agora, mas ele ficará disponível nas suas reservas.'
+      )
 
       setTimeout(() => {
-        setCopiado(false)
-      }, 3000)
-    } catch {
-      setMensagem('Erro ao copiar código PIX.')
+        router.push('/cliente/minhas-reservas')
+      }, 1400)
+    } finally {
+      setRedirecionandoGrupo(false)
     }
+  }
+
+  const copiarPix = async () => {
+    const codigo =
+      pix?.pix_code ||
+      pix?.digitable_line ||
+      pix?.qr_code ||
+      pix?.qrcode ||
+      ''
+
+    if (!codigo) {
+      setErro('Código PIX não disponível para copiar.')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(codigo)
+      setMensagem('Código PIX copiado.')
+    } catch {
+      setErro('Não foi possível copiar automaticamente. Selecione e copie manualmente.')
+    }
+  }
+
+  const qrCodeImagem = () => {
+    const base =
+      pix?.pix_qr_code ||
+      pix?.qr_code_base64 ||
+      pix?.qr_code ||
+      pix?.qrcode ||
+      ''
+
+    if (!base) return ''
+
+    if (String(base).startsWith('data:image')) return base
+
+    if (String(base).length > 200 && !String(base).startsWith('http')) {
+      return `data:image/png;base64,${base}`
+    }
+
+    return String(base)
+  }
+
+  const codigoPix = () => {
+    return pix?.pix_code || pix?.digitable_line || ''
   }
 
   if (carregando) {
     return (
-      <main className="loadingPage">
+      <main className="loading">
         <style>{`
-          * {
-            box-sizing: border-box;
-          }
+          * { box-sizing: border-box; }
 
           body {
             margin: 0;
-            background: #f3f4f6;
+            background: #f6f7f1;
             font-family:
               Inter,
               ui-sans-serif,
@@ -665,61 +646,45 @@ export default function PagamentoPIXPage() {
               sans-serif;
           }
 
-          @keyframes spin {
-            to {
-              transform: rotate(360deg);
-            }
-          }
-
-          .loadingPage {
+          .loading {
             min-height: 100vh;
             min-height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #f3f4f6;
+            background:
+              radial-gradient(circle at top left, rgba(132, 204, 22, 0.18), transparent 30%),
+              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
             color: #374151;
-            padding: 20px;
           }
 
           .loadingCard {
-            text-align: center;
             background: #ffffff;
-            border-radius: 24px;
+            border: 1px solid rgba(15, 23, 42, 0.06);
+            border-radius: 30px;
             padding: 28px;
-            box-shadow: 0 1px 8px rgba(0,0,0,0.08);
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+            text-align: center;
           }
 
-          .logoImg {
-            height: 56px;
+          .loadingCard img {
+            height: 68px;
             width: auto;
-            object-fit: contain;
             margin-bottom: 12px;
-          }
-
-          .spinner {
-            width: 44px;
-            height: 44px;
-            border-radius: 999px;
-            border: 4px solid #e5e7eb;
-            border-top-color: #16a34a;
-            animation: spin 1s linear infinite;
-            margin: 12px auto 0;
           }
         `}</style>
 
         <div className="loadingCard">
-          <img
-            src="/logo-prussik-display.png"
-            alt="PrussikTrails"
-            className="logoImg"
-          />
-          <p>Carregando pagamento PIX...</p>
-          <div className="spinner" />
+          <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          <div>Preparando pagamento...</div>
         </div>
       </main>
     )
   }
+
+  const foto = imagemRoteiro(roteiro)
+  const imagemQr = qrCodeImagem()
+  const codigo = codigoPix()
 
   return (
     <main className="page">
@@ -730,7 +695,7 @@ export default function PagamentoPIXPage() {
 
         body {
           margin: 0;
-          background: #f3f4f6;
+          background: #f6f7f1;
           font-family:
             Inter,
             ui-sans-serif,
@@ -745,427 +710,786 @@ export default function PagamentoPIXPage() {
           min-height: 100vh;
           min-height: 100dvh;
           background:
-            radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
-            linear-gradient(180deg, #f9fafb 0%, #eef2f7 100%);
-          padding: 18px;
-          color: #111827;
+            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
+          color: #172018;
         }
 
-        .container {
-          max-width: 540px;
+        .header {
+          position: sticky;
+          top: 0;
+          z-index: 40;
+          background: rgba(255, 253, 247, 0.86);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+          backdrop-filter: blur(18px);
+          padding: 10px 16px;
+        }
+
+        .headerInner {
+          max-width: 1180px;
           margin: 0 auto;
-        }
-
-        .topActions {
           display: flex;
           justify-content: space-between;
-          gap: 10px;
-          margin-bottom: 14px;
-        }
-
-        .smallButton {
-          border: none;
-          border-radius: 999px;
-          padding: 9px 14px;
-          font-size: 12px;
-          font-weight: 800;
-          cursor: pointer;
-          background: #ffffff;
-          color: #374151;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-        }
-
-        .card {
-          background: #ffffff;
-          border-radius: 28px;
-          padding: 24px;
-          box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-          border: 1px solid #eef2f7;
+          align-items: center;
+          gap: 12px;
         }
 
         .brand {
           display: flex;
           align-items: center;
-          justify-content: center;
-          margin-bottom: 18px;
+          gap: 10px;
+          cursor: pointer;
+          min-width: 0;
         }
 
         .brand img {
-          height: 58px;
+          height: 42px;
           width: auto;
           object-fit: contain;
+          display: block;
         }
 
-        .title {
-          font-size: 24px;
-          font-weight: 900;
-          margin: 0 0 8px;
-          color: #111827;
-          text-align: center;
+        .brandTitle {
+          font-size: 18px;
+          font-weight: 950;
+          color: #dc2626;
+          line-height: 1;
+          letter-spacing: -0.05em;
         }
 
-        .subtitle {
-          color: #6b7280;
-          font-size: 14px;
-          line-height: 1.5;
-          margin: 0 0 22px;
-          text-align: center;
-        }
-
-        .valueBox {
-          text-align: center;
-          background: #f0fdf4;
-          border: 1px solid #bbf7d0;
-          border-radius: 22px;
-          padding: 18px;
-          margin-bottom: 20px;
-        }
-
-        .valueLabel {
+        .brandSub {
+          color: #64748b;
           font-size: 11px;
-          font-weight: 900;
-          color: #166534;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          margin-bottom: 6px;
+          font-weight: 700;
+          margin-top: 3px;
         }
 
-        .value {
-          font-size: 36px;
-          font-weight: 900;
-          color: #16a34a;
+        .headerActions {
+          display: flex;
+          gap: 6px;
+          align-items: center;
         }
 
-        .qrBox {
-          text-align: center;
-          margin-bottom: 20px;
-        }
-
-        .qrBox img {
-          width: 250px;
-          max-width: 100%;
-          height: 250px;
-          object-fit: contain;
-          border-radius: 22px;
-          border: 1px solid #e5e7eb;
-          background: #ffffff;
-          padding: 10px;
-        }
-
-        .pixCode {
-          background: #f9fafb;
-          border: 1px solid #e5e7eb;
-          border-radius: 18px;
-          padding: 14px;
-          margin-bottom: 14px;
-          word-break: break-all;
-          font-size: 12px;
-          line-height: 1.5;
-          color: #374151;
-        }
-
-        .mainButton {
-          width: 100%;
-          border: none;
+        .iconBtn {
+          height: 38px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: rgba(255,255,255,0.78);
           border-radius: 999px;
-          padding: 14px;
-          font-size: 14px;
-          font-weight: 900;
+          padding: 0 13px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           cursor: pointer;
-          background: #16a34a;
+          font-size: 12px;
+          font-weight: 900;
+          transition: 0.2s ease;
+          color: #172018;
+          white-space: nowrap;
+        }
+
+        .iconBtn.primary {
+          background: #172018;
           color: #ffffff;
+          border-color: #172018;
+        }
+
+        .container {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 22px 16px 48px;
+        }
+
+        .hero {
+          position: relative;
+          overflow: hidden;
+          border-radius: 38px;
+          padding: 30px;
+          min-height: 300px;
+          background:
+            linear-gradient(135deg, rgba(23, 32, 24, 0.76), rgba(23, 32, 24, 0.34)),
+            radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 34%),
+            linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
+          color: #ffffff;
+          box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
+          margin-bottom: 16px;
+        }
+
+        .hero::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+          background-size: 46px 46px;
+          mask-image: linear-gradient(to bottom, black, transparent);
+          pointer-events: none;
+        }
+
+        .heroContent {
+          position: relative;
+          z-index: 2;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 280px;
+          gap: 24px;
+          align-items: end;
+          min-height: 240px;
+        }
+
+        .eyebrow {
+          display: inline-flex;
+          width: fit-content;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.26);
+          background: rgba(255, 255, 255, 0.12);
+          color: #f7fee7;
+          padding: 8px 12px;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
           margin-bottom: 14px;
         }
 
-        .secondaryButton {
-          width: 100%;
-          border: none;
-          border-radius: 999px;
-          padding: 13px;
+        .heroTitle {
+          margin: 0;
+          max-width: 760px;
+          font-size: clamp(40px, 6vw, 70px);
+          line-height: 0.92;
+          font-weight: 950;
+          letter-spacing: -0.085em;
+        }
+
+        .heroTitle span {
+          color: #bef264;
+          text-shadow: 0 0 28px rgba(190, 242, 100, 0.32);
+        }
+
+        .heroText {
+          max-width: 650px;
+          color: rgba(255,255,255,0.82);
+          line-height: 1.62;
+          margin: 16px 0 0;
+          font-size: 14px;
+        }
+
+        .heroCard {
+          background: rgba(255, 255, 255, 0.14);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          border-radius: 30px;
+          padding: 20px;
+          backdrop-filter: blur(16px);
+        }
+
+        .heroCardLabel {
+          color: rgba(255,255,255,0.76);
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+        }
+
+        .heroCardValue {
+          margin-top: 9px;
+          color: #ffffff;
+          font-size: 30px;
+          line-height: 1.05;
+          font-weight: 950;
+          letter-spacing: -0.07em;
+        }
+
+        .heroCardText {
+          margin-top: 8px;
+          color: rgba(255,255,255,0.78);
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+        }
+
+        .alert {
+          border-radius: 18px;
+          padding: 13px 15px;
+          margin-bottom: 16px;
           font-size: 13px;
           font-weight: 800;
-          cursor: pointer;
-          background: #111827;
-          color: #ffffff;
-          margin-bottom: 14px;
+          line-height: 1.45;
         }
 
-        .secondaryButton:disabled,
-        .mainButton:disabled {
-          opacity: 0.7;
-          cursor: not-allowed;
-        }
-
-        .statusBox {
-          border-top: 1px solid #e5e7eb;
-          padding-top: 18px;
-          margin-top: 18px;
-        }
-
-        .statusGrid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-          margin-bottom: 14px;
-        }
-
-        .statusItem {
-          background: #f9fafb;
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 12px;
-        }
-
-        .statusLabel {
-          font-size: 10px;
-          font-weight: 900;
-          color: #6b7280;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          margin-bottom: 4px;
-        }
-
-        .statusValue {
-          font-size: 13px;
-          font-weight: 900;
-          color: #111827;
-        }
-
-        .autoBox {
+        .alert.success {
           background: #ecfdf5;
           color: #166534;
           border: 1px solid #bbf7d0;
-          border-radius: 18px;
-          padding: 14px;
-          font-size: 13px;
-          line-height: 1.5;
-          margin-top: 14px;
         }
 
-        .infoBox {
-          background: #eff6ff;
-          color: #1e40af;
-          border: 1px solid #bfdbfe;
-          border-radius: 18px;
-          padding: 14px;
-          font-size: 13px;
-          line-height: 1.5;
-          margin-top: 14px;
-        }
-
-        .warningBox {
-          background: #fef3c7;
-          color: #92400e;
-          border: 1px solid #fde68a;
-          border-radius: 18px;
-          padding: 14px;
-          font-size: 13px;
-          line-height: 1.5;
-          margin-bottom: 16px;
-          text-align: center;
-        }
-
-        .message {
-          margin-top: 16px;
-          padding: 14px;
-          border-radius: 18px;
-          font-size: 13px;
-          line-height: 1.5;
-          text-align: center;
-        }
-
-        .message.success {
-          background: #dcfce7;
-          color: #166534;
-          border: 1px solid #bbf7d0;
-        }
-
-        .message.error {
+        .alert.error {
           background: #fee2e2;
           color: #991b1b;
           border: 1px solid #fecaca;
         }
 
-        .pending {
+        .mainGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+          gap: 16px;
+          align-items: start;
+        }
+
+        .panel {
+          background: rgba(255,255,255,0.88);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 32px;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+          overflow: hidden;
+        }
+
+        .panelHeader {
+          padding: 18px 20px;
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+        }
+
+        .panelTitle {
+          margin: 0;
+          font-size: 19px;
+          font-weight: 950;
+          color: #172018;
+          letter-spacing: -0.04em;
+        }
+
+        .panelSub {
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 700;
+          line-height: 1.45;
+        }
+
+        .panelBody {
+          padding: 18px;
+        }
+
+        .roteiroCard {
+          display: grid;
+          gap: 14px;
+        }
+
+        .imageBox {
+          width: 100%;
+          min-height: 230px;
+          background:
+            radial-gradient(circle at top right, rgba(251, 146, 60, 0.20), transparent 38%),
+            linear-gradient(135deg, #dbe7c8, #aebf8d);
+          border-radius: 26px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #64748b;
+          font-weight: 950;
+        }
+
+        .imageBox img {
+          width: 100%;
+          height: 100%;
+          min-height: 230px;
+          object-fit: cover;
+          display: block;
+        }
+
+        .infoRows {
+          display: grid;
+          gap: 10px;
+        }
+
+        .infoRow {
+          display: flex;
+          justify-content: space-between;
+          gap: 14px;
+          background: #fffdf7;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 20px;
+          padding: 12px 14px;
+          color: #475569;
+          font-size: 13px;
+          font-weight: 800;
+        }
+
+        .infoRow strong {
+          color: #172018;
+          text-align: right;
+        }
+
+        .paymentBox {
+          background:
+            radial-gradient(circle at top right, rgba(190, 242, 100, 0.20), transparent 38%),
+            #172018;
+          color: #ffffff;
+          border-radius: 30px;
+          padding: 22px;
+          margin-bottom: 16px;
+        }
+
+        .paymentLabel {
+          color: rgba(255,255,255,0.70);
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.10em;
+        }
+
+        .paymentValue {
+          color: #bef264;
+          font-size: 38px;
+          font-weight: 950;
+          letter-spacing: -0.08em;
+          margin-top: 8px;
+        }
+
+        .paymentText {
+          margin-top: 8px;
+          color: rgba(255,255,255,0.74);
+          font-size: 13px;
+          line-height: 1.55;
+          font-weight: 700;
+        }
+
+        .qrBox {
+          background: #fffdf7;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 26px;
+          padding: 16px;
+          text-align: center;
+        }
+
+        .qrImage {
+          width: 230px;
+          max-width: 100%;
+          height: auto;
+          border-radius: 18px;
+          background: #ffffff;
+          padding: 8px;
+          margin: 0 auto;
+          display: block;
+        }
+
+        .pixCode {
+          margin-top: 14px;
+          background: #f6f7f1;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 18px;
+          padding: 12px;
+          color: #475569;
+          font-size: 12px;
+          line-height: 1.45;
+          word-break: break-all;
+          max-height: 120px;
+          overflow: auto;
+          text-align: left;
+        }
+
+        .actions {
+          display: grid;
+          gap: 10px;
+          margin-top: 16px;
+        }
+
+        .btn {
+          border: none;
+          border-radius: 999px;
+          padding: 14px 18px;
+          font-size: 13px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+          width: 100%;
+        }
+
+        .btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.10);
+        }
+
+        .btn:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+        }
+
+        .btn.primary {
+          background: #16a34a;
+          color: #ffffff;
+        }
+
+        .btn.dark {
+          background: #172018;
+          color: #ffffff;
+        }
+
+        .btn.light {
+          background: #eef2e5;
+          color: #475569;
+        }
+
+        .statusPill {
+          display: inline-flex;
+          width: fit-content;
+          border-radius: 999px;
+          padding: 8px 11px;
+          font-size: 11px;
+          font-weight: 950;
+          margin-top: 14px;
+        }
+
+        .statusPill.pending {
+          background: #fef3c7;
           color: #92400e;
         }
 
-        .paid {
+        .statusPill.success {
+          background: #dcfce7;
           color: #166534;
         }
 
-        @media (max-width: 520px) {
-          .page {
-            padding: 12px;
-          }
-
-          .card {
-            border-radius: 24px;
-            padding: 18px;
-          }
-
-          .title {
-            font-size: 22px;
-          }
-
-          .value {
-            font-size: 32px;
-          }
-
-          .statusGrid {
+        @media (max-width: 1040px) {
+          .mainGrid,
+          .heroContent {
             grid-template-columns: 1fr;
           }
+        }
 
-          .topActions {
-            flex-direction: column;
+        @media (max-width: 720px) {
+          .header {
+            padding: 9px 12px;
           }
 
-          .smallButton {
-            width: 100%;
+          .brandTitle,
+          .brandSub {
+            display: none;
+          }
+
+          .headerActions .hideMobile {
+            display: none;
+          }
+
+          .container {
+            padding: 16px 12px 42px;
+          }
+
+          .hero,
+          .panel {
+            border-radius: 28px;
+          }
+
+          .hero {
+            padding: 22px;
+            min-height: auto;
+          }
+
+          .heroContent {
+            min-height: auto;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .heroTitle {
+            font-size: 40px;
+          }
+
+          .brand img {
+            height: 38px;
+          }
+
+          .paymentValue {
+            font-size: 32px;
           }
         }
       `}</style>
 
-      <div className="container">
-        <div className="topActions">
-          <button
-            type="button"
-            className="smallButton"
-            onClick={() => router.replace('/cliente/minhas-reservas')}
+      <header className="header">
+        <div className="headerInner">
+          <div
+            className="brand"
+            onClick={() => router.push('/cliente/dashboard')}
           >
-            ← Minhas reservas
-          </button>
-
-          <button
-            type="button"
-            className="smallButton"
-            onClick={() => reconciliarPagamentoAgora(false)}
-            disabled={verificandoPagamento}
-          >
-            {verificandoPagamento ? 'Verificando...' : 'Atualizar status'}
-          </button>
-        </div>
-
-        <section className="card">
-          <div className="brand">
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          </div>
 
-          <h1 className="title">Pagamento PIX</h1>
-
-          <p className="subtitle">
-            {roteiroTitulo}
-          </p>
-
-          <div className="valueBox">
-            <div className="valueLabel">Valor da reserva</div>
-            <div className="value">
-              R$ {valor.toFixed(2)}
+            <div>
+              <div className="brandTitle">PrussikTrails</div>
+              <div className="brandSub">Pagamento da reserva</div>
             </div>
           </div>
 
-          {gerandoPix && (
-            <div className="warningBox">
-              Gerando cobrança PIX. Aguarde alguns segundos...
-            </div>
-          )}
-
-          {qrCode && (
-            <div className="qrBox">
-              <img src={qrCode} alt="QR Code PIX" />
-            </div>
-          )}
-
-          {codigoPix && (
-            <>
-              <div className="pixCode">
-                {codigoPix}
-              </div>
-
-              <button
-                type="button"
-                className="mainButton"
-                onClick={copiarCodigo}
-              >
-                {copiado ? '✅ Código PIX copiado' : '📋 Copiar código PIX'}
-              </button>
-            </>
-          )}
-
-          {!qrCode && !codigoPix && !gerandoPix && (
-            <div className="warningBox">
-              Não foi possível carregar o QR Code PIX neste momento.
-            </div>
-          )}
-
-          <button
-            type="button"
-            className="secondaryButton"
-            onClick={() => reconciliarPagamentoAgora(false)}
-            disabled={verificandoPagamento}
-          >
-            {verificandoPagamento
-              ? 'Consultando a PagHiper...'
-              : 'Já paguei, verificar agora'}
-          </button>
-
-          <div className="statusBox">
-            <div className="statusGrid">
-              <div className="statusItem">
-                <div className="statusLabel">Pagamento</div>
-                <div
-                  className={`statusValue ${
-                    pagamentoConfirmado(pagamentoStatus, reservaStatus)
-                      ? 'paid'
-                      : 'pending'
-                  }`}
-                >
-                  {pagamentoStatus}
-                </div>
-              </div>
-
-              <div className="statusItem">
-                <div className="statusLabel">Reserva</div>
-                <div
-                  className={`statusValue ${
-                    pagamentoConfirmado(pagamentoStatus, reservaStatus)
-                      ? 'paid'
-                      : 'pending'
-                  }`}
-                >
-                  {reservaStatus}
-                </div>
-              </div>
-            </div>
-
-            <div className="autoBox">
-              O sistema está verificando automaticamente o pagamento na PagHiper
-              a cada poucos segundos. Quando confirmar, esta tela será fechada
-              automaticamente.
-              {ultimaVerificacao && (
-                <>
-                  <br />
-                  Última verificação: {ultimaVerificacao}. Tentativas automáticas:{' '}
-                  {tentativasAuto}.
-                </>
-              )}
-            </div>
-
-            <div className="infoBox">
-              Não feche esta tela logo após pagar. A confirmação pode levar alguns
-              segundos. Isso ajuda a evitar pagamento duplicado.
-            </div>
-          </div>
-
-          {mensagem && (
-            <div
-              className={`message ${
-                mensagem.includes('✅') ? 'success' : 'error'
-              }`}
+          <div className="headerActions">
+            <button
+              type="button"
+              className="iconBtn hideMobile"
+              onClick={() => router.push('/cliente/minhas-reservas')}
             >
-              {mensagem}
+              Reservas
+            </button>
+
+            <button
+              type="button"
+              className="iconBtn primary"
+              onClick={() => router.push('/cliente/perfil')}
+            >
+              Perfil
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="container">
+        <section className="hero">
+          <div className="heroContent">
+            <div>
+              <div className="eyebrow">
+                {pagamentoConfirmado ? 'Pagamento confirmado' : 'Pagamento PIX'}
+              </div>
+
+              <h1 className="heroTitle">
+                {pagamentoConfirmado
+                  ? (
+                    <>
+                      Tudo certo.
+                      <br />
+                      Agora você entra no <span>grupo da aventura.</span>
+                    </>
+                  )
+                  : (
+                    <>
+                      Falta pouco para sua <span>próxima jornada.</span>
+                    </>
+                  )}
+              </h1>
+
+              <p className="heroText">
+                Pague pelo PIX e aguarde a confirmação automática. Assim que o sistema
+                confirmar o pagamento, você será direcionado para o grupo interno do roteiro.
+              </p>
             </div>
-          )}
+
+            <aside className="heroCard">
+              <div className="heroCardLabel">Reserva</div>
+              <div className="heroCardValue">
+                {reserva?.id ? reserva.id.slice(0, 8).toUpperCase() : '-'}
+              </div>
+              <div className="heroCardText">
+                {ultimaVerificacao
+                  ? `Última verificação às ${ultimaVerificacao}.`
+                  : 'Verificação automática ativada.'}
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        {mensagem && (
+          <div className="alert success">{mensagem}</div>
+        )}
+
+        {erro && (
+          <div className="alert error">{erro}</div>
+        )}
+
+        <section className="mainGrid">
+          <section className="panel">
+            <div className="panelHeader">
+              <h2 className="panelTitle">Resumo da reserva</h2>
+              <div className="panelSub">
+                Confira os dados principais antes de pagar.
+              </div>
+            </div>
+
+            <div className="panelBody">
+              <div className="roteiroCard">
+                <div className="imageBox">
+                  {foto ? (
+                    <img src={foto} alt={tituloRoteiro(roteiro)} />
+                  ) : (
+                    'Roteiro'
+                  )}
+                </div>
+
+                <div>
+                  <h3
+                    style={{
+                      margin: 0,
+                      color: '#172018',
+                      fontSize: 24,
+                      lineHeight: 1.05,
+                      fontWeight: 950,
+                      letterSpacing: '-0.06em'
+                    }}
+                  >
+                    {tituloRoteiro(roteiro)}
+                  </h3>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      color: '#64748b',
+                      fontSize: 13,
+                      fontWeight: 750,
+                      lineHeight: 1.5
+                    }}
+                  >
+                    {localRoteiro(roteiro)}
+                  </div>
+                </div>
+
+                <div className="infoRows">
+                  <div className="infoRow">
+                    <span>Data</span>
+                    <strong>{formatarData(dataRoteiro(roteiro))}</strong>
+                  </div>
+
+                  <div className="infoRow">
+                    <span>Hora</span>
+                    <strong>{horaRoteiro(roteiro) || '-'}</strong>
+                  </div>
+
+                  <div className="infoRow">
+                    <span>Pessoas</span>
+                    <strong>{reserva?.quantidade_pessoas || 1}</strong>
+                  </div>
+
+                  <div className="infoRow">
+                    <span>Status</span>
+                    <strong>{reserva?.status || 'pendente'}</strong>
+                  </div>
+
+                  <div className="infoRow">
+                    <span>Pagamento</span>
+                    <strong>{reserva?.pagamento_status || 'pendente'}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <aside>
+            <section className="paymentBox">
+              <div className="paymentLabel">Valor total</div>
+
+              <div className="paymentValue">
+                {formatarMoeda(reserva?.valor_total || 0)}
+              </div>
+
+              <div className="paymentText">
+                Após a confirmação do pagamento, o acesso ao grupo do roteiro será
+                liberado automaticamente.
+              </div>
+
+              <div
+                className={`statusPill ${pagamentoConfirmado ? 'success' : 'pending'}`}
+              >
+                {pagamentoConfirmado
+                  ? 'Pagamento confirmado'
+                  : 'Aguardando pagamento'}
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="panelHeader">
+                <h2 className="panelTitle">PIX</h2>
+                <div className="panelSub">
+                  Copie o código ou use o QR Code.
+                </div>
+              </div>
+
+              <div className="panelBody">
+                {pagamentoConfirmado ? (
+                  <div className="qrBox">
+                    <div
+                      style={{
+                        fontSize: 46,
+                        marginBottom: 10
+                      }}
+                    >
+                      ✅
+                    </div>
+
+                    <strong>Pagamento confirmado</strong>
+
+                    <p
+                      style={{
+                        color: '#64748b',
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                        fontWeight: 700
+                      }}
+                    >
+                      Estamos preparando seu acesso ao grupo do roteiro.
+                    </p>
+                  </div>
+                ) : gerandoPix ? (
+                  <div className="qrBox">
+                    Gerando PIX...
+                  </div>
+                ) : (
+                  <>
+                    <div className="qrBox">
+                      {imagemQr ? (
+                        <img
+                          className="qrImage"
+                          src={imagemQr}
+                          alt="QR Code PIX"
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            color: '#64748b',
+                            fontSize: 13,
+                            fontWeight: 700,
+                            lineHeight: 1.5
+                          }}
+                        >
+                          QR Code ainda não disponível. Use o botão para verificar ou gerar novamente.
+                        </div>
+                      )}
+
+                      {codigo && (
+                        <div className="pixCode">
+                          {codigo}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="btn dark"
+                        onClick={copiarPix}
+                        disabled={!codigo}
+                      >
+                        Copiar código PIX
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn primary"
+                        onClick={() => verificarPagamento(false)}
+                        disabled={verificando || redirecionandoGrupo}
+                      >
+                        {verificando
+                          ? 'Verificando...'
+                          : redirecionandoGrupo
+                            ? 'Abrindo grupo...'
+                            : 'Já paguei'}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn light"
+                        onClick={() => router.push('/cliente/minhas-reservas')}
+                      >
+                        Voltar para reservas
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
+          </aside>
         </section>
       </div>
     </main>
