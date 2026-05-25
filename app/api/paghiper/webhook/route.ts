@@ -1,20 +1,41 @@
-import { NextResponse } from 'next/server'
-import axios from 'axios'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+type Reserva = {
+  id: string
+  cliente_id?: string | null
+  roteiro_id?: string | null
+  status?: string | null
+  pagamento_status?: string | null
+  paghiper_order_id?: string | null
+  paghiper_transaction_id?: string | null
+  order_id?: string | null
+  transaction_id?: string | null
+  chat_id?: string | null
+}
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseServiceKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  ''
+
+const pagHiperApiKey = process.env.PAGHIPER_API_KEY || ''
+const pagHiperToken = process.env.PAGHIPER_TOKEN || ''
+
+function json(data: any, status = 200) {
+  return NextResponse.json(data, { status })
+}
 
 function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error(
-      'Credenciais Supabase ausentes no servidor. Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel.'
-    )
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error('Credenciais Supabase ausentes.')
   }
 
-  return createClient(supabaseUrl, serviceRoleKey, {
+  return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false
@@ -22,16 +43,28 @@ function getSupabaseAdmin() {
   })
 }
 
-function procurarCampoRecursivo(obj: any, nomes: string[]): string {
-  if (!obj) return ''
+function normalizarTexto(valor: any) {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
 
-  if (typeof obj !== 'object') return ''
+function limparOrderId(orderId: string) {
+  return String(orderId || '')
+    .replace(/^RESERVA-/i, '')
+    .trim()
+}
+
+function buscarRecursivo(obj: any, nomes: string[]): string {
+  if (!obj || typeof obj !== 'object') return ''
 
   for (const nome of nomes) {
     const valor = obj[nome]
 
     if (typeof valor === 'string' && valor.trim()) {
-      return valor
+      return valor.trim()
     }
 
     if (typeof valor === 'number') {
@@ -40,7 +73,7 @@ function procurarCampoRecursivo(obj: any, nomes: string[]): string {
   }
 
   for (const key of Object.keys(obj)) {
-    const encontrado = procurarCampoRecursivo(obj[key], nomes)
+    const encontrado = buscarRecursivo(obj[key], nomes)
 
     if (encontrado) return encontrado
   }
@@ -48,60 +81,125 @@ function procurarCampoRecursivo(obj: any, nomes: string[]): string {
   return ''
 }
 
-function normalizarStatusPagHiper(status: string) {
-  const texto = String(status || '').toLowerCase().trim()
+function statusPago(status: string) {
+  const s = normalizarTexto(status)
 
-  if (
-    texto.includes('paid') ||
-    texto.includes('pago') ||
-    texto.includes('aprovado') ||
-    texto.includes('approved') ||
-    texto.includes('completed') ||
-    texto.includes('completo') ||
-    texto.includes('liquidado') ||
-    texto.includes('confirmado') ||
-    texto === 'success'
-  ) {
-    return 'pago'
-  }
-
-  if (
-    texto.includes('cancel') ||
-    texto.includes('expired') ||
-    texto.includes('expirado') ||
-    texto.includes('vencido') ||
-    texto.includes('estornado')
-  ) {
-    return 'cancelado'
-  }
-
-  return 'pendente'
+  return [
+    'paid',
+    'pago',
+    'aprovado',
+    'aprovada',
+    'approved',
+    'complete',
+    'completed',
+    'completo',
+    'confirmado',
+    'confirmed',
+    'liquidado',
+    'settled',
+    'reserved',
+    'reservado'
+  ].includes(s)
 }
 
-function extrairReservaIdDoOrderId(orderId: string) {
-  if (!orderId) return ''
+function statusPendente(status: string) {
+  const s = normalizarTexto(status)
 
-  if (orderId.startsWith('RESERVA-')) {
-    return orderId.replace('RESERVA-', '')
-  }
-
-  return orderId
+  return [
+    'pending',
+    'pendente',
+    'waiting',
+    'aguardando',
+    'created',
+    'criado',
+    'processing',
+    'processando',
+    'em aberto',
+    'open'
+  ].includes(s)
 }
 
-async function lerPayload(req: Request) {
-  const contentType = req.headers.get('content-type') || ''
+function statusCancelado(status: string) {
+  const s = normalizarTexto(status)
+
+  return [
+    'cancelado',
+    'cancelada',
+    'canceled',
+    'cancelled',
+    'expired',
+    'expirado',
+    'rejected',
+    'recusado',
+    'recusada'
+  ].includes(s)
+}
+
+function extrairColunaAusente(error: any) {
+  const texto = [
+    error?.message,
+    error?.details,
+    error?.hint
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const matchAspas = texto.match(/'([^']+)'/)
+
+  if (matchAspas?.[1]) {
+    return matchAspas[1]
+  }
+
+  const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
+
+  if (matchColumn?.[1]) {
+    return matchColumn[1]
+  }
+
+  return ''
+}
+
+function erroDeColunaAusente(error: any) {
+  const texto = String(
+    error?.message ||
+      error?.details ||
+      error?.hint ||
+      ''
+  ).toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    texto.includes('could not find') ||
+    texto.includes('schema cache') ||
+    texto.includes('column')
+  )
+}
+
+async function parseBody(request: NextRequest) {
+  const contentType = request.headers.get('content-type') || ''
+  const texto = await request.text()
+
+  if (!texto) {
+    return {}
+  }
 
   if (contentType.includes('application/json')) {
-    return await req.json()
+    try {
+      return JSON.parse(texto)
+    } catch {
+      return {
+        raw: texto
+      }
+    }
   }
 
-  const text = await req.text()
-
-  try {
-    return JSON.parse(text)
-  } catch {
-    const params = new URLSearchParams(text)
-    const obj: Record<string, string> = {}
+  if (
+    contentType.includes('application/x-www-form-urlencoded') ||
+    texto.includes('=')
+  ) {
+    const params = new URLSearchParams(texto)
+    const obj: Record<string, any> = {}
 
     params.forEach((value, key) => {
       obj[key] = value
@@ -109,434 +207,553 @@ async function lerPayload(req: Request) {
 
     return obj
   }
-}
-
-async function consultarPagHiperPorNotificacao(
-  notificationId: string,
-  transactionId: string
-) {
-  const apiKey = process.env.PAGHIPER_API_KEY
-  const token = process.env.PAGHIPER_TOKEN
-
-  if (!apiKey || !token || !notificationId) {
-    return null
-  }
 
   try {
-    const response = await axios.post(
-      'https://pix.paghiper.com/invoice/notification/',
-      {
-        apiKey,
-        token,
-        notification_id: notificationId,
-        transaction_id: transactionId || undefined,
-        idTransacao: transactionId || undefined
-      },
-      {
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json'
-        },
-        timeout: 15000
-      }
-    )
-
-    return response.data || null
-  } catch (error: any) {
-    console.warn(
-      'Não foi possível consultar notification na PagHiper:',
-      error.response?.data || error.message
-    )
-
-    return null
+    return JSON.parse(texto)
+  } catch {
+    return {
+      raw: texto
+    }
   }
 }
 
-async function buscarReservaPorPayload(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  payload: any,
-  payloadOriginal: any
+async function atualizarReservaComFallback(
+  supabase: ReturnType<typeof createClient>,
+  reservaId: string,
+  payloadOriginal: Record<string, any>
 ) {
-  const orderId = procurarCampoRecursivo(payload, [
-    'order_id',
-    'orderId',
-    'order',
-    'id_pedido',
-    'pedido'
-  ])
+  let payloadAtual = { ...payloadOriginal }
+  const colunasIgnoradas: string[] = []
 
-  const transactionId =
-    procurarCampoRecursivo(payload, [
-      'transaction_id',
-      'transactionId',
-      'idTransacao',
-      'id_transacao',
-      'id_transaction',
-      'hash'
-    ]) ||
-    procurarCampoRecursivo(payloadOriginal, [
-      'transaction_id',
-      'transactionId',
-      'idTransacao',
-      'id_transacao',
-      'id_transaction',
-      'hash'
-    ])
-
-  const reservaId = extrairReservaIdDoOrderId(orderId)
-
-  let query = supabase
-    .from('reservas')
-    .select('*')
-    .limit(1)
-
-  if (reservaId) {
-    query = query.eq('id', reservaId)
-  } else if (orderId) {
-    query = query.eq('paghiper_order_id', orderId)
-  } else if (transactionId) {
-    query = query.eq('paghiper_transaction_id', transactionId)
-  } else {
-    throw new Error('Webhook recebido sem order_id ou transaction_id.')
-  }
-
-  const { data, error } = await query
-
-  if (error) {
-    throw error
-  }
-
-  const reserva = data?.[0]
-
-  if (!reserva) {
-    throw new Error('Reserva não encontrada para o webhook PagHiper.')
-  }
-
-  return {
-    reserva,
-    orderId,
-    transactionId,
-    reservaId
-  }
-}
-
-async function buscarGuiaDaReserva(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  reserva: any
-) {
-  const guiaDireto =
-    reserva.guia_id ||
-    reserva.id_guia ||
-    null
-
-  if (guiaDireto) return guiaDireto
-
-  const roteiroId =
-    reserva.roteiro_id ||
-    reserva.id_roteiro ||
-    null
-
-  if (!roteiroId) return null
-
-  const { data: roteiro, error } = await supabase
-    .from('roteiros')
-    .select('id, id_guia, guia_id')
-    .eq('id', roteiroId)
-    .maybeSingle()
-
-  if (error) {
-    console.warn('Erro ao buscar guia pelo roteiro:', error)
-    return null
-  }
-
-  return (
-    roteiro?.id_guia ||
-    roteiro?.guia_id ||
-    null
-  )
-}
-
-async function subirComprovantePagHiper(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  reserva: any,
-  dadosComprovante: any
-) {
-  const conteudo = JSON.stringify(dadosComprovante, null, 2)
-  const buffer = Buffer.from(conteudo, 'utf-8')
-
-  const transactionId =
-    dadosComprovante.transaction_id ||
-    dadosComprovante.transactionId ||
-    dadosComprovante.idTransacao ||
-    'sem-transacao'
-
-  const filePath =
-    `paghiper/reserva-${reserva.id}-${transactionId}-${Date.now()}.json`
-
-  const { error: uploadError } = await supabase.storage
-    .from('comprovantes')
-    .upload(filePath, buffer, {
-      contentType: 'application/json',
-      upsert: true
-    })
-
-  if (uploadError) {
-    console.warn('Erro ao subir comprovante PagHiper:', uploadError)
-    return null
-  }
-
-  const {
-    data: { publicUrl }
-  } = supabase.storage
-    .from('comprovantes')
-    .getPublicUrl(filePath)
-
-  return publicUrl
-}
-
-async function criarOuBuscarChatDaReserva(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  reserva: any,
-  guiaId: string | null
-) {
-  if (reserva.chat_id) {
-    return reserva.chat_id
-  }
-
-  const { data: chatExistente, error: chatExistenteError } = await supabase
-    .from('chats')
-    .select('*')
-    .eq('reserva_id', reserva.id)
-    .maybeSingle()
-
-  if (chatExistenteError) {
-    throw chatExistenteError
-  }
-
-  if (chatExistente) {
-    await supabase
+  for (let tentativa = 0; tentativa < 15; tentativa++) {
+    const { data, error } = await supabase
       .from('reservas')
-      .update({ chat_id: chatExistente.id })
-      .eq('id', reserva.id)
+      .update(payloadAtual)
+      .eq('id', reservaId)
+      .select()
+      .maybeSingle()
 
-    return chatExistente.id
-  }
-
-  const clienteId =
-    reserva.cliente_id ||
-    reserva.id_cliente ||
-    null
-
-  const { data: novoChat, error: novoChatError } = await supabase
-    .from('chats')
-    .insert({
-      reserva_id: reserva.id,
-      cliente_id: clienteId,
-      guia_id: guiaId,
-      moderador_id: null,
-      status: 'ativo',
-      escopo_moderacao: 'cliente_guia_com_moderacao_futura',
-      origem: 'pagamento_confirmado'
-    })
-    .select()
-    .single()
-
-  if (novoChatError) {
-    throw novoChatError
-  }
-
-  await supabase
-    .from('reservas')
-    .update({ chat_id: novoChat.id })
-    .eq('id', reserva.id)
-
-  await supabase
-    .from('chat_mensagens')
-    .insert({
-      chat_id: novoChat.id,
-      remetente_id: null,
-      remetente_tipo: 'sistema',
-      tipo: 'sistema',
-      mensagem:
-        'Pagamento confirmado. Chat liberado entre cliente e guia. Este chat poderá ser moderado futuramente por um moderador.',
-      metadata: {
-        reserva_id: reserva.id,
-        escopo: 'moderacao_futura'
+    if (!error) {
+      return {
+        data,
+        colunasIgnoradas
       }
-    })
+    }
 
-  return novoChat.id
+    if (!erroDeColunaAusente(error)) {
+      throw error
+    }
+
+    const coluna = extrairColunaAusente(error)
+
+    if (!coluna || !(coluna in payloadAtual)) {
+      throw error
+    }
+
+    delete payloadAtual[coluna]
+    colunasIgnoradas.push(coluna)
+  }
+
+  throw new Error('Não foi possível atualizar a reserva.')
 }
 
-async function processarConfirmacaoPagamento(payloadOriginal: any) {
-  const notificationId = procurarCampoRecursivo(payloadOriginal, [
-    'notification_id',
-    'notificationId',
-    'idNotificacao',
-    'id_notification'
-  ])
+async function buscarReserva({
+  supabase,
+  reservaId,
+  orderId,
+  transactionId
+}: {
+  supabase: ReturnType<typeof createClient>
+  reservaId?: string
+  orderId?: string
+  transactionId?: string
+}) {
+  if (reservaId) {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .eq('id', reservaId)
+      .maybeSingle()
 
-  const transactionIdOriginal = procurarCampoRecursivo(payloadOriginal, [
-    'transaction_id',
-    'transactionId',
-    'idTransacao',
-    'id_transacao',
-    'id_transaction',
-    'hash'
-  ])
-
-  const payloadConsultado = await consultarPagHiperPorNotificacao(
-    notificationId,
-    transactionIdOriginal
-  )
-
-  const payload = payloadConsultado || payloadOriginal
-
-  const statusRecebido = procurarCampoRecursivo(payload, [
-    'status',
-    'status_request',
-    'status_pagamento',
-    'payment_status',
-    'status_transaction'
-  ])
-
-  const pagamentoStatus = normalizarStatusPagHiper(statusRecebido)
-
-  const supabase = getSupabaseAdmin()
-
-  const {
-    reserva,
-    orderId,
-    transactionId
-  } = await buscarReservaPorPayload(
-    supabase,
-    payload,
-    payloadOriginal
-  )
-
-  const guiaId = await buscarGuiaDaReserva(supabase, reserva)
-
-  const dadosComprovante = {
-    origem: 'paghiper',
-    reserva_id: reserva.id,
-    order_id: orderId || reserva.paghiper_order_id || null,
-    transaction_id:
-      transactionId ||
-      reserva.paghiper_transaction_id ||
-      transactionIdOriginal ||
-      null,
-    status_recebido: statusRecebido || null,
-    pagamento_status: pagamentoStatus,
-    recebido_em: new Date().toISOString(),
-    payload_original: payloadOriginal,
-    payload_consultado: payloadConsultado || null
+    if (error) throw error
+    if (data) return data as Reserva
   }
 
-  let comprovanteUrl: string | null = null
+  if (transactionId) {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .or(
+        `paghiper_transaction_id.eq.${transactionId},transaction_id.eq.${transactionId}`
+      )
+      .maybeSingle()
 
-  if (pagamentoStatus === 'pago') {
-    comprovanteUrl = await subirComprovantePagHiper(
-      supabase,
-      reserva,
-      dadosComprovante
-    )
+    if (error) throw error
+    if (data) return data as Reserva
   }
 
-  let chatId: string | null = reserva.chat_id || null
+  if (orderId) {
+    const orderIdLimpo = limparOrderId(orderId)
 
-  if (pagamentoStatus === 'pago') {
-    chatId = await criarOuBuscarChatDaReserva(
-      supabase,
-      reserva,
-      guiaId
-    )
+    const filtros = [
+      `paghiper_order_id.eq.${orderId}`,
+      `order_id.eq.${orderId}`
+    ]
+
+    if (orderIdLimpo) {
+      filtros.push(`id.eq.${orderIdLimpo}`)
+      filtros.push(`paghiper_order_id.eq.${orderIdLimpo}`)
+      filtros.push(`order_id.eq.${orderIdLimpo}`)
+    }
+
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .or(filtros.join(','))
+      .maybeSingle()
+
+    if (error) throw error
+    if (data) return data as Reserva
   }
 
-  const updatePayload: Record<string, any> = {
-    paghiper_order_id:
-      orderId || reserva.paghiper_order_id || null,
-    paghiper_transaction_id:
-      transactionId ||
-      reserva.paghiper_transaction_id ||
-      transactionIdOriginal ||
-      null,
-    paghiper_status:
-      statusRecebido || pagamentoStatus,
-    paghiper_response: payload,
-    paghiper_comprovante: dadosComprovante,
-    pagamento_status: pagamentoStatus
-  }
+  return null
+}
 
-  if (pagamentoStatus === 'pago') {
-    updatePayload.status = 'confirmada'
-    updatePayload.pagamento_confirmado_em = new Date().toISOString()
-    updatePayload.comprovante_status = 'paghiper_confirmado'
-    updatePayload.comprovante_origem = 'paghiper'
-    updatePayload.chat_id = chatId
-
-    if (comprovanteUrl) {
-      updatePayload.comprovante_url = comprovanteUrl
+async function consultarStatusPagHiper({
+  transactionId,
+  orderId
+}: {
+  transactionId?: string
+  orderId?: string
+}) {
+  if (!pagHiperApiKey || !pagHiperToken) {
+    return {
+      sucesso: false,
+      status: '',
+      erro: 'Credenciais PagHiper ausentes.'
     }
   }
 
-  if (pagamentoStatus === 'cancelado') {
-    updatePayload.pagamento_status = 'cancelado'
+  const endpoints = [
+    'https://pix.paghiper.com/invoice/status/',
+    'https://api.paghiper.com/transaction/status/'
+  ]
+
+  const payloads: Record<string, any>[] = []
+
+  if (transactionId) {
+    payloads.push({
+      apiKey: pagHiperApiKey,
+      token: pagHiperToken,
+      transaction_id: transactionId
+    })
   }
 
-  const { error: updateError } = await supabase
-    .from('reservas')
-    .update(updatePayload)
-    .eq('id', reserva.id)
+  if (orderId) {
+    payloads.push({
+      apiKey: pagHiperApiKey,
+      token: pagHiperToken,
+      order_id: orderId
+    })
 
-  if (updateError) {
-    throw updateError
+    const orderIdLimpo = limparOrderId(orderId)
+
+    if (orderIdLimpo && orderIdLimpo !== orderId) {
+      payloads.push({
+        apiKey: pagHiperApiKey,
+        token: pagHiperToken,
+        order_id: orderIdLimpo
+      })
+    }
+  }
+
+  const respostas: any[] = []
+
+  for (const endpoint of endpoints) {
+    for (const payload of payloads) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        })
+
+        const texto = await response.text()
+
+        let data: any = null
+
+        try {
+          data = texto ? JSON.parse(texto) : null
+        } catch {
+          data = {
+            raw: texto
+          }
+        }
+
+        const statusEncontrado = buscarRecursivo(data, [
+          'status',
+          'status_transaction',
+          'transaction_status',
+          'payment_status',
+          'status_pagamento',
+          'result'
+        ])
+
+        const transactionIdEncontrado = buscarRecursivo(data, [
+          'transaction_id',
+          'transactionId',
+          'paghiper_transaction_id',
+          'id_transacao'
+        ])
+
+        respostas.push({
+          endpoint,
+          statusHttp: response.status,
+          ok: response.ok,
+          statusEncontrado,
+          transactionIdEncontrado,
+          data
+        })
+
+        if (response.ok && statusEncontrado) {
+          return {
+            sucesso: true,
+            status: statusEncontrado,
+            transactionId: transactionIdEncontrado,
+            data,
+            respostas
+          }
+        }
+      } catch (error: any) {
+        respostas.push({
+          endpoint,
+          erro: error?.message || 'Erro ao consultar PagHiper.'
+        })
+      }
+    }
   }
 
   return {
-    reserva_id: reserva.id,
-    order_id: updatePayload.paghiper_order_id,
-    transaction_id: updatePayload.paghiper_transaction_id,
-    status_recebido: statusRecebido,
-    pagamento_status: pagamentoStatus,
-    comprovante_url: comprovanteUrl,
-    chat_id: chatId,
-    payload_consultado_na_paghiper: Boolean(payloadConsultado)
+    sucesso: false,
+    status: '',
+    respostas
+  }
+}
+
+async function tentarCriarChatSePossivel({
+  supabase,
+  reserva
+}: {
+  supabase: ReturnType<typeof createClient>
+  reserva: Reserva
+}) {
+  try {
+    if (reserva.chat_id) {
+      return {
+        criado: false,
+        chatId: reserva.chat_id,
+        motivo: 'Reserva já possui chat_id.'
+      }
+    }
+
+    const { data: roteiro, error: roteiroError } = await supabase
+      .from('roteiros')
+      .select('id, id_guia')
+      .eq('id', reserva.roteiro_id)
+      .maybeSingle()
+
+    if (roteiroError || !roteiro?.id_guia || !reserva.cliente_id) {
+      return {
+        criado: false,
+        motivo: 'Não foi possível identificar cliente ou guia para criar chat.'
+      }
+    }
+
+    const { data: chatExistente, error: chatExistenteError } = await supabase
+      .from('chats')
+      .select('*')
+      .eq('reserva_id', reserva.id)
+      .maybeSingle()
+
+    if (!chatExistenteError && chatExistente?.id) {
+      await atualizarReservaComFallback(supabase, reserva.id, {
+        chat_id: chatExistente.id,
+        updated_at: new Date().toISOString()
+      })
+
+      return {
+        criado: false,
+        chatId: chatExistente.id,
+        motivo: 'Chat já existia.'
+      }
+    }
+
+    const { data: novoChat, error: novoChatError } = await supabase
+      .from('chats')
+      .insert({
+        reserva_id: reserva.id,
+        cliente_id: reserva.cliente_id,
+        guia_id: roteiro.id_guia,
+        status: 'aberto',
+        encerrado: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .maybeSingle()
+
+    if (novoChatError || !novoChat?.id) {
+      return {
+        criado: false,
+        erro: novoChatError?.message || 'Não foi possível criar chat.'
+      }
+    }
+
+    await atualizarReservaComFallback(supabase, reserva.id, {
+      chat_id: novoChat.id,
+      updated_at: new Date().toISOString()
+    })
+
+    return {
+      criado: true,
+      chatId: novoChat.id
+    }
+  } catch (error: any) {
+    return {
+      criado: false,
+      erro: error?.message || 'Chat não criado.'
+    }
+  }
+}
+
+async function processarConfirmacaoPagamento({
+  supabase,
+  reserva,
+  statusPagHiper,
+  transactionId,
+  orderId,
+  payloadOriginal
+}: {
+  supabase: ReturnType<typeof createClient>
+  reserva: Reserva
+  statusPagHiper: string
+  transactionId?: string
+  orderId?: string
+  payloadOriginal: any
+}) {
+  const updatePayload = {
+    pagamento_status: 'pago',
+    status: 'confirmada',
+    paghiper_status: statusPagHiper,
+    paghiper_transaction_id:
+      transactionId ||
+      reserva.paghiper_transaction_id ||
+      reserva.transaction_id ||
+      null,
+    transaction_id:
+      transactionId ||
+      reserva.transaction_id ||
+      reserva.paghiper_transaction_id ||
+      null,
+    paghiper_order_id:
+      orderId ||
+      reserva.paghiper_order_id ||
+      reserva.order_id ||
+      reserva.id,
+    order_id:
+      orderId ||
+      reserva.order_id ||
+      reserva.paghiper_order_id ||
+      reserva.id,
+    pagamento_confirmado_em: new Date().toISOString(),
+    webhook_paghiper_payload: payloadOriginal,
+    updated_at: new Date().toISOString()
+  }
+
+  const update = await atualizarReservaComFallback(
+    supabase,
+    reserva.id,
+    updatePayload
+  )
+
+  const chat = await tentarCriarChatSePossivel({
+    supabase,
+    reserva: {
+      ...reserva,
+      status: 'confirmada',
+      pagamento_status: 'pago'
+    }
+  })
+
+  return {
+    update,
+    chat
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = getSupabaseAdmin()
+    const body = await parseBody(request)
+
+    console.log('Webhook PagHiper recebido:', body)
+
+    const orderIdRecebido = buscarRecursivo(body, [
+      'order_id',
+      'orderId',
+      'paghiper_order_id'
+    ])
+
+    const transactionIdRecebido = buscarRecursivo(body, [
+      'transaction_id',
+      'transactionId',
+      'paghiper_transaction_id',
+      'id_transacao'
+    ])
+
+    const reservaIdRecebido =
+      buscarRecursivo(body, [
+        'reservaId',
+        'reserva_id',
+        'id_reserva'
+      ]) || limparOrderId(orderIdRecebido)
+
+    const statusRecebido = buscarRecursivo(body, [
+      'status',
+      'status_transaction',
+      'transaction_status',
+      'payment_status',
+      'status_pagamento',
+      'result'
+    ])
+
+    const reserva = await buscarReserva({
+      supabase,
+      reservaId: reservaIdRecebido,
+      orderId: orderIdRecebido,
+      transactionId: transactionIdRecebido
+    })
+
+    if (!reserva) {
+      console.error('Webhook PagHiper: reserva não encontrada.', {
+        reservaIdRecebido,
+        orderIdRecebido,
+        transactionIdRecebido,
+        body
+      })
+
+      return json({
+        sucesso: false,
+        erro: 'Reserva não encontrada.',
+        recebido: {
+          reservaIdRecebido,
+          orderIdRecebido,
+          transactionIdRecebido,
+          statusRecebido
+        }
+      }, 200)
+    }
+
+    let statusFinal = statusRecebido
+    let transactionIdFinal = transactionIdRecebido
+
+    if (!statusFinal || (!statusPago(statusFinal) && !statusPendente(statusFinal))) {
+      const consulta = await consultarStatusPagHiper({
+        transactionId: transactionIdRecebido ||
+          reserva.paghiper_transaction_id ||
+          reserva.transaction_id ||
+          undefined,
+        orderId: orderIdRecebido ||
+          reserva.paghiper_order_id ||
+          reserva.order_id ||
+          reserva.id
+      })
+
+      if (consulta.status) {
+        statusFinal = consulta.status
+      }
+
+      if (consulta.transactionId) {
+        transactionIdFinal = consulta.transactionId
+      }
+    }
+
+    if (statusPago(statusFinal)) {
+      const resultado = await processarConfirmacaoPagamento({
+        supabase,
+        reserva,
+        statusPagHiper: statusFinal,
+        transactionId: transactionIdFinal,
+        orderId: orderIdRecebido ||
+          reserva.paghiper_order_id ||
+          reserva.order_id ||
+          reserva.id,
+        payloadOriginal: body
+      })
+
+      console.log('Webhook PagHiper: reserva confirmada.', {
+        reservaId: reserva.id,
+        statusFinal,
+        resultado
+      })
+
+      return json({
+        sucesso: true,
+        mensagem: 'Pagamento confirmado e reserva atualizada.',
+        reservaId: reserva.id,
+        statusPagHiper: statusFinal,
+        resultado
+      })
+    }
+
+    if (statusCancelado(statusFinal)) {
+      const resultado = await atualizarReservaComFallback(
+        supabase,
+        reserva.id,
+        {
+          pagamento_status: 'cancelado',
+          paghiper_status: statusFinal,
+          webhook_paghiper_payload: body,
+          updated_at: new Date().toISOString()
+        }
+      )
+
+      return json({
+        sucesso: true,
+        mensagem: 'Pagamento cancelado/expirado registrado.',
+        reservaId: reserva.id,
+        statusPagHiper: statusFinal,
+        resultado
+      })
+    }
+
+    return json({
+      sucesso: true,
+      mensagem: 'Webhook recebido, mas pagamento ainda não confirmado.',
+      reservaId: reserva.id,
+      statusPagHiper: statusFinal || 'status não informado'
+    })
+  } catch (error: any) {
+    console.error('Erro no webhook PagHiper:', error)
+
+    return json(
+      {
+        sucesso: false,
+        erro: error?.message || 'Erro interno no webhook PagHiper.'
+      },
+      500
+    )
   }
 }
 
 export async function GET() {
-  return NextResponse.json({
-    success: true,
-    message: 'Webhook PagHiper ativo.'
+  return json({
+    sucesso: true,
+    rota: '/api/paghiper/webhook',
+    metodo: 'POST',
+    mensagem: 'Webhook PagHiper ativo.'
   })
-}
-
-export async function POST(req: Request) {
-  try {
-    const payload = await lerPayload(req)
-
-    console.log('WEBHOOK PAGHIPER RECEBIDO:')
-    console.log(JSON.stringify(payload, null, 2))
-
-    const resultado = await processarConfirmacaoPagamento(payload)
-
-    return NextResponse.json({
-      success: true,
-      message: 'Webhook processado com sucesso.',
-      ...resultado
-    })
-
-  } catch (error: any) {
-    console.error('ERRO WEBHOOK PAGHIPER:')
-    console.error(error.message || error)
-
-    return NextResponse.json(
-      {
-        error: true,
-        message:
-          error.message || 'Erro interno no webhook PagHiper.'
-      },
-      { status: 500 }
-    )
-  }
 }
