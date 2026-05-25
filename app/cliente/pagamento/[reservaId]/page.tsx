@@ -6,13 +6,16 @@ import { supabase } from '@/lib/supabase/client'
 
 type Reserva = {
   id: string
-  cliente_id?: string
-  roteiro_id?: string
+  cliente_id?: string | null
+  roteiro_id?: string | null
+  quantidade_pessoas?: number | null
   valor_total?: number | null
   status?: string | null
   pagamento_status?: string | null
   paghiper_order_id?: string | null
   paghiper_transaction_id?: string | null
+  transaction_id?: string | null
+  order_id?: string | null
   pix_qr_code?: string | null
   pix_copia_cola?: string | null
   qr_code_base64?: string | null
@@ -42,6 +45,8 @@ export default function PagamentoPIXPage() {
 
   const carregouRef = useRef(false)
   const redirecionouRef = useRef(false)
+  const gerandoPixRef = useRef(false)
+  const verificacaoEmCursoRef = useRef(false)
 
   const [carregando, setCarregando] = useState(true)
   const [gerandoPix, setGerandoPix] = useState(false)
@@ -57,6 +62,8 @@ export default function PagamentoPIXPage() {
 
   const [mensagem, setMensagem] = useState('')
   const [copiado, setCopiado] = useState(false)
+  const [ultimaVerificacao, setUltimaVerificacao] = useState('')
+  const [tentativasAuto, setTentativasAuto] = useState(0)
 
   useEffect(() => {
     if (!reservaId) return
@@ -70,18 +77,25 @@ export default function PagamentoPIXPage() {
   useEffect(() => {
     if (!reservaId) return
 
-    const interval = setInterval(() => {
-      consultarStatusReserva(false)
-    }, 5000)
+    const primeiraVerificacao = setTimeout(() => {
+      reconciliarPagamentoAgora(true)
+    }, 3500)
 
-    return () => clearInterval(interval)
+    const interval = setInterval(() => {
+      reconciliarPagamentoAgora(true)
+    }, 7000)
+
+    return () => {
+      clearTimeout(primeiraVerificacao)
+      clearInterval(interval)
+    }
   }, [reservaId])
 
   const parseJsonSeguro = async (response: Response) => {
     const texto = await response.text()
 
     try {
-      return JSON.parse(texto)
+      return texto ? JSON.parse(texto) : null
     } catch {
       throw new Error(
         `A rota retornou uma resposta inválida. Status ${response.status}. Verifique se a API existe e não está retornando HTML/404.`
@@ -121,6 +135,28 @@ export default function PagamentoPIXPage() {
     }
 
     return `data:image/png;base64,${valorQr}`
+  }
+
+  const normalizarStatus = (status?: string | null) => {
+    return String(status || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+  }
+
+  const pagamentoConfirmado = (
+    pagamento?: string | null,
+    status?: string | null
+  ) => {
+    const pagamentoNormalizado = normalizarStatus(pagamento)
+    const statusNormalizado = normalizarStatus(status)
+
+    return (
+      pagamentoNormalizado === 'pago' ||
+      pagamentoNormalizado === 'confirmado' ||
+      statusNormalizado === 'confirmada'
+    )
   }
 
   const buscarReserva = async () => {
@@ -176,6 +212,57 @@ export default function PagamentoPIXPage() {
     return data as Cliente | null
   }
 
+  const atualizarReservaComFallback = async (
+    reservaIdAtual: string,
+    payloadOriginal: Record<string, any>
+  ) => {
+    let payloadAtual = { ...payloadOriginal }
+
+    for (let tentativa = 0; tentativa < 12; tentativa++) {
+      const { error } = await supabase
+        .from('reservas')
+        .update(payloadAtual)
+        .eq('id', reservaIdAtual)
+
+      if (!error) return
+
+      const textoErro = String(
+        error.message ||
+          error.details ||
+          error.hint ||
+          ''
+      ).toLowerCase()
+
+      const erroColuna =
+        error.code === '42703' ||
+        error.code === 'PGRST204' ||
+        textoErro.includes('could not find') ||
+        textoErro.includes('schema cache') ||
+        textoErro.includes('column')
+
+      if (!erroColuna) {
+        throw error
+      }
+
+      const textoCompleto = [
+        error.message,
+        error.details,
+        error.hint
+      ]
+        .filter(Boolean)
+        .join(' ')
+
+      const matchAspas = textoCompleto.match(/'([^']+)'/)
+      const coluna = matchAspas?.[1]
+
+      if (!coluna || !(coluna in payloadAtual)) {
+        throw error
+      }
+
+      delete payloadAtual[coluna]
+    }
+  }
+
   const consultarStatusReserva = async (mostrarLoading = true) => {
     if (!reservaId || redirecionouRef.current) return
 
@@ -203,27 +290,31 @@ export default function PagamentoPIXPage() {
       setPagamentoStatus(novoPagamentoStatus)
       setReservaStatus(novoReservaStatus)
 
-      const pagamentoConfirmado =
-        novoPagamentoStatus === 'pago' ||
-        novoPagamentoStatus === 'confirmado' ||
-        novoReservaStatus === 'confirmada'
-
-      if (pagamentoConfirmado && !redirecionouRef.current) {
-        redirecionouRef.current = true
-
-        setMensagem(
-          '✅ Pagamento confirmado! Estamos redirecionando você para suas reservas.'
-        )
-
-        setTimeout(() => {
-          router.replace('/cliente/minhas-reservas?pagamento=confirmado')
-        }, 1800)
+      if (
+        pagamentoConfirmado(novoPagamentoStatus, novoReservaStatus) &&
+        !redirecionouRef.current
+      ) {
+        redirecionarPagamentoConfirmado()
       }
     } catch (error) {
       console.warn('Erro ao verificar pagamento:', error)
     } finally {
       setVerificandoPagamento(false)
     }
+  }
+
+  const redirecionarPagamentoConfirmado = () => {
+    if (redirecionouRef.current) return
+
+    redirecionouRef.current = true
+
+    setMensagem(
+      '✅ Pagamento confirmado! Estamos redirecionando você para suas reservas.'
+    )
+
+    setTimeout(() => {
+      router.replace('/cliente/minhas-reservas?pagamento=confirmado')
+    }, 1400)
   }
 
   const carregarPagamento = async () => {
@@ -237,25 +328,13 @@ export default function PagamentoPIXPage() {
         reserva.pagamento_status || 'pendente'
       )
 
+      const statusReservaInicial = String(reserva.status || 'pendente')
+
       setPagamentoStatus(statusPagamentoInicial)
-      setReservaStatus(String(reserva.status || 'pendente'))
+      setReservaStatus(statusReservaInicial)
 
-      const pagamentoJaConfirmado =
-        statusPagamentoInicial === 'pago' ||
-        statusPagamentoInicial === 'confirmado' ||
-        reserva.status === 'confirmada'
-
-      if (pagamentoJaConfirmado) {
-        setMensagem(
-          '✅ Esta reserva já está com pagamento confirmado. Redirecionando...'
-        )
-
-        redirecionouRef.current = true
-
-        setTimeout(() => {
-          router.replace('/cliente/minhas-reservas?pagamento=confirmado')
-        }, 1200)
-
+      if (pagamentoConfirmado(statusPagamentoInicial, statusReservaInicial)) {
+        redirecionarPagamentoConfirmado()
         return
       }
 
@@ -293,6 +372,7 @@ export default function PagamentoPIXPage() {
       }
 
       if (qrSalvo || codigoSalvo) {
+        await reconciliarPagamentoAgora(true)
         return
       }
 
@@ -303,6 +383,10 @@ export default function PagamentoPIXPage() {
         valorReserva,
         tituloRoteiro
       })
+
+      setTimeout(() => {
+        reconciliarPagamentoAgora(true)
+      }, 3000)
     } catch (error: any) {
       console.error('Erro ao carregar pagamento:', error)
 
@@ -327,12 +411,20 @@ export default function PagamentoPIXPage() {
     valorReserva: number
     tituloRoteiro: string
   }) => {
+    if (gerandoPixRef.current) return
+
+    gerandoPixRef.current = true
     setGerandoPix(true)
 
     try {
       if (!valorReserva || valorReserva <= 0) {
         throw new Error('Valor da reserva inválido para gerar PIX.')
       }
+
+      const orderId =
+        reserva.paghiper_order_id ||
+        reserva.order_id ||
+        `RESERVA-${reserva.id}`
 
       const response = await fetch('/api/paghiper/create-pix', {
         method: 'POST',
@@ -342,9 +434,11 @@ export default function PagamentoPIXPage() {
         body: JSON.stringify({
           reservaId: reserva.id,
           reserva_id: reserva.id,
-          order_id: reserva.paghiper_order_id || `RESERVA-${reserva.id}`,
+          order_id: orderId,
           valor: valorReserva,
           descricao: `Reserva PrussikTrails - ${tituloRoteiro}`,
+          notification_url:
+            'https://prussiktrails.vercel.app/api/paghiper/webhook',
           roteiro: {
             id: roteiro?.id || reserva.roteiro_id || null,
             titulo: tituloRoteiro
@@ -355,7 +449,11 @@ export default function PagamentoPIXPage() {
             email: cliente?.email || 'cliente@prussiktrails.com',
             telefone: cliente?.telefone || '',
             cpf: cliente?.cpf || ''
-          }
+          },
+          payer_name: cliente?.nome || 'Cliente PrussikTrails',
+          payer_email: cliente?.email || 'cliente@prussiktrails.com',
+          payer_cpf_cnpj: cliente?.cpf || '',
+          payer_phone: cliente?.telefone || ''
         })
       })
 
@@ -366,6 +464,7 @@ export default function PagamentoPIXPage() {
       if (!response.ok) {
         throw new Error(
           data?.error ||
+            data?.erro ||
             data?.message ||
             data?.details ||
             'Erro ao gerar PIX PagHiper.'
@@ -393,6 +492,19 @@ export default function PagamentoPIXPage() {
         'qrcode'
       ])
 
+      const transactionId = procurarCampoRecursivo(data, [
+        'transaction_id',
+        'transactionId',
+        'paghiper_transaction_id',
+        'id_transacao'
+      ])
+
+      const orderIdRetornado = procurarCampoRecursivo(data, [
+        'order_id',
+        'orderId',
+        'paghiper_order_id'
+      ])
+
       if (qrCodeBase64) {
         setQrCode(formatarQrCode(qrCodeBase64))
       }
@@ -400,6 +512,20 @@ export default function PagamentoPIXPage() {
       if (codigoPixRecebido) {
         setCodigoPix(codigoPixRecebido)
       }
+
+      await atualizarReservaComFallback(reserva.id, {
+        paghiper_order_id: orderIdRetornado || orderId,
+        order_id: orderIdRetornado || orderId,
+        paghiper_transaction_id: transactionId || null,
+        transaction_id: transactionId || null,
+        qr_code_base64: qrCodeBase64 || null,
+        pix_qr_code: qrCodeBase64 || null,
+        pix_copia_cola: codigoPixRecebido || null,
+        codigo_pix: codigoPixRecebido || null,
+        pagamento_status: 'pendente',
+        status: 'pendente',
+        updated_at: new Date().toISOString()
+      })
 
       if (!qrCodeBase64 && !codigoPixRecebido) {
         setMensagem(
@@ -413,7 +539,88 @@ export default function PagamentoPIXPage() {
         error?.message || 'Erro ao gerar pagamento PIX.'
       )
     } finally {
+      gerandoPixRef.current = false
       setGerandoPix(false)
+    }
+  }
+
+  const reconciliarPagamentoAgora = async (silencioso = false) => {
+    if (!reservaId || redirecionouRef.current) return
+
+    if (verificacaoEmCursoRef.current) return
+    verificacaoEmCursoRef.current = true
+
+    if (!silencioso) {
+      setMensagem('Consultando a PagHiper...')
+    }
+
+    setVerificandoPagamento(true)
+
+    try {
+      if (silencioso) {
+        setTentativasAuto((prev) => prev + 1)
+      }
+
+      const response = await fetch('/api/paghiper/reconciliar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          reservaId
+        })
+      })
+
+      const data = await parseJsonSeguro(response)
+
+      setUltimaVerificacao(new Date().toLocaleTimeString('pt-BR'))
+
+      if (!response.ok || !data?.sucesso) {
+        if (!silencioso) {
+          setMensagem(
+            data?.erro ||
+              data?.message ||
+              'A PagHiper ainda não confirmou este pagamento.'
+          )
+        }
+
+        await consultarStatusReserva(false)
+        return
+      }
+
+      const algumAtualizado = Array.isArray(data.resultados)
+        ? data.resultados.some(
+            (item: any) => item.atualizado || item.jaEstavaConfirmada
+          )
+        : false
+
+      if (algumAtualizado) {
+        await consultarStatusReserva(false)
+        redirecionarPagamentoConfirmado()
+        return
+      }
+
+      await consultarStatusReserva(false)
+
+      if (!silencioso) {
+        setMensagem(
+          'A PagHiper ainda não retornou o pagamento como confirmado. Aguarde alguns instantes e tente novamente.'
+        )
+      }
+    } catch (error: any) {
+      console.error('Erro ao reconciliar pagamento:', error)
+
+      if (!silencioso) {
+        setMensagem(
+          error?.message ||
+            'Não foi possível consultar a PagHiper neste momento.'
+        )
+      }
+
+      await consultarStatusReserva(false)
+    } finally {
+      verificacaoEmCursoRef.current = false
+      setVerificandoPagamento(false)
     }
   }
 
@@ -475,16 +682,6 @@ export default function PagamentoPIXPage() {
             padding: 20px;
           }
 
-          .spinner {
-            width: 52px;
-            height: 52px;
-            border-radius: 999px;
-            border: 4px solid #e5e7eb;
-            border-top-color: #16a34a;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 16px;
-          }
-
           .loadingCard {
             text-align: center;
             background: #ffffff;
@@ -492,11 +689,33 @@ export default function PagamentoPIXPage() {
             padding: 28px;
             box-shadow: 0 1px 8px rgba(0,0,0,0.08);
           }
+
+          .logoImg {
+            height: 56px;
+            width: auto;
+            object-fit: contain;
+            margin-bottom: 12px;
+          }
+
+          .spinner {
+            width: 44px;
+            height: 44px;
+            border-radius: 999px;
+            border: 4px solid #e5e7eb;
+            border-top-color: #16a34a;
+            animation: spin 1s linear infinite;
+            margin: 12px auto 0;
+          }
         `}</style>
 
         <div className="loadingCard">
-          <div className="spinner" />
+          <img
+            src="/logo-prussik-display.png"
+            alt="PrussikTrails"
+            className="logoImg"
+          />
           <p>Carregando pagamento PIX...</p>
+          <div className="spinner" />
         </div>
       </main>
     )
@@ -533,7 +752,7 @@ export default function PagamentoPIXPage() {
         }
 
         .container {
-          max-width: 520px;
+          max-width: 540px;
           margin: 0 auto;
         }
 
@@ -564,11 +783,25 @@ export default function PagamentoPIXPage() {
           border: 1px solid #eef2f7;
         }
 
+        .brand {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 18px;
+        }
+
+        .brand img {
+          height: 58px;
+          width: auto;
+          object-fit: contain;
+        }
+
         .title {
           font-size: 24px;
           font-weight: 900;
           margin: 0 0 8px;
           color: #111827;
+          text-align: center;
         }
 
         .subtitle {
@@ -576,6 +809,7 @@ export default function PagamentoPIXPage() {
           font-size: 14px;
           line-height: 1.5;
           margin: 0 0 22px;
+          text-align: center;
         }
 
         .valueBox {
@@ -656,6 +890,12 @@ export default function PagamentoPIXPage() {
           margin-bottom: 14px;
         }
 
+        .secondaryButton:disabled,
+        .mainButton:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
         .statusBox {
           border-top: 1px solid #e5e7eb;
           padding-top: 18px;
@@ -689,6 +929,17 @@ export default function PagamentoPIXPage() {
           font-size: 13px;
           font-weight: 900;
           color: #111827;
+        }
+
+        .autoBox {
+          background: #ecfdf5;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+          border-radius: 18px;
+          padding: 14px;
+          font-size: 13px;
+          line-height: 1.5;
+          margin-top: 14px;
         }
 
         .infoBox {
@@ -764,6 +1015,14 @@ export default function PagamentoPIXPage() {
           .statusGrid {
             grid-template-columns: 1fr;
           }
+
+          .topActions {
+            flex-direction: column;
+          }
+
+          .smallButton {
+            width: 100%;
+          }
         }
       `}</style>
 
@@ -780,13 +1039,18 @@ export default function PagamentoPIXPage() {
           <button
             type="button"
             className="smallButton"
-            onClick={() => consultarStatusReserva(true)}
+            onClick={() => reconciliarPagamentoAgora(false)}
+            disabled={verificandoPagamento}
           >
-            Atualizar status
+            {verificandoPagamento ? 'Verificando...' : 'Atualizar status'}
           </button>
         </div>
 
         <section className="card">
+          <div className="brand">
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          </div>
+
           <h1 className="title">Pagamento PIX</h1>
 
           <p className="subtitle">
@@ -837,11 +1101,11 @@ export default function PagamentoPIXPage() {
           <button
             type="button"
             className="secondaryButton"
-            onClick={() => consultarStatusReserva(true)}
+            onClick={() => reconciliarPagamentoAgora(false)}
             disabled={verificandoPagamento}
           >
             {verificandoPagamento
-              ? 'Verificando pagamento...'
+              ? 'Consultando a PagHiper...'
               : 'Já paguei, verificar agora'}
           </button>
 
@@ -851,7 +1115,9 @@ export default function PagamentoPIXPage() {
                 <div className="statusLabel">Pagamento</div>
                 <div
                   className={`statusValue ${
-                    pagamentoStatus === 'pago' ? 'paid' : 'pending'
+                    pagamentoConfirmado(pagamentoStatus, reservaStatus)
+                      ? 'paid'
+                      : 'pending'
                   }`}
                 >
                   {pagamentoStatus}
@@ -862,7 +1128,9 @@ export default function PagamentoPIXPage() {
                 <div className="statusLabel">Reserva</div>
                 <div
                   className={`statusValue ${
-                    reservaStatus === 'confirmada' ? 'paid' : 'pending'
+                    pagamentoConfirmado(pagamentoStatus, reservaStatus)
+                      ? 'paid'
+                      : 'pending'
                   }`}
                 >
                   {reservaStatus}
@@ -870,10 +1138,22 @@ export default function PagamentoPIXPage() {
               </div>
             </div>
 
+            <div className="autoBox">
+              O sistema está verificando automaticamente o pagamento na PagHiper
+              a cada poucos segundos. Quando confirmar, esta tela será fechada
+              automaticamente.
+              {ultimaVerificacao && (
+                <>
+                  <br />
+                  Última verificação: {ultimaVerificacao}. Tentativas automáticas:{' '}
+                  {tentativasAuto}.
+                </>
+              )}
+            </div>
+
             <div className="infoBox">
-              Assim que a PagHiper confirmar o pagamento, esta tela será fechada
-              automaticamente e você voltará para suas reservas. Isso evita
-              pagamento duplicado.
+              Não feche esta tela logo após pagar. A confirmação pode levar alguns
+              segundos. Isso ajuda a evitar pagamento duplicado.
             </div>
           </div>
 
