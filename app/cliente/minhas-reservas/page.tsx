@@ -390,7 +390,9 @@ export default function MinhasReservasPage() {
     }
   }
 
-  const cancelarReserva = async (reservaId: string) => {
+  const cancelarReserva = async (reservaId: string, e: React.MouseEvent) => {
+    e.stopPropagation() // Impede o clique de propagar para o card
+
     const confirmar = window.confirm(
       'Tem certeza que deseja cancelar esta reserva? Esta ação deve ser usada apenas quando realmente necessário.'
     )
@@ -424,8 +426,15 @@ export default function MinhasReservasPage() {
     }
   }
 
-  const abrirPagamento = (reservaId: string) => {
+  const abrirPagamento = (reservaId: string, e: React.MouseEvent) => {
+    e.stopPropagation() // Impede o clique de propagar para o card
     router.push(`/cliente/pagamento/${reservaId}`)
+  }
+
+  const abrirDetalhesRoteiro = (roteiroId: string | null | undefined) => {
+    if (roteiroId) {
+      router.push(`/roteiros/${roteiroId}`)
+    }
   }
 
   const sair = () => {
@@ -717,6 +726,16 @@ export default function MinhasReservasPage() {
           overflow: hidden;
         }
 
+        /* Linha clicável */
+        .clickable-row {
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+
+        .clickable-row:hover {
+          background: #f0fdf4;
+        }
+
         .desktopTable {
           width: 100%;
           border-collapse: collapse;
@@ -788,6 +807,16 @@ export default function MinhasReservasPage() {
 
         .mobileList {
           display: none;
+        }
+
+        /* Card mobile clicável */
+        .mobile-card-clickable {
+          cursor: pointer;
+          transition: background 0.15s ease, transform 0.1s ease;
+        }
+
+        .mobile-card-clickable:active {
+          transform: scale(0.99);
         }
 
         .mobileCard {
@@ -960,6 +989,7 @@ export default function MinhasReservasPage() {
           </section>
         ) : (
           <>
+            {/* VERSÃO DESKTOP */}
             <section className="tableCard desktopWrap">
               <table className="desktopTable">
                 <thead>
@@ -986,36 +1016,33 @@ export default function MinhasReservasPage() {
                       !pagamentoConfirmado(reserva)
 
                     return (
-                      <tr key={reserva.id}>
+                      <tr
+                        key={reserva.id}
+                        className="clickable-row"
+                        onClick={() => abrirDetalhesRoteiro(reserva.roteiro_id)}
+                      >
                         <td>
                           <div className="roteiroNome">
                             {reserva.roteiro_titulo}
                           </div>
                         </td>
-
                         <td>{reserva.guia_nome}</td>
-
                         <td>{formatarData(reserva.created_at)}</td>
-
                         <td>{reserva.quantidade_pessoas || 1}</td>
-
                         <td>
                           <span className="valor">
                             R$ {reserva.valor_final.toFixed(2)}
                           </span>
                         </td>
-
                         <td>{badgePagamento(reserva)}</td>
-
                         <td>{badgeStatus(reserva)}</td>
-
                         <td>
                           <div className="rowActions">
                             {podePagar && (
                               <button
                                 type="button"
                                 className="btn btn-green"
-                                onClick={() => abrirPagamento(reserva.id)}
+                                onClick={(e) => abrirPagamento(reserva.id, e)}
                               >
                                 Pagar
                               </button>
@@ -1025,7 +1052,7 @@ export default function MinhasReservasPage() {
                               <button
                                 type="button"
                                 className="btn btn-soft-red"
-                                onClick={() => cancelarReserva(reserva.id)}
+                                onClick={(e) => cancelarReserva(reserva.id, e)}
                               >
                                 Cancelar
                               </button>
@@ -1039,6 +1066,7 @@ export default function MinhasReservasPage() {
               </table>
             </section>
 
+            {/* VERSÃO MOBILE */}
             <section className="mobileList">
               {reservas.map((reserva) => {
                 const podePagar =
@@ -1050,7 +1078,11 @@ export default function MinhasReservasPage() {
                   !pagamentoConfirmado(reserva)
 
                 return (
-                  <article className="mobileCard" key={reserva.id}>
+                  <article
+                    key={reserva.id}
+                    className="mobileCard mobile-card-clickable"
+                    onClick={() => abrirDetalhesRoteiro(reserva.roteiro_id)}
+                  >
                     <div className="mobileTop">
                       <div className="mobileTitle">
                         {reserva.roteiro_titulo}
@@ -1089,7 +1121,7 @@ export default function MinhasReservasPage() {
                         <button
                           type="button"
                           className="btn btn-green"
-                          onClick={() => abrirPagamento(reserva.id)}
+                          onClick={(e) => abrirPagamento(reserva.id, e)}
                         >
                           Pagar
                         </button>
@@ -1099,7 +1131,7 @@ export default function MinhasReservasPage() {
                         <button
                           type="button"
                           className="btn btn-soft-red"
-                          onClick={() => cancelarReserva(reserva.id)}
+                          onClick={(e) => cancelarReserva(reserva.id, e)}
                         >
                           Cancelar
                         </button>
