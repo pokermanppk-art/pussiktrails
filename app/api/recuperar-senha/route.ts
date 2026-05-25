@@ -151,7 +151,8 @@ async function enviarEmailRecuperacao({
   if (!resendApiKey) {
     return {
       enviado: false,
-      motivo: 'RESEND_API_KEY ausente.'
+      erro:
+        'RESEND_API_KEY ausente. Configure a chave da Resend na Vercel para enviar o e-mail.'
     }
   }
 
@@ -170,19 +171,38 @@ async function enviarEmailRecuperacao({
       to: email,
       subject: 'Recuperação de senha - PrussikTrails',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111827;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="margin: 0; color: #dc2626;">PrussikTrails</h1>
+          </div>
+
           <h2 style="color: #111827;">Recuperação de senha</h2>
+
           <p>Olá${nome ? `, ${nome}` : ''}.</p>
-          <p>Recebemos uma solicitação para redefinir sua senha no PrussikTrails.</p>
-          <p>Clique no botão abaixo para criar uma nova senha:</p>
+
+          <p>
+            Recebemos uma solicitação para redefinir sua senha no PrussikTrails.
+          </p>
+
+          <p>
+            Clique no botão abaixo para criar uma nova senha:
+          </p>
+
           <p style="margin: 28px 0;">
-            <a href="${link}" style="background: #16a34a; color: #ffffff; padding: 14px 22px; border-radius: 999px; text-decoration: none; font-weight: bold;">
+            <a href="${link}" style="background: #16a34a; color: #ffffff; padding: 14px 22px; border-radius: 999px; text-decoration: none; font-weight: bold; display: inline-block;">
               Redefinir senha
             </a>
           </p>
-          <p>Se o botão não abrir, copie e cole este link no navegador:</p>
-          <p style="word-break: break-all; color: #2563eb;">${link}</p>
-          <p style="color: #6b7280; font-size: 13px;">
+
+          <p>
+            Se o botão não abrir, copie e cole este endereço no navegador:
+          </p>
+
+          <p style="word-break: break-all; color: #2563eb;">
+            ${link}
+          </p>
+
+          <p style="color: #6b7280; font-size: 13px; margin-top: 28px;">
             Este link expira em 1 hora. Se você não solicitou esta alteração, ignore este e-mail.
           </p>
         </div>
@@ -246,10 +266,6 @@ export async function POST(request: NextRequest) {
       throw usuarioError
     }
 
-    /*
-      Por segurança, não informamos publicamente se o e-mail existe ou não.
-      Mas para debug retornamos sucesso sem link.
-    */
     if (!usuario) {
       return json({
         sucesso: true,
@@ -274,21 +290,23 @@ export async function POST(request: NextRequest) {
       link
     })
 
+    if (!envio.enviado) {
+      return json(
+        {
+          sucesso: false,
+          erro:
+            envio.erro ||
+            'Não foi possível enviar o e-mail de recuperação neste momento.'
+        },
+        500
+      )
+    }
+
     return json({
       sucesso: true,
       mensagem:
         'Se este e-mail estiver cadastrado, enviaremos as instruções de recuperação.',
-      emailEnviado: envio.enviado,
-      aviso:
-        envio.enviado
-          ? undefined
-          : 'E-mail não enviado porque RESEND_API_KEY não está configurada ou falhou.',
-      erroEmail: envio.enviado ? undefined : envio.erro || envio.motivo,
-      /*
-        Mantive o link no retorno para teste do MVP.
-        Depois podemos remover para produção.
-      */
-      linkRecuperacao: link
+      emailEnviado: true
     })
   } catch (error: any) {
     console.error('Erro em recuperar senha:', error)
@@ -296,7 +314,9 @@ export async function POST(request: NextRequest) {
     return json(
       {
         sucesso: false,
-        erro: error?.message || 'Erro interno ao solicitar recuperação de senha.'
+        erro:
+          error?.message ||
+          'Erro interno ao solicitar recuperação de senha.'
       },
       500
     )

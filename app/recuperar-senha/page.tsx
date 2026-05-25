@@ -10,7 +10,6 @@ export default function RecuperarSenhaPage() {
   const [carregando, setCarregando] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [tipoMensagem, setTipoMensagem] = useState<'erro' | 'sucesso' | ''>('')
-  const [linkTeste, setLinkTeste] = useState('')
 
   const validarEmail = (valor: string) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)
@@ -21,7 +20,6 @@ export default function RecuperarSenhaPage() {
 
     setMensagem('')
     setTipoMensagem('')
-    setLinkTeste('')
 
     const emailFinal = email.trim().toLowerCase()
 
@@ -67,10 +65,7 @@ export default function RecuperarSenhaPage() {
           'Se este e-mail estiver cadastrado, enviaremos as instruções de recuperação.'
       )
       setTipoMensagem('sucesso')
-
-      if (data?.linkRecuperacao) {
-        setLinkTeste(data.linkRecuperacao)
-      }
+      setEmail('')
     } catch (error: any) {
       console.error('Erro ao solicitar recuperação de senha:', error)
 
@@ -276,27 +271,6 @@ export default function RecuperarSenhaPage() {
           background: #f0fdf4;
         }
 
-        .testBox {
-          margin-top: 18px;
-          padding: 14px;
-          border-radius: 18px;
-          background: #eff6ff;
-          border: 1px solid #bfdbfe;
-          color: #1e40af;
-          font-size: 13px;
-          line-height: 1.5;
-        }
-
-        .testLink {
-          display: block;
-          margin-top: 8px;
-          word-break: break-all;
-          color: #2563eb;
-          font-weight: 800;
-          text-decoration: underline;
-          cursor: pointer;
-        }
-
         .hint {
           margin: 16px 0 0;
           text-align: center;
@@ -354,8 +328,8 @@ export default function RecuperarSenhaPage() {
           <h1 className="title">Recuperar senha</h1>
 
           <p className="subtitle">
-            Informe o e-mail cadastrado. Se ele existir na plataforma, enviaremos
-            um link para você criar uma nova senha.
+            Informe o e-mail cadastrado. Enviaremos um link para você criar uma
+            nova senha.
           </p>
 
           <form className="form" onSubmit={solicitarRecuperacao}>
@@ -385,19 +359,6 @@ export default function RecuperarSenhaPage() {
             </button>
           </form>
 
-          {linkTeste && (
-            <div className="testBox">
-              Link de teste do MVP:
-              <button
-                type="button"
-                className="testLink"
-                onClick={() => router.push(linkTeste.replace(window.location.origin, ''))}
-              >
-                {linkTeste}
-              </button>
-            </div>
-          )}
-
           <button
             type="button"
             className="secondaryButton"
@@ -407,7 +368,7 @@ export default function RecuperarSenhaPage() {
           </button>
 
           <p className="hint">
-            O link expira em 1 hora por segurança.
+            O link será enviado por e-mail e expira em 1 hora.
           </p>
         </section>
       </div>
