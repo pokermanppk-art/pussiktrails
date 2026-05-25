@@ -176,22 +176,9 @@ export default function LoginPage() {
             radial-gradient(circle at top left, rgba(22, 163, 74, 0.12), transparent 30%),
             linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
           color: #111827;
-        }
-
-        .topBar {
-          height: 64px;
-          background: #dc2626;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 0 16px;
-        }
-
-        .topLogo {
-          height: 42px;
-          width: auto;
-          object-fit: contain;
-          display: block;
         }
 
         .container {
@@ -204,7 +191,7 @@ export default function LoginPage() {
         .card {
           background: #ffffff;
           border-radius: 32px;
-          padding: 30px;
+          padding: 40px 30px;
           box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
           border: 1px solid #eef2f7;
         }
@@ -212,31 +199,22 @@ export default function LoginPage() {
         .brand {
           display: flex;
           justify-content: center;
-          margin-bottom: 18px;
+          margin-bottom: 24px;
         }
 
         .brand img {
-          height: 78px;
+          height: 88px;
           width: auto;
           object-fit: contain;
           display: block;
         }
 
-        .title {
-          margin: 0;
-          text-align: center;
-          font-size: 32px;
-          font-weight: 900;
-          color: #111827;
-          letter-spacing: -0.04em;
-        }
-
         .heroPhrase {
-          margin: 12px auto 28px;
+          margin: 0 auto 32px;
           text-align: center;
           color: #111827;
-          font-size: 28px;
-          line-height: 1.08;
+          font-size: 26px;
+          line-height: 1.2;
           font-weight: 900;
           letter-spacing: -0.05em;
         }
@@ -247,13 +225,13 @@ export default function LoginPage() {
 
         .form {
           display: grid;
-          gap: 16px;
+          gap: 20px;
         }
 
         .formGroup {
           display: flex;
           flex-direction: column;
-          gap: 7px;
+          gap: 8px;
         }
 
         label {
@@ -300,17 +278,17 @@ export default function LoginPage() {
           border: none;
           border-radius: 999px;
           padding: 16px;
-          background: #15803d;
+          background: #16a34a;
           color: #ffffff;
-          font-size: 18px;
-          font-weight: 900;
+          font-size: 17px;
+          font-weight: 800;
           cursor: pointer;
           transition: 0.2s ease;
-          margin-top: 4px;
+          margin-top: 8px;
         }
 
         .submitButton:hover:not(:disabled) {
-          background: #166534;
+          background: #15803d;
           transform: translateY(-1px);
           box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
         }
@@ -323,7 +301,7 @@ export default function LoginPage() {
         .linkRow {
           display: flex;
           justify-content: center;
-          margin-top: 14px;
+          margin-top: 18px;
         }
 
         .textButton {
@@ -331,7 +309,7 @@ export default function LoginPage() {
           background: transparent;
           color: #16a34a;
           font-size: 14px;
-          font-weight: 900;
+          font-weight: 800;
           cursor: pointer;
           text-decoration: none;
         }
@@ -341,7 +319,7 @@ export default function LoginPage() {
           grid-template-columns: 1fr auto 1fr;
           align-items: center;
           gap: 14px;
-          margin: 22px 0;
+          margin: 24px 0;
           color: #9ca3af;
           font-size: 14px;
         }
@@ -360,8 +338,8 @@ export default function LoginPage() {
           padding: 15px;
           background: #ffffff;
           color: #16a34a;
-          font-size: 17px;
-          font-weight: 900;
+          font-size: 16px;
+          font-weight: 800;
           cursor: pointer;
           transition: 0.2s ease;
         }
@@ -371,7 +349,7 @@ export default function LoginPage() {
         }
 
         .hint {
-          margin: 16px 0 0;
+          margin: 20px 0 0;
           text-align: center;
           color: #9ca3af;
           font-size: 12px;
@@ -379,45 +357,35 @@ export default function LoginPage() {
         }
 
         @media (max-width: 520px) {
-          .topBar {
-            height: 62px;
-          }
-
           .container {
             padding: 24px 14px 34px;
           }
 
           .card {
             border-radius: 28px;
-            padding: 24px 18px;
+            padding: 28px 20px;
           }
 
           .brand img {
-            height: 68px;
-          }
-
-          .title {
-            font-size: 28px;
+            height: 72px;
           }
 
           .heroPhrase {
-            font-size: 26px;
+            font-size: 22px;
+            margin-bottom: 28px;
           }
 
           input {
+            font-size: 15px;
+            padding: 13px 14px;
+          }
+
+          .submitButton {
+            padding: 14px;
             font-size: 16px;
-            padding: 14px 15px;
           }
         }
       `}</style>
-
-      <header className="topBar">
-        <img
-          src="/logo-prussik-display.png"
-          alt="PrussikTrails"
-          className="topLogo"
-        />
-      </header>
 
       <div className="container">
         <section className="card">
@@ -427,8 +395,6 @@ export default function LoginPage() {
               alt="PrussikTrails"
             />
           </div>
-
-          <h1 className="title">Entrar</h1>
 
           <p className="heroPhrase">
             Sua próxima
@@ -472,7 +438,7 @@ export default function LoginPage() {
               className="submitButton"
               disabled={carregando}
             >
-              {carregando ? 'Entrando...' : 'Entrar'}
+              {carregando ? 'Entrando...' : 'Acessar minha conta'}
             </button>
           </form>
 
@@ -493,7 +459,7 @@ export default function LoginPage() {
             className="secondaryButton"
             onClick={() => router.push('/cadastro')}
           >
-            Criar conta
+            Criar nova conta
           </button>
 
           <p className="hint">
