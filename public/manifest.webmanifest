@@ -1,13 +1,18 @@
 {
+  "id": "/login",
   "name": "PrussikTrails",
   "short_name": "PrussikTrails",
   "description": "Plataforma de aventuras e trilhas conectando guias especializados e aventureiros.",
+  "lang": "pt-BR",
+  "dir": "ltr",
   "start_url": "/login",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "browser"],
+  "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#dc2626",
-  "orientation": "portrait",
+  "categories": ["travel", "sports", "lifestyle"],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -26,6 +31,47 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Entrar",
+      "short_name": "Login",
+      "description": "Acessar o login do PrussikTrails",
+      "url": "/login",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Minhas Reservas",
+      "short_name": "Reservas",
+      "description": "Acessar as reservas do cliente",
+      "url": "/cliente/minhas-reservas",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Roteiros",
+      "short_name": "Roteiros",
+      "description": "Explorar roteiros disponíveis",
+      "url": "/roteiros",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }
