@@ -1,38 +1,58 @@
-import { NextResponse } from 'next/server'
-import axios from 'axios'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseServiceKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  ''
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error(
-      'Credenciais Supabase ausentes no servidor. Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel.'
-    )
-  }
+const pagHiperApiKey = process.env.PAGHIPER_API_KEY || ''
+const pagHiperToken = process.env.PAGHIPER_TOKEN || ''
 
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
-    }
-  })
+const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+type Reserva = {
+  id: string
+  cliente_id?: string | null
+  status?: string | null
+  pagamento_status?: string | null
+  paghiper_transaction_id?: string | null
+  paghiper_order_id?: string | null
+  transaction_id?: string | null
+  order_id?: string | null
+  created_at?: string | null
 }
 
-function procurarCampoRecursivo(obj: any, nomes: string[]): string {
-  if (!obj) return ''
+function json(data: any, status = 200) {
+  return NextResponse.json(data, { status })
+}
 
-  if (typeof obj !== 'object') return ''
+function normalizarTexto(valor: any) {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function limparOrderId(orderId: string) {
+  return String(orderId || '')
+    .replace(/^RESERVA-/i, '')
+    .trim()
+}
+
+function buscarRecursivo(obj: any, nomes: string[]): string {
+  if (!obj || typeof obj !== 'object') return ''
 
   for (const nome of nomes) {
     const valor = obj[nome]
 
     if (typeof valor === 'string' && valor.trim()) {
-      return valor
+      return valor.trim()
     }
 
     if (typeof valor === 'number') {
@@ -41,7 +61,7 @@ function procurarCampoRecursivo(obj: any, nomes: string[]): string {
   }
 
   for (const key of Object.keys(obj)) {
-    const encontrado = procurarCampoRecursivo(obj[key], nomes)
+    const encontrado = buscarRecursivo(obj[key], nomes)
 
     if (encontrado) return encontrado
   }
@@ -49,658 +69,550 @@ function procurarCampoRecursivo(obj: any, nomes: string[]): string {
   return ''
 }
 
-function normalizarStatusPagHiper(status: string) {
-  const texto = String(status || '').toLowerCase().trim()
+function pagamentoJaConfirmado(reserva: Reserva) {
+  const pagamento = normalizarTexto(reserva.pagamento_status)
+  const status = normalizarTexto(reserva.status)
 
-  if (
-    texto.includes('paid') ||
-    texto.includes('pago') ||
-    texto.includes('aprovado') ||
-    texto.includes('approved') ||
-    texto.includes('completed') ||
-    texto.includes('completo') ||
-    texto.includes('liquidado') ||
-    texto.includes('confirmado') ||
-    texto === 'success'
-  ) {
-    return 'pago'
-  }
-
-  if (
-    texto.includes('cancel') ||
-    texto.includes('expired') ||
-    texto.includes('expirado') ||
-    texto.includes('vencido') ||
-    texto.includes('estornado')
-  ) {
-    return 'cancelado'
-  }
-
-  return 'pendente'
+  return (
+    pagamento === 'pago' ||
+    pagamento === 'confirmado' ||
+    status === 'confirmada'
+  )
 }
 
-function extrairReservaIdDoOrderId(orderId: string) {
-  if (!orderId) return ''
+function statusPago(status: string) {
+  const s = normalizarTexto(status)
 
-  if (orderId.startsWith('RESERVA-')) {
-    return orderId.replace('RESERVA-', '')
-  }
-
-  return orderId
+  return [
+    'paid',
+    'pago',
+    'aprovado',
+    'aprovada',
+    'approved',
+    'complete',
+    'completed',
+    'completo',
+    'confirmado',
+    'confirmed',
+    'liquidado',
+    'settled',
+    'reserved',
+    'reservado'
+  ].includes(s)
 }
 
-function extrairIdentificadores(payload: any) {
-  const orderId = procurarCampoRecursivo(payload, [
-    'order_id',
-    'orderId',
-    'order',
-    'id_pedido',
-    'pedido'
-  ])
+function statusPendente(status: string) {
+  const s = normalizarTexto(status)
 
-  const transactionId = procurarCampoRecursivo(payload, [
-    'transaction_id',
-    'transactionId',
-    'idTransacao',
-    'id_transacao',
-    'id_transaction',
-    'hash'
-  ])
-
-  const notificationId = procurarCampoRecursivo(payload, [
-    'notification_id',
-    'notificationId',
-    'idNotificacao',
-    'id_notification'
-  ])
-
-  const statusRecebido = procurarCampoRecursivo(payload, [
-    'status',
-    'status_request',
-    'status_pagamento',
-    'payment_status',
-    'status_transaction'
-  ])
-
-  return {
-    orderId,
-    transactionId,
-    notificationId,
-    statusRecebido
-  }
+  return [
+    'pending',
+    'pendente',
+    'waiting',
+    'aguardando',
+    'created',
+    'criado',
+    'processing',
+    'processando',
+    'em aberto',
+    'open'
+  ].includes(s)
 }
 
-async function consultarPagHiper(params: {
-  notificationId?: string
-  transactionId?: string
-  orderId?: string
+function extrairColunaAusente(error: any) {
+  const texto = [
+    error?.message,
+    error?.details,
+    error?.hint
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const matchAspas = texto.match(/'([^']+)'/)
+
+  if (matchAspas?.[1]) {
+    return matchAspas[1]
+  }
+
+  const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
+
+  if (matchColumn?.[1]) {
+    return matchColumn[1]
+  }
+
+  return ''
+}
+
+function erroDeColunaAusente(error: any) {
+  const texto = String(
+    error?.message ||
+      error?.details ||
+      error?.hint ||
+      ''
+  ).toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    texto.includes('could not find') ||
+    texto.includes('schema cache') ||
+    texto.includes('column')
+  )
+}
+
+async function atualizarReservaComFallback(
+  reservaId: string,
+  payloadOriginal: Record<string, any>
+) {
+  let payloadAtual = { ...payloadOriginal }
+  const colunasIgnoradas: string[] = []
+
+  for (let tentativa = 0; tentativa < 12; tentativa++) {
+    const { data, error } = await supabase
+      .from('reservas')
+      .update(payloadAtual)
+      .eq('id', reservaId)
+      .select()
+      .maybeSingle()
+
+    if (!error) {
+      return {
+        data,
+        colunasIgnoradas
+      }
+    }
+
+    if (!erroDeColunaAusente(error)) {
+      throw error
+    }
+
+    const coluna = extrairColunaAusente(error)
+
+    if (!coluna || !(coluna in payloadAtual)) {
+      throw error
+    }
+
+    delete payloadAtual[coluna]
+    colunasIgnoradas.push(coluna)
+  }
+
+  throw new Error('Não foi possível atualizar a reserva.')
+}
+
+async function consultarPagHiper({
+  transactionId,
+  orderId
+}: {
+  transactionId?: string | null
+  orderId?: string | null
 }) {
-  const apiKey = process.env.PAGHIPER_API_KEY
-  const token = process.env.PAGHIPER_TOKEN
+  const endpoints = [
+    'https://pix.paghiper.com/invoice/status/',
+    'https://api.paghiper.com/transaction/status/'
+  ]
 
-  if (!apiKey || !token) {
-    throw new Error(
-      'Credenciais PagHiper ausentes. Configure PAGHIPER_API_KEY e PAGHIPER_TOKEN na Vercel.'
-    )
-  }
+  const payloads: Record<string, any>[] = []
 
-  const tentativas: Array<{
-    nome: string
-    url: string
-    body: Record<string, any>
-  }> = []
-
-  if (params.notificationId) {
-    tentativas.push({
-      nome: 'invoice/notification',
-      url: 'https://pix.paghiper.com/invoice/notification/',
-      body: {
-        apiKey,
-        token,
-        notification_id: params.notificationId,
-        transaction_id: params.transactionId || undefined,
-        idTransacao: params.transactionId || undefined
-      }
+  if (transactionId) {
+    payloads.push({
+      apiKey: pagHiperApiKey,
+      token: pagHiperToken,
+      transaction_id: transactionId
     })
   }
 
-  if (params.transactionId) {
-    tentativas.push({
-      nome: 'invoice/status por transaction_id',
-      url: 'https://pix.paghiper.com/invoice/status/',
-      body: {
-        apiKey,
-        token,
-        transaction_id: params.transactionId,
-        idTransacao: params.transactionId
-      }
+  if (orderId) {
+    payloads.push({
+      apiKey: pagHiperApiKey,
+      token: pagHiperToken,
+      order_id: orderId
     })
-  }
 
-  if (params.orderId) {
-    tentativas.push({
-      nome: 'invoice/status por order_id',
-      url: 'https://pix.paghiper.com/invoice/status/',
-      body: {
-        apiKey,
-        token,
-        order_id: params.orderId
-      }
-    })
-  }
+    const orderIdLimpo = limparOrderId(orderId)
 
-  const erros: any[] = []
-
-  for (const tentativa of tentativas) {
-    try {
-      const response = await axios.post(tentativa.url, tentativa.body, {
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json'
-        },
-        timeout: 20000
+    if (orderIdLimpo && orderIdLimpo !== orderId) {
+      payloads.push({
+        apiKey: pagHiperApiKey,
+        token: pagHiperToken,
+        order_id: orderIdLimpo
       })
+    }
+  }
 
-      if (response.data) {
-        return {
-          sucesso: true,
-          origemConsulta: tentativa.nome,
-          data: response.data,
-          erros
+  const respostas: any[] = []
+
+  for (const endpoint of endpoints) {
+    for (const payload of payloads) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        })
+
+        const texto = await response.text()
+
+        let data: any = null
+
+        try {
+          data = texto ? JSON.parse(texto) : null
+        } catch {
+          data = {
+            raw: texto
+          }
         }
+
+        const statusEncontrado = buscarRecursivo(data, [
+          'status',
+          'status_transaction',
+          'transaction_status',
+          'payment_status',
+          'status_pagamento',
+          'result'
+        ])
+
+        const transactionIdEncontrado = buscarRecursivo(data, [
+          'transaction_id',
+          'transactionId',
+          'id_transacao'
+        ])
+
+        respostas.push({
+          endpoint,
+          statusHttp: response.status,
+          ok: response.ok,
+          payloadUsado: payload,
+          statusEncontrado,
+          transactionIdEncontrado,
+          data
+        })
+
+        if (response.ok && statusEncontrado) {
+          return {
+            sucesso: true,
+            endpoint,
+            status: statusEncontrado,
+            transactionId: transactionIdEncontrado,
+            data,
+            respostas
+          }
+        }
+      } catch (error: any) {
+        respostas.push({
+          endpoint,
+          erro: error?.message || 'Erro ao consultar endpoint PagHiper.'
+        })
       }
-    } catch (error: any) {
-      erros.push({
-        origemConsulta: tentativa.nome,
-        erro: error.response?.data || error.message || String(error)
-      })
     }
   }
 
   return {
     sucesso: false,
-    origemConsulta: null,
+    status: '',
     data: null,
-    erros
+    respostas
   }
 }
 
-async function registrarLogPagHiper(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  payload: {
-    reserva_id?: string | null
-    order_id?: string | null
-    transaction_id?: string | null
-    notification_id?: string | null
-    status_recebido?: string | null
-    payload?: any
-    processado?: boolean
-    erro?: string | null
-  }
-) {
-  try {
-    await supabase
-      .from('paghiper_webhook_logs')
-      .insert({
-        reserva_id: payload.reserva_id || null,
-        order_id: payload.order_id || null,
-        transaction_id: payload.transaction_id || null,
-        notification_id: payload.notification_id || null,
-        status_recebido: payload.status_recebido || null,
-        payload: payload.payload || null,
-        processado: payload.processado || false,
-        erro: payload.erro || null
-      })
-  } catch (error) {
-    console.warn(
-      'Log PagHiper não foi gravado. Se desejar logs, crie a tabela paghiper_webhook_logs.',
-      error
-    )
-  }
-}
-
-async function buscarReserva(params: {
+async function buscarReservasParaReconciliar({
+  reservaId,
+  clienteId,
+  orderId,
+  transactionId
+}: {
   reservaId?: string
+  clienteId?: string
   orderId?: string
   transactionId?: string
 }) {
-  const supabase = getSupabaseAdmin()
+  if (reservaId) {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .eq('id', reservaId)
 
-  let query = supabase
-    .from('reservas')
-    .select('*')
-    .limit(1)
+    if (error) throw error
 
-  if (params.reservaId) {
-    query = query.eq('id', params.reservaId)
-  } else if (params.orderId) {
-    query = query.eq('paghiper_order_id', params.orderId)
-  } else if (params.transactionId) {
-    query = query.eq('paghiper_transaction_id', params.transactionId)
-  } else {
-    throw new Error(
-      'Informe reservaId, orderId ou transactionId para reconciliar.'
+    return (data || []) as Reserva[]
+  }
+
+  if (clienteId) {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .eq('cliente_id', clienteId)
+      .not('status', 'eq', 'cancelada')
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    return ((data || []) as Reserva[]).filter(
+      (reserva) => !pagamentoJaConfirmado(reserva)
     )
   }
 
-  const { data, error } = await query
+  if (transactionId) {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .or(
+        `paghiper_transaction_id.eq.${transactionId},transaction_id.eq.${transactionId}`
+      )
 
-  if (error) {
-    throw error
+    if (error) throw error
+
+    return (data || []) as Reserva[]
   }
 
-  const reserva = data?.[0]
+  if (orderId) {
+    const orderIdLimpo = limparOrderId(orderId)
 
-  if (!reserva) {
-    throw new Error('Reserva não encontrada para reconciliação.')
+    const filtros = [
+      `paghiper_order_id.eq.${orderId}`,
+      `order_id.eq.${orderId}`
+    ]
+
+    if (orderIdLimpo && orderIdLimpo !== orderId) {
+      filtros.push(`paghiper_order_id.eq.${orderIdLimpo}`)
+      filtros.push(`order_id.eq.${orderIdLimpo}`)
+      filtros.push(`id.eq.${orderIdLimpo}`)
+    }
+
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*')
+      .or(filtros.join(','))
+
+    if (error) throw error
+
+    return (data || []) as Reserva[]
   }
 
-  return reserva
+  return []
 }
 
-async function buscarGuiaDaReserva(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  reserva: any
-) {
-  const guiaDireto =
-    reserva.id_guia ||
-    reserva.guia_id ||
-    null
-
-  if (guiaDireto) return guiaDireto
-
-  const roteiroId = reserva.roteiro_id || null
-
-  if (!roteiroId) return null
-
-  const { data: roteiro, error } = await supabase
-    .from('roteiros')
-    .select('id, id_guia')
-    .eq('id', roteiroId)
-    .maybeSingle()
-
-  if (error) {
-    console.warn('Erro ao buscar guia pelo roteiro:', error)
-    return null
+async function reconciliarReserva(reserva: Reserva) {
+  if (pagamentoJaConfirmado(reserva)) {
+    return {
+      reservaId: reserva.id,
+      jaEstavaConfirmada: true,
+      atualizado: false
+    }
   }
-
-  return roteiro?.id_guia || null
-}
-
-async function subirComprovantePagHiper(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  reserva: any,
-  dadosComprovante: any
-) {
-  const conteudo = JSON.stringify(dadosComprovante, null, 2)
-  const buffer = Buffer.from(conteudo, 'utf-8')
 
   const transactionId =
-    dadosComprovante.transaction_id ||
-    dadosComprovante.idTransacao ||
-    'sem-transacao'
-
-  const filePath =
-    `paghiper/reconciliacao-reserva-${reserva.id}-${transactionId}-${Date.now()}.json`
-
-  const { error: uploadError } = await supabase.storage
-    .from('comprovantes')
-    .upload(filePath, buffer, {
-      contentType: 'application/json',
-      upsert: true
-    })
-
-  if (uploadError) {
-    console.warn('Erro ao subir comprovante PagHiper:', uploadError)
-    return null
-  }
-
-  const {
-    data: { publicUrl }
-  } = supabase.storage
-    .from('comprovantes')
-    .getPublicUrl(filePath)
-
-  return publicUrl
-}
-
-async function criarOuBuscarChatDaReserva(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  reserva: any,
-  guiaId: string | null
-) {
-  if (reserva.chat_id) {
-    return reserva.chat_id
-  }
-
-  const { data: chatExistente, error: chatExistenteError } = await supabase
-    .from('chats')
-    .select('*')
-    .eq('reserva_id', reserva.id)
-    .maybeSingle()
-
-  if (chatExistenteError) {
-    throw chatExistenteError
-  }
-
-  if (chatExistente) {
-    await supabase
-      .from('reservas')
-      .update({ chat_id: chatExistente.id })
-      .eq('id', reserva.id)
-
-    return chatExistente.id
-  }
-
-  const clienteId =
-    reserva.cliente_id ||
-    reserva.id_cliente ||
-    null
-
-  const { data: novoChat, error: novoChatError } = await supabase
-    .from('chats')
-    .insert({
-      reserva_id: reserva.id,
-      cliente_id: clienteId,
-      guia_id: guiaId,
-      moderador_id: null,
-      status: 'ativo',
-      escopo_moderacao: 'cliente_guia_com_moderacao_futura',
-      origem: 'reconciliacao_paghiper'
-    })
-    .select()
-    .single()
-
-  if (novoChatError) {
-    throw novoChatError
-  }
-
-  await supabase
-    .from('reservas')
-    .update({ chat_id: novoChat.id })
-    .eq('id', reserva.id)
-
-  await supabase
-    .from('chat_mensagens')
-    .insert({
-      chat_id: novoChat.id,
-      remetente_id: null,
-      remetente_tipo: 'sistema',
-      tipo: 'sistema',
-      mensagem:
-        'Pagamento confirmado por reconciliação PagHiper. Chat liberado entre cliente e guia. Este chat poderá ser moderado futuramente por um moderador.',
-      metadata: {
-        reserva_id: reserva.id,
-        origem: 'reconciliacao_paghiper',
-        escopo: 'moderacao_futura'
-      }
-    })
-
-  return novoChat.id
-}
-
-async function reconciliarReserva(params: {
-  reservaId?: string
-  orderId?: string
-  transactionId?: string
-  notificationId?: string
-}) {
-  const supabase = getSupabaseAdmin()
-
-  let reserva = await buscarReserva({
-    reservaId: params.reservaId,
-    orderId: params.orderId,
-    transactionId: params.transactionId
-  })
-
-  const identificadoresDaReserva = extrairIdentificadores({
-    order_id: reserva.paghiper_order_id,
-    transaction_id: reserva.paghiper_transaction_id,
-    notification_id:
-      params.notificationId ||
-      procurarCampoRecursivo(reserva.paghiper_response, [
-        'notification_id',
-        'notificationId',
-        'idNotificacao',
-        'id_notification'
-      ]),
-    paghiper_response: reserva.paghiper_response
-  })
+    reserva.paghiper_transaction_id ||
+    reserva.transaction_id ||
+    ''
 
   const orderId =
-    params.orderId ||
     reserva.paghiper_order_id ||
-    identificadoresDaReserva.orderId ||
-    ''
+    reserva.order_id ||
+    reserva.id
 
-  const transactionId =
-    params.transactionId ||
-    reserva.paghiper_transaction_id ||
-    identificadoresDaReserva.transactionId ||
-    ''
-
-  const notificationId =
-    params.notificationId ||
-    identificadoresDaReserva.notificationId ||
-    ''
+  if (!transactionId && !orderId) {
+    return {
+      reservaId: reserva.id,
+      atualizado: false,
+      motivo:
+        'Reserva sem transaction_id/order_id. Não foi possível consultar a PagHiper.'
+    }
+  }
 
   const consulta = await consultarPagHiper({
-    notificationId,
     transactionId,
     orderId
   })
 
-  const payloadConsulta = consulta.data || null
+  const statusPagHiper = consulta.status || ''
 
-  const identificadoresConsulta = extrairIdentificadores(payloadConsulta || {})
-
-  const statusRecebido =
-    identificadoresConsulta.statusRecebido ||
-    identificadoresDaReserva.statusRecebido ||
-    reserva.paghiper_status ||
-    ''
-
-  const pagamentoStatus = normalizarStatusPagHiper(statusRecebido)
-
-  const orderIdFinal =
-    identificadoresConsulta.orderId ||
-    orderId ||
-    reserva.paghiper_order_id ||
-    null
-
-  const transactionIdFinal =
-    identificadoresConsulta.transactionId ||
-    transactionId ||
-    reserva.paghiper_transaction_id ||
-    null
-
-  const notificationIdFinal =
-    identificadoresConsulta.notificationId ||
-    notificationId ||
-    null
-
-  const dadosComprovante = {
-    origem: 'paghiper',
-    tipo: 'reconciliacao',
-    reserva_id: reserva.id,
-    order_id: orderIdFinal,
-    transaction_id: transactionIdFinal,
-    notification_id: notificationIdFinal,
-    status_recebido: statusRecebido || null,
-    pagamento_status: pagamentoStatus,
-    reconciliado_em: new Date().toISOString(),
-    origem_consulta: consulta.origemConsulta,
-    payload_consulta: payloadConsulta,
-    erros_consulta: consulta.erros
-  }
-
-  await registrarLogPagHiper(supabase, {
-    reserva_id: reserva.id,
-    order_id: orderIdFinal,
-    transaction_id: transactionIdFinal,
-    notification_id: notificationIdFinal,
-    status_recebido: statusRecebido || pagamentoStatus,
-    payload: dadosComprovante,
-    processado: pagamentoStatus === 'pago',
-    erro: consulta.sucesso ? null : 'Consulta PagHiper não retornou dados válidos.'
-  })
-
-  if (pagamentoStatus !== 'pago') {
-    await supabase
-      .from('reservas')
-      .update({
-        paghiper_order_id: orderIdFinal,
-        paghiper_transaction_id: transactionIdFinal,
-        paghiper_status: statusRecebido || pagamentoStatus,
-        paghiper_response: payloadConsulta || reserva.paghiper_response || null,
-        paghiper_comprovante: dadosComprovante,
-        pagamento_status:
-          pagamentoStatus === 'cancelado'
-            ? 'cancelado'
-            : reserva.pagamento_status || 'pendente'
-      })
-      .eq('id', reserva.id)
-
+  if (!statusPagHiper) {
     return {
-      reconciliado: false,
-      motivo:
-        'A consulta à PagHiper não retornou pagamento confirmado.',
-      reserva_id: reserva.id,
-      pagamento_status: pagamentoStatus,
-      status_recebido: statusRecebido || null,
-      order_id: orderIdFinal,
-      transaction_id: transactionIdFinal,
-      notification_id: notificationIdFinal,
-      origem_consulta: consulta.origemConsulta,
-      erros_consulta: consulta.erros
+      reservaId: reserva.id,
+      atualizado: false,
+      motivo: 'PagHiper não retornou status reconhecível.',
+      consulta
     }
   }
 
-  const guiaId = await buscarGuiaDaReserva(supabase, reserva)
+  if (statusPago(statusPagHiper)) {
+    const payloadUpdate = {
+      pagamento_status: 'pago',
+      status: 'confirmada',
+      paghiper_status: statusPagHiper,
+      pagamento_confirmado_em: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
 
-  const comprovanteUrl = await subirComprovantePagHiper(
-    supabase,
-    reserva,
-    dadosComprovante
-  )
+    const update = await atualizarReservaComFallback(
+      reserva.id,
+      payloadUpdate
+    )
 
-  const chatId = await criarOuBuscarChatDaReserva(
-    supabase,
-    reserva,
-    guiaId
-  )
-
-  const updatePayload: Record<string, any> = {
-    pagamento_status: 'pago',
-    status: reserva.status === 'cancelada' ? reserva.status : 'confirmada',
-    pagamento_confirmado_em:
-      reserva.pagamento_confirmado_em || new Date().toISOString(),
-    comprovante_origem: 'paghiper',
-    comprovante_status: 'paghiper_confirmado',
-    paghiper_order_id: orderIdFinal,
-    paghiper_transaction_id: transactionIdFinal,
-    paghiper_status: statusRecebido || 'pago',
-    paghiper_response: payloadConsulta || reserva.paghiper_response || null,
-    paghiper_comprovante: dadosComprovante,
-    chat_id: chatId
+    return {
+      reservaId: reserva.id,
+      atualizado: true,
+      statusPagHiper,
+      update
+    }
   }
 
-  if (comprovanteUrl) {
-    updatePayload.comprovante_url = comprovanteUrl
-  }
-
-  const { error: updateError } = await supabase
-    .from('reservas')
-    .update(updatePayload)
-    .eq('id', reserva.id)
-
-  if (updateError) {
-    throw updateError
+  if (statusPendente(statusPagHiper)) {
+    return {
+      reservaId: reserva.id,
+      atualizado: false,
+      statusPagHiper,
+      motivo: 'Pagamento ainda pendente na PagHiper.'
+    }
   }
 
   return {
-    reconciliado: true,
-    reserva_id: reserva.id,
-    pagamento_status: 'pago',
-    reserva_status: updatePayload.status,
-    status_recebido: statusRecebido || 'pago',
-    order_id: orderIdFinal,
-    transaction_id: transactionIdFinal,
-    notification_id: notificationIdFinal,
-    comprovante_url: comprovanteUrl,
-    chat_id: chatId,
-    guia_id: guiaId,
-    origem_consulta: consulta.origemConsulta
+    reservaId: reserva.id,
+    atualizado: false,
+    statusPagHiper,
+    motivo: 'Status PagHiper não tratado como confirmado.',
+    consulta
   }
 }
 
-export async function GET() {
-  return NextResponse.json({
-    success: true,
-    message: 'Rota de reconciliação PagHiper ativa.',
-    uso: {
-      metodo: 'POST',
-      exemplo_body: {
-        reservaId: 'uuid-da-reserva'
-      }
-    }
-  })
-}
-
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json()
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return json(
+        {
+          sucesso: false,
+          erro: 'Credenciais Supabase ausentes.'
+        },
+        500
+      )
+    }
+
+    if (!pagHiperApiKey || !pagHiperToken) {
+      return json(
+        {
+          sucesso: false,
+          erro: 'Credenciais PagHiper ausentes.'
+        },
+        500
+      )
+    }
+
+    const body = await request.json().catch(() => ({}))
 
     const reservaId =
-      body?.reservaId ||
-      body?.reserva_id ||
+      body.reservaId ||
+      body.reserva_id ||
+      body.id ||
+      ''
+
+    const clienteId =
+      body.clienteId ||
+      body.cliente_id ||
       ''
 
     const orderId =
-      body?.orderId ||
-      body?.order_id ||
+      body.orderId ||
+      body.order_id ||
+      body.paghiper_order_id ||
       ''
 
     const transactionId =
-      body?.transactionId ||
-      body?.transaction_id ||
-      body?.idTransacao ||
+      body.transactionId ||
+      body.transaction_id ||
+      body.paghiper_transaction_id ||
       ''
 
-    const notificationId =
-      body?.notificationId ||
-      body?.notification_id ||
-      body?.idNotificacao ||
-      ''
+    if (!reservaId && !clienteId && !orderId && !transactionId) {
+      return json(
+        {
+          sucesso: false,
+          erro:
+            'Informe reservaId, clienteId, orderId ou transactionId para reconciliar.'
+        },
+        400
+      )
+    }
 
-    const resultado = await reconciliarReserva({
+    const reservas = await buscarReservasParaReconciliar({
       reservaId,
+      clienteId,
       orderId,
-      transactionId,
-      notificationId
+      transactionId
     })
 
-    return NextResponse.json({
-      success: true,
-      message: resultado.reconciliado
-        ? 'Pagamento reconciliado com sucesso.'
-        : 'Reconciliação executada, mas pagamento ainda não foi confirmado pela PagHiper.',
-      ...resultado
-    })
+    if (reservas.length === 0) {
+      return json(
+        {
+          sucesso: false,
+          erro: 'Nenhuma reserva encontrada para reconciliar.',
+          filtros: {
+            reservaId,
+            clienteId,
+            orderId,
+            transactionId
+          }
+        },
+        404
+      )
+    }
 
+    const resultados = []
+
+    for (const reserva of reservas) {
+      const resultado = await reconciliarReserva(reserva)
+      resultados.push(resultado)
+    }
+
+    const atualizadas = resultados.filter(
+      (item: any) => item.atualizado
+    ).length
+
+    const jaConfirmadas = resultados.filter(
+      (item: any) => item.jaEstavaConfirmada
+    ).length
+
+    return json({
+      sucesso: true,
+      total: resultados.length,
+      atualizadas,
+      jaConfirmadas,
+      resultados
+    })
   } catch (error: any) {
-    console.error('ERRO RECONCILIAR PAGHIPER:')
-    console.error(error.response?.data || error.message || error)
+    console.error('Erro na reconciliação PagHiper:', error)
 
-    return NextResponse.json(
+    return json(
       {
-        error: true,
-        message:
-          error.message || 'Erro interno ao reconciliar pagamento PagHiper.',
-        details:
-          error.response?.data || null
+        sucesso: false,
+        erro: error?.message || 'Erro interno na reconciliação PagHiper.'
       },
-      { status: 500 }
+      500
     )
   }
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+
+  const reservaId = searchParams.get('reservaId') || ''
+  const clienteId = searchParams.get('clienteId') || ''
+  const orderId = searchParams.get('orderId') || ''
+  const transactionId = searchParams.get('transactionId') || ''
+
+  const fakeRequest = new NextRequest(request.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      reservaId,
+      clienteId,
+      orderId,
+      transactionId
+    })
+  })
+
+  return POST(fakeRequest)
 }

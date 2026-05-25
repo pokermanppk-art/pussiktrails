@@ -54,6 +54,7 @@ type ReservaCompleta = ReservaRaw & {
 
 export default function MinhasReservasPage() {
   const router = useRouter()
+
   const carregouRef = useRef(false)
   const reconciliacaoEmCursoRef = useRef(false)
 
@@ -75,11 +76,11 @@ export default function MinhasReservasPage() {
     if (!user?.id) return
 
     const interval = setInterval(() => {
-      reconciliarReservasPendentes(true)
+      reconciliarPagHiperPorCliente(true)
     }, 15000)
 
     return () => clearInterval(interval)
-  }, [user?.id, reservas])
+  }, [user?.id])
 
   const iniciarPagina = async () => {
     setCarregando(true)
@@ -102,11 +103,16 @@ export default function MinhasReservasPage() {
 
       setUser(parsedUser)
 
-      const reservasCarregadas = await carregarReservas(parsedUser.id)
-
-      await reconciliarListaDeReservas(reservasCarregadas, true)
-
       await carregarReservas(parsedUser.id)
+
+      const atualizou = await reconciliarPagHiperPorClienteInterno(
+        parsedUser.id,
+        true
+      )
+
+      if (atualizou) {
+        await carregarReservas(parsedUser.id)
+      }
     } catch (error) {
       console.error('Erro ao iniciar minhas reservas:', error)
       setMensagem('Erro ao carregar suas reservas.')
@@ -252,86 +258,19 @@ export default function MinhasReservasPage() {
     return normalizarStatus(reserva.status) === 'cancelada'
   }
 
-  const reservaPendentePagamento = (reserva: ReservaCompleta | ReservaRaw) => {
-    return !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
-  }
-
-  const reconciliarUmaReserva = async (
-    reserva: ReservaCompleta | ReservaRaw,
-    silencioso = false
-  ) => {
-    if (!reserva?.id) {
-      return {
-        sucesso: false,
-        erro: 'Reserva sem ID.'
-      }
-    }
-
-    try {
-      const response = await fetch('/api/paghiper/reconciliar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          reservaId: reserva.id,
-          orderId:
-            reserva.paghiper_order_id ||
-            reserva.order_id ||
-            undefined,
-          transactionId:
-            reserva.paghiper_transaction_id ||
-            reserva.transaction_id ||
-            undefined
-        })
-      })
-
-      const data = await parseJsonSeguro(response)
-
-      if (!response.ok || !data?.sucesso) {
-        if (!silencioso) {
-          console.warn('Falha ao reconciliar reserva:', reserva.id, data)
-        }
-
-        return {
-          sucesso: false,
-          reservaId: reserva.id,
-          erro:
-            data?.erro ||
-            data?.message ||
-            'Não foi possível reconciliar esta reserva.'
-        }
-      }
-
-      return {
-        sucesso: true,
-        reservaId: reserva.id,
-        data
-      }
-    } catch (error: any) {
-      console.warn('Erro ao chamar reconciliação da reserva:', reserva.id, error)
-
-      return {
-        sucesso: false,
-        reservaId: reserva.id,
-        erro: error?.message || 'Erro ao consultar PagHiper.'
-      }
-    }
-  }
-
-  const reconciliarListaDeReservas = async (
-    lista: ReservaCompleta[] | ReservaRaw[],
-    silencioso = false
-  ) => {
-    if (reconciliacaoEmCursoRef.current) return false
-
-    const pendentes = lista.filter((reserva) =>
-      reservaPendentePagamento(reserva)
+  const existeReservaPendente = (lista: ReservaCompleta[]) => {
+    return lista.some(
+      (reserva) => !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
     )
+  }
 
-    if (pendentes.length === 0) {
-      return false
-    }
+  const reconciliarPagHiperPorClienteInterno = async (
+    clienteId: string,
+    silencioso = false
+  ) => {
+    if (!clienteId) return false
+
+    if (reconciliacaoEmCursoRef.current) return false
 
     reconciliacaoEmCursoRef.current = true
 
@@ -341,35 +280,66 @@ export default function MinhasReservasPage() {
     }
 
     try {
-      let algumaAtualizada = false
+      const response = await fetch('/api/paghiper/reconciliar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          clienteId
+        })
+      })
 
-      for (const reserva of pendentes) {
-        const resultado = await reconciliarUmaReserva(reserva, silencioso)
-
-        const resultados = resultado?.data?.resultados
-
-        if (Array.isArray(resultados)) {
-          const atualizou = resultados.some(
-            (item: any) => item.atualizado || item.jaEstavaConfirmada
-          )
-
-          if (atualizou) {
-            algumaAtualizada = true
-          }
-        }
-      }
+      const data = await parseJsonSeguro(response)
 
       setUltimaVerificacao(new Date().toLocaleTimeString('pt-BR'))
 
+      if (!response.ok || !data?.sucesso) {
+        const erro = String(data?.erro || data?.message || '')
+
+        const erroSemPendencias =
+          response.status === 404 ||
+          erro.toLowerCase().includes('nenhuma reserva')
+
+        if (!silencioso && !erroSemPendencias) {
+          setMensagem(
+            erro ||
+              'Não foi possível consultar a PagHiper neste momento.'
+          )
+        }
+
+        return false
+      }
+
+      const atualizadas = Number(data?.atualizadas || 0)
+      const jaConfirmadas = Number(data?.jaConfirmadas || 0)
+
+      const atualizou = atualizadas > 0 || jaConfirmadas > 0
+
+      if (!silencioso) {
+        if (atualizadas > 0) {
+          setMensagem('Pagamento confirmado e reserva atualizada.')
+        } else if (jaConfirmadas > 0) {
+          setMensagem('A reserva já estava confirmada.')
+        } else {
+          setMensagem(
+            'Consulta realizada. A PagHiper ainda não confirmou novos pagamentos.'
+          )
+        }
+      }
+
+      return atualizou
+    } catch (error: any) {
+      console.warn('Erro ao reconciliar PagHiper por cliente:', error)
+
       if (!silencioso) {
         setMensagem(
-          algumaAtualizada
-            ? 'Pagamento confirmado e reservas atualizadas.'
-            : 'Consulta realizada. A PagHiper ainda não confirmou novos pagamentos.'
+          error?.message ||
+            'Não foi possível consultar a PagHiper neste momento.'
         )
       }
 
-      return algumaAtualizada
+      return false
     } finally {
       reconciliacaoEmCursoRef.current = false
 
@@ -379,10 +349,17 @@ export default function MinhasReservasPage() {
     }
   }
 
-  const reconciliarReservasPendentes = async (silencioso = false) => {
+  const reconciliarPagHiperPorCliente = async (silencioso = false) => {
     if (!user?.id) return
 
-    const atualizou = await reconciliarListaDeReservas(reservas, silencioso)
+    if (!existeReservaPendente(reservas)) {
+      return
+    }
+
+    const atualizou = await reconciliarPagHiperPorClienteInterno(
+      user.id,
+      silencioso
+    )
 
     if (atualizou) {
       await carregarReservas(user.id)
@@ -396,9 +373,18 @@ export default function MinhasReservasPage() {
     setMensagem('')
 
     try {
-      const reservasAtualizadas = await carregarReservas(user.id)
-      await reconciliarListaDeReservas(reservasAtualizadas, false)
       await carregarReservas(user.id)
+
+      const atualizou = await reconciliarPagHiperPorClienteInterno(
+        user.id,
+        false
+      )
+
+      if (atualizou) {
+        await carregarReservas(user.id)
+      } else {
+        await carregarReservas(user.id)
+      }
     } finally {
       setCarregando(false)
     }

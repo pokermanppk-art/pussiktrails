@@ -218,7 +218,7 @@ async function parseBody(request: NextRequest) {
 }
 
 async function atualizarReservaComFallback(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   reservaId: string,
   payloadOriginal: Record<string, any>
 ) {
@@ -263,7 +263,7 @@ async function buscarReserva({
   orderId,
   transactionId
 }: {
-  supabase: ReturnType<typeof createClient>
+  supabase: any
   reservaId?: string
   orderId?: string
   transactionId?: string
@@ -447,7 +447,7 @@ async function tentarCriarChatSePossivel({
   supabase,
   reserva
 }: {
-  supabase: ReturnType<typeof createClient>
+  supabase: any
   reserva: Reserva
 }) {
   try {
@@ -459,16 +459,23 @@ async function tentarCriarChatSePossivel({
       }
     }
 
+    if (!reserva.roteiro_id || !reserva.cliente_id) {
+      return {
+        criado: false,
+        motivo: 'Reserva sem roteiro_id ou cliente_id.'
+      }
+    }
+
     const { data: roteiro, error: roteiroError } = await supabase
       .from('roteiros')
       .select('id, id_guia')
       .eq('id', reserva.roteiro_id)
       .maybeSingle()
 
-    if (roteiroError || !roteiro?.id_guia || !reserva.cliente_id) {
+    if (roteiroError || !roteiro?.id_guia) {
       return {
         criado: false,
-        motivo: 'Não foi possível identificar cliente ou guia para criar chat.'
+        motivo: 'Não foi possível identificar o guia do roteiro.'
       }
     }
 
@@ -537,7 +544,7 @@ async function processarConfirmacaoPagamento({
   orderId,
   payloadOriginal
 }: {
-  supabase: ReturnType<typeof createClient>
+  supabase: any
   reserva: Reserva
   statusPagHiper: string
   transactionId?: string
@@ -645,28 +652,38 @@ export async function POST(request: NextRequest) {
         body
       })
 
-      return json({
-        sucesso: false,
-        erro: 'Reserva não encontrada.',
-        recebido: {
-          reservaIdRecebido,
-          orderIdRecebido,
-          transactionIdRecebido,
-          statusRecebido
-        }
-      }, 200)
+      return json(
+        {
+          sucesso: false,
+          erro: 'Reserva não encontrada.',
+          recebido: {
+            reservaIdRecebido,
+            orderIdRecebido,
+            transactionIdRecebido,
+            statusRecebido
+          }
+        },
+        200
+      )
     }
 
     let statusFinal = statusRecebido
     let transactionIdFinal = transactionIdRecebido
 
-    if (!statusFinal || (!statusPago(statusFinal) && !statusPendente(statusFinal))) {
+    if (
+      !statusFinal ||
+      (!statusPago(statusFinal) &&
+        !statusPendente(statusFinal) &&
+        !statusCancelado(statusFinal))
+    ) {
       const consulta = await consultarStatusPagHiper({
-        transactionId: transactionIdRecebido ||
+        transactionId:
+          transactionIdRecebido ||
           reserva.paghiper_transaction_id ||
           reserva.transaction_id ||
           undefined,
-        orderId: orderIdRecebido ||
+        orderId:
+          orderIdRecebido ||
           reserva.paghiper_order_id ||
           reserva.order_id ||
           reserva.id
@@ -687,7 +704,8 @@ export async function POST(request: NextRequest) {
         reserva,
         statusPagHiper: statusFinal,
         transactionId: transactionIdFinal,
-        orderId: orderIdRecebido ||
+        orderId:
+          orderIdRecebido ||
           reserva.paghiper_order_id ||
           reserva.order_id ||
           reserva.id,
