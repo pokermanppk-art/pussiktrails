@@ -1,7 +1,6 @@
-// app/layout.tsx
-
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
+import type { ReactNode } from 'react'
 import './globals.css'
 
 const inter = Inter({
@@ -9,33 +8,34 @@ const inter = Inter({
   display: 'swap'
 })
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: true,
-  viewportFit: 'cover',
-  themeColor: '#dc2626'
-}
-
 export const metadata: Metadata = {
+  metadataBase: new URL('https://prussiktrails.vercel.app'),
+
   title: 'PrussikTrails - Sua Aventura Começa Aqui',
   description:
     'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros em busca de experiências únicas na natureza.',
-  keywords:
-    'trilhas, aventura, ecoturismo, guia de montanha, trekking, natureza, roteiros outdoor, rapel, expedições',
+
+  keywords: [
+    'trilhas',
+    'aventura',
+    'ecoturismo',
+    'guia de montanha',
+    'trekking',
+    'natureza',
+    'PrussikTrails'
+  ],
+
   authors: [{ name: 'PrussikTrails' }],
   creator: 'PrussikTrails',
   publisher: 'PrussikTrails',
-
-  metadataBase: new URL('https://prussiktrails.vercel.app'),
 
   manifest: '/manifest.webmanifest',
 
   icons: {
     icon: [
       {
-        url: '/favicon.ico'
+        url: '/favicon.ico',
+        sizes: 'any'
       },
       {
         url: '/icon-192.png',
@@ -59,8 +59,16 @@ export const metadata: Metadata = {
 
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'PrussikTrails'
+    title: 'PrussikTrails',
+    statusBarStyle: 'black-translucent'
+  },
+
+  formatDetection: {
+    telephone: false,
+    date: false,
+    address: false,
+    email: false,
+    url: false
   },
 
   openGraph: {
@@ -69,23 +77,23 @@ export const metadata: Metadata = {
       'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros.',
     url: 'https://prussiktrails.vercel.app',
     siteName: 'PrussikTrails',
+    locale: 'pt_BR',
+    type: 'website',
     images: [
       {
-        url: '/og-image.jpg',
-        width: 1200,
-        height: 630,
-        alt: 'PrussikTrails - Aventura na natureza'
+        url: '/icon-512.png',
+        width: 512,
+        height: 512,
+        alt: 'PrussikTrails'
       }
-    ],
-    locale: 'pt_BR',
-    type: 'website'
+    ]
   },
 
   twitter: {
-    card: 'summary_large_image',
+    card: 'summary',
     title: 'PrussikTrails - Sua Aventura Começa Aqui',
     description: 'Plataforma de aventuras e trilhas',
-    images: ['/og-image.jpg']
+    images: ['/icon-512.png']
   },
 
   robots: {
@@ -102,64 +110,33 @@ export const metadata: Metadata = {
 
   other: {
     'mobile-web-app-capable': 'yes',
-    'apple-mobile-web-app-capable': 'yes',
-    'apple-mobile-web-app-status-bar-style': 'black-translucent',
-    'apple-mobile-web-app-title': 'PrussikTrails',
-    'format-detection': 'telephone=no',
-    'msapplication-TileColor': '#dc2626',
-    'color-scheme': 'light'
+    'msapplication-TileColor': '#dc2626'
   }
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: true,
+  themeColor: '#dc2626',
+  colorScheme: 'light'
 }
 
 export default function RootLayout({
   children
 }: {
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <html lang="pt-BR">
-      <head>
-        <link rel="manifest" href="/manifest.webmanifest" />
-
-        <link rel="icon" href="/favicon.ico" />
-        <link
-          rel="icon"
-          type="image/png"
-          sizes="192x192"
-          href="/icon-192.png"
-        />
-        <link
-          rel="icon"
-          type="image/png"
-          sizes="512x512"
-          href="/icon-512.png"
-        />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
-
-        <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="PrussikTrails" />
-        <meta property="og:locale" content="pt_BR" />
-
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-
-        <link
-          rel="dns-prefetch"
-          href="https://ktlzltlrhnreqhprupvv.supabase.co"
-        />
-      </head>
-
       <body
         className={inter.className}
         style={{
           margin: 0,
           padding: 0,
           minHeight: '100vh',
-          backgroundColor: '#f3f4f6'
+          background: '#ffffff'
         }}
       >
         {children}
