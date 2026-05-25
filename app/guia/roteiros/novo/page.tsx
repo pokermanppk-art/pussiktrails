@@ -20,6 +20,7 @@ type RoteiroCriado = {
 }
 
 type DificuldadeValue = 'facil' | 'medio' | 'dificil'
+type RecorrenciaValue = 'unica' | 'semanal' | 'mensal' | 'anual'
 
 const DIFICULDADES: Array<{
   value: DificuldadeValue
@@ -43,6 +44,28 @@ const DIFICULDADES: Array<{
   }
 ]
 
+const RECORRENCIAS: Array<{
+  value: RecorrenciaValue
+  label: string
+}> = [
+  {
+    value: 'unica',
+    label: 'Experiência única'
+  },
+  {
+    value: 'semanal',
+    label: 'Semanal'
+  },
+  {
+    value: 'mensal',
+    label: 'Mensal'
+  },
+  {
+    value: 'anual',
+    label: 'Anual'
+  }
+]
+
 export default function GuiaNovoRoteiroPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
@@ -63,7 +86,7 @@ export default function GuiaNovoRoteiroPage() {
   const [km, setKm] = useState('')
   const [limitePessoas, setLimitePessoas] = useState('10')
   const [dificuldade, setDificuldade] = useState<DificuldadeValue>('facil')
-  const [recorrencia, setRecorrencia] = useState('Experiência única')
+  const [recorrencia, setRecorrencia] = useState<RecorrenciaValue>('unica')
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [fotoPreview, setFotoPreview] = useState('')
 
@@ -123,6 +146,29 @@ export default function GuiaNovoRoteiroPage() {
     return String(valor || '').trim()
   }
 
+  const normalizarRecorrencia = (valor: any): RecorrenciaValue => {
+    const texto = String(valor || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+
+    if (texto === 'semanal') return 'semanal'
+    if (texto === 'mensal') return 'mensal'
+    if (texto === 'anual') return 'anual'
+
+    return 'unica'
+  }
+
+  const labelRecorrencia = (valor: any) => {
+    const normalizada = normalizarRecorrencia(valor)
+
+    return (
+      RECORRENCIAS.find((item) => item.value === normalizada)?.label ||
+      'Experiência única'
+    )
+  }
+
   const extrairColunaAusente = (error: any) => {
     const texto = [error?.message, error?.details, error?.hint]
       .filter(Boolean)
@@ -169,6 +215,23 @@ export default function GuiaNovoRoteiroPage() {
       (
         texto.includes('dificuldade') ||
         texto.includes('roteiros_dificuldade_check')
+      )
+    )
+  }
+
+  const erroDeConstraintRecorrencia = (error: any) => {
+    const texto = String(
+      error?.message ||
+        error?.details ||
+        error?.hint ||
+        ''
+    ).toLowerCase()
+
+    return (
+      error?.code === '23514' &&
+      (
+        texto.includes('recorrencia') ||
+        texto.includes('roteiros_recorrencia_check')
       )
     )
   }
@@ -409,7 +472,7 @@ export default function GuiaNovoRoteiroPage() {
     setKm('')
     setLimitePessoas('10')
     setDificuldade('facil')
-    setRecorrencia('Experiência única')
+    setRecorrencia('unica')
     setFotoFile(null)
     setFotoPreview('')
   }
@@ -444,7 +507,7 @@ export default function GuiaNovoRoteiroPage() {
       const duracaoNumero = Math.max(1, Math.round(normalizarNumero(duracaoHoras, 1)))
       const kmNumero = normalizarNumero(km, 0)
       const limiteNumero = Math.max(1, Math.round(normalizarNumero(limitePessoas, 10)))
-      const recorrenciaLimpa = limparTexto(recorrencia) || 'Experiência única'
+      const recorrenciaNormalizada = normalizarRecorrencia(recorrencia)
 
       const agora = new Date().toISOString()
 
@@ -483,8 +546,8 @@ export default function GuiaNovoRoteiroPage() {
         capacidade: limiteNumero,
         max_pessoas: limiteNumero,
 
-        recorrencia: recorrenciaLimpa,
-        frequencia: recorrenciaLimpa,
+        recorrencia: recorrenciaNormalizada,
+        frequencia: recorrenciaNormalizada,
 
         status: 'pendente',
         ativo: false,
@@ -537,6 +600,8 @@ export default function GuiaNovoRoteiroPage() {
 
       if (texto.includes('duracao_horas')) {
         setErro('O campo duração é obrigatório. Informe a duração em horas.')
+      } else if (erroDeConstraintRecorrencia(error) || texto.includes('recorrencia') || texto.includes('roteiros_recorrencia_check')) {
+        setErro('A recorrência escolhida não foi aceita pelo banco. Use Experiência única, Semanal, Mensal ou Anual.')
       } else if (texto.includes('dificuldade') || texto.includes('roteiros_dificuldade_check')) {
         setErro('A dificuldade escolhida não foi aceita pelo banco. Use Fácil, Médio ou Difícil.')
       } else {
@@ -1412,14 +1477,17 @@ export default function GuiaNovoRoteiroPage() {
                   <select
                     className="select"
                     value={recorrencia}
-                    onChange={(event) => setRecorrencia(event.target.value)}
+                    onChange={(event) => setRecorrencia(normalizarRecorrencia(event.target.value))}
                   >
-                    <option value="Experiência única">Experiência única</option>
-                    <option value="Semanal">Semanal</option>
-                    <option value="Quinzenal">Quinzenal</option>
-                    <option value="Mensal">Mensal</option>
-                    <option value="Sob demanda">Sob demanda</option>
+                    {RECORRENCIAS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
                   </select>
+                  <div className="helper">
+                    O banco aceita apenas: única, semanal, mensal ou anual.
+                  </div>
                 </div>
 
                 <div className="field full">
@@ -1551,6 +1619,11 @@ export default function GuiaNovoRoteiroPage() {
                   <strong>
                     {DIFICULDADES.find((item) => item.value === dificuldade)?.label || 'Fácil'}
                   </strong>
+                </div>
+
+                <div className="summaryRow">
+                  <span>Recorrência</span>
+                  <strong>{labelRecorrencia(recorrencia)}</strong>
                 </div>
               </div>
             </section>

@@ -28,6 +28,8 @@ type Reserva = {
   guia_nome?: string
   roteiro_titulo?: string
   valor_calculado?: number
+  ja_avaliada?: boolean
+  avaliacao_id?: string | null
 }
 
 type Roteiro = {
@@ -60,6 +62,15 @@ type UsuarioBanco = {
   nome?: string | null
   name?: string | null
   email?: string | null
+}
+
+type Avaliacao = {
+  id: string
+  reserva_id?: string | null
+  avaliador_id?: string | null
+  tipo_avaliacao?: string | null
+  nota?: number | null
+  created_at?: string | null
 }
 
 export default function ClienteMinhasReservasPage() {
@@ -285,6 +296,10 @@ export default function ClienteMinhasReservasPage() {
       return
     }
 
+    const reservaIds = reservasBase
+      .map((reserva) => reserva.id)
+      .filter(Boolean)
+
     const roteiroIds = Array.from(
       new Set(
         reservasBase
@@ -327,6 +342,23 @@ export default function ClienteMinhasReservasPage() {
       }
     }
 
+    let avaliacoes: Avaliacao[] = []
+
+    if (reservaIds.length > 0) {
+      const { data: avaliacoesData, error: avaliacoesError } = await supabase
+        .from('avaliacoes')
+        .select('id, reserva_id, avaliador_id, tipo_avaliacao, nota, created_at')
+        .in('reserva_id', reservaIds)
+        .eq('avaliador_id', clienteId)
+        .eq('tipo_avaliacao', 'cliente_para_guia')
+
+      if (!avaliacoesError) {
+        avaliacoes = (avaliacoesData || []) as Avaliacao[]
+      } else {
+        console.warn('Aviso ao buscar avaliações:', avaliacoesError)
+      }
+    }
+
     const reservasCompletas = reservasBase.map((reserva) => {
       const roteiro =
         roteiros.find((item) => item.id === reserva.roteiro_id) ||
@@ -334,6 +366,10 @@ export default function ClienteMinhasReservasPage() {
 
       const guiaId = guiaIdRoteiro(roteiro)
       const guia = guias.find((item) => item.id === guiaId)
+
+      const avaliacao = avaliacoes.find(
+        (item) => item.reserva_id === reserva.id
+      )
 
       const quantidade = Number(reserva.quantidade_pessoas || 1)
       const valorCalculado =
@@ -350,7 +386,9 @@ export default function ClienteMinhasReservasPage() {
           guia?.name ||
           guia?.email ||
           'Guia',
-        valor_calculado: valorCalculado
+        valor_calculado: valorCalculado,
+        ja_avaliada: !!avaliacao?.id,
+        avaliacao_id: avaliacao?.id || null
       }
     })
 
@@ -553,6 +591,18 @@ export default function ClienteMinhasReservasPage() {
     return <span className="badge badge-yellow">Pendente</span>
   }
 
+  const badgeAvaliacao = (reserva: Reserva) => {
+    if (reserva.ja_avaliada) {
+      return <span className="badge badge-green">Avaliada</span>
+    }
+
+    if (pagamentoConfirmado(reserva)) {
+      return <span className="badge badge-neutral">Avaliação disponível</span>
+    }
+
+    return null
+  }
+
   const reservasFiltradas = useMemo(() => {
     return reservas.filter((reserva) => {
       if (filtro === 'todas') return true
@@ -572,12 +622,14 @@ export default function ClienteMinhasReservasPage() {
       (reserva) => !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
     )
     const canceladas = reservas.filter(reservaCancelada)
+    const avaliadas = reservas.filter((reserva) => reserva.ja_avaliada)
 
     return {
       total: reservas.length,
       pagas: pagas.length,
       pendentes: pendentes.length,
-      canceladas: canceladas.length
+      canceladas: canceladas.length,
+      avaliadas: avaliadas.length
     }
   }, [reservas])
 
@@ -885,7 +937,7 @@ export default function ClienteMinhasReservasPage() {
 
         .statsGrid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 12px;
           margin-bottom: 16px;
         }
@@ -1291,8 +1343,8 @@ export default function ClienteMinhasReservasPage() {
               </h1>
 
               <p className="heroText">
-                Acompanhe pagamento, confirmação e acesso ao grupo interno do roteiro.
-                Quando o pagamento for confirmado, o botão Entrar no grupo aparecerá na reserva.
+                Acompanhe pagamento, confirmação, acesso ao grupo interno e avaliação da experiência.
+                Quando o pagamento for confirmado, você poderá entrar no grupo e avaliar o guia.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1303,10 +1355,10 @@ export default function ClienteMinhasReservasPage() {
             </div>
 
             <aside className="heroCard">
-              <div className="heroCardLabel">Reservas confirmadas</div>
-              <div className="heroCardValue">{stats.pagas}</div>
+              <div className="heroCardLabel">Experiências avaliadas</div>
+              <div className="heroCardValue">{stats.avaliadas}</div>
               <div className="heroCardText">
-                Reservas pagas liberam acesso automático ao grupo da aventura.
+                Suas avaliações ajudam a melhorar a comunidade PrussikTrails.
               </div>
             </aside>
           </div>
@@ -1339,6 +1391,11 @@ export default function ClienteMinhasReservasPage() {
           <article className="statCard" onClick={() => setFiltro('canceladas')}>
             <div className="statValue">{stats.canceladas}</div>
             <div className="statLabel">canceladas</div>
+          </article>
+
+          <article className="statCard" onClick={() => setFiltro('pagas')}>
+            <div className="statValue">{stats.avaliadas}</div>
+            <div className="statLabel">experiências avaliadas</div>
           </article>
         </section>
 
@@ -1450,18 +1507,39 @@ export default function ClienteMinhasReservasPage() {
                       <div className="badges">
                         {badgeStatus(reserva)}
                         {badgePagamento(reserva)}
+                        {badgeAvaliacao(reserva)}
                       </div>
 
                       <div className="actions">
                         {paga ? (
-                          <button
-                            type="button"
-                            className="btn primary"
-                            onClick={() => entrarNoGrupo(reserva)}
-                            disabled={abrindoGrupoId === reserva.id}
-                          >
-                            {abrindoGrupoId === reserva.id ? 'Abrindo...' : 'Entrar no grupo'}
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="btn primary"
+                              onClick={() => entrarNoGrupo(reserva)}
+                              disabled={abrindoGrupoId === reserva.id}
+                            >
+                              {abrindoGrupoId === reserva.id ? 'Abrindo...' : 'Entrar no grupo'}
+                            </button>
+
+                            {reserva.ja_avaliada ? (
+                              <button
+                                type="button"
+                                className="btn light"
+                                onClick={() => router.push(`/cliente/avaliar/${reserva.id}`)}
+                              >
+                                Ver avaliação
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn dark"
+                                onClick={() => router.push(`/cliente/avaliar/${reserva.id}`)}
+                              >
+                                Avaliar experiência
+                              </button>
+                            )}
+                          </>
                         ) : !cancelada ? (
                           <>
                             <button

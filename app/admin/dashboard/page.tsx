@@ -3,34 +3,41 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import SettingsButton from '@/components/SettingsButton'
 
-type AdminUser = {
+type UsuarioLocal = {
   id: string
   nome?: string | null
+  name?: string | null
   email?: string | null
   tipo?: string | null
 }
 
-type Stats = {
-  totalUsuarios: number
-  totalClientes: number
-  totalGuias: number
-  totalAdmins: number
-  guiasPendentes: number
-  totalRoteiros: number
-  roteirosAtivos: number
-  roteirosPendentes: number
-  totalReservas: number
-  reservasPendentes: number
-  reservasConfirmadas: number
-  reservasCanceladas: number
-  pagamentosPendentes: number
-  pagamentosPagos: number
-  receitaTotal: number
-  receitaMes: number
-  chatsAbertos: number
-  avaliacoesPendentes: number
+type UsuarioBanco = {
+  id: string
+  nome?: string | null
+  name?: string | null
+  email?: string | null
+  tipo?: string | null
+  created_at?: string | null
+}
+
+type Roteiro = {
+  id: string
+  titulo?: string | null
+  nome?: string | null
+  status?: string | null
+  ativo?: boolean | null
+  preco?: number | null
+  valor?: number | null
+  id_guia?: string | null
+  guia_id?: string | null
+  local?: string | null
+  localizacao?: string | null
+  foto_capa?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
+  imagem?: string | null
+  created_at?: string | null
 }
 
 type Reserva = {
@@ -41,101 +48,102 @@ type Reserva = {
   valor_total?: number | null
   status?: string | null
   pagamento_status?: string | null
-  paghiper_order_id?: string | null
-  paghiper_transaction_id?: string | null
-  chat_id?: string | null
-  created_at?: string | null
-  cliente_nome?: string
-  roteiro_titulo?: string
-}
-
-type Guia = {
-  id: string
-  nome?: string | null
-  email?: string | null
-  telefone?: string | null
-  instagram?: string | null
-  cadastur?: string | null
-  cnpj?: string | null
-  status?: string | null
   created_at?: string | null
 }
 
-type Roteiro = {
+type GrupoRoteiro = {
   id: string
+  roteiro_id?: string | null
+  guia_id?: string | null
   titulo?: string | null
-  preco?: number | null
   status?: string | null
-  id_guia?: string | null
   created_at?: string | null
-  guia_nome?: string
 }
 
-type Atividade = {
-  id: string
-  descricao: string
-  detalhe?: string
-  tipo: 'pagamento' | 'reserva' | 'guia' | 'roteiro' | 'sistema' | 'usuario'
-  created_at?: string | null
+type AvaliacaoResumo = {
+  total: number
+  mediaNota: number
+  percentualRecomendacao: number
+  orientacoesClarasPercentual: number
+  segurancaAltaPercentual: number
+  experienciaSuperouPercentual: number
+  notasBaixas: number
+}
+
+type Stats = {
+  usuariosTotal: number
+  clientesTotal: number
+  guiasTotal: number
+  adminsTotal: number
+  roteirosTotal: number
+  roteirosAtivos: number
+  roteirosPendentes: number
+  reservasTotal: number
+  reservasConfirmadas: number
+  reservasPendentes: number
+  receitaBruta: number
+  taxaPlataforma: number
+  repasseGuias: number
+  gruposTotal: number
+  gruposAtivos: number
 }
 
 const statsInicial: Stats = {
-  totalUsuarios: 0,
-  totalClientes: 0,
-  totalGuias: 0,
-  totalAdmins: 0,
-  guiasPendentes: 0,
-  totalRoteiros: 0,
+  usuariosTotal: 0,
+  clientesTotal: 0,
+  guiasTotal: 0,
+  adminsTotal: 0,
+  roteirosTotal: 0,
   roteirosAtivos: 0,
   roteirosPendentes: 0,
-  totalReservas: 0,
-  reservasPendentes: 0,
+  reservasTotal: 0,
   reservasConfirmadas: 0,
-  reservasCanceladas: 0,
-  pagamentosPendentes: 0,
-  pagamentosPagos: 0,
-  receitaTotal: 0,
-  receitaMes: 0,
-  chatsAbertos: 0,
-  avaliacoesPendentes: 0
+  reservasPendentes: 0,
+  receitaBruta: 0,
+  taxaPlataforma: 0,
+  repasseGuias: 0,
+  gruposTotal: 0,
+  gruposAtivos: 0
+}
+
+const avaliacaoInicial: AvaliacaoResumo = {
+  total: 0,
+  mediaNota: 0,
+  percentualRecomendacao: 0,
+  orientacoesClarasPercentual: 0,
+  segurancaAltaPercentual: 0,
+  experienciaSuperouPercentual: 0,
+  notasBaixas: 0
 }
 
 export default function AdminDashboardPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
-  const reconciliandoRef = useRef(false)
 
-  const [user, setUser] = useState<AdminUser | null>(null)
+  const [user, setUser] = useState<UsuarioLocal | null>(null)
+  const [usuarios, setUsuarios] = useState<UsuarioBanco[]>([])
+  const [roteiros, setRoteiros] = useState<Roteiro[]>([])
+  const [reservas, setReservas] = useState<Reserva[]>([])
+  const [grupos, setGrupos] = useState<GrupoRoteiro[]>([])
   const [stats, setStats] = useState<Stats>(statsInicial)
-  const [reservasRecentes, setReservasRecentes] = useState<Reserva[]>([])
-  const [guiasPendentes, setGuiasPendentes] = useState<Guia[]>([])
-  const [roteirosPendentes, setRoteirosPendentes] = useState<Roteiro[]>([])
-  const [atividades, setAtividades] = useState<Atividade[]>([])
+  const [avaliacoes, setAvaliacoes] = useState<AvaliacaoResumo>(avaliacaoInicial)
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
-  const [reconciliando, setReconciliando] = useState(false)
   const [mensagem, setMensagem] = useState('')
+  const [erro, setErro] = useState('')
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
 
   useEffect(() => {
     if (iniciouRef.current) return
 
     iniciouRef.current = true
-    iniciarDashboard()
+    iniciar()
   }, [])
 
-  useEffect(() => {
-    if (!user?.id) return
-
-    const interval = setInterval(() => {
-      carregarTudo(true)
-    }, 45000)
-
-    return () => clearInterval(interval)
-  }, [user?.id])
-
-  const iniciarDashboard = async () => {
+  const iniciar = async () => {
     setCarregando(true)
+    setErro('')
+    setMensagem('')
 
     try {
       const userData = localStorage.getItem('user')
@@ -145,7 +153,7 @@ export default function AdminDashboardPage() {
         return
       }
 
-      const parsedUser = JSON.parse(userData) as AdminUser
+      const parsedUser = JSON.parse(userData) as UsuarioLocal
 
       if (parsedUser.tipo !== 'admin') {
         router.replace('/login')
@@ -153,16 +161,16 @@ export default function AdminDashboardPage() {
       }
 
       setUser(parsedUser)
-      await carregarTudo(true)
+      await carregarTudo()
     } catch (error) {
       console.error('Erro ao iniciar dashboard admin:', error)
-      setMensagem('Erro ao carregar dashboard administrativo.')
+      setErro('Não foi possível carregar o painel administrativo agora.')
     } finally {
       setCarregando(false)
     }
   }
 
-  const normalizarStatus = (valor?: string | null) => {
+  const normalizar = (valor?: string | null) => {
     return String(valor || '')
       .toLowerCase()
       .normalize('NFD')
@@ -170,27 +178,25 @@ export default function AdminDashboardPage() {
       .trim()
   }
 
-  const pagamentoConfirmado = (reserva: Reserva) => {
-    const pagamento = normalizarStatus(reserva.pagamento_status)
-    const status = normalizarStatus(reserva.status)
-
-    return (
-      pagamento === 'pago' ||
-      pagamento === 'confirmado' ||
-      status === 'confirmada' ||
-      status === 'realizada'
-    )
+  const nomeUsuario = (usuario?: UsuarioLocal | UsuarioBanco | null) => {
+    return usuario?.nome || usuario?.name || usuario?.email || 'Usuário'
   }
 
-  const reservaCancelada = (reserva: Reserva) => {
-    return normalizarStatus(reserva.status) === 'cancelada'
+  const primeiroNome = (valor?: string | null) => {
+    const nome = String(valor || 'Admin').trim()
+    return nome.split(' ')[0] || 'Admin'
   }
 
-  const formatarMoeda = (valor: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(Number(valor || 0))
+  const tituloRoteiro = (roteiro?: Roteiro | null) => {
+    return roteiro?.titulo || roteiro?.nome || 'Roteiro'
+  }
+
+  const imagemRoteiro = (roteiro?: Roteiro | null) => {
+    return roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || roteiro?.imagem || ''
+  }
+
+  const localRoteiro = (roteiro?: Roteiro | null) => {
+    return roteiro?.local || roteiro?.localizacao || 'Local a confirmar'
   }
 
   const formatarData = (valor?: string | null) => {
@@ -198,635 +204,242 @@ export default function AdminDashboardPage() {
 
     const data = new Date(valor)
 
-    if (Number.isNaN(data.getTime())) {
-      return valor
-    }
+    if (Number.isNaN(data.getTime())) return valor
 
-    return data.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
+    return data.toLocaleDateString('pt-BR')
   }
 
-  const formatarHora = (valor?: string | null) => {
-    if (!valor) return '-'
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) {
-      return ''
-    }
-
-    return data.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+  const formatarMoeda = (valor: any) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(Number(valor || 0))
   }
 
-  const obterCount = async (query: any, label: string) => {
+  const formatarNota = (valor: any) => {
+    return Number(valor || 0).toFixed(2).replace('.', ',')
+  }
+
+  const formatarPercentual = (valor: any) => {
+    return `${Number(valor || 0).toFixed(1).replace('.', ',')}%`
+  }
+
+  const estrelas = (nota: number) => {
+    const inteira = Math.round(Number(nota || 0))
+
+    return '★★★★★'
+      .split('')
+      .map((_, index) => (index < inteira ? '★' : '☆'))
+      .join('')
+  }
+
+  const pagamentoConfirmado = (reserva: Reserva) => {
+    const pagamento = normalizar(reserva.pagamento_status)
+    const status = normalizar(reserva.status)
+
+    return (
+      pagamento === 'pago' ||
+      pagamento === 'confirmado' ||
+      pagamento === 'aprovado' ||
+      pagamento === 'paid' ||
+      pagamento === 'approved' ||
+      status === 'confirmada' ||
+      status === 'realizada' ||
+      status === 'pago' ||
+      status === 'paga'
+    )
+  }
+
+  const statusRoteiro = (roteiro: Roteiro) => {
+    const status = normalizar(roteiro.status)
+
+    if (status) return status
+    if (roteiro.ativo === true) return 'ativo'
+    if (roteiro.ativo === false) return 'pausado'
+
+    return 'pendente'
+  }
+
+  const carregarAvaliacoes = async () => {
     try {
-      const { count, error } = await query
+      const response = await fetch('/api/avaliacoes/estatisticas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          todos: true,
+          status: 'publicada',
+          limite: 1000,
+          limiteComentarios: 8
+        })
+      })
 
-      if (error) {
-        console.warn(`Erro ao contar ${label}:`, error)
-        return 0
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Aviso ao carregar avaliações:', data)
+        setAvaliacoes(avaliacaoInicial)
+        return avaliacaoInicial
       }
 
-      return count || 0
+      const resumo: AvaliacaoResumo = {
+        total: Number(data?.resumo?.total || 0),
+        mediaNota: Number(data?.resumo?.mediaNota || 0),
+        percentualRecomendacao: Number(data?.resumo?.percentualRecomendacao || 0),
+        orientacoesClarasPercentual: Number(data?.resumo?.orientacoesClarasPercentual || 0),
+        segurancaAltaPercentual: Number(data?.resumo?.segurancaAltaPercentual || 0),
+        experienciaSuperouPercentual: Number(data?.resumo?.experienciaSuperouPercentual || 0),
+        notasBaixas: Number(data?.resumo?.notasBaixas || 0)
+      }
+
+      setAvaliacoes(resumo)
+      return resumo
     } catch (error) {
-      console.warn(`Erro inesperado ao contar ${label}:`, error)
-      return 0
+      console.warn('Erro ao buscar avaliações:', error)
+      setAvaliacoes(avaliacaoInicial)
+      return avaliacaoInicial
     }
   }
 
-  const buscarTabela = async <T,>(
-    tabela: string,
-    select = '*',
-    limite = 10,
-    order = 'created_at'
-  ): Promise<T[]> => {
-    try {
-      const { data, error } = await supabase
-        .from(tabela)
-        .select(select)
-        .order(order, { ascending: false })
-        .limit(limite)
+  const carregarTudo = async () => {
+    setErro('')
 
-      if (error) {
-        console.warn(`Erro ao buscar ${tabela}:`, error)
-        return []
-      }
-
-      return (data || []) as T[]
-    } catch (error) {
-      console.warn(`Erro inesperado ao buscar ${tabela}:`, error)
-      return []
-    }
-  }
-
-  const carregarTudo = async (silencioso = false) => {
-    if (!silencioso) {
-      setAtualizando(true)
-      setMensagem('')
-    }
-
-    try {
-      await Promise.all([
-        carregarEstatisticas(),
-        carregarReservasRecentes(),
-        carregarGuiasPendentes(),
-        carregarRoteirosPendentes(),
-        carregarAtividades()
-      ])
-
-      setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
-
-      if (!silencioso) {
-        setMensagem('Dashboard atualizado.')
-      }
-    } catch (error) {
-      console.error('Erro ao carregar dashboard:', error)
-
-      if (!silencioso) {
-        setMensagem('Erro ao atualizar dashboard.')
-      }
-    } finally {
-      if (!silencioso) {
-        setAtualizando(false)
-      }
-    }
-  }
-
-  const carregarEstatisticas = async () => {
-    const inicioMes = new Date()
-    inicioMes.setDate(1)
-    inicioMes.setHours(0, 0, 0, 0)
+    const avaliacoesResumo = await carregarAvaliacoes()
 
     const [
-      totalUsuarios,
-      totalClientes,
-      totalGuias,
-      totalAdmins,
-      guiasPendentesCount,
-      totalRoteiros,
-      roteirosAtivos,
-      roteirosPendentesCount,
-      totalReservas,
-      reservasPendentes,
-      reservasConfirmadas,
-      reservasCanceladas,
-      pagamentosPendentes,
-      pagamentosPagos,
-      chatsAbertos,
-      avaliacoesPendentes
+      usuariosResult,
+      roteirosResult,
+      reservasResult,
+      gruposResult
     ] = await Promise.all([
-      obterCount(
-        supabase.from('users').select('*', { count: 'exact', head: true }),
-        'usuários'
-      ),
-      obterCount(
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('tipo', 'cliente'),
-        'clientes'
-      ),
-      obterCount(
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('tipo', 'guia'),
-        'guias'
-      ),
-      obterCount(
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('tipo', 'admin'),
-        'admins'
-      ),
-      obterCount(
-        supabase
-          .from('users')
-          .select('*', { count: 'exact', head: true })
-          .eq('tipo', 'guia')
-          .eq('status', 'pendente'),
-        'guias pendentes'
-      ),
-      obterCount(
-        supabase.from('roteiros').select('*', { count: 'exact', head: true }),
-        'roteiros'
-      ),
-      obterCount(
-        supabase.from('roteiros').select('*', { count: 'exact', head: true }).eq('status', 'ativo'),
-        'roteiros ativos'
-      ),
-      obterCount(
-        supabase
-          .from('roteiros')
-          .select('*', { count: 'exact', head: true })
-          .in('status', ['aguardando', 'pendente', 'em_analise']),
-        'roteiros pendentes'
-      ),
-      obterCount(
-        supabase.from('reservas').select('*', { count: 'exact', head: true }),
-        'reservas'
-      ),
-      obterCount(
-        supabase
-          .from('reservas')
-          .select('*', { count: 'exact', head: true })
-          .in('status', ['pendente', 'aguardando']),
-        'reservas pendentes'
-      ),
-      obterCount(
-        supabase
-          .from('reservas')
-          .select('*', { count: 'exact', head: true })
-          .in('status', ['confirmada', 'realizada']),
-        'reservas confirmadas'
-      ),
-      obterCount(
-        supabase
-          .from('reservas')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'cancelada'),
-        'reservas canceladas'
-      ),
-      obterCount(
-        supabase
-          .from('reservas')
-          .select('*', { count: 'exact', head: true })
-          .in('pagamento_status', ['pendente', 'aguardando']),
-        'pagamentos pendentes'
-      ),
-      obterCount(
-        supabase
-          .from('reservas')
-          .select('*', { count: 'exact', head: true })
-          .eq('pagamento_status', 'pago'),
-        'pagamentos pagos'
-      ),
-      obterCount(
-        supabase
-          .from('chats')
-          .select('*', { count: 'exact', head: true })
-          .in('status', ['aberto', 'ativo']),
-        'chats abertos'
-      ),
-      obterCount(
-        supabase
-          .from('avaliacoes')
-          .select('*', { count: 'exact', head: true })
-          .in('status_moderacao', ['aguardando_admin', 'pendente']),
-        'avaliações pendentes'
-      )
-    ])
-
-    let receitaTotal = 0
-    let receitaMes = 0
-
-    try {
-      const { data: reservasPagas, error } = await supabase
-        .from('reservas')
-        .select('valor_total, created_at, status, pagamento_status')
-        .or('pagamento_status.eq.pago,status.eq.confirmada,status.eq.realizada')
-
-      if (!error && reservasPagas) {
-        receitaTotal = reservasPagas.reduce(
-          (soma: number, reserva: any) => soma + Number(reserva.valor_total || 0),
-          0
-        )
-
-        receitaMes = reservasPagas
-          .filter((reserva: any) => {
-            const data = new Date(reserva.created_at || '')
-            return !Number.isNaN(data.getTime()) && data >= inicioMes
-          })
-          .reduce(
-            (soma: number, reserva: any) => soma + Number(reserva.valor_total || 0),
-            0
-          )
-      }
-    } catch (error) {
-      console.warn('Erro ao calcular receita:', error)
-    }
-
-    setStats({
-      totalUsuarios,
-      totalClientes,
-      totalGuias,
-      totalAdmins,
-      guiasPendentes: guiasPendentesCount,
-      totalRoteiros,
-      roteirosAtivos,
-      roteirosPendentes: roteirosPendentesCount,
-      totalReservas,
-      reservasPendentes,
-      reservasConfirmadas,
-      reservasCanceladas,
-      pagamentosPendentes,
-      pagamentosPagos,
-      receitaTotal,
-      receitaMes,
-      chatsAbertos,
-      avaliacoesPendentes
-    })
-  }
-
-  const carregarReservasRecentes = async () => {
-    const reservas = await buscarTabela<Reserva>('reservas', '*', 10)
-
-    if (reservas.length === 0) {
-      setReservasRecentes([])
-      return
-    }
-
-    const clienteIds = Array.from(
-      new Set(reservas.map((item) => item.cliente_id).filter(Boolean) as string[])
-    )
-
-    const roteiroIds = Array.from(
-      new Set(reservas.map((item) => item.roteiro_id).filter(Boolean) as string[])
-    )
-
-    let clientes: any[] = []
-    let roteiros: any[] = []
-
-    if (clienteIds.length > 0) {
-      const { data } = await supabase
+      supabase
         .from('users')
-        .select('id, nome, name, email')
-        .in('id', clienteIds)
-
-      clientes = data || []
-    }
-
-    if (roteiroIds.length > 0) {
-      const { data } = await supabase
-        .from('roteiros')
-        .select('id, titulo, preco, id_guia')
-        .in('id', roteiroIds)
-
-      roteiros = data || []
-    }
-
-    const lista = reservas.map((reserva) => {
-      const cliente = clientes.find((item) => item.id === reserva.cliente_id)
-      const roteiro = roteiros.find((item) => item.id === reserva.roteiro_id)
-
-      return {
-        ...reserva,
-        cliente_nome:
-          cliente?.nome ||
-          cliente?.name ||
-          cliente?.email ||
-          'Cliente',
-        roteiro_titulo:
-          roteiro?.titulo ||
-          'Roteiro'
-      }
-    })
-
-    setReservasRecentes(lista)
-  }
-
-  const carregarGuiasPendentes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, nome, email, telefone, instagram, cadastur, cnpj, status, created_at')
-        .eq('tipo', 'guia')
-        .eq('status', 'pendente')
-        .order('created_at', { ascending: false })
-        .limit(8)
-
-      if (error) {
-        console.warn('Erro ao buscar guias pendentes:', error)
-        setGuiasPendentes([])
-        return
-      }
-
-      setGuiasPendentes((data || []) as Guia[])
-    } catch (error) {
-      console.warn('Erro inesperado ao buscar guias pendentes:', error)
-      setGuiasPendentes([])
-    }
-  }
-
-  const carregarRoteirosPendentes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('roteiros')
-        .select('id, titulo, preco, status, id_guia, created_at')
-        .in('status', ['aguardando', 'pendente', 'em_analise'])
-        .order('created_at', { ascending: false })
-        .limit(8)
-
-      if (error) {
-        console.warn('Erro ao buscar roteiros pendentes:', error)
-        setRoteirosPendentes([])
-        return
-      }
-
-      const roteirosBase = (data || []) as Roteiro[]
-
-      const guiaIds = Array.from(
-        new Set(roteirosBase.map((item) => item.id_guia).filter(Boolean) as string[])
-      )
-
-      let guias: any[] = []
-
-      if (guiaIds.length > 0) {
-        const { data: guiasData } = await supabase
-          .from('users')
-          .select('id, nome, name, email')
-          .in('id', guiaIds)
-
-        guias = guiasData || []
-      }
-
-      const lista = roteirosBase.map((roteiro) => {
-        const guia = guias.find((item) => item.id === roteiro.id_guia)
-
-        return {
-          ...roteiro,
-          guia_nome:
-            guia?.nome ||
-            guia?.name ||
-            guia?.email ||
-            'Guia'
-        }
-      })
-
-      setRoteirosPendentes(lista)
-    } catch (error) {
-      console.warn('Erro inesperado ao buscar roteiros pendentes:', error)
-      setRoteirosPendentes([])
-    }
-  }
-
-  const carregarAtividades = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('logs_atividades')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(12)
+        .limit(500),
+      supabase
+        .from('roteiros')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('reservas')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('grupos_roteiros')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500)
+    ])
 
-      if (!error && data) {
-        const lista: Atividade[] = data.map((log: any) => ({
-          id: log.id,
-          descricao:
-            log.detalhes ||
-            `${log.primeiro_nome || 'Usuário'} realizou ${log.acao || 'uma ação'}`,
-          detalhe: log.tipo_usuario || log.acao || '',
-          tipo: tipoAtividadePorAcao(log.acao),
-          created_at: log.created_at
-        }))
-
-        setAtividades(lista)
-        return
-      }
-    } catch {
-      // Sem problema. Abaixo montamos fallback.
+    if (usuariosResult.error) {
+      console.warn('Erro ao carregar usuários:', usuariosResult.error)
     }
 
-    const fallback: Atividade[] = [
-      ...reservasRecentes.slice(0, 4).map((reserva) => ({
-        id: `reserva-${reserva.id}`,
-        descricao: `Reserva criada para ${reserva.roteiro_titulo || 'roteiro'}`,
-        detalhe: reserva.cliente_nome || '',
-        tipo: 'reserva' as const,
-        created_at: reserva.created_at
-      })),
-      ...guiasPendentes.slice(0, 3).map((guia) => ({
-        id: `guia-${guia.id}`,
-        descricao: `Guia aguardando aprovação: ${guia.nome || guia.email || 'Guia'}`,
-        detalhe: guia.email || '',
-        tipo: 'guia' as const,
-        created_at: guia.created_at
-      })),
-      ...roteirosPendentes.slice(0, 3).map((roteiro) => ({
-        id: `roteiro-${roteiro.id}`,
-        descricao: `Roteiro aguardando análise: ${roteiro.titulo || 'Roteiro'}`,
-        detalhe: roteiro.guia_nome || '',
-        tipo: 'roteiro' as const,
-        created_at: roteiro.created_at
-      }))
-    ]
+    if (roteirosResult.error) {
+      console.warn('Erro ao carregar roteiros:', roteirosResult.error)
+    }
 
-    setAtividades(fallback)
-  }
+    if (reservasResult.error) {
+      console.warn('Erro ao carregar reservas:', reservasResult.error)
+    }
 
-  const tipoAtividadePorAcao = (acao?: string | null): Atividade['tipo'] => {
-    const a = normalizarStatus(acao)
+    if (gruposResult.error) {
+      console.warn('Erro ao carregar grupos:', gruposResult.error)
+    }
 
-    if (a.includes('pag')) return 'pagamento'
-    if (a.includes('reserv')) return 'reserva'
-    if (a.includes('guia')) return 'guia'
-    if (a.includes('roteiro')) return 'roteiro'
-    if (a.includes('login') || a.includes('usuario')) return 'usuario'
+    const usuariosData = (usuariosResult.data || []) as UsuarioBanco[]
+    const roteirosData = (roteirosResult.data || []) as Roteiro[]
+    const reservasData = (reservasResult.data || []) as Reserva[]
+    const gruposData = (gruposResult.data || []) as GrupoRoteiro[]
 
-    return 'sistema'
-  }
+    setUsuarios(usuariosData)
+    setRoteiros(roteirosData)
+    setReservas(reservasData)
+    setGrupos(gruposData)
 
-  const atualizarStatusGuia = async (guiaId: string, status: 'ativo' | 'reprovado') => {
-    const confirmar = window.confirm(
-      status === 'ativo'
-        ? 'Aprovar este guia?'
-        : 'Reprovar este guia?'
+    const reservasConfirmadas = reservasData.filter(pagamentoConfirmado)
+    const reservasPendentes = reservasData.filter((reserva) => !pagamentoConfirmado(reserva))
+
+    const receitaBruta = reservasConfirmadas.reduce(
+      (total, reserva) => total + Number(reserva.valor_total || 0),
+      0
     )
 
-    if (!confirmar) return
+    const taxaPlataforma = receitaBruta * 0.05
+    const repasseGuias = receitaBruta - taxaPlataforma
 
+    const statsCalculados: Stats = {
+      usuariosTotal: usuariosData.length,
+      clientesTotal: usuariosData.filter((item) => normalizar(item.tipo) === 'cliente').length,
+      guiasTotal: usuariosData.filter((item) => normalizar(item.tipo) === 'guia').length,
+      adminsTotal: usuariosData.filter((item) => normalizar(item.tipo) === 'admin').length,
+      roteirosTotal: roteirosData.length,
+      roteirosAtivos: roteirosData.filter((item) => statusRoteiro(item) === 'ativo').length,
+      roteirosPendentes: roteirosData.filter((item) => {
+        const status = statusRoteiro(item)
+        return status === 'pendente' || status === 'aguardando' || status === 'em_analise'
+      }).length,
+      reservasTotal: reservasData.length,
+      reservasConfirmadas: reservasConfirmadas.length,
+      reservasPendentes: reservasPendentes.length,
+      receitaBruta,
+      taxaPlataforma,
+      repasseGuias,
+      gruposTotal: gruposData.length,
+      gruposAtivos: gruposData.filter((item) => normalizar(item.status) === 'ativo').length
+    }
+
+    setStats(statsCalculados)
+    setAvaliacoes(avaliacoesResumo)
+    setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
+  }
+
+  const atualizar = async () => {
+    setAtualizando(true)
     setMensagem('')
-
-    const { error } = await supabase
-      .from('users')
-      .update({
-        status,
-        ativo: status === 'ativo',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', guiaId)
-
-    if (error) {
-      console.error('Erro ao atualizar guia:', error)
-      setMensagem('Erro ao atualizar guia.')
-      return
-    }
-
-    setMensagem(status === 'ativo' ? 'Guia aprovado.' : 'Guia reprovado.')
-    await carregarTudo(true)
-  }
-
-  const atualizarStatusRoteiro = async (
-    roteiroId: string,
-    status: 'ativo' | 'reprovado'
-  ) => {
-    const confirmar = window.confirm(
-      status === 'ativo'
-        ? 'Aprovar este roteiro?'
-        : 'Reprovar este roteiro?'
-    )
-
-    if (!confirmar) return
-
-    setMensagem('')
-
-    const { error } = await supabase
-      .from('roteiros')
-      .update({
-        status,
-        ativo: status === 'ativo',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', roteiroId)
-
-    if (error) {
-      console.error('Erro ao atualizar roteiro:', error)
-      setMensagem('Erro ao atualizar roteiro.')
-      return
-    }
-
-    setMensagem(status === 'ativo' ? 'Roteiro aprovado.' : 'Roteiro reprovado.')
-    await carregarTudo(true)
-  }
-
-  const reconciliarPagamentos = async () => {
-    if (reconciliandoRef.current) return
-
-    const pendentes = reservasRecentes.filter(
-      (reserva) => !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
-    )
-
-    if (pendentes.length === 0) {
-      setMensagem('Não há reservas recentes pendentes para reconciliar.')
-      return
-    }
-
-    reconciliandoRef.current = true
-    setReconciliando(true)
-    setMensagem('Consultando PagHiper nas reservas pendentes recentes...')
+    setErro('')
 
     try {
-      let atualizadas = 0
-
-      for (const reserva of pendentes.slice(0, 10)) {
-        const response = await fetch('/api/paghiper/reconciliar', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            reservaId: reserva.id,
-            orderId: reserva.paghiper_order_id || reserva.id,
-            transactionId: reserva.paghiper_transaction_id || undefined
-          })
-        })
-
-        const data = await response.json().catch(() => null)
-
-        if (
-          response.ok &&
-          data?.sucesso &&
-          Array.isArray(data.resultados) &&
-          data.resultados.some((item: any) => item.atualizado || item.jaEstavaConfirmada)
-        ) {
-          atualizadas += 1
-        }
-      }
-
-      setMensagem(
-        atualizadas > 0
-          ? `${atualizadas} reserva(s) atualizada(s) pela PagHiper.`
-          : 'Consulta finalizada. Nenhuma nova confirmação retornou agora.'
-      )
-
-      await carregarTudo(true)
+      await carregarTudo()
+      setMensagem('Dashboard atualizado.')
     } catch (error) {
-      console.error('Erro ao reconciliar pagamentos:', error)
-      setMensagem('Erro ao reconciliar pagamentos PagHiper.')
+      console.error('Erro ao atualizar dashboard:', error)
+      setErro('Não foi possível atualizar o dashboard agora.')
     } finally {
-      reconciliandoRef.current = false
-      setReconciliando(false)
+      setAtualizando(false)
     }
   }
 
-  const sair = () => {
-    localStorage.removeItem('user')
-    router.replace('/login')
+  const roteirosRecentes = useMemo(() => {
+    return roteiros.slice(0, 6)
+  }, [roteiros])
+
+  const reservasRecentes = useMemo(() => {
+    return reservas.slice(0, 6)
+  }, [reservas])
+
+  const usuariosRecentes = useMemo(() => {
+    return usuarios.slice(0, 5)
+  }, [usuarios])
+
+  const badgeRoteiro = (roteiro: Roteiro) => {
+    const status = statusRoteiro(roteiro)
+
+    if (status === 'ativo') return <span className="badge green">Ativo</span>
+    if (status === 'reprovado') return <span className="badge red">Reprovado</span>
+    if (status === 'pausado') return <span className="badge neutral">Pausado</span>
+
+    return <span className="badge yellow">Em análise</span>
   }
 
-  const alertaCritico = useMemo(() => {
-    return (
-      stats.guiasPendentes +
-      stats.roteirosPendentes +
-      stats.pagamentosPendentes +
-      stats.avaliacoesPendentes
-    )
-  }, [stats])
+  const badgeReserva = (reserva: Reserva) => {
+    if (pagamentoConfirmado(reserva)) return <span className="badge green">Confirmada</span>
 
-  const statusBadge = (status?: string | null, tipo: 'reserva' | 'pagamento' = 'reserva') => {
-    const s = normalizarStatus(status)
-
-    let classe = 'badge badge-neutral'
-    let texto = status || 'pendente'
-
-    if (tipo === 'pagamento') {
-      if (s === 'pago' || s === 'confirmado') {
-        classe = 'badge badge-green'
-        texto = 'Pago'
-      } else {
-        classe = 'badge badge-yellow'
-        texto = 'Pendente'
-      }
-
-      return <span className={classe}>{texto}</span>
-    }
-
-    if (s === 'confirmada' || s === 'realizada' || s === 'ativo') {
-      classe = 'badge badge-green'
-    } else if (s === 'cancelada' || s === 'reprovado') {
-      classe = 'badge badge-red'
-    } else if (s === 'pendente' || s === 'aguardando' || s === 'em_analise') {
-      classe = 'badge badge-yellow'
-    }
-
-    return <span className={classe}>{texto}</span>
+    return <span className="badge yellow">Pendente</span>
   }
 
   if (carregando || !user) {
@@ -837,7 +450,6 @@ export default function AdminDashboardPage() {
 
           body {
             margin: 0;
-            background: #f3f4f6;
             font-family:
               Inter,
               ui-sans-serif,
@@ -846,6 +458,7 @@ export default function AdminDashboardPage() {
               BlinkMacSystemFont,
               "Segoe UI",
               sans-serif;
+            background: #0f172a;
           }
 
           .loading {
@@ -854,23 +467,23 @@ export default function AdminDashboardPage() {
             display: flex;
             align-items: center;
             justify-content: center;
+            color: #e5e7eb;
             background:
-              radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
-              linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
-            color: #374151;
+              radial-gradient(circle at top left, rgba(34,197,94,0.16), transparent 30%),
+              linear-gradient(135deg, #020617, #0f172a);
           }
 
           .loadingCard {
-            background: #ffffff;
-            border: 1px solid #eef2f7;
-            border-radius: 28px;
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 26px;
             padding: 28px;
-            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
             text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.35);
           }
 
           .loadingCard img {
-            height: 64px;
+            height: 58px;
             width: auto;
             margin-bottom: 12px;
           }
@@ -893,7 +506,6 @@ export default function AdminDashboardPage() {
 
         body {
           margin: 0;
-          background: #eef2f7;
           font-family:
             Inter,
             ui-sans-serif,
@@ -902,187 +514,153 @@ export default function AdminDashboardPage() {
             BlinkMacSystemFont,
             "Segoe UI",
             sans-serif;
+          background: #f8fafc;
         }
 
         .page {
           min-height: 100vh;
           min-height: 100dvh;
           background:
-            radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 28%),
-            radial-gradient(circle at bottom right, rgba(220, 38, 38, 0.08), transparent 30%),
+            radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.10), transparent 30%),
+            radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.10), transparent 30%),
             linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-          color: #111827;
+          color: #0f172a;
         }
 
         .header {
           position: sticky;
           top: 0;
           z-index: 40;
-          background: rgba(255,255,255,0.92);
-          border-bottom: 1px solid #e5e7eb;
+          background: rgba(248, 250, 252, 0.88);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.08);
           backdrop-filter: blur(18px);
-          padding: 14px 18px;
+          padding: 12px 18px;
         }
 
         .headerInner {
-          max-width: 1440px;
+          max-width: 1240px;
           margin: 0 auto;
           display: flex;
-          align-items: center;
           justify-content: space-between;
-          gap: 16px;
-          flex-wrap: wrap;
+          align-items: center;
+          gap: 12px;
         }
 
         .brand {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
+          cursor: pointer;
+          min-width: 0;
         }
 
-        .brandLogo {
-          height: 48px;
+        .brand img {
+          height: 40px;
           width: auto;
-          object-fit: contain;
           display: block;
         }
 
         .brandTitle {
-          margin: 0;
-          color: #dc2626;
-          font-size: 22px;
+          font-size: 17px;
           font-weight: 950;
+          color: #0f172a;
+          letter-spacing: -0.045em;
           line-height: 1;
-          letter-spacing: -0.05em;
         }
 
         .brandSub {
-          margin-top: 4px;
           color: #64748b;
-          font-size: 12px;
-          font-weight: 700;
+          font-size: 11px;
+          font-weight: 800;
+          margin-top: 3px;
         }
 
         .headerActions {
           display: flex;
-          align-items: center;
           gap: 8px;
+          align-items: center;
           flex-wrap: wrap;
+          justify-content: flex-end;
         }
 
-        .userPill {
-          background: #f8fafc;
-          border: 1px solid #e5e7eb;
-          color: #475569;
+        .iconBtn {
+          min-height: 38px;
+          border: 1px solid rgba(15, 23, 42, 0.10);
+          background: rgba(255, 255, 255, 0.78);
+          color: #0f172a;
           border-radius: 999px;
-          padding: 9px 12px;
-          font-size: 12px;
-          font-weight: 800;
-        }
-
-        .btn {
-          border: none;
-          border-radius: 999px;
-          padding: 10px 14px;
-          cursor: pointer;
+          padding: 9px 13px;
           font-size: 12px;
           font-weight: 900;
+          cursor: pointer;
           transition: 0.2s ease;
           white-space: nowrap;
         }
 
-        .btn:hover:not(:disabled) {
+        .iconBtn:hover:not(:disabled) {
           transform: translateY(-1px);
-          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
         }
 
-        .btn:disabled {
-          opacity: 0.65;
+        .iconBtn.primary {
+          background: #0f172a;
+          color: #ffffff;
+          border-color: #0f172a;
+        }
+
+        .iconBtn:disabled {
+          opacity: 0.6;
           cursor: not-allowed;
         }
 
-        .btn-dark {
-          background: #111827;
-          color: #ffffff;
-        }
-
-        .btn-green {
-          background: #16a34a;
-          color: #ffffff;
-        }
-
-        .btn-red {
-          background: #dc2626;
-          color: #ffffff;
-        }
-
-        .btn-light {
-          background: #f1f5f9;
-          color: #334155;
-        }
-
-        .btn-soft-red {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-
-        .btn-outline {
-          background: #ffffff;
-          border: 1px solid #d1d5db;
-          color: #334155;
-        }
-
         .container {
-          max-width: 1440px;
+          max-width: 1240px;
           margin: 0 auto;
           padding: 24px 18px 52px;
         }
 
         .hero {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 380px;
-          gap: 18px;
-          margin-bottom: 18px;
-        }
-
-        .heroCard {
           background:
-            linear-gradient(135deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.92)),
-            radial-gradient(circle at top right, rgba(22, 163, 74, 0.22), transparent 32%);
+            radial-gradient(circle at top right, rgba(34, 197, 94, 0.18), transparent 30%),
+            linear-gradient(135deg, #0f172a, #1e293b);
           color: #ffffff;
           border-radius: 34px;
           padding: 28px;
+          box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+          margin-bottom: 18px;
           overflow: hidden;
           position: relative;
-          min-height: 230px;
-          box-shadow: 0 20px 60px rgba(15, 23, 42, 0.24);
         }
 
-        .heroCard::after {
+        .hero::after {
           content: "";
           position: absolute;
           inset: 0;
           background:
-            linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-          background-size: 42px 42px;
+            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+          background-size: 44px 44px;
           mask-image: linear-gradient(to bottom, black, transparent);
           pointer-events: none;
         }
 
-        .heroContent {
+        .heroInner {
           position: relative;
           z-index: 2;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 330px;
+          gap: 22px;
+          align-items: end;
         }
 
         .eyebrow {
           display: inline-flex;
-          align-items: center;
+          width: fit-content;
           border-radius: 999px;
-          border: 1px solid rgba(22, 163, 74, 0.42);
-          background: rgba(22, 163, 74, 0.12);
-          color: #86efac;
-          padding: 7px 11px;
+          padding: 8px 12px;
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(255,255,255,0.08);
+          color: #bbf7d0;
           font-size: 11px;
           font-weight: 950;
           letter-spacing: 0.12em;
@@ -1092,70 +670,83 @@ export default function AdminDashboardPage() {
 
         .heroTitle {
           margin: 0;
-          max-width: 760px;
-          font-size: clamp(34px, 5vw, 54px);
-          line-height: 0.98;
+          font-size: clamp(38px, 5.5vw, 68px);
+          line-height: 0.94;
+          font-weight: 950;
+          letter-spacing: -0.08em;
+        }
+
+        .heroTitle span {
+          color: #86efac;
+        }
+
+        .heroText {
+          max-width: 720px;
+          color: rgba(255,255,255,0.76);
+          font-size: 14px;
+          line-height: 1.6;
+          font-weight: 650;
+          margin: 16px 0 0;
+        }
+
+        .heroCard {
+          border-radius: 28px;
+          background: rgba(255,255,255,0.10);
+          border: 1px solid rgba(255,255,255,0.16);
+          padding: 20px;
+          backdrop-filter: blur(14px);
+        }
+
+        .heroLabel {
+          color: rgba(255,255,255,0.66);
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.10em;
+        }
+
+        .heroValue {
+          margin-top: 8px;
+          color: #ffffff;
+          font-size: 36px;
+          line-height: 1;
           font-weight: 950;
           letter-spacing: -0.07em;
         }
 
-        .heroTitle span {
-          color: #22c55e;
-        }
-
-        .heroText {
-          max-width: 660px;
-          color: #cbd5e1;
-          line-height: 1.65;
-          margin: 14px 0 0;
-          font-size: 14px;
-        }
-
-        .healthCard {
-          background: #ffffff;
-          border: 1px solid #eef2f7;
-          border-radius: 34px;
-          padding: 22px;
-          box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
-        }
-
-        .healthTitle {
-          font-size: 16px;
-          font-weight: 950;
-          color: #111827;
-          margin-bottom: 12px;
-        }
-
-        .healthNumber {
-          font-size: 54px;
-          font-weight: 950;
-          color: ${alertaCritico > 0 ? '#dc2626' : '#16a34a'};
-          letter-spacing: -0.08em;
-          line-height: 1;
-        }
-
-        .healthText {
+        .heroSmall {
+          color: rgba(255,255,255,0.70);
+          font-size: 12px;
+          font-weight: 750;
+          line-height: 1.45;
           margin-top: 8px;
-          color: #64748b;
-          line-height: 1.5;
-          font-size: 13px;
         }
 
-        .healthActions {
-          display: grid;
-          gap: 8px;
-          margin-top: 18px;
+        .heroStars {
+          color: #86efac;
+          font-size: 18px;
+          letter-spacing: 1px;
+          margin-top: 8px;
         }
 
-        .message {
-          background: #eff6ff;
-          color: #1e40af;
-          border: 1px solid #bfdbfe;
+        .alert {
           border-radius: 18px;
           padding: 13px 15px;
           margin-bottom: 16px;
           font-size: 13px;
-          font-weight: 700;
+          font-weight: 800;
+        }
+
+        .alert.success {
+          background: #ecfdf5;
+          border: 1px solid #bbf7d0;
+          color: #166534;
+        }
+
+        .alert.error {
+          background: #fee2e2;
+          border: 1px solid #fecaca;
+          color: #991b1b;
         }
 
         .statsGrid {
@@ -1166,256 +757,205 @@ export default function AdminDashboardPage() {
         }
 
         .statCard {
-          background: #ffffff;
-          border: 1px solid #eef2f7;
-          border-radius: 26px;
-          padding: 16px;
-          min-height: 118px;
-          box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
+          background: rgba(255,255,255,0.88);
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 24px;
+          padding: 15px;
+          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
           cursor: pointer;
           transition: 0.2s ease;
         }
 
         .statCard:hover {
           transform: translateY(-2px);
-          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.10);
+          box-shadow: 0 16px 34px rgba(15, 23, 42, 0.10);
+        }
+
+        .statIcon {
+          width: 38px;
+          height: 38px;
+          border-radius: 16px;
+          background: #ecfdf5;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 19px;
+          margin-bottom: 11px;
+        }
+
+        .statValue {
+          font-size: 27px;
+          font-weight: 950;
+          line-height: 1;
+          letter-spacing: -0.06em;
+          color: #0f172a;
         }
 
         .statLabel {
           color: #64748b;
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          line-height: 1.35;
-        }
-
-        .statValue {
-          margin-top: 12px;
-          font-size: 30px;
-          font-weight: 950;
-          color: #111827;
-          letter-spacing: -0.07em;
-        }
-
-        .statHint {
-          color: #94a3b8;
-          font-size: 11px;
-          margin-top: 4px;
-          font-weight: 700;
-        }
-
-        .statGreen .statValue {
-          color: #16a34a;
-        }
-
-        .statRed .statValue {
-          color: #dc2626;
-        }
-
-        .statYellow .statValue {
-          color: #d97706;
-        }
-
-        .quickGrid {
-          display: grid;
-          grid-template-columns: repeat(8, minmax(0, 1fr));
-          gap: 10px;
-          margin-bottom: 18px;
-        }
-
-        .quickButton {
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          border-radius: 22px;
-          padding: 14px 10px;
-          min-height: 82px;
-          cursor: pointer;
-          transition: 0.2s ease;
-          text-align: center;
-          color: #111827;
-        }
-
-        .quickButton:hover {
-          transform: translateY(-2px);
-          border-color: #16a34a;
-          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.10);
-        }
-
-        .quickIcon {
-          width: 28px;
-          height: 28px;
-          border-radius: 12px;
-          background: #f0fdf4;
-          color: #16a34a;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
           font-size: 12px;
-          font-weight: 950;
-          margin-bottom: 8px;
-        }
-
-        .quickLabel {
-          font-size: 11px;
-          font-weight: 950;
-          line-height: 1.25;
+          font-weight: 850;
+          line-height: 1.35;
+          margin-top: 7px;
         }
 
         .mainGrid {
           display: grid;
-          grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
+          grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
           gap: 18px;
+          align-items: start;
         }
 
         .panel {
-          background: #ffffff;
-          border: 1px solid #eef2f7;
-          border-radius: 30px;
-          box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
+          background: rgba(255,255,255,0.92);
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 28px;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07);
           overflow: hidden;
         }
 
         .panelHeader {
           padding: 18px 20px;
-          border-bottom: 1px solid #eef2f7;
+          border-bottom: 1px solid rgba(15, 23, 42, 0.08);
           display: flex;
-          align-items: center;
           justify-content: space-between;
           gap: 12px;
+          align-items: center;
+          flex-wrap: wrap;
         }
 
         .panelTitle {
           margin: 0;
-          font-size: 18px;
+          color: #0f172a;
+          font-size: 19px;
+          line-height: 1.15;
           font-weight: 950;
-          color: #111827;
           letter-spacing: -0.04em;
         }
 
         .panelSub {
-          margin-top: 3px;
           color: #64748b;
           font-size: 12px;
-          font-weight: 700;
+          line-height: 1.45;
+          font-weight: 750;
+          margin-top: 4px;
         }
 
         .panelBody {
           padding: 16px;
         }
 
-        .tableWrap {
-          overflow-x: auto;
-        }
-
-        .table {
-          width: 100%;
-          border-collapse: collapse;
-          min-width: 760px;
-        }
-
-        .table th {
-          text-align: left;
-          color: #64748b;
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          padding: 11px 10px;
-          background: #f8fafc;
-          border-bottom: 1px solid #e5e7eb;
-        }
-
-        .table td {
-          padding: 12px 10px;
-          border-bottom: 1px solid #f1f5f9;
-          color: #334155;
-          font-size: 13px;
-          vertical-align: middle;
-        }
-
-        .table tr:last-child td {
-          border-bottom: none;
-        }
-
-        .strong {
-          color: #111827;
+        .textLink {
+          border: none;
+          background: transparent;
+          color: #16a34a;
+          font-size: 12px;
           font-weight: 950;
+          cursor: pointer;
+          padding: 0;
         }
 
-        .muted {
+        .list {
+          display: grid;
+          gap: 12px;
+        }
+
+        .itemCard {
+          background: #ffffff;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 22px;
+          padding: 13px;
+          display: grid;
+          grid-template-columns: 72px minmax(0, 1fr);
+          gap: 12px;
+          align-items: center;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .itemCard:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+        }
+
+        .thumb {
+          width: 72px;
+          height: 72px;
+          border-radius: 20px;
+          background: #e2e8f0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           color: #64748b;
           font-size: 12px;
+          font-weight: 950;
+          overflow: hidden;
+        }
+
+        .thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .itemTitle {
+          color: #0f172a;
+          font-size: 14px;
+          font-weight: 950;
+          line-height: 1.32;
+        }
+
+        .itemMeta {
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+          margin-top: 4px;
+        }
+
+        .itemFooter {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-top: 9px;
+        }
+
+        .price {
+          color: #16a34a;
+          font-size: 13px;
+          font-weight: 950;
         }
 
         .badge {
           display: inline-flex;
           align-items: center;
-          justify-content: center;
           border-radius: 999px;
-          padding: 6px 10px;
+          padding: 6px 9px;
           font-size: 11px;
           font-weight: 950;
-          white-space: nowrap;
         }
 
-        .badge-green {
+        .badge.green {
           background: #dcfce7;
           color: #166534;
         }
 
-        .badge-yellow {
+        .badge.yellow {
           background: #fef3c7;
           color: #92400e;
         }
 
-        .badge-red {
+        .badge.red {
           background: #fee2e2;
           color: #991b1b;
         }
 
-        .badge-neutral {
+        .badge.neutral {
           background: #f1f5f9;
           color: #475569;
-        }
-
-        .list {
-          display: grid;
-          gap: 10px;
-        }
-
-        .listItem {
-          border: 1px solid #eef2f7;
-          background: #f8fafc;
-          border-radius: 22px;
-          padding: 14px;
-        }
-
-        .listTop {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          align-items: flex-start;
-        }
-
-        .listTitle {
-          color: #111827;
-          font-size: 14px;
-          font-weight: 950;
-          line-height: 1.35;
-        }
-
-        .listMeta {
-          color: #64748b;
-          font-size: 12px;
-          margin-top: 4px;
-          line-height: 1.45;
-        }
-
-        .listActions {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-          margin-top: 12px;
         }
 
         .sideGrid {
@@ -1423,114 +963,173 @@ export default function AdminDashboardPage() {
           gap: 18px;
         }
 
-        .activityItem {
-          display: grid;
-          grid-template-columns: 12px minmax(0, 1fr);
-          gap: 12px;
-          padding: 12px 0;
-          border-bottom: 1px solid #f1f5f9;
+        .reviewBox,
+        .financeBox {
+          background:
+            radial-gradient(circle at top right, rgba(34,197,94,0.24), transparent 34%),
+            linear-gradient(135deg, #0f172a, #1e293b);
+          color: #ffffff;
+          border-radius: 28px;
+          padding: 22px;
+          box-shadow: 0 16px 40px rgba(15, 23, 42, 0.20);
         }
 
-        .activityItem:last-child {
-          border-bottom: none;
+        .reviewBox {
+          background:
+            radial-gradient(circle at top right, rgba(251,146,60,0.18), transparent 34%),
+            radial-gradient(circle at bottom left, rgba(34,197,94,0.16), transparent 30%),
+            linear-gradient(135deg, #0f172a, #1e293b);
         }
 
-        .dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 999px;
-          margin-top: 5px;
-          background: #94a3b8;
+        .boxLabel {
+          color: rgba(255,255,255,0.68);
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.10em;
         }
 
-        .dot.pagamento {
-          background: #16a34a;
+        .boxValue {
+          margin-top: 8px;
+          color: #86efac;
+          font-size: 34px;
+          font-weight: 950;
+          letter-spacing: -0.07em;
+          line-height: 1;
         }
 
-        .dot.reserva {
-          background: #2563eb;
-        }
-
-        .dot.guia {
-          background: #dc2626;
-        }
-
-        .dot.roteiro {
-          background: #d97706;
-        }
-
-        .dot.usuario {
-          background: #7c3aed;
-        }
-
-        .activityText {
-          color: #111827;
+        .boxText {
+          color: rgba(255,255,255,0.72);
           font-size: 13px;
-          font-weight: 800;
-          line-height: 1.4;
+          line-height: 1.55;
+          font-weight: 700;
+          margin-top: 9px;
         }
 
-        .activityMeta {
-          color: #64748b;
+        .boxRows {
+          display: grid;
+          gap: 8px;
+          margin-top: 15px;
+        }
+
+        .boxRow {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          color: rgba(255,255,255,0.82);
           font-size: 12px;
+          font-weight: 800;
+        }
+
+        .boxButton {
+          width: 100%;
+          border: none;
+          background: #86efac;
+          color: #0f172a;
+          border-radius: 999px;
+          padding: 12px 14px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          margin-top: 16px;
+        }
+
+        .quickGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .quickBtn {
+          min-height: 76px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: #ffffff;
+          border-radius: 20px;
+          padding: 12px;
+          text-align: left;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .quickBtn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+        }
+
+        .quickIcon {
+          font-size: 18px;
+          margin-bottom: 7px;
+        }
+
+        .quickTitle {
+          color: #0f172a;
+          font-size: 13px;
+          font-weight: 950;
+        }
+
+        .quickText {
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 750;
+          line-height: 1.35;
           margin-top: 3px;
         }
 
         .empty {
-          padding: 22px;
+          padding: 24px;
           text-align: center;
           color: #64748b;
-          font-size: 13px;
-          background: #f8fafc;
-          border-radius: 22px;
+          background: #ffffff;
           border: 1px dashed #cbd5e1;
+          border-radius: 22px;
+          font-size: 13px;
+          font-weight: 750;
         }
 
         @media (max-width: 1180px) {
           .statsGrid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
           }
+        }
 
-          .quickGrid {
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-          }
-
-          .hero,
+        @media (max-width: 1040px) {
+          .heroInner,
           .mainGrid {
             grid-template-columns: 1fr;
           }
         }
 
-        @media (max-width: 760px) {
+        @media (max-width: 720px) {
           .header {
-            padding: 12px;
+            padding: 10px 12px;
           }
 
-          .headerInner {
-            align-items: flex-start;
+          .brandTitle,
+          .brandSub {
+            display: none;
           }
 
           .headerActions {
-            width: 100%;
+            gap: 6px;
           }
 
-          .headerActions .btn,
-          .headerActions .userPill {
-            flex: 1;
-            text-align: center;
+          .headerActions .iconBtn {
+            padding: 8px 10px;
+            font-size: 11px;
           }
 
           .container {
-            padding: 16px 12px 40px;
+            padding: 16px 12px 42px;
           }
 
-          .heroCard,
-          .healthCard,
-          .panel {
+          .hero,
+          .panel,
+          .reviewBox,
+          .financeBox {
             border-radius: 24px;
           }
 
-          .heroCard {
+          .hero {
             padding: 22px;
           }
 
@@ -1539,85 +1138,76 @@ export default function AdminDashboardPage() {
           }
 
           .quickGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .brandLogo {
-            height: 42px;
-          }
-
-          .brandTitle {
-            font-size: 20px;
+            grid-template-columns: 1fr;
           }
         }
 
-        @media (max-width: 460px) {
+        @media (max-width: 480px) {
+          .heroTitle {
+            font-size: 38px;
+          }
+
           .statsGrid {
             grid-template-columns: 1fr;
           }
 
-          .quickGrid {
+          .itemCard {
             grid-template-columns: 1fr;
           }
 
-          .heroTitle {
-            font-size: 34px;
-          }
-
-          .healthNumber {
-            font-size: 44px;
+          .thumb {
+            width: 100%;
+            height: 150px;
           }
         }
       `}</style>
 
       <header className="header">
         <div className="headerInner">
-          <div className="brand">
-            <img
-              src="/logo-prussik-display.png"
-              alt="PrussikTrails"
-              className="brandLogo"
-            />
+          <div
+            className="brand"
+            onClick={() => router.push('/admin/dashboard')}
+          >
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
 
             <div>
-              <h1 className="brandTitle">PrussikTrails Admin</h1>
-              <div className="brandSub">
-                Painel central de operação e controle
-              </div>
+              <div className="brandTitle">PrussikTrails Admin</div>
+              <div className="brandSub">Painel administrativo</div>
             </div>
           </div>
 
           <div className="headerActions">
-            <span className="userPill">
-              {user.nome || user.email || 'Administrador'}
-            </span>
+            <button
+              type="button"
+              className="iconBtn"
+              onClick={() => router.push('/admin/roteiros')}
+            >
+              Roteiros
+            </button>
 
             <button
               type="button"
-              className="btn btn-light"
-              onClick={() => carregarTudo(false)}
+              className="iconBtn"
+              onClick={() => router.push('/admin/avaliacoes')}
+            >
+              Avaliações
+            </button>
+
+            <button
+              type="button"
+              className="iconBtn"
+              onClick={() => router.push('/admin/financeiro')}
+            >
+              Financeiro
+            </button>
+
+            <button
+              type="button"
+              className="iconBtn primary"
+              onClick={atualizar}
               disabled={atualizando}
             >
               {atualizando ? 'Atualizando...' : 'Atualizar'}
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-green"
-              onClick={reconciliarPagamentos}
-              disabled={reconciliando}
-            >
-              {reconciliando ? 'Sincronizando...' : 'Sincronizar PH'}
-            </button>
-
-            <SettingsButton userId={user.id} userEmail={user.email || ''} />
-
-            <button
-              type="button"
-              className="btn btn-red"
-              onClick={sair}
-            >
-              Sair
             </button>
           </div>
         </div>
@@ -1625,419 +1215,421 @@ export default function AdminDashboardPage() {
 
       <div className="container">
         <section className="hero">
-          <div className="heroCard">
-            <div className="heroContent">
-              <div className="eyebrow">Centro de comando</div>
+          <div className="heroInner">
+            <div>
+              <div className="eyebrow">Administração geral</div>
 
-              <h2 className="heroTitle">
-                Controle total da operação <span>PrussikTrails.</span>
-              </h2>
+              <h1 className="heroTitle">
+                Olá, {primeiroNome(nomeUsuario(user))}.
+                <br />
+                Controle a operação com <span>visão total.</span>
+              </h1>
 
               <p className="heroText">
-                Acompanhe pagamentos, reservas, guias, roteiros, usuários, chats,
-                avaliações e pendências críticas em um único painel administrativo.
+                Acompanhe usuários, roteiros, reservas, grupos, financeiro e avaliações da plataforma.
+                {ultimaAtualizacao && (
+                  <>
+                    <br />
+                    Atualizado às {ultimaAtualizacao}.
+                  </>
+                )}
               </p>
             </div>
+
+            <aside className="heroCard">
+              <div className="heroLabel">Receita confirmada</div>
+              <div className="heroValue">{formatarMoeda(stats.receitaBruta)}</div>
+              <div className="heroSmall">
+                Taxa estimada da plataforma: {formatarMoeda(stats.taxaPlataforma)}.
+              </div>
+            </aside>
           </div>
-
-          <aside className="healthCard">
-            <div className="healthTitle">Pendências críticas</div>
-            <div className="healthNumber">{alertaCritico}</div>
-
-            <div className="healthText">
-              Soma de guias, roteiros, pagamentos e avaliações que exigem atenção
-              administrativa.
-              {ultimaAtualizacao && (
-                <>
-                  <br />
-                  Última atualização: {ultimaAtualizacao}.
-                </>
-              )}
-            </div>
-
-            <div className="healthActions">
-              <button
-                type="button"
-                className="btn btn-dark"
-                onClick={() => router.push('/admin/reservas')}
-              >
-                Ver reservas
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={() => router.push('/admin/roteiros')}
-              >
-                Ver roteiros
-              </button>
-            </div>
-          </aside>
         </section>
 
         {mensagem && (
-          <div className="message">
-            {mensagem}
-          </div>
+          <div className="alert success">{mensagem}</div>
+        )}
+
+        {erro && (
+          <div className="alert error">{erro}</div>
         )}
 
         <section className="statsGrid">
           <article
-            className="statCard statRed"
-            onClick={() => router.push('/admin/reservas')}
-          >
-            <div className="statLabel">Pagamentos pendentes</div>
-            <div className="statValue">{stats.pagamentosPendentes}</div>
-            <div className="statHint">PagHiper / reservas</div>
-          </article>
-
-          <article
-            className="statCard statGreen"
-            onClick={() => router.push('/admin/reservas')}
-          >
-            <div className="statLabel">Pagamentos pagos</div>
-            <div className="statValue">{stats.pagamentosPagos}</div>
-            <div className="statHint">Confirmados</div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => router.push('/admin/reservas')}
-          >
-            <div className="statLabel">Reservas totais</div>
-            <div className="statValue">{stats.totalReservas}</div>
-            <div className="statHint">{stats.reservasConfirmadas} confirmadas</div>
-          </article>
-
-          <article
-            className="statCard statYellow"
-            onClick={() => router.push('/admin/guias')}
-          >
-            <div className="statLabel">Guias pendentes</div>
-            <div className="statValue">{stats.guiasPendentes}</div>
-            <div className="statHint">{stats.totalGuias} guias totais</div>
-          </article>
-
-          <article
-            className="statCard statYellow"
-            onClick={() => router.push('/admin/roteiros')}
-          >
-            <div className="statLabel">Roteiros pendentes</div>
-            <div className="statValue">{stats.roteirosPendentes}</div>
-            <div className="statHint">{stats.roteirosAtivos} ativos</div>
-          </article>
-
-          <article
-            className="statCard statGreen"
-            onClick={() => router.push('/admin/financeiro')}
-          >
-            <div className="statLabel">Receita do mês</div>
-            <div className="statValue">{formatarMoeda(stats.receitaMes)}</div>
-            <div className="statHint">Total: {formatarMoeda(stats.receitaTotal)}</div>
-          </article>
-
-          <article
             className="statCard"
             onClick={() => router.push('/admin/usuarios')}
           >
-            <div className="statLabel">Usuários</div>
-            <div className="statValue">{stats.totalUsuarios}</div>
-            <div className="statHint">{stats.totalClientes} clientes</div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => router.push('/admin/chats')}
-          >
-            <div className="statLabel">Chats abertos</div>
-            <div className="statValue">{stats.chatsAbertos}</div>
-            <div className="statHint">Cliente / guia</div>
-          </article>
-
-          <article
-            className="statCard statYellow"
-            onClick={() => router.push('/admin/avaliacoes')}
-          >
-            <div className="statLabel">Avaliações pendentes</div>
-            <div className="statValue">{stats.avaliacoesPendentes}</div>
-            <div className="statHint">Moderação</div>
+            <div className="statIcon">👥</div>
+            <div className="statValue">{stats.usuariosTotal}</div>
+            <div className="statLabel">
+              usuários · {stats.clientesTotal} clientes · {stats.guiasTotal} guias
+            </div>
           </article>
 
           <article
             className="statCard"
             onClick={() => router.push('/admin/roteiros')}
           >
-            <div className="statLabel">Roteiros totais</div>
-            <div className="statValue">{stats.totalRoteiros}</div>
-            <div className="statHint">Catálogo</div>
-          </article>
-
-          <article
-            className="statCard statRed"
-            onClick={() => router.push('/admin/reservas')}
-          >
-            <div className="statLabel">Canceladas</div>
-            <div className="statValue">{stats.reservasCanceladas}</div>
-            <div className="statHint">Reservas</div>
+            <div className="statIcon">🧭</div>
+            <div className="statValue">{stats.roteirosTotal}</div>
+            <div className="statLabel">
+              roteiros · {stats.roteirosAtivos} ativos · {stats.roteirosPendentes} em análise
+            </div>
           </article>
 
           <article
             className="statCard"
-            onClick={() => router.push('/admin/dashboard')}
+            onClick={() => router.push('/admin/reservas')}
           >
-            <div className="statLabel">Admins</div>
-            <div className="statValue">{stats.totalAdmins}</div>
-            <div className="statHint">Acesso interno</div>
+            <div className="statIcon">🎒</div>
+            <div className="statValue">{stats.reservasTotal}</div>
+            <div className="statLabel">
+              reservas · {stats.reservasConfirmadas} confirmadas
+            </div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => router.push('/admin/grupos')}
+          >
+            <div className="statIcon">💬</div>
+            <div className="statValue">{stats.gruposTotal}</div>
+            <div className="statLabel">
+              grupos internos · {stats.gruposAtivos} ativos
+            </div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => router.push('/admin/avaliacoes')}
+          >
+            <div className="statIcon">⭐</div>
+            <div className="statValue">{formatarNota(avaliacoes.mediaNota)}</div>
+            <div className="statLabel">
+              avaliações · {avaliacoes.total} registro(s) · {avaliacoes.notasBaixas} atenção
+            </div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => router.push('/admin/financeiro')}
+          >
+            <div className="statIcon">💰</div>
+            <div className="statValue">{formatarMoeda(stats.taxaPlataforma)}</div>
+            <div className="statLabel">
+              taxa 5% estimada · repasse {formatarMoeda(stats.repasseGuias)}
+            </div>
           </article>
         </section>
 
-        <section className="quickGrid">
-          {[
-            ['Reservas', '/admin/reservas', 'RS'],
-            ['Guias', '/admin/guias', 'G'],
-            ['Roteiros', '/admin/roteiros', 'RT'],
-            ['Usuários', '/admin/usuarios', 'U'],
-            ['Clientes', '/admin/clientes', 'C'],
-            ['Pagamentos', '/admin/financeiro', 'PH'],
-            ['Chats', '/admin/chats', 'CH'],
-            ['Premium demo', '/premium/demo', 'P']
-          ].map(([label, href, icon]) => (
-            <button
-              key={href}
-              type="button"
-              className="quickButton"
-              onClick={() => router.push(href)}
-            >
-              <span className="quickIcon">{icon}</span>
-              <div className="quickLabel">{label}</div>
-            </button>
-          ))}
-        </section>
-
         <section className="mainGrid">
-          <div className="panel">
-            <div className="panelHeader">
-              <div>
-                <h3 className="panelTitle">Reservas recentes</h3>
-                <div className="panelSub">
-                  Pagamentos, status, valores e acesso rápido ao controle total.
+          <div>
+            <section className="panel">
+              <div className="panelHeader">
+                <div>
+                  <h2 className="panelTitle">Roteiros recentes</h2>
+                  <div className="panelSub">
+                    Últimos roteiros cadastrados na plataforma.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="textLink"
+                  onClick={() => router.push('/admin/roteiros')}
+                >
+                  Ver roteiros
+                </button>
+              </div>
+
+              <div className="panelBody">
+                {roteirosRecentes.length === 0 ? (
+                  <div className="empty">
+                    Nenhum roteiro cadastrado ainda.
+                  </div>
+                ) : (
+                  <div className="list">
+                    {roteirosRecentes.map((roteiro) => {
+                      const imagem = imagemRoteiro(roteiro)
+
+                      return (
+                        <article
+                          className="itemCard"
+                          key={roteiro.id}
+                          onClick={() => router.push('/admin/roteiros')}
+                        >
+                          <div className="thumb">
+                            {imagem ? (
+                              <img src={imagem} alt={tituloRoteiro(roteiro)} />
+                            ) : (
+                              'RT'
+                            )}
+                          </div>
+
+                          <div>
+                            <div className="itemTitle">
+                              {tituloRoteiro(roteiro)}
+                            </div>
+
+                            <div className="itemMeta">
+                              {localRoteiro(roteiro)}
+                              <br />
+                              Criado em {formatarData(roteiro.created_at)}
+                            </div>
+
+                            <div className="itemFooter">
+                              <span className="price">
+                                {formatarMoeda(roteiro.preco || roteiro.valor || 0)}
+                              </span>
+
+                              {badgeRoteiro(roteiro)}
+                            </div>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="panel" style={{ marginTop: 18 }}>
+              <div className="panelHeader">
+                <div>
+                  <h2 className="panelTitle">Reservas recentes</h2>
+                  <div className="panelSub">
+                    Últimas movimentações de reservas.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="textLink"
+                  onClick={() => router.push('/admin/reservas')}
+                >
+                  Ver reservas
+                </button>
+              </div>
+
+              <div className="panelBody">
+                {reservasRecentes.length === 0 ? (
+                  <div className="empty">
+                    Nenhuma reserva encontrada ainda.
+                  </div>
+                ) : (
+                  <div className="list">
+                    {reservasRecentes.map((reserva) => (
+                      <article
+                        className="itemCard"
+                        key={reserva.id}
+                        onClick={() => router.push('/admin/reservas')}
+                      >
+                        <div className="thumb">RS</div>
+
+                        <div>
+                          <div className="itemTitle">
+                            Reserva {reserva.id.slice(0, 8)}
+                          </div>
+
+                          <div className="itemMeta">
+                            Pessoas: {reserva.quantidade_pessoas || 1}
+                            <br />
+                            Criada em {formatarData(reserva.created_at)}
+                          </div>
+
+                          <div className="itemFooter">
+                            <span className="price">
+                              {formatarMoeda(reserva.valor_total || 0)}
+                            </span>
+
+                            {badgeReserva(reserva)}
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+
+          <div className="sideGrid">
+            <section className="reviewBox">
+              <div className="boxLabel">Qualidade da plataforma</div>
+              <div className="boxValue">{formatarNota(avaliacoes.mediaNota)}</div>
+              <div className="heroStars">{estrelas(avaliacoes.mediaNota)}</div>
+
+              <div className="boxText">
+                Média geral das avaliações publicadas pelos clientes.
+              </div>
+
+              <div className="boxRows">
+                <div className="boxRow">
+                  <span>Total de avaliações</span>
+                  <strong>{avaliacoes.total}</strong>
+                </div>
+
+                <div className="boxRow">
+                  <span>Sentiram muita segurança</span>
+                  <strong>{formatarPercentual(avaliacoes.segurancaAltaPercentual)}</strong>
+                </div>
+
+                <div className="boxRow">
+                  <span>Recomendariam</span>
+                  <strong>{formatarPercentual(avaliacoes.percentualRecomendacao)}</strong>
+                </div>
+
+                <div className="boxRow">
+                  <span>Avaliações de atenção</span>
+                  <strong>{avaliacoes.notasBaixas}</strong>
                 </div>
               </div>
 
               <button
                 type="button"
-                className="btn btn-dark"
-                onClick={() => router.push('/admin/reservas')}
+                className="boxButton"
+                onClick={() => router.push('/admin/avaliacoes')}
               >
-                Abrir reservas
+                Abrir painel de avaliações
               </button>
-            </div>
+            </section>
 
-            <div className="panelBody">
-              {reservasRecentes.length === 0 ? (
-                <div className="empty">Nenhuma reserva recente encontrada.</div>
-              ) : (
-                <div className="tableWrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Reserva</th>
-                        <th>Cliente</th>
-                        <th>Roteiro</th>
-                        <th>Valor</th>
-                        <th>Pagamento</th>
-                        <th>Status</th>
-                        <th>Data</th>
-                      </tr>
-                    </thead>
+            <section className="financeBox">
+              <div className="boxLabel">Financeiro estimado</div>
+              <div className="boxValue">{formatarMoeda(stats.taxaPlataforma)}</div>
 
-                    <tbody>
-                      {reservasRecentes.map((reserva) => (
-                        <tr key={reserva.id}>
-                          <td>
-                            <div className="strong">
-                              {String(reserva.id).slice(0, 8)}
-                            </div>
-                            <div className="muted">
-                              {reserva.quantidade_pessoas || 1} pessoa(s)
-                            </div>
-                          </td>
+              <div className="boxText">
+                Taxa estimada da plataforma sobre reservas confirmadas. Cálculo com base em 5% por reserva paga.
+              </div>
 
-                          <td>{reserva.cliente_nome || 'Cliente'}</td>
-
-                          <td>{reserva.roteiro_titulo || 'Roteiro'}</td>
-
-                          <td>
-                            <span className="strong">
-                              {formatarMoeda(Number(reserva.valor_total || 0))}
-                            </span>
-                          </td>
-
-                          <td>{statusBadge(reserva.pagamento_status, 'pagamento')}</td>
-
-                          <td>{statusBadge(reserva.status, 'reserva')}</td>
-
-                          <td>
-                            {formatarData(reserva.created_at)}
-                            <div className="muted">{formatarHora(reserva.created_at)}</div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <div className="boxRows">
+                <div className="boxRow">
+                  <span>Receita bruta confirmada</span>
+                  <strong>{formatarMoeda(stats.receitaBruta)}</strong>
                 </div>
-              )}
-            </div>
-          </div>
 
-          <div className="sideGrid">
+                <div className="boxRow">
+                  <span>Repasse estimado aos guias</span>
+                  <strong>{formatarMoeda(stats.repasseGuias)}</strong>
+                </div>
+
+                <div className="boxRow">
+                  <span>Taxa plataforma</span>
+                  <strong>{formatarMoeda(stats.taxaPlataforma)}</strong>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="boxButton"
+                onClick={() => router.push('/admin/financeiro')}
+              >
+                Abrir financeiro
+              </button>
+            </section>
+
             <section className="panel">
               <div className="panelHeader">
                 <div>
-                  <h3 className="panelTitle">Guias pendentes</h3>
-                  <div className="panelSub">Aprovação operacional</div>
+                  <h2 className="panelTitle">Ações rápidas</h2>
+                  <div className="panelSub">
+                    Atalhos de controle operacional.
+                  </div>
                 </div>
-
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => router.push('/admin/guias')}
-                >
-                  Ver todos
-                </button>
               </div>
 
               <div className="panelBody">
-                {guiasPendentes.length === 0 ? (
-                  <div className="empty">Nenhum guia pendente.</div>
-                ) : (
-                  <div className="list">
-                    {guiasPendentes.map((guia) => (
-                      <article className="listItem" key={guia.id}>
-                        <div className="listTop">
-                          <div>
-                            <div className="listTitle">
-                              {guia.nome || guia.email || 'Guia'}
-                            </div>
-                            <div className="listMeta">
-                              {guia.email}
-                              {guia.cadastur ? ` · CADASTUR: ${guia.cadastur}` : ''}
-                            </div>
-                          </div>
+                <div className="quickGrid">
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/roteiros')}
+                  >
+                    <div className="quickIcon">🧭</div>
+                    <div className="quickTitle">Roteiros</div>
+                    <div className="quickText">Aprovar, revisar e acompanhar.</div>
+                  </button>
 
-                          {statusBadge(guia.status || 'pendente')}
-                        </div>
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/avaliacoes')}
+                  >
+                    <div className="quickIcon">⭐</div>
+                    <div className="quickTitle">Avaliações</div>
+                    <div className="quickText">Reputação, qualidade e moderação.</div>
+                  </button>
 
-                        <div className="listActions">
-                          <button
-                            type="button"
-                            className="btn btn-green"
-                            onClick={() => atualizarStatusGuia(guia.id, 'ativo')}
-                          >
-                            Aprovar
-                          </button>
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/financeiro')}
+                  >
+                    <div className="quickIcon">💰</div>
+                    <div className="quickTitle">Financeiro</div>
+                    <div className="quickText">Taxa, repasses e saldos.</div>
+                  </button>
 
-                          <button
-                            type="button"
-                            className="btn btn-soft-red"
-                            onClick={() => atualizarStatusGuia(guia.id, 'reprovado')}
-                          >
-                            Reprovar
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/usuarios')}
+                  >
+                    <div className="quickIcon">👥</div>
+                    <div className="quickTitle">Usuários</div>
+                    <div className="quickText">Clientes, guias e admins.</div>
+                  </button>
+                </div>
               </div>
             </section>
 
             <section className="panel">
               <div className="panelHeader">
                 <div>
-                  <h3 className="panelTitle">Roteiros pendentes</h3>
-                  <div className="panelSub">Curadoria e publicação</div>
+                  <h2 className="panelTitle">Usuários recentes</h2>
+                  <div className="panelSub">
+                    Últimos cadastros encontrados.
+                  </div>
                 </div>
-
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => router.push('/admin/roteiros')}
-                >
-                  Ver todos
-                </button>
               </div>
 
               <div className="panelBody">
-                {roteirosPendentes.length === 0 ? (
-                  <div className="empty">Nenhum roteiro pendente.</div>
+                {usuariosRecentes.length === 0 ? (
+                  <div className="empty">
+                    Nenhum usuário encontrado.
+                  </div>
                 ) : (
                   <div className="list">
-                    {roteirosPendentes.map((roteiro) => (
-                      <article className="listItem" key={roteiro.id}>
-                        <div className="listTop">
-                          <div>
-                            <div className="listTitle">
-                              {roteiro.titulo || 'Roteiro'}
-                            </div>
-                            <div className="listMeta">
-                              Guia: {roteiro.guia_nome || 'Guia'} ·{' '}
-                              {formatarMoeda(Number(roteiro.preco || 0))}
-                            </div>
-                          </div>
-
-                          {statusBadge(roteiro.status || 'pendente')}
-                        </div>
-
-                        <div className="listActions">
-                          <button
-                            type="button"
-                            className="btn btn-green"
-                            onClick={() => atualizarStatusRoteiro(roteiro.id, 'ativo')}
-                          >
-                            Aprovar
-                          </button>
-
-                          <button
-                            type="button"
-                            className="btn btn-soft-red"
-                            onClick={() => atualizarStatusRoteiro(roteiro.id, 'reprovado')}
-                          >
-                            Reprovar
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="panel">
-              <div className="panelHeader">
-                <div>
-                  <h3 className="panelTitle">Atividades recentes</h3>
-                  <div className="panelSub">Eventos operacionais</div>
-                </div>
-              </div>
-
-              <div className="panelBody">
-                {atividades.length === 0 ? (
-                  <div className="empty">Nenhuma atividade recente.</div>
-                ) : (
-                  <div>
-                    {atividades.map((atividade) => (
-                      <div className="activityItem" key={atividade.id}>
-                        <span className={`dot ${atividade.tipo}`} />
+                    {usuariosRecentes.map((usuario) => (
+                      <article
+                        className="itemCard"
+                        key={usuario.id}
+                        onClick={() => router.push('/admin/usuarios')}
+                      >
+                        <div className="thumb">US</div>
 
                         <div>
-                          <div className="activityText">{atividade.descricao}</div>
-                          <div className="activityMeta">
-                            {atividade.detalhe ? `${atividade.detalhe} · ` : ''}
-                            {formatarData(atividade.created_at)} {formatarHora(atividade.created_at)}
+                          <div className="itemTitle">
+                            {nomeUsuario(usuario)}
+                          </div>
+
+                          <div className="itemMeta">
+                            {usuario.email || 'E-mail não informado'}
+                            <br />
+                            Criado em {formatarData(usuario.created_at)}
+                          </div>
+
+                          <div className="itemFooter">
+                            <span className="price">
+                              {usuario.tipo || 'usuário'}
+                            </span>
+
+                            <span className="badge neutral">
+                              {usuario.id.slice(0, 8)}
+                            </span>
                           </div>
                         </div>
-                      </div>
+                      </article>
                     ))}
                   </div>
                 )}
