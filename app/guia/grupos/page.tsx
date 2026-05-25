@@ -121,6 +121,7 @@ export default function GuiaGruposPage() {
   const [grupos, setGrupos] = useState<GrupoCompleto[]>([])
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
+  const [sincronizando, setSincronizando] = useState(false)
   const [erro, setErro] = useState('')
   const [mensagem, setMensagem] = useState('')
   const [busca, setBusca] = useState('')
@@ -218,19 +219,6 @@ export default function GuiaGruposPage() {
     return data.toLocaleDateString('pt-BR')
   }
 
-  const formatarHora = (valor?: string | null) => {
-    if (!valor) return ''
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return ''
-
-    return data.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
   const formatarMoeda = (valor: any) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -304,6 +292,7 @@ export default function GuiaGruposPage() {
     }
 
     const grupoIds = gruposBase.map((grupo) => grupo.id)
+
     const roteiroIds = Array.from(
       new Set(
         gruposBase
@@ -403,12 +392,13 @@ export default function GuiaGruposPage() {
         0
       )
 
-      const ultimaMensagem = mensagensGrupo.sort((a, b) => {
-        const dataA = new Date(a.created_at || '').getTime()
-        const dataB = new Date(b.created_at || '').getTime()
+      const ultimaMensagem =
+        mensagensGrupo.sort((a, b) => {
+          const dataA = new Date(a.created_at || '').getTime()
+          const dataB = new Date(b.created_at || '').getTime()
 
-        return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
-      })[0] || null
+          return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
+        })[0] || null
 
       return {
         ...grupo,
@@ -440,6 +430,7 @@ export default function GuiaGruposPage() {
     )
 
     setGrupos(gruposCompletos)
+
     setStats({
       totalGrupos: gruposCompletos.length,
       gruposAtivos: gruposCompletos.filter((grupo) => normalizar(grupo.status) === 'ativo').length,
@@ -447,6 +438,7 @@ export default function GuiaGruposPage() {
       reservasConfirmadas: totalReservasConfirmadas,
       notificacoesNaoLidas: totalNotificacoes
     })
+
     setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
   }
 
@@ -454,12 +446,55 @@ export default function GuiaGruposPage() {
     if (!user?.id) return
 
     setAtualizando(true)
+    setErro('')
+    setMensagem('')
 
     try {
       await carregarGrupos(user.id)
       setMensagem('Grupos atualizados.')
     } finally {
       setAtualizando(false)
+    }
+  }
+
+  const sincronizarMeusGrupos = async () => {
+    if (!user?.id) return
+
+    setSincronizando(true)
+    setErro('')
+    setMensagem('')
+
+    try {
+      const response = await fetch('/api/grupos/sincronizar-roteiros', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          guiaId: user.id
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.sucesso) {
+        throw new Error(data?.erro || data?.message || 'Não foi possível sincronizar os grupos.')
+      }
+
+      await carregarGrupos(user.id)
+
+      const criados = Number(data?.gruposCriados || 0)
+      const garantidos = Number(data?.gruposGarantidos || 0)
+      const falhas = Number(data?.falhas || 0)
+
+      setMensagem(
+        `Sincronização concluída: ${criados} grupo(s) criado(s), ${garantidos} roteiro(s) garantido(s)${falhas ? `, ${falhas} falha(s)` : ''}.`
+      )
+    } catch (error: any) {
+      console.error('Erro ao sincronizar grupos:', error)
+      setErro(error?.message || 'Erro ao sincronizar grupos dos roteiros.')
+    } finally {
+      setSincronizando(false)
     }
   }
 
@@ -817,6 +852,34 @@ export default function GuiaGruposPage() {
           border: 1px solid #fecaca;
         }
 
+        .syncBox {
+          background: rgba(255,255,255,0.88);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 30px;
+          padding: 16px;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+          display: flex;
+          justify-content: space-between;
+          gap: 14px;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .syncTitle {
+          color: #172018;
+          font-size: 16px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .syncText {
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 750;
+          line-height: 1.45;
+          margin-top: 4px;
+        }
+
         .statsGrid {
           display: grid;
           grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1120,6 +1183,15 @@ export default function GuiaGruposPage() {
             grid-template-columns: 1fr;
           }
 
+          .syncBox {
+            align-items: stretch;
+            flex-direction: column;
+          }
+
+          .syncBox .iconBtn {
+            width: 100%;
+          }
+
           .groupStats {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
@@ -1171,7 +1243,7 @@ export default function GuiaGruposPage() {
               type="button"
               className="iconBtn hideMobile"
               onClick={atualizar}
-              disabled={atualizando}
+              disabled={atualizando || sincronizando}
             >
               {atualizando ? '…' : 'Atualizar'}
             </button>
@@ -1234,6 +1306,25 @@ export default function GuiaGruposPage() {
         {erro && (
           <div className="alert error">{erro}</div>
         )}
+
+        <section className="syncBox">
+          <div>
+            <div className="syncTitle">Sincronizar grupos antigos</div>
+            <div className="syncText">
+              Use este botão para criar grupos em roteiros cadastrados antes dessa funcionalidade.
+              Roteiros novos já criam grupo automaticamente.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="iconBtn primary"
+            onClick={sincronizarMeusGrupos}
+            disabled={sincronizando || atualizando}
+          >
+            {sincronizando ? 'Sincronizando...' : 'Sincronizar meus grupos'}
+          </button>
+        </section>
 
         <section className="statsGrid">
           <article className="statCard">

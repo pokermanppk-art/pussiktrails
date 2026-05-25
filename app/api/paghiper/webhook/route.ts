@@ -4,35 +4,36 @@ import { createClient } from '@supabase/supabase-js'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-type Reserva = {
-  id: string
-  cliente_id?: string | null
-  roteiro_id?: string | null
-  status?: string | null
-  pagamento_status?: string | null
-  paghiper_order_id?: string | null
-  paghiper_transaction_id?: string | null
-  order_id?: string | null
-  transaction_id?: string | null
-  chat_id?: string | null
-}
-
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseServiceKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  ''
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
-const pagHiperApiKey = process.env.PAGHIPER_API_KEY || ''
-const pagHiperToken = process.env.PAGHIPER_TOKEN || ''
+const paghiperApiKey = process.env.PAGHIPER_API_KEY || ''
+const paghiperToken = process.env.PAGHIPER_TOKEN || ''
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+
+type ResultadoWebhook = {
+  reservaId: string
+  orderId?: string | null
+  transactionId?: string | null
+  pagamentoConfirmado: boolean
+  reservaAtualizada: boolean
+  grupoLiberado: boolean
+  grupoId?: string | null
+  erro?: string | null
+  detalhe?: any
+}
 
 function json(data: any, status = 200) {
   return NextResponse.json(data, { status })
 }
 
 function getSupabaseAdmin() {
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error('Credenciais Supabase ausentes.')
+  if (!supabaseUrl) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL ausente no ambiente.')
+  }
+
+  if (!supabaseServiceKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY ausente no ambiente.')
   }
 
   return createClient(supabaseUrl, supabaseServiceKey, {
@@ -43,7 +44,11 @@ function getSupabaseAdmin() {
   })
 }
 
-function normalizarTexto(valor: any) {
+function limparTexto(valor: any) {
+  return String(valor || '').trim()
+}
+
+function normalizar(valor: any) {
   return String(valor || '')
     .toLowerCase()
     .normalize('NFD')
@@ -51,110 +56,175 @@ function normalizarTexto(valor: any) {
     .trim()
 }
 
-function limparOrderId(orderId: string) {
-  return String(orderId || '')
-    .replace(/^RESERVA-/i, '')
-    .trim()
+function uuidValido(valor: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    valor
+  )
 }
 
-function buscarRecursivo(obj: any, nomes: string[]): string {
-  if (!obj || typeof obj !== 'object') return ''
+function removerPrefixoReserva(orderId: string) {
+  return limparTexto(orderId).replace(/^RESERVA-/i, '')
+}
 
-  for (const nome of nomes) {
-    const valor = obj[nome]
+function garantirPrefixoReserva(valor: string) {
+  const limpo = limparTexto(valor)
 
-    if (typeof valor === 'string' && valor.trim()) {
-      return valor.trim()
+  if (!limpo) return ''
+
+  if (/^RESERVA-/i.test(limpo)) return limpo
+
+  return `RESERVA-${limpo}`
+}
+
+function candidatosOrderId(valor: string) {
+  const limpo = limparTexto(valor)
+  const semPrefixo = removerPrefixoReserva(limpo)
+  const comPrefixo = garantirPrefixoReserva(semPrefixo || limpo)
+
+  return Array.from(
+    new Set(
+      [limpo, semPrefixo, comPrefixo]
+        .map((item) => limparTexto(item))
+        .filter(Boolean)
+    )
+  )
+}
+
+function pagamentoEstaConfirmado(reserva: any) {
+  const pagamento = normalizar(reserva?.pagamento_status)
+  const status = normalizar(reserva?.status)
+
+  return (
+    pagamento === 'pago' ||
+    pagamento === 'confirmado' ||
+    pagamento === 'aprovado' ||
+    pagamento === 'paid' ||
+    pagamento === 'approved' ||
+    status === 'confirmada' ||
+    status === 'realizada' ||
+    status === 'pago' ||
+    status === 'paga'
+  )
+}
+
+function statusExternoPago(valor: any) {
+  const texto = normalizar(valor)
+
+  return (
+    texto === 'paid' ||
+    texto === 'approved' ||
+    texto === 'completed' ||
+    texto === 'confirmed' ||
+    texto === 'pago' ||
+    texto === 'aprovado' ||
+    texto === 'confirmado' ||
+    texto === 'liquidado' ||
+    texto === 'settled'
+  )
+}
+
+function coletarCamposStatus(obj: any, encontrados: string[] = []) {
+  if (!obj || typeof obj !== 'object') return encontrados
+
+  for (const [key, value] of Object.entries(obj)) {
+    const chave = normalizar(key)
+
+    if (
+      chave === 'status' ||
+      chave === 'payment_status' ||
+      chave === 'pagamento_status' ||
+      chave === 'status_request' ||
+      chave === 'transaction_status' ||
+      chave === 'status_pagamento'
+    ) {
+      encontrados.push(String(value || ''))
     }
 
-    if (typeof valor === 'number') {
-      return String(valor)
+    if (value && typeof value === 'object') {
+      coletarCamposStatus(value, encontrados)
     }
   }
 
-  for (const key of Object.keys(obj)) {
-    const encontrado = buscarRecursivo(obj[key], nomes)
+  return encontrados
+}
 
-    if (encontrado) return encontrado
+function respostaIndicaPagamento(data: any) {
+  const statusEncontrados = coletarCamposStatus(data)
+
+  return statusEncontrados.some(statusExternoPago)
+}
+
+function buscarValorRecursivo(obj: any, nomes: string[]): string {
+  if (!obj || typeof obj !== 'object') return ''
+
+  for (const [key, value] of Object.entries(obj)) {
+    const chave = normalizar(key)
+
+    if (nomes.includes(chave)) {
+      const texto = limparTexto(value)
+
+      if (texto) return texto
+    }
+
+    if (value && typeof value === 'object') {
+      const encontrado = buscarValorRecursivo(value, nomes)
+
+      if (encontrado) return encontrado
+    }
   }
 
   return ''
 }
 
-function statusPago(status: string) {
-  const s = normalizarTexto(status)
-
-  return [
-    'paid',
-    'pago',
-    'aprovado',
-    'aprovada',
-    'approved',
-    'complete',
-    'completed',
-    'completo',
-    'confirmado',
-    'confirmed',
-    'liquidado',
-    'settled',
-    'reserved',
-    'reservado'
-  ].includes(s)
+function extrairTransactionId(data: any) {
+  return (
+    buscarValorRecursivo(data, [
+      'transaction_id',
+      'transactionid',
+      'transaction',
+      'id_transacao',
+      'transacao_id'
+    ]) || ''
+  )
 }
 
-function statusPendente(status: string) {
-  const s = normalizarTexto(status)
-
-  return [
-    'pending',
-    'pendente',
-    'waiting',
-    'aguardando',
-    'created',
-    'criado',
-    'processing',
-    'processando',
-    'em aberto',
-    'open'
-  ].includes(s)
+function extrairOrderId(data: any) {
+  return (
+    buscarValorRecursivo(data, [
+      'order_id',
+      'orderid',
+      'order',
+      'pedido',
+      'pedido_id',
+      'id_pedido'
+    ]) || ''
+  )
 }
 
-function statusCancelado(status: string) {
-  const s = normalizarTexto(status)
-
-  return [
-    'cancelado',
-    'cancelada',
-    'canceled',
-    'cancelled',
-    'expired',
-    'expirado',
-    'rejected',
-    'recusado',
-    'recusada'
-  ].includes(s)
+function extrairNotificationId(data: any) {
+  return (
+    buscarValorRecursivo(data, [
+      'notification_id',
+      'notificationid',
+      'notification',
+      'id_notificacao',
+      'notificacao_id'
+    ]) || ''
+  )
 }
 
 function extrairColunaAusente(error: any) {
-  const texto = [
-    error?.message,
-    error?.details,
-    error?.hint
-  ]
+  const texto = [error?.message, error?.details, error?.hint]
     .filter(Boolean)
     .join(' ')
 
   const matchAspas = texto.match(/'([^']+)'/)
 
-  if (matchAspas?.[1]) {
-    return matchAspas[1]
-  }
+  if (matchAspas?.[1]) return matchAspas[1]
 
   const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
 
-  if (matchColumn?.[1]) {
-    return matchColumn[1]
-  }
+  if (matchColumn?.[1]) return matchColumn[1]
 
   return ''
 }
@@ -176,44 +246,66 @@ function erroDeColunaAusente(error: any) {
   )
 }
 
-async function parseBody(request: NextRequest) {
+async function lerBody(request: NextRequest) {
   const contentType = request.headers.get('content-type') || ''
-  const texto = await request.text()
 
-  if (!texto) {
-    return {}
-  }
+  const queryData: Record<string, any> = {}
 
-  if (contentType.includes('application/json')) {
-    try {
-      return JSON.parse(texto)
-    } catch {
-      return {
-        raw: texto
-      }
-    }
-  }
-
-  if (
-    contentType.includes('application/x-www-form-urlencoded') ||
-    texto.includes('=')
-  ) {
-    const params = new URLSearchParams(texto)
-    const obj: Record<string, any> = {}
-
-    params.forEach((value, key) => {
-      obj[key] = value
-    })
-
-    return obj
-  }
+  request.nextUrl.searchParams.forEach((value, key) => {
+    queryData[key] = value
+  })
 
   try {
-    return JSON.parse(texto)
-  } catch {
-    return {
-      raw: texto
+    if (contentType.includes('application/json')) {
+      const body = await request.json().catch(() => ({}))
+
+      return {
+        ...queryData,
+        ...body
+      }
     }
+
+    if (
+      contentType.includes('application/x-www-form-urlencoded') ||
+      contentType.includes('multipart/form-data')
+    ) {
+      const formData = await request.formData()
+      const body: Record<string, any> = {}
+
+      formData.forEach((value, key) => {
+        body[key] = typeof value === 'string' ? value : value.name
+      })
+
+      return {
+        ...queryData,
+        ...body
+      }
+    }
+
+    const texto = await request.text().catch(() => '')
+
+    if (!texto) return queryData
+
+    try {
+      return {
+        ...queryData,
+        ...JSON.parse(texto)
+      }
+    } catch {
+      const params = new URLSearchParams(texto)
+      const body: Record<string, any> = {}
+
+      params.forEach((value, key) => {
+        body[key] = value
+      })
+
+      return {
+        ...queryData,
+        ...body
+      }
+    }
+  } catch {
+    return queryData
   }
 }
 
@@ -223,21 +315,17 @@ async function atualizarReservaComFallback(
   payloadOriginal: Record<string, any>
 ) {
   let payloadAtual = { ...payloadOriginal }
-  const colunasIgnoradas: string[] = []
 
-  for (let tentativa = 0; tentativa < 15; tentativa++) {
+  for (let tentativa = 0; tentativa < 20; tentativa++) {
     const { data, error } = await supabase
       .from('reservas')
       .update(payloadAtual)
       .eq('id', reservaId)
-      .select()
+      .select('*')
       .maybeSingle()
 
     if (!error) {
-      return {
-        data,
-        colunasIgnoradas
-      }
+      return data
     }
 
     if (!erroDeColunaAusente(error)) {
@@ -251,515 +339,434 @@ async function atualizarReservaComFallback(
     }
 
     delete payloadAtual[coluna]
-    colunasIgnoradas.push(coluna)
   }
 
   throw new Error('Não foi possível atualizar a reserva.')
 }
 
-async function buscarReserva({
-  supabase,
-  reservaId,
-  orderId,
-  transactionId
-}: {
-  supabase: any
-  reservaId?: string
-  orderId?: string
-  transactionId?: string
-}) {
-  if (reservaId) {
+async function buscarReservasPorIdentificadores(
+  supabase: any,
+  params: {
+    reservaId?: string
+    orderId?: string
+    transactionId?: string
+  }
+) {
+  const mapa = new Map<string, any>()
+
+  const adicionar = (items: any[] = []) => {
+    items.forEach((item) => {
+      if (item?.id) mapa.set(item.id, item)
+    })
+  }
+
+  if (params.reservaId && uuidValido(params.reservaId)) {
     const { data, error } = await supabase
       .from('reservas')
       .select('*')
-      .eq('id', reservaId)
+      .eq('id', params.reservaId)
       .maybeSingle()
 
-    if (error) throw error
-    if (data) return data as Reserva
+    if (!error && data?.id) mapa.set(data.id, data)
   }
 
-  if (transactionId) {
+  if (params.transactionId) {
     const { data, error } = await supabase
       .from('reservas')
       .select('*')
-      .or(
-        `paghiper_transaction_id.eq.${transactionId},transaction_id.eq.${transactionId}`
-      )
-      .maybeSingle()
+      .eq('transaction_id', params.transactionId)
+      .order('created_at', { ascending: false })
+      .limit(20)
 
-    if (error) throw error
-    if (data) return data as Reserva
+    if (!error) adicionar(data || [])
   }
 
-  if (orderId) {
-    const orderIdLimpo = limparOrderId(orderId)
+  if (params.orderId) {
+    const candidatos = candidatosOrderId(params.orderId)
 
-    const filtros = [
-      `paghiper_order_id.eq.${orderId}`,
-      `order_id.eq.${orderId}`
-    ]
+    for (const candidato of candidatos) {
+      const { data, error } = await supabase
+        .from('reservas')
+        .select('*')
+        .eq('order_id', candidato)
+        .order('created_at', { ascending: false })
+        .limit(20)
 
-    if (orderIdLimpo) {
-      filtros.push(`id.eq.${orderIdLimpo}`)
-      filtros.push(`paghiper_order_id.eq.${orderIdLimpo}`)
-      filtros.push(`order_id.eq.${orderIdLimpo}`)
+      if (!error) adicionar(data || [])
     }
 
-    const { data, error } = await supabase
-      .from('reservas')
-      .select('*')
-      .or(filtros.join(','))
-      .maybeSingle()
+    const semPrefixo = removerPrefixoReserva(params.orderId)
 
-    if (error) throw error
-    if (data) return data as Reserva
+    if (uuidValido(semPrefixo)) {
+      const { data, error } = await supabase
+        .from('reservas')
+        .select('*')
+        .eq('id', semPrefixo)
+        .maybeSingle()
+
+      if (!error && data?.id) mapa.set(data.id, data)
+    }
   }
 
-  return null
+  return Array.from(mapa.values())
 }
 
-async function consultarStatusPagHiper({
-  transactionId,
-  orderId
-}: {
-  transactionId?: string
+async function consultarStatusPagHiper(params: {
+  reserva?: any
   orderId?: string
+  transactionId?: string
+  notificationId?: string
 }) {
-  if (!pagHiperApiKey || !pagHiperToken) {
+  if (!paghiperApiKey || !paghiperToken) {
     return {
-      sucesso: false,
-      status: '',
-      erro: 'Credenciais PagHiper ausentes.'
+      consultou: false,
+      pago: false,
+      erro: 'Credenciais PagHiper ausentes.',
+      data: null
     }
   }
 
-  const endpoints = [
-    'https://pix.paghiper.com/invoice/status/',
-    'https://api.paghiper.com/transaction/status/'
-  ]
+  const transactionId =
+    limparTexto(params.transactionId) ||
+    limparTexto(params.reserva?.transaction_id)
 
-  const payloads: Record<string, any>[] = []
+  const orderId =
+    limparTexto(params.orderId) ||
+    limparTexto(params.reserva?.order_id) ||
+    (params.reserva?.id ? `RESERVA-${params.reserva.id}` : '')
+
+  const notificationId = limparTexto(params.notificationId)
+
+  const payload: Record<string, any> = {
+    apiKey: paghiperApiKey,
+    token: paghiperToken
+  }
 
   if (transactionId) {
-    payloads.push({
-      apiKey: pagHiperApiKey,
-      token: pagHiperToken,
-      transaction_id: transactionId
-    })
+    payload.transaction_id = transactionId
   }
 
   if (orderId) {
-    payloads.push({
-      apiKey: pagHiperApiKey,
-      token: pagHiperToken,
-      order_id: orderId
-    })
-
-    const orderIdLimpo = limparOrderId(orderId)
-
-    if (orderIdLimpo && orderIdLimpo !== orderId) {
-      payloads.push({
-        apiKey: pagHiperApiKey,
-        token: pagHiperToken,
-        order_id: orderIdLimpo
-      })
-    }
+    payload.order_id = orderId
   }
 
-  const respostas: any[] = []
-
-  for (const endpoint of endpoints) {
-    for (const payload of payloads) {
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        })
-
-        const texto = await response.text()
-
-        let data: any = null
-
-        try {
-          data = texto ? JSON.parse(texto) : null
-        } catch {
-          data = {
-            raw: texto
-          }
-        }
-
-        const statusEncontrado = buscarRecursivo(data, [
-          'status',
-          'status_transaction',
-          'transaction_status',
-          'payment_status',
-          'status_pagamento',
-          'result'
-        ])
-
-        const transactionIdEncontrado = buscarRecursivo(data, [
-          'transaction_id',
-          'transactionId',
-          'paghiper_transaction_id',
-          'id_transacao'
-        ])
-
-        respostas.push({
-          endpoint,
-          statusHttp: response.status,
-          ok: response.ok,
-          statusEncontrado,
-          transactionIdEncontrado,
-          data
-        })
-
-        if (response.ok && statusEncontrado) {
-          return {
-            sucesso: true,
-            status: statusEncontrado,
-            transactionId: transactionIdEncontrado,
-            data,
-            respostas
-          }
-        }
-      } catch (error: any) {
-        respostas.push({
-          endpoint,
-          erro: error?.message || 'Erro ao consultar PagHiper.'
-        })
-      }
-    }
+  if (notificationId) {
+    payload.notification_id = notificationId
   }
 
-  return {
-    sucesso: false,
-    status: '',
-    respostas
-  }
-}
-
-async function tentarCriarChatSePossivel({
-  supabase,
-  reserva
-}: {
-  supabase: any
-  reserva: Reserva
-}) {
   try {
-    if (reserva.chat_id) {
-      return {
-        criado: false,
-        chatId: reserva.chat_id,
-        motivo: 'Reserva já possui chat_id.'
-      }
-    }
-
-    if (!reserva.roteiro_id || !reserva.cliente_id) {
-      return {
-        criado: false,
-        motivo: 'Reserva sem roteiro_id ou cliente_id.'
-      }
-    }
-
-    const { data: roteiro, error: roteiroError } = await supabase
-      .from('roteiros')
-      .select('id, id_guia')
-      .eq('id', reserva.roteiro_id)
-      .maybeSingle()
-
-    if (roteiroError || !roteiro?.id_guia) {
-      return {
-        criado: false,
-        motivo: 'Não foi possível identificar o guia do roteiro.'
-      }
-    }
-
-    const { data: chatExistente, error: chatExistenteError } = await supabase
-      .from('chats')
-      .select('*')
-      .eq('reserva_id', reserva.id)
-      .maybeSingle()
-
-    if (!chatExistenteError && chatExistente?.id) {
-      await atualizarReservaComFallback(supabase, reserva.id, {
-        chat_id: chatExistente.id,
-        updated_at: new Date().toISOString()
-      })
-
-      return {
-        criado: false,
-        chatId: chatExistente.id,
-        motivo: 'Chat já existia.'
-      }
-    }
-
-    const { data: novoChat, error: novoChatError } = await supabase
-      .from('chats')
-      .insert({
-        reserva_id: reserva.id,
-        cliente_id: reserva.cliente_id,
-        guia_id: roteiro.id_guia,
-        status: 'aberto',
-        encerrado: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .maybeSingle()
-
-    if (novoChatError || !novoChat?.id) {
-      return {
-        criado: false,
-        erro: novoChatError?.message || 'Não foi possível criar chat.'
-      }
-    }
-
-    await atualizarReservaComFallback(supabase, reserva.id, {
-      chat_id: novoChat.id,
-      updated_at: new Date().toISOString()
+    const response = await fetch('https://pix.paghiper.com/invoice/status/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify(payload),
+      cache: 'no-store'
     })
 
+    const data = await response.json().catch(() => null)
+    const pago = respostaIndicaPagamento(data)
+
     return {
-      criado: true,
-      chatId: novoChat.id
+      consultou: true,
+      httpOk: response.ok,
+      pago,
+      data,
+      transactionId: extrairTransactionId(data) || transactionId,
+      orderId: extrairOrderId(data) || orderId
     }
   } catch (error: any) {
     return {
-      criado: false,
-      erro: error?.message || 'Chat não criado.'
+      consultou: false,
+      pago: false,
+      erro: error?.message || 'Erro ao consultar PagHiper.',
+      data: null
     }
   }
 }
 
-async function processarConfirmacaoPagamento({
-  supabase,
-  reserva,
-  statusPagHiper,
-  transactionId,
-  orderId,
-  payloadOriginal
-}: {
-  supabase: any
-  reserva: Reserva
-  statusPagHiper: string
-  transactionId?: string
-  orderId?: string
-  payloadOriginal: any
-}) {
-  const updatePayload = {
-    pagamento_status: 'pago',
-    status: 'confirmada',
-    paghiper_status: statusPagHiper,
-    paghiper_transaction_id:
-      transactionId ||
-      reserva.paghiper_transaction_id ||
-      reserva.transaction_id ||
-      null,
-    transaction_id:
-      transactionId ||
-      reserva.transaction_id ||
-      reserva.paghiper_transaction_id ||
-      null,
-    paghiper_order_id:
-      orderId ||
-      reserva.paghiper_order_id ||
-      reserva.order_id ||
-      reserva.id,
-    order_id:
-      orderId ||
-      reserva.order_id ||
-      reserva.paghiper_order_id ||
-      reserva.id,
-    pagamento_confirmado_em: new Date().toISOString(),
-    webhook_paghiper_payload: payloadOriginal,
-    updated_at: new Date().toISOString()
-  }
+async function liberarGrupoDaReserva(
+  request: NextRequest,
+  reservaId: string
+) {
+  const baseUrl = appUrl || request.nextUrl.origin
 
-  const update = await atualizarReservaComFallback(
-    supabase,
-    reserva.id,
-    updatePayload
-  )
+  try {
+    const response = await fetch(`${baseUrl}/api/grupos/garantir-acesso`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        reservaId
+      }),
+      cache: 'no-store'
+    })
 
-  const chat = await tentarCriarChatSePossivel({
-    supabase,
-    reserva: {
-      ...reserva,
-      status: 'confirmada',
-      pagamento_status: 'pago'
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok || !data?.sucesso) {
+      return {
+        sucesso: false,
+        erro: data?.erro || data?.message || 'Não foi possível liberar o grupo.',
+        data
+      }
     }
-  })
 
-  return {
-    update,
-    chat
+    return {
+      sucesso: true,
+      grupoId: data?.grupo?.id || null,
+      redirectUrl: data?.redirectUrl || null,
+      data
+    }
+  } catch (error: any) {
+    return {
+      sucesso: false,
+      erro: error?.message || 'Erro ao liberar grupo.',
+      data: null
+    }
   }
+}
+
+async function processarReservaConfirmada(
+  request: NextRequest,
+  supabase: any,
+  reserva: any,
+  params: {
+    dadosRecebidos?: any
+    statusPagHiper?: any
+    orderId?: string
+    transactionId?: string
+  }
+): Promise<ResultadoWebhook> {
+  const resultado: ResultadoWebhook = {
+    reservaId: reserva.id,
+    orderId: reserva.order_id || params.orderId || null,
+    transactionId: reserva.transaction_id || params.transactionId || null,
+    pagamentoConfirmado: true,
+    reservaAtualizada: false,
+    grupoLiberado: false,
+    grupoId: null,
+    detalhe: params.statusPagHiper?.data || params.dadosRecebidos || null
+  }
+
+  let reservaAtualizada = reserva
+
+  if (!pagamentoEstaConfirmado(reserva)) {
+    const agora = new Date().toISOString()
+
+    const payload: Record<string, any> = {
+      pagamento_status: 'pago',
+      status: 'confirmada',
+      order_id:
+        params.statusPagHiper?.orderId ||
+        params.orderId ||
+        reserva.order_id ||
+        `RESERVA-${reserva.id}`,
+      transaction_id:
+        params.statusPagHiper?.transactionId ||
+        params.transactionId ||
+        reserva.transaction_id ||
+        null,
+      webhook_received_at: agora,
+      paid_at: agora,
+      pago_em: agora,
+      data_pagamento: agora,
+      updated_at: agora
+    }
+
+    reservaAtualizada = await atualizarReservaComFallback(
+      supabase,
+      reserva.id,
+      payload
+    )
+
+    resultado.reservaAtualizada = true
+    resultado.orderId = reservaAtualizada?.order_id || payload.order_id
+    resultado.transactionId =
+      reservaAtualizada?.transaction_id || payload.transaction_id
+  }
+
+  const grupo = await liberarGrupoDaReserva(request, reserva.id)
+
+  resultado.grupoLiberado = !!grupo.sucesso
+  resultado.grupoId = grupo.grupoId || null
+
+  if (!grupo.sucesso) {
+    resultado.erro = grupo.erro || 'Pagamento confirmado, mas grupo não liberado.'
+  }
+
+  return resultado
 }
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin()
-    const body = await parseBody(request)
+    const body = await lerBody(request)
 
-    console.log('Webhook PagHiper recebido:', body)
+    const orderIdRecebido =
+      limparTexto(
+        body.orderId ||
+          body.order_id ||
+          body.order ||
+          body.id_pedido ||
+          extrairOrderId(body)
+      )
 
-    const orderIdRecebido = buscarRecursivo(body, [
-      'order_id',
-      'orderId',
-      'paghiper_order_id'
-    ])
+    const transactionIdRecebido =
+      limparTexto(
+        body.transactionId ||
+          body.transaction_id ||
+          body.transaction ||
+          body.id_transacao ||
+          extrairTransactionId(body)
+      )
 
-    const transactionIdRecebido = buscarRecursivo(body, [
-      'transaction_id',
-      'transactionId',
-      'paghiper_transaction_id',
-      'id_transacao'
-    ])
+    const notificationIdRecebido =
+      limparTexto(
+        body.notificationId ||
+          body.notification_id ||
+          body.notification ||
+          body.id_notificacao ||
+          extrairNotificationId(body)
+      )
 
-    const reservaIdRecebido =
-      buscarRecursivo(body, [
-        'reservaId',
-        'reserva_id',
-        'id_reserva'
-      ]) || limparOrderId(orderIdRecebido)
+    const reservaIdRecebida = removerPrefixoReserva(orderIdRecebido)
 
-    const statusRecebido = buscarRecursivo(body, [
-      'status',
-      'status_transaction',
-      'transaction_status',
-      'payment_status',
-      'status_pagamento',
-      'result'
-    ])
-
-    const reserva = await buscarReserva({
-      supabase,
-      reservaId: reservaIdRecebido,
+    let reservas = await buscarReservasPorIdentificadores(supabase, {
+      reservaId: uuidValido(reservaIdRecebida) ? reservaIdRecebida : '',
       orderId: orderIdRecebido,
       transactionId: transactionIdRecebido
     })
 
-    if (!reserva) {
-      console.error('Webhook PagHiper: reserva não encontrada.', {
-        reservaIdRecebido,
-        orderIdRecebido,
-        transactionIdRecebido,
+    let statusPagHiper: any = null
+
+    if (reservas.length === 0) {
+      statusPagHiper = await consultarStatusPagHiper({
+        orderId: orderIdRecebido,
+        transactionId: transactionIdRecebido,
+        notificationId: notificationIdRecebido
+      })
+
+      const orderIdStatus = statusPagHiper?.orderId || ''
+      const transactionIdStatus = statusPagHiper?.transactionId || ''
+
+      reservas = await buscarReservasPorIdentificadores(supabase, {
+        reservaId: uuidValido(removerPrefixoReserva(orderIdStatus))
+          ? removerPrefixoReserva(orderIdStatus)
+          : '',
+        orderId: orderIdStatus || orderIdRecebido,
+        transactionId: transactionIdStatus || transactionIdRecebido
+      })
+    }
+
+    if (reservas.length === 0) {
+      return json({
+        sucesso: true,
+        recebido: true,
+        mensagem: 'Webhook recebido, mas nenhuma reserva correspondente foi localizada.',
+        identificadores: {
+          orderId: orderIdRecebido || null,
+          transactionId: transactionIdRecebido || null,
+          notificationId: notificationIdRecebido || null
+        },
         body
       })
-
-      return json(
-        {
-          sucesso: false,
-          erro: 'Reserva não encontrada.',
-          recebido: {
-            reservaIdRecebido,
-            orderIdRecebido,
-            transactionIdRecebido,
-            statusRecebido
-          }
-        },
-        200
-      )
     }
 
-    let statusFinal = statusRecebido
-    let transactionIdFinal = transactionIdRecebido
+    const webhookIndicaPagamento = respostaIndicaPagamento(body)
+    const resultados: ResultadoWebhook[] = []
 
-    if (
-      !statusFinal ||
-      (!statusPago(statusFinal) &&
-        !statusPendente(statusFinal) &&
-        !statusCancelado(statusFinal))
-    ) {
-      const consulta = await consultarStatusPagHiper({
-        transactionId:
-          transactionIdRecebido ||
-          reserva.paghiper_transaction_id ||
-          reserva.transaction_id ||
-          undefined,
-        orderId:
-          orderIdRecebido ||
-          reserva.paghiper_order_id ||
-          reserva.order_id ||
-          reserva.id
-      })
+    for (const reserva of reservas) {
+      try {
+        let consulta = statusPagHiper
 
-      if (consulta.status) {
-        statusFinal = consulta.status
-      }
-
-      if (consulta.transactionId) {
-        transactionIdFinal = consulta.transactionId
-      }
-    }
-
-    if (statusPago(statusFinal)) {
-      const resultado = await processarConfirmacaoPagamento({
-        supabase,
-        reserva,
-        statusPagHiper: statusFinal,
-        transactionId: transactionIdFinal,
-        orderId:
-          orderIdRecebido ||
-          reserva.paghiper_order_id ||
-          reserva.order_id ||
-          reserva.id,
-        payloadOriginal: body
-      })
-
-      console.log('Webhook PagHiper: reserva confirmada.', {
-        reservaId: reserva.id,
-        statusFinal,
-        resultado
-      })
-
-      return json({
-        sucesso: true,
-        mensagem: 'Pagamento confirmado e reserva atualizada.',
-        reservaId: reserva.id,
-        statusPagHiper: statusFinal,
-        resultado
-      })
-    }
-
-    if (statusCancelado(statusFinal)) {
-      const resultado = await atualizarReservaComFallback(
-        supabase,
-        reserva.id,
-        {
-          pagamento_status: 'cancelado',
-          paghiper_status: statusFinal,
-          webhook_paghiper_payload: body,
-          updated_at: new Date().toISOString()
+        if (!consulta) {
+          consulta = await consultarStatusPagHiper({
+            reserva,
+            orderId: orderIdRecebido,
+            transactionId: transactionIdRecebido,
+            notificationId: notificationIdRecebido
+          })
         }
-      )
 
-      return json({
-        sucesso: true,
-        mensagem: 'Pagamento cancelado/expirado registrado.',
-        reservaId: reserva.id,
-        statusPagHiper: statusFinal,
-        resultado
-      })
+        const confirmado =
+          pagamentoEstaConfirmado(reserva) ||
+          webhookIndicaPagamento ||
+          !!consulta?.pago
+
+        if (!confirmado) {
+          resultados.push({
+            reservaId: reserva.id,
+            orderId: reserva.order_id || orderIdRecebido || null,
+            transactionId: reserva.transaction_id || transactionIdRecebido || null,
+            pagamentoConfirmado: false,
+            reservaAtualizada: false,
+            grupoLiberado: false,
+            grupoId: null,
+            detalhe: consulta?.data || body || null
+          })
+
+          continue
+        }
+
+        const resultado = await processarReservaConfirmada(
+          request,
+          supabase,
+          reserva,
+          {
+            dadosRecebidos: body,
+            statusPagHiper: consulta,
+            orderId: orderIdRecebido,
+            transactionId: transactionIdRecebido
+          }
+        )
+
+        resultados.push(resultado)
+      } catch (error: any) {
+        resultados.push({
+          reservaId: reserva.id,
+          orderId: reserva.order_id || orderIdRecebido || null,
+          transactionId: reserva.transaction_id || transactionIdRecebido || null,
+          pagamentoConfirmado: false,
+          reservaAtualizada: false,
+          grupoLiberado: false,
+          grupoId: null,
+          erro: error?.message || 'Erro ao processar reserva no webhook.',
+          detalhe: body
+        })
+      }
     }
+
+    const confirmadas = resultados.filter((item) => item.pagamentoConfirmado).length
+    const atualizadas = resultados.filter((item) => item.reservaAtualizada).length
+    const gruposLiberados = resultados.filter((item) => item.grupoLiberado).length
+    const erros = resultados.filter((item) => item.erro).length
 
     return json({
       sucesso: true,
-      mensagem: 'Webhook recebido, mas pagamento ainda não confirmado.',
-      reservaId: reserva.id,
-      statusPagHiper: statusFinal || 'status não informado'
+      recebido: true,
+      mensagem: 'Webhook PagHiper processado.',
+      identificadores: {
+        orderId: orderIdRecebido || null,
+        transactionId: transactionIdRecebido || null,
+        notificationId: notificationIdRecebido || null
+      },
+      totalReservas: reservas.length,
+      confirmadas,
+      atualizadas,
+      gruposLiberados,
+      erros,
+      resultados
     })
   } catch (error: any) {
-    console.error('Erro no webhook PagHiper:', error)
+    console.error('Erro em /api/paghiper/webhook:', error)
 
     return json(
       {
         sucesso: false,
+        recebido: false,
         erro: error?.message || 'Erro interno no webhook PagHiper.'
       },
       500
@@ -767,11 +774,19 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const queryData: Record<string, any> = {}
+
+  request.nextUrl.searchParams.forEach((value, key) => {
+    queryData[key] = value
+  })
+
   return json({
     sucesso: true,
     rota: '/api/paghiper/webhook',
     metodo: 'POST',
-    mensagem: 'Webhook PagHiper ativo.'
+    mensagem:
+      'Webhook PagHiper ativo. A confirmação de pagamento atualiza reserva e libera grupo.',
+    query: queryData
   })
 }
