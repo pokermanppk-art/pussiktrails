@@ -24,45 +24,15 @@ type Roteiro = {
   id: string
   titulo?: string | null
   nome?: string | null
-  descricao?: string | null
-  status?: string | null
-  ativo?: boolean | null
-  preco?: number | null
-  valor?: number | null
-  id_guia?: string | null
-  guia_id?: string | null
-  user_id?: string | null
-  usuario_id?: string | null
   local?: string | null
   localizacao?: string | null
-  local_encontro?: string | null
-  ponto_encontro?: string | null
-  dificuldade?: string | null
-  duracao_horas?: number | null
-  duracao?: string | null
-  km?: number | null
-  distancia_km?: number | null
-  limite_pessoas?: number | null
-  capacidade?: number | null
-  max_pessoas?: number | null
-  recorrencia?: string | null
+  id_guia?: string | null
+  guia_id?: string | null
   foto_capa?: string | null
   foto_url?: string | null
   imagem_url?: string | null
   imagem?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-  [key: string]: any
-}
-
-type Reserva = {
-  id: string
-  roteiro_id?: string | null
-  cliente_id?: string | null
-  valor_total?: number | null
-  quantidade_pessoas?: number | null
   status?: string | null
-  pagamento_status?: string | null
   created_at?: string | null
 }
 
@@ -72,75 +42,90 @@ type GrupoRoteiro = {
   guia_id?: string | null
   titulo?: string | null
   nome?: string | null
+  descricao?: string | null
   status?: string | null
   ativo?: boolean | null
   created_at?: string | null
+  updated_at?: string | null
+  [key: string]: any
 }
 
-type Avaliacao = {
+type GrupoMembro = {
   id: string
-  roteiro_id?: string | null
-  nota?: number | null
+  grupo_id?: string | null
+  grupo_roteiro_id?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  cliente_id?: string | null
+  guia_id?: string | null
+  papel?: string | null
+  tipo?: string | null
   status?: string | null
   created_at?: string | null
+  [key: string]: any
 }
 
-type RoteiroCompleto = Roteiro & {
+type GrupoMensagem = {
+  id: string
+  grupo_id?: string | null
+  grupo_roteiro_id?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  mensagem?: string | null
+  texto?: string | null
+  conteudo?: string | null
+  created_at?: string | null
+  [key: string]: any
+}
+
+type GrupoCompleto = GrupoRoteiro & {
+  roteiro?: Roteiro | null
   guia?: UsuarioBanco | null
-  reservas?: Reserva[]
-  grupo?: GrupoRoteiro | null
-  avaliacoes?: Avaliacao[]
+  membros?: GrupoMembro[]
+  mensagens?: GrupoMensagem[]
+  roteiro_titulo?: string
   guia_nome?: string
-  total_reservas?: number
-  reservas_confirmadas?: number
-  receita_confirmada?: number
-  media_avaliacao?: number
-  total_avaliacoes?: number
+  total_membros?: number
+  total_mensagens?: number
+  ultima_mensagem_em?: string | null
 }
 
-type FiltroStatus = 'todos' | 'ativos' | 'pendentes' | 'pausados' | 'reprovados' | 'com_reservas' | 'sem_grupo'
+type FiltroStatus = 'todos' | 'ativos' | 'pausados' | 'vazios' | 'com_membros'
 
 type Stats = {
   total: number
   ativos: number
-  pendentes: number
   pausados: number
-  reprovados: number
-  novosMes: number
-  comReservas: number
-  semGrupo: number
-  receitaConfirmada: number
-  reservasConfirmadas: number
-  mediaAvaliacoes: number
+  gruposMes: number
+  membrosTotal: number
+  mensagensTotal: number
+  gruposVazios: number
+  gruposComMembros: number
 }
 
 const statsInicial: Stats = {
   total: 0,
   ativos: 0,
-  pendentes: 0,
   pausados: 0,
-  reprovados: 0,
-  novosMes: 0,
-  comReservas: 0,
-  semGrupo: 0,
-  receitaConfirmada: 0,
-  reservasConfirmadas: 0,
-  mediaAvaliacoes: 0
+  gruposMes: 0,
+  membrosTotal: 0,
+  mensagensTotal: 0,
+  gruposVazios: 0,
+  gruposComMembros: 0
 }
 
-export default function AdminRoteirosPage() {
+export default function AdminGruposPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [roteiros, setRoteiros] = useState<RoteiroCompleto[]>([])
-  const [roteiroSelecionado, setRoteiroSelecionado] = useState<RoteiroCompleto | null>(null)
+  const [grupos, setGrupos] = useState<GrupoCompleto[]>([])
+  const [grupoSelecionado, setGrupoSelecionado] = useState<GrupoCompleto | null>(null)
   const [stats, setStats] = useState<Stats>(statsInicial)
 
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
   const [alterandoStatusId, setAlterandoStatusId] = useState('')
-  const [criandoGrupoId, setCriandoGrupoId] = useState('')
   const [menuAberto, setMenuAberto] = useState(false)
 
   const [busca, setBusca] = useState('')
@@ -184,10 +169,10 @@ export default function AdminRoteirosPage() {
       }
 
       setUser(parsedUser)
-      await carregarRoteiros()
+      await carregarGrupos()
     } catch (error) {
-      console.error('Erro ao iniciar roteiros admin:', error)
-      setErro('Não foi possível carregar os roteiros agora.')
+      console.error('Erro ao iniciar grupos admin:', error)
+      setErro('Não foi possível carregar os grupos agora.')
     } finally {
       setCarregando(false)
     }
@@ -209,41 +194,32 @@ export default function AdminRoteirosPage() {
     return roteiro?.titulo || roteiro?.nome || 'Roteiro'
   }
 
-  const guiaIdDoRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.id_guia || roteiro?.guia_id || roteiro?.user_id || roteiro?.usuario_id || ''
+  const tituloGrupo = (grupo?: GrupoCompleto | null) => {
+    return grupo?.titulo || grupo?.nome || grupo?.roteiro_titulo || 'Grupo do roteiro'
   }
 
   const localRoteiro = (roteiro?: Roteiro | null) => {
-    return (
-      roteiro?.local ||
-      roteiro?.localizacao ||
-      roteiro?.local_encontro ||
-      roteiro?.ponto_encontro ||
-      'Local a confirmar'
-    )
+    return roteiro?.local || roteiro?.localizacao || 'Local a confirmar'
   }
 
   const imagemRoteiro = (roteiro?: Roteiro | null) => {
     return roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || roteiro?.imagem || ''
   }
 
-  const precoRoteiro = (roteiro?: Roteiro | null) => {
-    return Number(roteiro?.preco || roteiro?.valor || 0)
+  const idGrupoDoMembro = (membro: GrupoMembro) => {
+    return membro.grupo_id || membro.grupo_roteiro_id || ''
   }
 
-  const distanciaRoteiro = (roteiro?: Roteiro | null) => {
-    return Number(roteiro?.distancia_km || roteiro?.km || 0)
+  const idUsuarioDoMembro = (membro: GrupoMembro) => {
+    return membro.user_id || membro.usuario_id || membro.cliente_id || membro.guia_id || ''
   }
 
-  const limitePessoasRoteiro = (roteiro?: Roteiro | null) => {
-    return Number(roteiro?.limite_pessoas || roteiro?.capacidade || roteiro?.max_pessoas || 0)
+  const idGrupoDaMensagem = (mensagemItem: GrupoMensagem) => {
+    return mensagemItem.grupo_id || mensagemItem.grupo_roteiro_id || ''
   }
 
-  const duracaoRoteiro = (roteiro?: Roteiro | null) => {
-    if (roteiro?.duracao_horas) return `${roteiro.duracao_horas}h`
-    if (roteiro?.duracao) return roteiro.duracao
-
-    return '-'
+  const textoMensagem = (mensagemItem?: GrupoMensagem | null) => {
+    return mensagemItem?.mensagem || mensagemItem?.texto || mensagemItem?.conteudo || ''
   }
 
   const formatarData = (valor?: string | null) => {
@@ -266,17 +242,6 @@ export default function AdminRoteirosPage() {
     return data.toLocaleString('pt-BR')
   }
 
-  const formatarMoeda = (valor: any) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(Number(valor || 0))
-  }
-
-  const formatarNota = (valor: any) => {
-    return Number(valor || 0).toFixed(2).replace('.', ',')
-  }
-
   const dentroDoMesAtual = (valor?: string | null) => {
     if (!valor) return false
 
@@ -292,69 +257,25 @@ export default function AdminRoteirosPage() {
     )
   }
 
-  const pagamentoConfirmado = (reserva: Reserva) => {
-    const pagamento = normalizar(reserva.pagamento_status)
-    const status = normalizar(reserva.status)
+  const grupoAtivo = (grupo: GrupoRoteiro) => {
+    const status = normalizar(grupo.status)
+
+    if (grupo.ativo === true) return true
+    if (grupo.ativo === false) return false
+
+    return !status || status === 'ativo' || status === 'active'
+  }
+
+  const grupoPausado = (grupo: GrupoRoteiro) => {
+    const status = normalizar(grupo.status)
 
     return (
-      pagamento === 'pago' ||
-      pagamento === 'confirmado' ||
-      pagamento === 'aprovado' ||
-      pagamento === 'paid' ||
-      pagamento === 'approved' ||
-      status === 'confirmada' ||
-      status === 'realizada' ||
-      status === 'pago' ||
-      status === 'paga'
+      grupo.ativo === false ||
+      status === 'pausado' ||
+      status === 'inativo' ||
+      status === 'encerrado' ||
+      status === 'arquivado'
     )
-  }
-
-  const statusRoteiro = (roteiro: Roteiro) => {
-    const status = normalizar(roteiro.status)
-
-    if (status) return status
-    if (roteiro.ativo === true) return 'ativo'
-    if (roteiro.ativo === false) return 'pausado'
-
-    return 'pendente'
-  }
-
-  const roteiroAtivo = (roteiro: Roteiro) => {
-    const status = statusRoteiro(roteiro)
-
-    return (
-      roteiro.ativo === true ||
-      status === 'ativo' ||
-      status === 'aprovado' ||
-      status === 'publicado'
-    )
-  }
-
-  const roteiroPendente = (roteiro: Roteiro) => {
-    const status = statusRoteiro(roteiro)
-
-    return (
-      status === 'pendente' ||
-      status === 'aguardando' ||
-      status === 'em_analise' ||
-      status === 'analise'
-    )
-  }
-
-  const roteiroPausado = (roteiro: Roteiro) => {
-    const status = statusRoteiro(roteiro)
-
-    return (
-      roteiro.ativo === false &&
-      !roteiroPendente(roteiro) &&
-      !roteiroReprovado(roteiro)
-    ) || status === 'pausado' || status === 'inativo'
-  }
-
-  const roteiroReprovado = (roteiro: Roteiro) => {
-    const status = statusRoteiro(roteiro)
-
-    return status === 'reprovado' || status === 'recusado' || status === 'negado'
   }
 
   const extrairColunaAusente = (error: any) => {
@@ -390,55 +311,117 @@ export default function AdminRoteirosPage() {
     )
   }
 
-  const erroDeConstraintStatus = (error: any) => {
-    const texto = String(
-      error?.message ||
-        error?.details ||
-        error?.hint ||
-        ''
-    ).toLowerCase()
-
-    return (
-      error?.code === '23514' &&
-      (
-        texto.includes('status') ||
-        texto.includes('roteiros_status') ||
-        texto.includes('check constraint')
-      )
-    )
-  }
-
-  const carregarRoteiros = async () => {
+  const carregarGrupos = async () => {
     setErro('')
 
-    const { data: roteirosData, error: roteirosError } = await supabase
-      .from('roteiros')
+    const { data: gruposData, error: gruposError } = await supabase
+      .from('grupos_roteiros')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(1200)
+      .limit(1000)
 
-    if (roteirosError) {
-      console.error('Erro ao carregar roteiros:', roteirosError)
-      setErro('Não foi possível carregar os roteiros.')
+    if (gruposError) {
+      console.error('Erro ao carregar grupos:', gruposError)
+      setErro('Não foi possível carregar os grupos.')
       return
     }
 
-    const roteirosBase = (roteirosData || []) as Roteiro[]
+    const gruposBase = (gruposData || []) as GrupoRoteiro[]
 
-    const roteiroIds = roteirosBase.map((roteiro) => roteiro.id)
-
-    const guiaIds = Array.from(
+    const roteiroIds = Array.from(
       new Set(
-        roteirosBase
-          .map(guiaIdDoRoteiro)
-          .filter(Boolean)
+        gruposBase
+          .map((grupo) => grupo.roteiro_id)
+          .filter(Boolean) as string[]
       )
     )
 
+    const guiaIdsDiretos = Array.from(
+      new Set(
+        gruposBase
+          .map((grupo) => grupo.guia_id)
+          .filter(Boolean) as string[]
+      )
+    )
+
+    let roteiros: Roteiro[] = []
+    let membros: GrupoMembro[] = []
+    let mensagensLista: GrupoMensagem[] = []
     let guias: UsuarioBanco[] = []
-    let reservas: Reserva[] = []
-    let grupos: GrupoRoteiro[] = []
-    let avaliacoes: Avaliacao[] = []
+
+    if (roteiroIds.length > 0) {
+      const { data: roteirosData, error: roteirosError } = await supabase
+        .from('roteiros')
+        .select('*')
+        .in('id', roteiroIds)
+
+      if (roteirosError) {
+        console.warn('Erro ao buscar roteiros dos grupos:', roteirosError)
+      }
+
+      roteiros = (roteirosData || []) as Roteiro[]
+    }
+
+    const grupoIds = gruposBase.map((grupo) => grupo.id)
+
+    if (grupoIds.length > 0) {
+      const membrosResult = await supabase
+        .from('grupo_membros')
+        .select('*')
+        .in('grupo_id', grupoIds)
+
+      if (membrosResult.error) {
+        const fallbackMembros = await supabase
+          .from('grupo_membros')
+          .select('*')
+          .in('grupo_roteiro_id', grupoIds)
+
+        if (fallbackMembros.error) {
+          console.warn('Erro ao buscar membros dos grupos:', membrosResult.error, fallbackMembros.error)
+        } else {
+          membros = (fallbackMembros.data || []) as GrupoMembro[]
+        }
+      } else {
+        membros = (membrosResult.data || []) as GrupoMembro[]
+      }
+
+      const mensagensResult = await supabase
+        .from('grupo_mensagens')
+        .select('*')
+        .in('grupo_id', grupoIds)
+        .order('created_at', { ascending: false })
+        .limit(2000)
+
+      if (mensagensResult.error) {
+        const fallbackMensagens = await supabase
+          .from('grupo_mensagens')
+          .select('*')
+          .in('grupo_roteiro_id', grupoIds)
+          .order('created_at', { ascending: false })
+          .limit(2000)
+
+        if (fallbackMensagens.error) {
+          console.warn('Erro ao buscar mensagens dos grupos:', mensagensResult.error, fallbackMensagens.error)
+        } else {
+          mensagensLista = (fallbackMensagens.data || []) as GrupoMensagem[]
+        }
+      } else {
+        mensagensLista = (mensagensResult.data || []) as GrupoMensagem[]
+      }
+    }
+
+    const guiaIdsDosRoteiros = roteiros
+      .map((roteiro) => roteiro.id_guia || roteiro.guia_id)
+      .filter(Boolean) as string[]
+
+    const guiaIdsDosMembros = membros
+      .filter((membro) => normalizar(membro.papel || membro.tipo) === 'guia' || membro.guia_id)
+      .map(idUsuarioDoMembro)
+      .filter(Boolean)
+
+    const guiaIds = Array.from(
+      new Set([...guiaIdsDiretos, ...guiaIdsDosRoteiros, ...guiaIdsDosMembros])
+    )
 
     if (guiaIds.length > 0) {
       const { data: guiasData, error: guiasError } = await supabase
@@ -447,130 +430,71 @@ export default function AdminRoteirosPage() {
         .in('id', guiaIds)
 
       if (guiasError) {
-        console.warn('Erro ao buscar guias dos roteiros:', guiasError)
+        console.warn('Erro ao buscar guias dos grupos:', guiasError)
       }
 
       guias = (guiasData || []) as UsuarioBanco[]
     }
 
-    if (roteiroIds.length > 0) {
-      const { data: reservasData, error: reservasError } = await supabase
-        .from('reservas')
-        .select('*')
-        .in('roteiro_id', roteiroIds)
-        .limit(2500)
+    const gruposCompletos: GrupoCompleto[] = gruposBase.map((grupo) => {
+      const roteiro =
+        roteiros.find((item) => item.id === grupo.roteiro_id) ||
+        null
 
-      if (reservasError) {
-        console.warn('Erro ao buscar reservas dos roteiros:', reservasError)
-      }
-
-      reservas = (reservasData || []) as Reserva[]
-
-      const { data: gruposData, error: gruposError } = await supabase
-        .from('grupos_roteiros')
-        .select('*')
-        .in('roteiro_id', roteiroIds)
-        .limit(1500)
-
-      if (gruposError) {
-        console.warn('Erro ao buscar grupos dos roteiros:', gruposError)
-      }
-
-      grupos = (gruposData || []) as GrupoRoteiro[]
-
-      const { data: avaliacoesData, error: avaliacoesError } = await supabase
-        .from('avaliacoes')
-        .select('id, roteiro_id, nota, status, created_at')
-        .in('roteiro_id', roteiroIds)
-        .limit(2500)
-
-      if (avaliacoesError) {
-        console.warn('Erro ao buscar avaliações dos roteiros:', avaliacoesError)
-      }
-
-      avaliacoes = (avaliacoesData || []) as Avaliacao[]
-    }
-
-    const roteirosCompletos: RoteiroCompleto[] = roteirosBase.map((roteiro) => {
-      const guiaId = guiaIdDoRoteiro(roteiro)
+      const guiaId =
+        grupo.guia_id ||
+        roteiro?.id_guia ||
+        roteiro?.guia_id ||
+        ''
 
       const guia =
         guias.find((item) => item.id === guiaId) ||
         null
 
-      const reservasDoRoteiro = reservas.filter((reserva) => reserva.roteiro_id === roteiro.id)
-      const reservasConfirmadas = reservasDoRoteiro.filter(pagamentoConfirmado)
+      const membrosDoGrupo = membros.filter((membro) => idGrupoDoMembro(membro) === grupo.id)
 
-      const receitaConfirmada = reservasConfirmadas.reduce(
-        (total, reserva) => total + Number(reserva.valor_total || 0),
-        0
+      const mensagensDoGrupo = mensagensLista.filter(
+        (mensagemItem) => idGrupoDaMensagem(mensagemItem) === grupo.id
       )
 
-      const grupo =
-        grupos.find((item) => item.roteiro_id === roteiro.id) ||
-        null
-
-      const avaliacoesDoRoteiro = avaliacoes.filter((avaliacao) => {
-        const status = normalizar(avaliacao.status)
-        return avaliacao.roteiro_id === roteiro.id && (!status || status === 'publicada')
-      })
-
-      const somaNotas = avaliacoesDoRoteiro.reduce(
-        (total, avaliacao) => total + Number(avaliacao.nota || 0),
-        0
-      )
-
-      const mediaAvaliacao =
-        avaliacoesDoRoteiro.length > 0
-          ? somaNotas / avaliacoesDoRoteiro.length
-          : 0
+      const ultimaMensagem = mensagensDoGrupo
+        .slice()
+        .sort((a, b) => {
+          const dataA = new Date(a.created_at || 0).getTime()
+          const dataB = new Date(b.created_at || 0).getTime()
+          return dataB - dataA
+        })[0]
 
       return {
-        ...roteiro,
+        ...grupo,
+        roteiro,
         guia,
-        reservas: reservasDoRoteiro,
-        grupo,
-        avaliacoes: avaliacoesDoRoteiro,
+        membros: membrosDoGrupo,
+        mensagens: mensagensDoGrupo,
+        roteiro_titulo: tituloRoteiro(roteiro),
         guia_nome: nomeUsuario(guia),
-        total_reservas: reservasDoRoteiro.length,
-        reservas_confirmadas: reservasConfirmadas.length,
-        receita_confirmada: receitaConfirmada,
-        media_avaliacao: mediaAvaliacao,
-        total_avaliacoes: avaliacoesDoRoteiro.length
+        total_membros: membrosDoGrupo.length,
+        total_mensagens: mensagensDoGrupo.length,
+        ultima_mensagem_em: ultimaMensagem?.created_at || null
       }
     })
 
-    const receitaConfirmada = roteirosCompletos.reduce(
-      (total, roteiro) => total + Number(roteiro.receita_confirmada || 0),
-      0
-    )
+    const ativos = gruposCompletos.filter(grupoAtivo)
+    const pausados = gruposCompletos.filter(grupoPausado)
+    const gruposVazios = gruposCompletos.filter((grupo) => Number(grupo.total_membros || 0) <= 1)
+    const gruposComMembros = gruposCompletos.filter((grupo) => Number(grupo.total_membros || 0) > 1)
 
-    const totalAvaliacoes = roteirosCompletos.reduce(
-      (total, roteiro) => total + Number(roteiro.total_avaliacoes || 0),
-      0
-    )
-
-    const somaMediasPonderadas = roteirosCompletos.reduce(
-      (total, roteiro) => {
-        return total + Number(roteiro.media_avaliacao || 0) * Number(roteiro.total_avaliacoes || 0)
-      },
-      0
-    )
-
-    setRoteiros(roteirosCompletos)
+    setGrupos(gruposCompletos)
 
     setStats({
-      total: roteirosCompletos.length,
-      ativos: roteirosCompletos.filter(roteiroAtivo).length,
-      pendentes: roteirosCompletos.filter(roteiroPendente).length,
-      pausados: roteirosCompletos.filter(roteiroPausado).length,
-      reprovados: roteirosCompletos.filter(roteiroReprovado).length,
-      novosMes: roteirosCompletos.filter((roteiro) => dentroDoMesAtual(roteiro.created_at)).length,
-      comReservas: roteirosCompletos.filter((roteiro) => Number(roteiro.total_reservas || 0) > 0).length,
-      semGrupo: roteirosCompletos.filter((roteiro) => !roteiro.grupo?.id).length,
-      receitaConfirmada,
-      reservasConfirmadas: reservas.filter(pagamentoConfirmado).length,
-      mediaAvaliacoes: totalAvaliacoes > 0 ? somaMediasPonderadas / totalAvaliacoes : 0
+      total: gruposCompletos.length,
+      ativos: ativos.length,
+      pausados: pausados.length,
+      gruposMes: gruposCompletos.filter((grupo) => dentroDoMesAtual(grupo.created_at)).length,
+      membrosTotal: membros.length,
+      mensagensTotal: mensagensLista.length,
+      gruposVazios: gruposVazios.length,
+      gruposComMembros: gruposComMembros.length
     })
 
     setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
@@ -582,27 +506,27 @@ export default function AdminRoteirosPage() {
     setErro('')
 
     try {
-      await carregarRoteiros()
-      setMensagem('Roteiros atualizados.')
+      await carregarGrupos()
+      setMensagem('Grupos atualizados.')
     } catch (error) {
-      console.error('Erro ao atualizar roteiros:', error)
-      setErro('Não foi possível atualizar os roteiros agora.')
+      console.error('Erro ao atualizar grupos:', error)
+      setErro('Não foi possível atualizar os grupos agora.')
     } finally {
       setAtualizando(false)
     }
   }
 
-  const atualizarRoteiroComFallback = async (
-    roteiroId: string,
+  const atualizarGrupoComFallback = async (
+    grupoId: string,
     payloadOriginal: Record<string, any>
   ) => {
     let payloadAtual = { ...payloadOriginal }
 
     for (let tentativa = 0; tentativa < 12; tentativa++) {
       const { error } = await supabase
-        .from('roteiros')
+        .from('grupos_roteiros')
         .update(payloadAtual)
-        .eq('id', roteiroId)
+        .eq('id', grupoId)
 
       if (!error) return true
 
@@ -619,149 +543,33 @@ export default function AdminRoteirosPage() {
       delete payloadAtual[coluna]
     }
 
-    throw new Error('Não foi possível atualizar o roteiro.')
+    throw new Error('Não foi possível atualizar o grupo.')
   }
 
-  const alterarStatusComTentativas = async (
-    roteiroId: string,
-    statusPossiveis: string[],
-    ativo: boolean
-  ) => {
-    let ultimoErro: any = null
+  const alternarStatusGrupo = async (grupo: GrupoCompleto) => {
+    if (!grupo?.id) return
 
-    for (const status of statusPossiveis) {
-      try {
-        await atualizarRoteiroComFallback(roteiroId, {
-          status,
-          ativo,
-          updated_at: new Date().toISOString()
-        })
+    const ativoAgora = grupoAtivo(grupo)
+    const novoStatus = ativoAgora ? 'pausado' : 'ativo'
 
-        return status
-      } catch (error: any) {
-        ultimoErro = error
-
-        if (!erroDeConstraintStatus(error)) {
-          throw error
-        }
-
-        console.warn(`Status "${status}" recusado pelo banco. Tentando próximo...`, error)
-      }
-    }
-
-    throw ultimoErro || new Error('Status não aceito pelo banco.')
-  }
-
-  const ativarRoteiro = async (roteiro: RoteiroCompleto) => {
-    if (!roteiro?.id) return
-
-    setAlterandoStatusId(roteiro.id)
+    setAlterandoStatusId(grupo.id)
     setMensagem('')
     setErro('')
 
     try {
-      const statusUsado = await alterarStatusComTentativas(
-        roteiro.id,
-        ['ativo', 'aprovado', 'publicado'],
-        true
-      )
-
-      setMensagem(`Roteiro ativado com sucesso. Status usado: ${statusUsado}.`)
-      await carregarRoteiros()
-    } catch (error: any) {
-      console.error('Erro ao ativar roteiro:', error)
-      setErro(error?.message || 'Não foi possível ativar o roteiro.')
-    } finally {
-      setAlterandoStatusId('')
-    }
-  }
-
-  const pausarRoteiro = async (roteiro: RoteiroCompleto) => {
-    if (!roteiro?.id) return
-
-    setAlterandoStatusId(roteiro.id)
-    setMensagem('')
-    setErro('')
-
-    try {
-      const statusUsado = await alterarStatusComTentativas(
-        roteiro.id,
-        ['pausado', 'inativo', 'pendente'],
-        false
-      )
-
-      setMensagem(`Roteiro pausado com sucesso. Status usado: ${statusUsado}.`)
-      await carregarRoteiros()
-    } catch (error: any) {
-      console.error('Erro ao pausar roteiro:', error)
-      setErro(error?.message || 'Não foi possível pausar o roteiro.')
-    } finally {
-      setAlterandoStatusId('')
-    }
-  }
-
-  const reprovarRoteiro = async (roteiro: RoteiroCompleto) => {
-    if (!roteiro?.id) return
-
-    const confirmar = window.confirm(
-      'Deseja marcar este roteiro como reprovado/recusado?'
-    )
-
-    if (!confirmar) return
-
-    setAlterandoStatusId(roteiro.id)
-    setMensagem('')
-    setErro('')
-
-    try {
-      const statusUsado = await alterarStatusComTentativas(
-        roteiro.id,
-        ['reprovado', 'recusado', 'pendente'],
-        false
-      )
-
-      setMensagem(`Roteiro atualizado com sucesso. Status usado: ${statusUsado}.`)
-      await carregarRoteiros()
-    } catch (error: any) {
-      console.error('Erro ao reprovar roteiro:', error)
-      setErro(error?.message || 'Não foi possível reprovar o roteiro.')
-    } finally {
-      setAlterandoStatusId('')
-    }
-  }
-
-  const garantirGrupo = async (roteiro: RoteiroCompleto) => {
-    if (!roteiro?.id) return
-
-    setCriandoGrupoId(roteiro.id)
-    setMensagem('')
-    setErro('')
-
-    try {
-      const response = await fetch('/api/grupos/garantir-grupo-roteiro', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          roteiroId: roteiro.id
-        })
+      await atualizarGrupoComFallback(grupo.id, {
+        status: novoStatus,
+        ativo: !ativoAgora,
+        updated_at: new Date().toISOString()
       })
 
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || data?.sucesso === false) {
-        setErro(data?.erro || data?.message || 'Não foi possível garantir o grupo do roteiro.')
-        return
-      }
-
-      setMensagem('Grupo do roteiro garantido com sucesso.')
-      await carregarRoteiros()
-    } catch (error) {
-      console.error('Erro ao garantir grupo:', error)
-      setErro('Erro ao garantir grupo do roteiro.')
+      setMensagem(ativoAgora ? 'Grupo pausado com sucesso.' : 'Grupo ativado com sucesso.')
+      await carregarGrupos()
+    } catch (error: any) {
+      console.error('Erro ao alternar status do grupo:', error)
+      setErro(error?.message || 'Não foi possível alterar o status do grupo.')
     } finally {
-      setCriandoGrupoId('')
+      setAlterandoStatusId('')
     }
   }
 
@@ -867,18 +675,19 @@ export default function AdminRoteirosPage() {
     router.replace('/login')
   }
 
-  const roteirosFiltrados = useMemo(() => {
+  const gruposFiltrados = useMemo(() => {
     const termo = normalizar(busca)
 
-    return roteiros.filter((roteiro) => {
+    return grupos.filter((grupo) => {
+      const ativo = grupoAtivo(grupo)
+      const totalMembros = Number(grupo.total_membros || 0)
+
       const passaStatus =
         filtroStatus === 'todos' ||
-        (filtroStatus === 'ativos' && roteiroAtivo(roteiro)) ||
-        (filtroStatus === 'pendentes' && roteiroPendente(roteiro)) ||
-        (filtroStatus === 'pausados' && roteiroPausado(roteiro)) ||
-        (filtroStatus === 'reprovados' && roteiroReprovado(roteiro)) ||
-        (filtroStatus === 'com_reservas' && Number(roteiro.total_reservas || 0) > 0) ||
-        (filtroStatus === 'sem_grupo' && !roteiro.grupo?.id)
+        (filtroStatus === 'ativos' && ativo) ||
+        (filtroStatus === 'pausados' && !ativo) ||
+        (filtroStatus === 'vazios' && totalMembros <= 1) ||
+        (filtroStatus === 'com_membros' && totalMembros > 1)
 
       if (!passaStatus) return false
 
@@ -886,34 +695,39 @@ export default function AdminRoteirosPage() {
 
       const texto = normalizar(
         [
-          roteiro.id,
-          roteiro.titulo,
-          roteiro.nome,
-          roteiro.descricao,
-          roteiro.status,
-          roteiro.dificuldade,
-          roteiro.recorrencia,
-          roteiro.guia_nome,
-          localRoteiro(roteiro)
+          grupo.id,
+          grupo.roteiro_id,
+          grupo.guia_id,
+          grupo.titulo,
+          grupo.nome,
+          grupo.descricao,
+          grupo.status,
+          grupo.roteiro_titulo,
+          grupo.guia_nome,
+          localRoteiro(grupo.roteiro)
         ].join(' ')
       )
 
       return texto.includes(termo)
     })
-  }, [roteiros, busca, filtroStatus])
+  }, [grupos, busca, filtroStatus])
 
-  const badgeStatus = (roteiro: RoteiroCompleto) => {
-    if (roteiroAtivo(roteiro)) return <span className="badge green">Ativo</span>
-    if (roteiroPendente(roteiro)) return <span className="badge yellow">Em análise</span>
-    if (roteiroReprovado(roteiro)) return <span className="badge red">Reprovado</span>
+  const badgeStatus = (grupo: GrupoCompleto) => {
+    if (grupoAtivo(grupo)) {
+      return <span className="badge green">Ativo</span>
+    }
 
-    return <span className="badge neutral">Pausado</span>
+    return <span className="badge yellow">Pausado</span>
   }
 
-  const badgeGrupo = (roteiro: RoteiroCompleto) => {
-    if (roteiro.grupo?.id) return <span className="badge blue">Grupo criado</span>
+  const badgeMembros = (grupo: GrupoCompleto) => {
+    const total = Number(grupo.total_membros || 0)
 
-    return <span className="badge neutral">Sem grupo</span>
+    if (total > 1) {
+      return <span className="badge blue">{total} membros</span>
+    }
+
+    return <span className="badge neutral">Sem clientes</span>
   }
 
   if (carregando || !user) {
@@ -965,7 +779,7 @@ export default function AdminRoteirosPage() {
 
         <div className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <div>Carregando roteiros...</div>
+          <div>Carregando grupos...</div>
         </div>
       </main>
     )
@@ -1148,7 +962,7 @@ export default function AdminRoteirosPage() {
           position: relative;
           z-index: 2;
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 350px;
+          grid-template-columns: minmax(0, 1fr) 340px;
           gap: 22px;
           align-items: end;
         }
@@ -1402,32 +1216,32 @@ export default function AdminRoteirosPage() {
           padding: 0;
         }
 
-        .roteiroList {
+        .groupList {
           display: grid;
           gap: 10px;
         }
 
-        .roteiroCard {
+        .groupCard {
           background: #ffffff;
           border: 1px solid rgba(15, 23, 42, 0.08);
           border-radius: 22px;
           padding: 12px;
           display: grid;
-          grid-template-columns: 82px minmax(0, 1fr) auto;
+          grid-template-columns: 74px minmax(0, 1fr) auto;
           gap: 12px;
           align-items: center;
           transition: 0.2s ease;
         }
 
-        .roteiroCard:hover {
+        .groupCard:hover {
           transform: translateY(-1px);
           box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
         }
 
         .thumb {
-          width: 82px;
-          height: 82px;
-          border-radius: 22px;
+          width: 74px;
+          height: 74px;
+          border-radius: 20px;
           background: #e2e8f0;
           display: flex;
           align-items: center;
@@ -1445,14 +1259,14 @@ export default function AdminRoteirosPage() {
           display: block;
         }
 
-        .roteiroTitle {
+        .groupTitle {
           color: #0f172a;
           font-size: 15px;
           font-weight: 950;
           line-height: 1.3;
         }
 
-        .roteiroMeta {
+        .groupMeta {
           color: #64748b;
           font-size: 12px;
           line-height: 1.45;
@@ -1460,18 +1274,12 @@ export default function AdminRoteirosPage() {
           margin-top: 4px;
         }
 
-        .roteiroFooter {
+        .groupFooter {
           display: flex;
           gap: 7px;
           flex-wrap: wrap;
           margin-top: 8px;
           align-items: center;
-        }
-
-        .price {
-          color: #16a34a;
-          font-size: 13px;
-          font-weight: 950;
         }
 
         .badge {
@@ -1511,7 +1319,7 @@ export default function AdminRoteirosPage() {
         .actions {
           display: grid;
           gap: 8px;
-          min-width: 160px;
+          min-width: 150px;
         }
 
         .actionBtn {
@@ -1550,12 +1358,6 @@ export default function AdminRoteirosPage() {
           border-color: #fde68a;
         }
 
-        .actionBtn.red {
-          background: #fee2e2;
-          color: #991b1b;
-          border-color: #fecaca;
-        }
-
         .actionBtn:disabled {
           opacity: 0.55;
           cursor: not-allowed;
@@ -1585,7 +1387,7 @@ export default function AdminRoteirosPage() {
 
         .modal {
           width: 100%;
-          max-width: 560px;
+          max-width: 520px;
           background: #ffffff;
           border-radius: 28px;
           box-shadow: 0 28px 90px rgba(15, 23, 42, 0.30);
@@ -1711,14 +1513,14 @@ export default function AdminRoteirosPage() {
           text-align: right;
         }
 
-        .descriptionBox {
+        .messageBox {
           background: #f8fafc;
           border: 1px solid rgba(15, 23, 42, 0.06);
           border-radius: 18px;
           padding: 12px;
           color: #475569;
           font-size: 12px;
-          line-height: 1.55;
+          line-height: 1.45;
           font-weight: 750;
         }
 
@@ -1737,8 +1539,8 @@ export default function AdminRoteirosPage() {
             grid-template-columns: 1fr;
           }
 
-          .roteiroCard {
-            grid-template-columns: 74px minmax(0, 1fr);
+          .groupCard {
+            grid-template-columns: 64px minmax(0, 1fr);
           }
 
           .actions {
@@ -1797,13 +1599,13 @@ export default function AdminRoteirosPage() {
             grid-template-columns: 1fr;
           }
 
-          .roteiroCard {
+          .groupCard {
             grid-template-columns: 1fr;
           }
 
           .thumb {
             width: 100%;
-            height: 160px;
+            height: 150px;
           }
 
           .modalActions {
@@ -1834,7 +1636,7 @@ export default function AdminRoteirosPage() {
 
             <div>
               <div className="brandTitle">PrussikTrails Admin</div>
-              <div className="brandSub">Roteiros da plataforma</div>
+              <div className="brandSub">Grupos internos</div>
             </div>
           </div>
 
@@ -1875,14 +1677,14 @@ export default function AdminRoteirosPage() {
         <section className="hero">
           <div className="heroInner">
             <div>
-              <div className="eyebrow">Controle de experiências</div>
+              <div className="eyebrow">Comunidade por roteiro</div>
 
               <h1 className="heroTitle">
-                Roteiros, guias, grupos e reservas em <span>uma central.</span>
+                Grupos internos com acesso pós-<span>pagamento.</span>
               </h1>
 
               <p className="heroText">
-                Aprove, pause, acompanhe reservas, garanta grupos internos e monitore a qualidade dos roteiros cadastrados.
+                Acompanhe os grupos criados automaticamente por roteiro, guias administradores, membros e movimentação das conversas.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1894,12 +1696,12 @@ export default function AdminRoteirosPage() {
 
             <aside
               className="heroCard"
-              onClick={() => router.push('/admin/financeiro')}
+              onClick={() => setFiltroStatus('ativos')}
             >
-              <div className="heroLabel">Receita confirmada</div>
-              <div className="heroValue">{formatarMoeda(stats.receitaConfirmada)}</div>
+              <div className="heroLabel">Grupos ativos</div>
+              <div className="heroValue">{stats.ativos}</div>
               <div className="heroSmall">
-                {stats.reservasConfirmadas} reserva(s) confirmada(s) vinculadas aos roteiros.
+                {stats.total} grupo(s) criados · {stats.membrosTotal} vínculo(s) de membros · {stats.mensagensTotal} mensagem(ns).
               </div>
             </aside>
           </div>
@@ -1918,9 +1720,9 @@ export default function AdminRoteirosPage() {
             className="statCard"
             onClick={() => setFiltroStatus('todos')}
           >
-            <div className="statIcon">🧭</div>
+            <div className="statIcon">💬</div>
             <div className="statValue">{stats.total}</div>
-            <div className="statLabel">roteiros cadastrados</div>
+            <div className="statLabel">grupos criados por roteiro</div>
           </article>
 
           <article
@@ -1929,43 +1731,43 @@ export default function AdminRoteirosPage() {
           >
             <div className="statIcon">✅</div>
             <div className="statValue">{stats.ativos}</div>
-            <div className="statLabel">roteiros ativos/publicados</div>
+            <div className="statLabel">grupos ativos</div>
           </article>
 
           <article
             className="statCard"
-            onClick={() => setFiltroStatus('pendentes')}
+            onClick={() => setFiltroStatus('com_membros')}
           >
-            <div className="statIcon">⏳</div>
-            <div className="statValue">{stats.pendentes}</div>
-            <div className="statLabel">em análise/pendentes</div>
+            <div className="statIcon">👥</div>
+            <div className="statValue">{stats.gruposComMembros}</div>
+            <div className="statLabel">grupos com clientes/membros</div>
           </article>
 
           <article
             className="statCard"
-            onClick={() => setFiltroStatus('com_reservas')}
+            onClick={() => setFiltroStatus('vazios')}
           >
-            <div className="statIcon">🎒</div>
-            <div className="statValue">{stats.comReservas}</div>
-            <div className="statLabel">roteiros com reservas</div>
+            <div className="statIcon">🕊️</div>
+            <div className="statValue">{stats.gruposVazios}</div>
+            <div className="statLabel">grupos ainda sem clientes</div>
           </article>
 
           <article
             className="statCard"
-            onClick={() => setFiltroStatus('sem_grupo')}
+            onClick={() => setFiltroStatus('todos')}
           >
-            <div className="statIcon">💬</div>
-            <div className="statValue">{stats.semGrupo}</div>
-            <div className="statLabel">roteiros ainda sem grupo</div>
+            <div className="statIcon">✉️</div>
+            <div className="statValue">{stats.mensagensTotal}</div>
+            <div className="statLabel">mensagens registradas</div>
           </article>
 
           <article
             className="statCard"
-            onClick={() => router.push('/admin/avaliacoes')}
+            onClick={() => setFiltroStatus('todos')}
           >
-            <div className="statIcon">⭐</div>
-            <div className="statValue">{formatarNota(stats.mediaAvaliacoes)}</div>
-            <div className="statLabel">média de avaliações dos roteiros</div>
+            <div className="statIcon">📈</div>
+            <div className="statValue">{stats.gruposMes}</div>
+            <div className="statLabel">grupos criados neste mês</div>
           </article>
         </section>
 
@@ -1974,7 +1776,7 @@ export default function AdminRoteirosPage() {
             className="input"
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
-            placeholder="Buscar por roteiro, guia, local, status, dificuldade ou ID..."
+            placeholder="Buscar por roteiro, guia, grupo, local, status ou ID..."
           />
 
           <div className="filters">
@@ -1996,14 +1798,6 @@ export default function AdminRoteirosPage() {
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'pendentes' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('pendentes')}
-            >
-              Pendentes
-            </button>
-
-            <button
-              type="button"
               className={`filterBtn ${filtroStatus === 'pausados' ? 'active' : ''}`}
               onClick={() => setFiltroStatus('pausados')}
             >
@@ -2012,18 +1806,18 @@ export default function AdminRoteirosPage() {
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'reprovados' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('reprovados')}
+              className={`filterBtn ${filtroStatus === 'com_membros' ? 'active' : ''}`}
+              onClick={() => setFiltroStatus('com_membros')}
             >
-              Reprovados
+              Com membros
             </button>
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'sem_grupo' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('sem_grupo')}
+              className={`filterBtn ${filtroStatus === 'vazios' ? 'active' : ''}`}
+              onClick={() => setFiltroStatus('vazios')}
             >
-              Sem grupo
+              Vazios
             </button>
           </div>
         </section>
@@ -2031,9 +1825,9 @@ export default function AdminRoteirosPage() {
         <section className="panel">
           <div className="panelHeader">
             <div>
-              <h2 className="panelTitle">Lista de roteiros</h2>
+              <h2 className="panelTitle">Lista de grupos</h2>
               <div className="panelSub">
-                {roteirosFiltrados.length} roteiro(s) encontrado(s) no filtro atual.
+                {gruposFiltrados.length} grupo(s) encontrado(s) no filtro atual.
               </div>
             </div>
 
@@ -2043,62 +1837,54 @@ export default function AdminRoteirosPage() {
               onClick={atualizar}
               disabled={atualizando}
             >
-              {atualizando ? 'Atualizando...' : 'Atualizar roteiros'}
+              {atualizando ? 'Atualizando...' : 'Atualizar grupos'}
             </button>
           </div>
 
           <div className="panelBody">
-            {roteirosFiltrados.length === 0 ? (
+            {gruposFiltrados.length === 0 ? (
               <div className="empty">
-                Nenhum roteiro encontrado com os filtros atuais.
+                Nenhum grupo encontrado com os filtros atuais.
               </div>
             ) : (
-              <div className="roteiroList">
-                {roteirosFiltrados.map((roteiro) => {
-                  const imagem = imagemRoteiro(roteiro)
-                  const emAlteracao = alterandoStatusId === roteiro.id
-                  const criandoGrupo = criandoGrupoId === roteiro.id
+              <div className="groupList">
+                {gruposFiltrados.map((grupo) => {
+                  const imagem = imagemRoteiro(grupo.roteiro)
 
                   return (
-                    <article className="roteiroCard" key={roteiro.id}>
+                    <article className="groupCard" key={grupo.id}>
                       <div className="thumb">
                         {imagem ? (
-                          <img src={imagem} alt={tituloRoteiro(roteiro)} />
+                          <img src={imagem} alt={tituloRoteiro(grupo.roteiro)} />
                         ) : (
-                          'RT'
+                          'GP'
                         )}
                       </div>
 
                       <div>
-                        <div className="roteiroTitle">
-                          {tituloRoteiro(roteiro)}
+                        <div className="groupTitle">
+                          {tituloGrupo(grupo)}
                         </div>
 
-                        <div className="roteiroMeta">
-                          Guia: {roteiro.guia_nome || 'Guia não informado'} · {localRoteiro(roteiro)}
+                        <div className="groupMeta">
+                          Roteiro: {grupo.roteiro_titulo || 'Roteiro'} · Guia: {grupo.guia_nome || 'Guia'}
                           <br />
-                          Criado em {formatarData(roteiro.created_at)} · ID: {roteiro.id.slice(0, 8)}
+                          {localRoteiro(grupo.roteiro)} · criado em {formatarData(grupo.created_at)}
                           <br />
-                          Reservas: {roteiro.total_reservas || 0} · Confirmadas: {roteiro.reservas_confirmadas || 0} · Receita: {formatarMoeda(roteiro.receita_confirmada || 0)}
+                          ID: {grupo.id.slice(0, 8)}
                         </div>
 
-                        <div className="roteiroFooter">
-                          <span className="price">
-                            {formatarMoeda(precoRoteiro(roteiro))}
+                        <div className="groupFooter">
+                          {badgeStatus(grupo)}
+                          {badgeMembros(grupo)}
+
+                          <span className="badge neutral">
+                            {grupo.total_mensagens || 0} mensagens
                           </span>
 
-                          {badgeStatus(roteiro)}
-                          {badgeGrupo(roteiro)}
-
-                          {roteiro.dificuldade && (
+                          {grupo.ultima_mensagem_em && (
                             <span className="badge neutral">
-                              {roteiro.dificuldade}
-                            </span>
-                          )}
-
-                          {Number(roteiro.total_avaliacoes || 0) > 0 && (
-                            <span className="badge blue">
-                              ⭐ {formatarNota(roteiro.media_avaliacao)}
+                              último movimento {formatarData(grupo.ultima_mensagem_em)}
                             </span>
                           )}
                         </div>
@@ -2108,59 +1894,28 @@ export default function AdminRoteirosPage() {
                         <button
                           type="button"
                           className="actionBtn primary"
-                          onClick={() => setRoteiroSelecionado(roteiro)}
+                          onClick={() => setGrupoSelecionado(grupo)}
                         >
                           Detalhes
                         </button>
 
-                        {!roteiroAtivo(roteiro) && (
-                          <button
-                            type="button"
-                            className="actionBtn green"
-                            onClick={() => ativarRoteiro(roteiro)}
-                            disabled={emAlteracao}
-                          >
-                            {emAlteracao ? 'Atualizando...' : 'Ativar'}
-                          </button>
-                        )}
-
-                        {roteiroAtivo(roteiro) && (
-                          <button
-                            type="button"
-                            className="actionBtn yellow"
-                            onClick={() => pausarRoteiro(roteiro)}
-                            disabled={emAlteracao}
-                          >
-                            {emAlteracao ? 'Atualizando...' : 'Pausar'}
-                          </button>
-                        )}
-
-                        {!roteiroReprovado(roteiro) && (
-                          <button
-                            type="button"
-                            className="actionBtn red"
-                            onClick={() => reprovarRoteiro(roteiro)}
-                            disabled={emAlteracao}
-                          >
-                            Reprovar
-                          </button>
-                        )}
-
-                        {!roteiro.grupo?.id && (
-                          <button
-                            type="button"
-                            className="actionBtn"
-                            onClick={() => garantirGrupo(roteiro)}
-                            disabled={criandoGrupo}
-                          >
-                            {criandoGrupo ? 'Criando...' : 'Criar grupo'}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className={grupoAtivo(grupo) ? 'actionBtn yellow' : 'actionBtn green'}
+                          onClick={() => alternarStatusGrupo(grupo)}
+                          disabled={alterandoStatusId === grupo.id}
+                        >
+                          {alterandoStatusId === grupo.id
+                            ? 'Atualizando...'
+                            : grupoAtivo(grupo)
+                              ? 'Pausar'
+                              : 'Ativar'}
+                        </button>
 
                         <button
                           type="button"
                           className="actionBtn"
-                          onClick={() => copiarTexto(roteiro.id, 'ID do roteiro')}
+                          onClick={() => copiarTexto(grupo.id, 'ID do grupo')}
                         >
                           Copiar ID
                         </button>
@@ -2174,90 +1929,80 @@ export default function AdminRoteirosPage() {
         </section>
       </div>
 
-      {roteiroSelecionado && (
+      {grupoSelecionado && (
         <div className="modalOverlay">
           <div className="modal">
             <div className="modalHeader">
-              <h2 className="modalTitle">{tituloRoteiro(roteiroSelecionado)}</h2>
+              <h2 className="modalTitle">{tituloGrupo(grupoSelecionado)}</h2>
               <div className="modalSub">
-                Detalhes administrativos do roteiro.
+                Detalhes administrativos do grupo interno.
               </div>
             </div>
 
             <div className="modalBody">
               <div className="detailGrid">
                 <div className="detailRow">
-                  <span>ID do roteiro</span>
-                  <strong>{roteiroSelecionado.id}</strong>
+                  <span>ID do grupo</span>
+                  <strong>{grupoSelecionado.id}</strong>
                 </div>
 
                 <div className="detailRow">
-                  <span>Guia</span>
-                  <strong>{roteiroSelecionado.guia_nome || '-'}</strong>
+                  <span>Roteiro</span>
+                  <strong>{grupoSelecionado.roteiro_titulo || '-'}</strong>
+                </div>
+
+                <div className="detailRow">
+                  <span>Guia administrador</span>
+                  <strong>{grupoSelecionado.guia_nome || '-'}</strong>
                 </div>
 
                 <div className="detailRow">
                   <span>Status</span>
-                  <strong>{statusRoteiro(roteiroSelecionado)}</strong>
+                  <strong>{grupoAtivo(grupoSelecionado) ? 'Ativo' : 'Pausado'}</strong>
                 </div>
 
                 <div className="detailRow">
-                  <span>Local</span>
-                  <strong>{localRoteiro(roteiroSelecionado)}</strong>
+                  <span>Membros</span>
+                  <strong>{grupoSelecionado.total_membros || 0}</strong>
                 </div>
 
                 <div className="detailRow">
-                  <span>Valor</span>
-                  <strong>{formatarMoeda(precoRoteiro(roteiroSelecionado))}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Duração</span>
-                  <strong>{duracaoRoteiro(roteiroSelecionado)}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Distância</span>
-                  <strong>{distanciaRoteiro(roteiroSelecionado) || '-'} km</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Limite de pessoas</span>
-                  <strong>{limitePessoasRoteiro(roteiroSelecionado) || '-'}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Reservas</span>
-                  <strong>{roteiroSelecionado.total_reservas || 0}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Receita confirmada</span>
-                  <strong>{formatarMoeda(roteiroSelecionado.receita_confirmada || 0)}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Grupo interno</span>
-                  <strong>{roteiroSelecionado.grupo?.id ? 'Criado' : 'Não criado'}</strong>
+                  <span>Mensagens</span>
+                  <strong>{grupoSelecionado.total_mensagens || 0}</strong>
                 </div>
 
                 <div className="detailRow">
                   <span>Criado em</span>
-                  <strong>{formatarDataHora(roteiroSelecionado.created_at)}</strong>
+                  <strong>{formatarDataHora(grupoSelecionado.created_at)}</strong>
+                </div>
+
+                <div className="detailRow">
+                  <span>Última mensagem</span>
+                  <strong>{formatarDataHora(grupoSelecionado.ultima_mensagem_em)}</strong>
                 </div>
               </div>
 
-              <div className="descriptionBox">
-                <strong>Descrição:</strong>
+              <div className="messageBox">
+                <strong>Últimas mensagens carregadas:</strong>
                 <br />
-                {roteiroSelecionado.descricao || 'Sem descrição cadastrada.'}
+                {grupoSelecionado.mensagens && grupoSelecionado.mensagens.length > 0 ? (
+                  grupoSelecionado.mensagens.slice(0, 3).map((msg) => (
+                    <div key={msg.id} style={{ marginTop: 8 }}>
+                      {textoMensagem(msg) || 'Mensagem sem texto'} · {formatarDataHora(msg.created_at)}
+                    </div>
+                  ))
+                ) : (
+                  <span style={{ display: 'block', marginTop: 8 }}>
+                    Nenhuma mensagem encontrada para este grupo.
+                  </span>
+                )}
               </div>
 
               <div className="modalActions">
                 <button
                   type="button"
                   className="btn primary"
-                  onClick={() => copiarTexto(roteiroSelecionado.id, 'ID do roteiro')}
+                  onClick={() => copiarTexto(grupoSelecionado.id, 'ID do grupo')}
                 >
                   Copiar ID
                 </button>
@@ -2266,28 +2011,17 @@ export default function AdminRoteirosPage() {
                   type="button"
                   className="btn green"
                   onClick={() => {
-                    setRoteiroSelecionado(null)
-                    router.push('/admin/reservas')
+                    setGrupoSelecionado(null)
+                    router.push('/admin/roteiros')
                   }}
                 >
-                  Ver reservas
-                </button>
-
-                <button
-                  type="button"
-                  className="btn green"
-                  onClick={() => {
-                    setRoteiroSelecionado(null)
-                    router.push('/admin/grupos')
-                  }}
-                >
-                  Ver grupos
+                  Ver roteiros
                 </button>
 
                 <button
                   type="button"
                   className="btn light"
-                  onClick={() => setRoteiroSelecionado(null)}
+                  onClick={() => setGrupoSelecionado(null)}
                 >
                   Fechar
                 </button>

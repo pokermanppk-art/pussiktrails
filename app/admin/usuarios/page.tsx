@@ -17,91 +17,51 @@ type UsuarioBanco = {
   nome?: string | null
   name?: string | null
   email?: string | null
+  telefone?: string | null
+  celular?: string | null
+  cpf?: string | null
   tipo?: string | null
-}
-
-type Roteiro = {
-  id: string
-  titulo?: string | null
-  nome?: string | null
-  preco?: number | null
-  valor?: number | null
-  id_guia?: string | null
-  guia_id?: string | null
-  local?: string | null
-  localizacao?: string | null
-  foto_capa?: string | null
-  foto_url?: string | null
-  imagem_url?: string | null
-  imagem?: string | null
-}
-
-type Reserva = {
-  id: string
-  cliente_id?: string | null
-  roteiro_id?: string | null
-  quantidade_pessoas?: number | null
-  valor_total?: number | null
   status?: string | null
-  pagamento_status?: string | null
-  order_id?: string | null
-  transaction_id?: string | null
+  ativo?: boolean | null
   created_at?: string | null
   updated_at?: string | null
+  [key: string]: any
 }
 
-type ReservaCompleta = Reserva & {
-  cliente?: UsuarioBanco | null
-  guia?: UsuarioBanco | null
-  roteiro?: Roteiro | null
-  cliente_nome?: string
-  guia_nome?: string
-  roteiro_titulo?: string
-}
-
-type FiltroStatus = 'todas' | 'confirmadas' | 'pendentes' | 'canceladas' | 'pagas'
+type FiltroTipo = 'todos' | 'cliente' | 'guia' | 'admin'
 
 type Stats = {
   total: number
-  confirmadas: number
-  pendentes: number
-  canceladas: number
-  pagas: number
-  receitaBruta: number
-  receitaMes: number
-  taxaPlataforma: number
-  repasseGuias: number
-  ticketMedio: number
+  clientes: number
+  guias: number
+  admins: number
+  novosMes: number
+  ativos: number
 }
 
 const statsInicial: Stats = {
   total: 0,
-  confirmadas: 0,
-  pendentes: 0,
-  canceladas: 0,
-  pagas: 0,
-  receitaBruta: 0,
-  receitaMes: 0,
-  taxaPlataforma: 0,
-  repasseGuias: 0,
-  ticketMedio: 0
+  clientes: 0,
+  guias: 0,
+  admins: 0,
+  novosMes: 0,
+  ativos: 0
 }
 
-export default function AdminReservasPage() {
+export default function AdminUsuariosPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [reservas, setReservas] = useState<ReservaCompleta[]>([])
+  const [usuarios, setUsuarios] = useState<UsuarioBanco[]>([])
   const [stats, setStats] = useState<Stats>(statsInicial)
 
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
-  const [reconciliandoId, setReconciliandoId] = useState('')
   const [menuAberto, setMenuAberto] = useState(false)
 
   const [busca, setBusca] = useState('')
-  const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todas')
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
 
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
   const [senhaAtual, setSenhaAtual] = useState('')
@@ -115,7 +75,6 @@ export default function AdminReservasPage() {
 
   useEffect(() => {
     if (iniciouRef.current) return
-
     iniciouRef.current = true
     iniciar()
   }, [])
@@ -141,10 +100,10 @@ export default function AdminReservasPage() {
       }
 
       setUser(parsedUser)
-      await carregarReservas()
+      await carregarUsuarios()
     } catch (error) {
-      console.error('Erro ao iniciar reservas admin:', error)
-      setErro('Não foi possível carregar as reservas agora.')
+      console.error('Erro ao iniciar usuários admin:', error)
+      setErro('Não foi possível carregar os usuários agora.')
     } finally {
       setCarregando(false)
     }
@@ -162,16 +121,8 @@ export default function AdminReservasPage() {
     return usuario?.nome || usuario?.name || usuario?.email || 'Usuário'
   }
 
-  const tituloRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.titulo || roteiro?.nome || 'Roteiro'
-  }
-
-  const localRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.local || roteiro?.localizacao || 'Local a confirmar'
-  }
-
-  const imagemRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || roteiro?.imagem || ''
+  const telefoneUsuario = (usuario?: UsuarioBanco | null) => {
+    return usuario?.telefone || usuario?.celular || '-'
   }
 
   const formatarData = (valor?: string | null) => {
@@ -182,13 +133,6 @@ export default function AdminReservasPage() {
     if (Number.isNaN(data.getTime())) return valor
 
     return data.toLocaleDateString('pt-BR')
-  }
-
-  const formatarMoeda = (valor: any) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(Number(valor || 0))
   }
 
   const dentroDoMesAtual = (valor?: string | null) => {
@@ -206,176 +150,41 @@ export default function AdminReservasPage() {
     )
   }
 
-  const pagamentoConfirmado = (reserva: Reserva) => {
-    const pagamento = normalizar(reserva.pagamento_status)
-    const status = normalizar(reserva.status)
+  const usuarioAtivo = (usuario: UsuarioBanco) => {
+    const status = normalizar(usuario.status)
 
-    return (
-      pagamento === 'pago' ||
-      pagamento === 'confirmado' ||
-      pagamento === 'aprovado' ||
-      pagamento === 'paid' ||
-      pagamento === 'approved' ||
-      status === 'confirmada' ||
-      status === 'realizada' ||
-      status === 'pago' ||
-      status === 'paga'
-    )
+    if (usuario.ativo === true) return true
+    if (usuario.ativo === false) return false
+
+    return !status || status === 'ativo' || status === 'active'
   }
 
-  const reservaCancelada = (reserva: Reserva) => {
-    const status = normalizar(reserva.status)
-
-    return status === 'cancelada' || status === 'cancelado' || status === 'cancelled'
-  }
-
-  const reservaPendente = (reserva: Reserva) => {
-    return !pagamentoConfirmado(reserva) && !reservaCancelada(reserva)
-  }
-
-  const carregarReservas = async () => {
+  const carregarUsuarios = async () => {
     setErro('')
 
-    const { data: reservasData, error: reservasError } = await supabase
-      .from('reservas')
+    const { data, error } = await supabase
+      .from('users')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(1000)
+      .limit(1200)
 
-    if (reservasError) {
-      console.error('Erro ao carregar reservas:', reservasError)
-      setErro('Não foi possível carregar as reservas.')
+    if (error) {
+      console.error('Erro ao carregar usuários:', error)
+      setErro('Não foi possível carregar os usuários.')
       return
     }
 
-    const reservasBase = (reservasData || []) as Reserva[]
+    const lista = (data || []) as UsuarioBanco[]
 
-    const clienteIds = Array.from(
-      new Set(
-        reservasBase
-          .map((reserva) => reserva.cliente_id)
-          .filter(Boolean) as string[]
-      )
-    )
+    setUsuarios(lista)
 
-    const roteiroIds = Array.from(
-      new Set(
-        reservasBase
-          .map((reserva) => reserva.roteiro_id)
-          .filter(Boolean) as string[]
-      )
-    )
-
-    let clientes: UsuarioBanco[] = []
-    let roteiros: Roteiro[] = []
-    let guias: UsuarioBanco[] = []
-
-    if (clienteIds.length > 0) {
-      const { data: clientesData, error: clientesError } = await supabase
-        .from('users')
-        .select('id, nome, name, email, tipo')
-        .in('id', clienteIds)
-
-      if (clientesError) {
-        console.warn('Erro ao buscar clientes das reservas:', clientesError)
-      }
-
-      clientes = (clientesData || []) as UsuarioBanco[]
-    }
-
-    if (roteiroIds.length > 0) {
-      const { data: roteirosData, error: roteirosError } = await supabase
-        .from('roteiros')
-        .select('*')
-        .in('id', roteiroIds)
-
-      if (roteirosError) {
-        console.warn('Erro ao buscar roteiros das reservas:', roteirosError)
-      }
-
-      roteiros = (roteirosData || []) as Roteiro[]
-    }
-
-    const guiaIds = Array.from(
-      new Set(
-        roteiros
-          .map((roteiro) => roteiro.id_guia || roteiro.guia_id)
-          .filter(Boolean) as string[]
-      )
-    )
-
-    if (guiaIds.length > 0) {
-      const { data: guiasData, error: guiasError } = await supabase
-        .from('users')
-        .select('id, nome, name, email, tipo')
-        .in('id', guiaIds)
-
-      if (guiasError) {
-        console.warn('Erro ao buscar guias das reservas:', guiasError)
-      }
-
-      guias = (guiasData || []) as UsuarioBanco[]
-    }
-
-    const reservasCompletas = reservasBase.map((reserva) => {
-      const cliente =
-        clientes.find((item) => item.id === reserva.cliente_id) ||
-        null
-
-      const roteiro =
-        roteiros.find((item) => item.id === reserva.roteiro_id) ||
-        null
-
-      const guiaId = roteiro?.id_guia || roteiro?.guia_id || ''
-
-      const guia =
-        guias.find((item) => item.id === guiaId) ||
-        null
-
-      return {
-        ...reserva,
-        cliente,
-        guia,
-        roteiro,
-        cliente_nome: nomeUsuario(cliente),
-        guia_nome: nomeUsuario(guia),
-        roteiro_titulo: tituloRoteiro(roteiro)
-      }
-    })
-
-    const confirmadas = reservasCompletas.filter(pagamentoConfirmado)
-    const pendentes = reservasCompletas.filter(reservaPendente)
-    const canceladas = reservasCompletas.filter(reservaCancelada)
-    const pagas = reservasCompletas.filter((reserva) => {
-      const pagamento = normalizar(reserva.pagamento_status)
-      return pagamento === 'pago' || pagamento === 'paid' || pagamento === 'approved' || pagamento === 'aprovado'
-    })
-
-    const receitaBruta = confirmadas.reduce(
-      (total, reserva) => total + Number(reserva.valor_total || 0),
-      0
-    )
-
-    const receitaMes = confirmadas
-      .filter((reserva) => dentroDoMesAtual(reserva.created_at))
-      .reduce((total, reserva) => total + Number(reserva.valor_total || 0), 0)
-
-    const taxaPlataforma = receitaBruta * 0.05
-    const repasseGuias = receitaBruta - taxaPlataforma
-    const ticketMedio = confirmadas.length > 0 ? receitaBruta / confirmadas.length : 0
-
-    setReservas(reservasCompletas)
     setStats({
-      total: reservasCompletas.length,
-      confirmadas: confirmadas.length,
-      pendentes: pendentes.length,
-      canceladas: canceladas.length,
-      pagas: pagas.length,
-      receitaBruta,
-      receitaMes,
-      taxaPlataforma,
-      repasseGuias,
-      ticketMedio
+      total: lista.length,
+      clientes: lista.filter((item) => normalizar(item.tipo) === 'cliente').length,
+      guias: lista.filter((item) => normalizar(item.tipo) === 'guia').length,
+      admins: lista.filter((item) => normalizar(item.tipo) === 'admin').length,
+      novosMes: lista.filter((item) => dentroDoMesAtual(item.created_at)).length,
+      ativos: lista.filter(usuarioAtivo).length
     })
 
     setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
@@ -387,50 +196,13 @@ export default function AdminReservasPage() {
     setErro('')
 
     try {
-      await carregarReservas()
-      setMensagem('Reservas atualizadas.')
+      await carregarUsuarios()
+      setMensagem('Usuários atualizados.')
     } catch (error) {
-      console.error('Erro ao atualizar reservas:', error)
-      setErro('Não foi possível atualizar as reservas agora.')
+      console.error('Erro ao atualizar usuários:', error)
+      setErro('Não foi possível atualizar os usuários agora.')
     } finally {
       setAtualizando(false)
-    }
-  }
-
-  const reconciliarReserva = async (reserva: ReservaCompleta) => {
-    if (!reserva?.id) return
-
-    setReconciliandoId(reserva.id)
-    setMensagem('')
-    setErro('')
-
-    try {
-      const response = await fetch('/api/paghiper/reconciliar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          reservaId: reserva.id,
-          orderId: reserva.order_id || `RESERVA-${reserva.id}`,
-          transactionId: reserva.transaction_id || ''
-        })
-      })
-
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || data?.sucesso === false) {
-        setErro(data?.erro || data?.message || 'Não foi possível reconciliar esta reserva.')
-        return
-      }
-
-      setMensagem('Reconciliação executada. Reserva atualizada, se o pagamento já estiver confirmado.')
-      await carregarReservas()
-    } catch (error) {
-      console.error('Erro ao reconciliar reserva:', error)
-      setErro('Erro ao reconciliar reserva.')
-    } finally {
-      setReconciliandoId('')
     }
   }
 
@@ -526,63 +298,70 @@ export default function AdminReservasPage() {
     router.replace('/login')
   }
 
-  const reservasFiltradas = useMemo(() => {
+  const usuariosFiltrados = useMemo(() => {
     const termo = normalizar(busca)
 
-    return reservas.filter((reserva) => {
-      const passaStatus =
-        filtroStatus === 'todas' ||
-        (filtroStatus === 'confirmadas' && pagamentoConfirmado(reserva)) ||
-        (filtroStatus === 'pendentes' && reservaPendente(reserva)) ||
-        (filtroStatus === 'canceladas' && reservaCancelada(reserva)) ||
-        (filtroStatus === 'pagas' && normalizar(reserva.pagamento_status).includes('pago'))
+    return usuarios.filter((usuario) => {
+      const tipo = normalizar(usuario.tipo)
 
-      if (!passaStatus) return false
+      const passaTipo =
+        filtroTipo === 'todos' ||
+        tipo === filtroTipo
+
+      if (!passaTipo) return false
 
       if (!termo) return true
 
       const texto = normalizar(
         [
-          reserva.id,
-          reserva.order_id,
-          reserva.transaction_id,
-          reserva.cliente_nome,
-          reserva.guia_nome,
-          reserva.roteiro_titulo,
-          reserva.status,
-          reserva.pagamento_status,
-          localRoteiro(reserva.roteiro)
+          usuario.id,
+          usuario.nome,
+          usuario.name,
+          usuario.email,
+          usuario.telefone,
+          usuario.celular,
+          usuario.cpf,
+          usuario.tipo,
+          usuario.status
         ].join(' ')
       )
 
       return texto.includes(termo)
     })
-  }, [reservas, busca, filtroStatus])
+  }, [usuarios, busca, filtroTipo])
 
-  const badgeReserva = (reserva: ReservaCompleta) => {
-    if (pagamentoConfirmado(reserva)) return <span className="badge green">Confirmada</span>
-    if (reservaCancelada(reserva)) return <span className="badge red">Cancelada</span>
+  const badgeTipo = (usuario: UsuarioBanco) => {
+    const tipo = normalizar(usuario.tipo)
 
-    return <span className="badge yellow">Pendente</span>
+    if (tipo === 'admin') return <span className="badge dark">Admin</span>
+    if (tipo === 'guia') return <span className="badge green">Guia</span>
+    if (tipo === 'cliente') return <span className="badge blue">Cliente</span>
+
+    return <span className="badge neutral">Usuário</span>
   }
 
-  const badgePagamento = (reserva: ReservaCompleta) => {
-    const pagamento = normalizar(reserva.pagamento_status)
-
-    if (
-      pagamento === 'pago' ||
-      pagamento === 'paid' ||
-      pagamento === 'approved' ||
-      pagamento === 'aprovado'
-    ) {
-      return <span className="badge green">Pago</span>
+  const badgeStatus = (usuario: UsuarioBanco) => {
+    if (usuarioAtivo(usuario)) {
+      return <span className="badge green">Ativo</span>
     }
 
-    if (pagamento === 'cancelado' || pagamento === 'cancelada' || pagamento === 'expired') {
-      return <span className="badge red">Não pago</span>
+    return <span className="badge red">Inativo</span>
+  }
+
+  const acaoPrincipalUsuario = (usuario: UsuarioBanco) => {
+    const tipo = normalizar(usuario.tipo)
+
+    if (tipo === 'guia') {
+      router.push('/admin/roteiros')
+      return
     }
 
-    return <span className="badge neutral">Aguardando</span>
+    if (tipo === 'cliente') {
+      router.push('/admin/reservas')
+      return
+    }
+
+    router.push('/admin/dashboard')
   }
 
   if (carregando || !user) {
@@ -634,7 +413,7 @@ export default function AdminReservasPage() {
 
         <div className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <div>Carregando reservas...</div>
+          <div>Carregando usuários...</div>
         </div>
       </main>
     )
@@ -920,7 +699,7 @@ export default function AdminReservasPage() {
 
         .statsGrid {
           display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
+          grid-template-columns: repeat(6, minmax(0, 1fr));
           gap: 12px;
           margin-bottom: 18px;
         }
@@ -981,8 +760,7 @@ export default function AdminReservasPage() {
           margin-bottom: 18px;
         }
 
-        .input,
-        .select {
+        .input {
           width: 100%;
           border: 1px solid rgba(15, 23, 42, 0.10);
           background: #ffffff;
@@ -994,8 +772,7 @@ export default function AdminReservasPage() {
           outline: none;
         }
 
-        .input:focus,
-        .select:focus {
+        .input:focus {
           border-color: #22c55e;
           box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.10);
         }
@@ -1073,57 +850,52 @@ export default function AdminReservasPage() {
           padding: 0;
         }
 
-        .reservaList {
+        .userList {
           display: grid;
           gap: 10px;
         }
 
-        .reservaCard {
+        .userCard {
           background: #ffffff;
           border: 1px solid rgba(15, 23, 42, 0.08);
           border-radius: 22px;
           padding: 12px;
           display: grid;
-          grid-template-columns: 74px minmax(0, 1fr) auto;
+          grid-template-columns: 58px minmax(0, 1fr) auto;
           gap: 12px;
           align-items: center;
           transition: 0.2s ease;
         }
 
-        .reservaCard:hover {
+        .userCard:hover {
           transform: translateY(-1px);
           box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
         }
 
-        .thumb {
-          width: 74px;
-          height: 74px;
+        .avatar {
+          width: 58px;
+          height: 58px;
           border-radius: 20px;
-          background: #e2e8f0;
+          background:
+            radial-gradient(circle at top right, rgba(34, 197, 94, 0.18), transparent 40%),
+            #e2e8f0;
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #64748b;
-          font-size: 12px;
+          color: #475569;
+          font-size: 13px;
           font-weight: 950;
-          overflow: hidden;
+          text-transform: uppercase;
         }
 
-        .thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .reservaTitle {
+        .userTitle {
           color: #0f172a;
-          font-size: 14px;
+          font-size: 15px;
           font-weight: 950;
           line-height: 1.3;
         }
 
-        .reservaMeta {
+        .userMeta {
           color: #64748b;
           font-size: 12px;
           line-height: 1.45;
@@ -1131,18 +903,12 @@ export default function AdminReservasPage() {
           margin-top: 4px;
         }
 
-        .reservaFooter {
+        .userFooter {
           display: flex;
           gap: 7px;
           flex-wrap: wrap;
           margin-top: 8px;
           align-items: center;
-        }
-
-        .price {
-          color: #16a34a;
-          font-size: 13px;
-          font-weight: 950;
         }
 
         .badge {
@@ -1159,9 +925,14 @@ export default function AdminReservasPage() {
           color: #166534;
         }
 
-        .badge.yellow {
-          background: #fef3c7;
-          color: #92400e;
+        .badge.blue {
+          background: #dbeafe;
+          color: #1d4ed8;
+        }
+
+        .badge.dark {
+          background: #0f172a;
+          color: #ffffff;
         }
 
         .badge.red {
@@ -1193,7 +964,7 @@ export default function AdminReservasPage() {
           white-space: nowrap;
         }
 
-        .actionBtn:hover:not(:disabled) {
+        .actionBtn:hover {
           transform: translateY(-1px);
           box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
         }
@@ -1208,11 +979,6 @@ export default function AdminReservasPage() {
           background: #dcfce7;
           color: #166534;
           border-color: #bbf7d0;
-        }
-
-        .actionBtn:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
         }
 
         .empty {
@@ -1350,8 +1116,8 @@ export default function AdminReservasPage() {
             grid-template-columns: 1fr;
           }
 
-          .reservaCard {
-            grid-template-columns: 64px minmax(0, 1fr);
+          .userCard {
+            grid-template-columns: 58px minmax(0, 1fr);
           }
 
           .actions {
@@ -1410,13 +1176,13 @@ export default function AdminReservasPage() {
             grid-template-columns: 1fr;
           }
 
-          .reservaCard {
+          .userCard {
             grid-template-columns: 1fr;
           }
 
-          .thumb {
+          .avatar {
             width: 100%;
-            height: 150px;
+            height: 120px;
           }
 
           .modalActions {
@@ -1439,7 +1205,7 @@ export default function AdminReservasPage() {
 
             <div>
               <div className="brandTitle">PrussikTrails Admin</div>
-              <div className="brandSub">Reservas da plataforma</div>
+              <div className="brandSub">Usuários da plataforma</div>
             </div>
           </div>
 
@@ -1480,14 +1246,14 @@ export default function AdminReservasPage() {
         <section className="hero">
           <div className="heroInner">
             <div>
-              <div className="eyebrow">Controle de reservas</div>
+              <div className="eyebrow">Base da plataforma</div>
 
               <h1 className="heroTitle">
-                Reservas, pagamentos e operação em <span>um só painel.</span>
+                Usuários, guias e clientes com <span>visão administrativa.</span>
               </h1>
 
               <p className="heroText">
-                Acompanhe reservas confirmadas, pendentes, canceladas, valores, clientes, guias e reconciliação de pagamentos.
+                Acompanhe crescimento da base, perfis cadastrados, guias ativos, clientes e administradores.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1499,12 +1265,12 @@ export default function AdminReservasPage() {
 
             <aside
               className="heroCard"
-              onClick={() => router.push('/admin/financeiro')}
+              onClick={() => setFiltroTipo('todos')}
             >
-              <div className="heroLabel">Receita confirmada</div>
-              <div className="heroValue">{formatarMoeda(stats.receitaBruta)}</div>
+              <div className="heroLabel">Usuários cadastrados</div>
+              <div className="heroValue">{stats.total}</div>
               <div className="heroSmall">
-                Taxa plataforma estimada: {formatarMoeda(stats.taxaPlataforma)} · repasse guias: {formatarMoeda(stats.repasseGuias)}.
+                {stats.clientes} clientes · {stats.guias} guias · {stats.admins} admin(s) · {stats.novosMes} novo(s) no mês.
               </div>
             </aside>
           </div>
@@ -1521,47 +1287,56 @@ export default function AdminReservasPage() {
         <section className="statsGrid">
           <article
             className="statCard"
-            onClick={() => setFiltroStatus('todas')}
+            onClick={() => setFiltroTipo('todos')}
+          >
+            <div className="statIcon">👥</div>
+            <div className="statValue">{stats.total}</div>
+            <div className="statLabel">usuários cadastrados</div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => setFiltroTipo('cliente')}
           >
             <div className="statIcon">🎒</div>
-            <div className="statValue">{stats.total}</div>
-            <div className="statLabel">reservas totais cadastradas</div>
+            <div className="statValue">{stats.clientes}</div>
+            <div className="statLabel">clientes aventureiros</div>
           </article>
 
           <article
             className="statCard"
-            onClick={() => setFiltroStatus('confirmadas')}
+            onClick={() => setFiltroTipo('guia')}
+          >
+            <div className="statIcon">🧭</div>
+            <div className="statValue">{stats.guias}</div>
+            <div className="statLabel">guias cadastrados</div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => setFiltroTipo('admin')}
+          >
+            <div className="statIcon">⚙️</div>
+            <div className="statValue">{stats.admins}</div>
+            <div className="statLabel">administradores</div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => setFiltroTipo('todos')}
+          >
+            <div className="statIcon">📈</div>
+            <div className="statValue">{stats.novosMes}</div>
+            <div className="statLabel">novos usuários no mês</div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => setFiltroTipo('todos')}
           >
             <div className="statIcon">✅</div>
-            <div className="statValue">{stats.confirmadas}</div>
-            <div className="statLabel">confirmadas ou realizadas</div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => setFiltroStatus('pendentes')}
-          >
-            <div className="statIcon">⏳</div>
-            <div className="statValue">{stats.pendentes}</div>
-            <div className="statLabel">aguardando pagamento ou confirmação</div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => router.push('/admin/financeiro')}
-          >
-            <div className="statIcon">💰</div>
-            <div className="statValue">{formatarMoeda(stats.receitaMes)}</div>
-            <div className="statLabel">receita confirmada no mês</div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => router.push('/admin/financeiro')}
-          >
-            <div className="statIcon">📊</div>
-            <div className="statValue">{formatarMoeda(stats.ticketMedio)}</div>
-            <div className="statLabel">ticket médio das reservas confirmadas</div>
+            <div className="statValue">{stats.ativos}</div>
+            <div className="statLabel">usuários ativos estimados</div>
           </article>
         </section>
 
@@ -1570,48 +1345,40 @@ export default function AdminReservasPage() {
             className="input"
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
-            placeholder="Buscar por cliente, guia, roteiro, ID, order_id ou status..."
+            placeholder="Buscar por nome, e-mail, telefone, CPF, tipo ou ID..."
           />
 
           <div className="filters">
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'todas' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('todas')}
+              className={`filterBtn ${filtroTipo === 'todos' ? 'active' : ''}`}
+              onClick={() => setFiltroTipo('todos')}
             >
-              Todas
+              Todos
             </button>
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'confirmadas' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('confirmadas')}
+              className={`filterBtn ${filtroTipo === 'cliente' ? 'active' : ''}`}
+              onClick={() => setFiltroTipo('cliente')}
             >
-              Confirmadas
+              Clientes
             </button>
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'pendentes' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('pendentes')}
+              className={`filterBtn ${filtroTipo === 'guia' ? 'active' : ''}`}
+              onClick={() => setFiltroTipo('guia')}
             >
-              Pendentes
+              Guias
             </button>
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'canceladas' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('canceladas')}
+              className={`filterBtn ${filtroTipo === 'admin' ? 'active' : ''}`}
+              onClick={() => setFiltroTipo('admin')}
             >
-              Canceladas
-            </button>
-
-            <button
-              type="button"
-              className={`filterBtn ${filtroStatus === 'pagas' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('pagas')}
-            >
-              Pagas
+              Admins
             </button>
           </div>
         </section>
@@ -1619,9 +1386,9 @@ export default function AdminReservasPage() {
         <section className="panel">
           <div className="panelHeader">
             <div>
-              <h2 className="panelTitle">Lista de reservas</h2>
+              <h2 className="panelTitle">Lista de usuários</h2>
               <div className="panelSub">
-                {reservasFiltradas.length} reserva(s) encontrada(s) no filtro atual.
+                {usuariosFiltrados.length} usuário(s) encontrado(s) no filtro atual.
               </div>
             </div>
 
@@ -1631,90 +1398,87 @@ export default function AdminReservasPage() {
               onClick={atualizar}
               disabled={atualizando}
             >
-              {atualizando ? 'Atualizando...' : 'Atualizar reservas'}
+              {atualizando ? 'Atualizando...' : 'Atualizar usuários'}
             </button>
           </div>
 
           <div className="panelBody">
-            {reservasFiltradas.length === 0 ? (
+            {usuariosFiltrados.length === 0 ? (
               <div className="empty">
-                Nenhuma reserva encontrada com os filtros atuais.
+                Nenhum usuário encontrado com os filtros atuais.
               </div>
             ) : (
-              <div className="reservaList">
-                {reservasFiltradas.map((reserva) => {
-                  const imagem = imagemRoteiro(reserva.roteiro)
+              <div className="userList">
+                {usuariosFiltrados.map((usuario) => (
+                  <article className="userCard" key={usuario.id}>
+                    <div className="avatar">
+                      {(nomeUsuario(usuario).slice(0, 2) || 'US').toUpperCase()}
+                    </div>
 
-                  return (
-                    <article className="reservaCard" key={reserva.id}>
-                      <div className="thumb">
-                        {imagem ? (
-                          <img
-                            src={imagem}
-                            alt={tituloRoteiro(reserva.roteiro)}
-                          />
-                        ) : (
-                          'RS'
+                    <div>
+                      <div className="userTitle">
+                        {nomeUsuario(usuario)}
+                      </div>
+
+                      <div className="userMeta">
+                        {usuario.email || 'E-mail não informado'}
+                        <br />
+                        Telefone: {telefoneUsuario(usuario)} · Cadastro: {formatarData(usuario.created_at)}
+                        <br />
+                        ID: {usuario.id.slice(0, 8)}
+                      </div>
+
+                      <div className="userFooter">
+                        {badgeTipo(usuario)}
+                        {badgeStatus(usuario)}
+
+                        {usuario.cpf && (
+                          <span className="badge neutral">
+                            CPF {String(usuario.cpf).slice(-4)}
+                          </span>
                         )}
                       </div>
+                    </div>
 
-                      <div>
-                        <div className="reservaTitle">
-                          {reserva.roteiro_titulo || 'Roteiro'}
-                        </div>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="actionBtn primary"
+                        onClick={() => acaoPrincipalUsuario(usuario)}
+                      >
+                        Ver operação
+                      </button>
 
-                        <div className="reservaMeta">
-                          Cliente: {reserva.cliente_nome || 'Cliente'} · Guia: {reserva.guia_nome || 'Guia'}
-                          <br />
-                          {localRoteiro(reserva.roteiro)} · criada em {formatarData(reserva.created_at)}
-                          <br />
-                          ID: {reserva.id.slice(0, 8)}
-                          {reserva.order_id ? ` · Order: ${reserva.order_id}` : ''}
-                        </div>
-
-                        <div className="reservaFooter">
-                          <span className="price">
-                            {formatarMoeda(reserva.valor_total || 0)}
-                          </span>
-
-                          <span className="badge neutral">
-                            {reserva.quantidade_pessoas || 1} pessoa(s)
-                          </span>
-
-                          {badgeReserva(reserva)}
-                          {badgePagamento(reserva)}
-                        </div>
-                      </div>
-
-                      <div className="actions">
-                        <button
-                          type="button"
-                          className="actionBtn primary"
-                          onClick={() => router.push('/admin/financeiro')}
-                        >
-                          Financeiro
-                        </button>
-
-                        <button
-                          type="button"
-                          className="actionBtn"
-                          onClick={() => router.push('/admin/roteiros')}
-                        >
-                          Roteiro
-                        </button>
-
+                      {normalizar(usuario.tipo) === 'guia' && (
                         <button
                           type="button"
                           className="actionBtn green"
-                          onClick={() => reconciliarReserva(reserva)}
-                          disabled={reconciliandoId === reserva.id}
+                          onClick={() => router.push('/admin/roteiros')}
                         >
-                          {reconciliandoId === reserva.id ? 'Reconciliando...' : 'Reconciliar'}
+                          Roteiros
                         </button>
-                      </div>
-                    </article>
-                  )
-                })}
+                      )}
+
+                      {normalizar(usuario.tipo) === 'cliente' && (
+                        <button
+                          type="button"
+                          className="actionBtn green"
+                          onClick={() => router.push('/admin/reservas')}
+                        >
+                          Reservas
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="actionBtn"
+                        onClick={() => navigator.clipboard?.writeText(usuario.id)}
+                      >
+                        Copiar ID
+                      </button>
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
           </div>

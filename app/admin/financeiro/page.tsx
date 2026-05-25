@@ -24,9 +24,6 @@ type Roteiro = {
   id: string
   titulo?: string | null
   nome?: string | null
-  descricao?: string | null
-  status?: string | null
-  ativo?: boolean | null
   preco?: number | null
   valor?: number | null
   id_guia?: string | null
@@ -35,116 +32,121 @@ type Roteiro = {
   usuario_id?: string | null
   local?: string | null
   localizacao?: string | null
-  local_encontro?: string | null
-  ponto_encontro?: string | null
-  dificuldade?: string | null
-  duracao_horas?: number | null
-  duracao?: string | null
-  km?: number | null
-  distancia_km?: number | null
-  limite_pessoas?: number | null
-  capacidade?: number | null
-  max_pessoas?: number | null
-  recorrencia?: string | null
-  foto_capa?: string | null
-  foto_url?: string | null
-  imagem_url?: string | null
-  imagem?: string | null
+}
+
+type Reserva = {
+  id: string
+  cliente_id?: string | null
+  roteiro_id?: string | null
+  quantidade_pessoas?: number | null
+  valor_total?: number | null
+  status?: string | null
+  pagamento_status?: string | null
+  order_id?: string | null
+  transaction_id?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+type RepasseGuia = {
+  id: string
+  guia_id?: string | null
+  id_guia?: string | null
+  valor?: number | null
+  valor_pago?: number | null
+  valor_repassado?: number | null
+  status?: string | null
+  observacao?: string | null
+  descricao?: string | null
+  data_pagamento?: string | null
   created_at?: string | null
   updated_at?: string | null
   [key: string]: any
 }
 
-type Reserva = {
-  id: string
-  roteiro_id?: string | null
-  cliente_id?: string | null
-  valor_total?: number | null
-  quantidade_pessoas?: number | null
-  status?: string | null
-  pagamento_status?: string | null
-  created_at?: string | null
-}
-
-type GrupoRoteiro = {
-  id: string
-  roteiro_id?: string | null
-  guia_id?: string | null
-  titulo?: string | null
-  nome?: string | null
-  status?: string | null
-  ativo?: boolean | null
-  created_at?: string | null
-}
-
-type Avaliacao = {
-  id: string
-  roteiro_id?: string | null
-  nota?: number | null
-  status?: string | null
-  created_at?: string | null
-}
-
-type RoteiroCompleto = Roteiro & {
+type ReservaCompleta = Reserva & {
+  roteiro?: Roteiro | null
   guia?: UsuarioBanco | null
-  reservas?: Reserva[]
-  grupo?: GrupoRoteiro | null
-  avaliacoes?: Avaliacao[]
+  guia_id_real?: string | null
   guia_nome?: string
-  total_reservas?: number
-  reservas_confirmadas?: number
-  receita_confirmada?: number
-  media_avaliacao?: number
-  total_avaliacoes?: number
+  roteiro_titulo?: string
 }
 
-type FiltroStatus = 'todos' | 'ativos' | 'pendentes' | 'pausados' | 'reprovados' | 'com_reservas' | 'sem_grupo'
+type GuiaFinanceiro = {
+  guia_id: string
+  guia_nome: string
+  guia_email: string
+  reservas: ReservaCompleta[]
+  repasses: RepasseGuia[]
+  receita_bruta: number
+  taxa_plataforma: number
+  taxa_paghiper: number
+  valor_liquido_guia: number
+  valor_pago: number
+  saldo_pendente: number
+  reservas_confirmadas: number
+  ultima_reserva_em?: string | null
+  ultimo_pagamento_em?: string | null
+}
 
 type Stats = {
-  total: number
-  ativos: number
-  pendentes: number
-  pausados: number
-  reprovados: number
-  novosMes: number
-  comReservas: number
-  semGrupo: number
-  receitaConfirmada: number
+  receitaBrutaTotal: number
+  receitaBrutaMes: number
+  taxaPlataformaTotal: number
+  taxaPlataformaMes: number
+  taxaPagHiperTotal: number
+  taxaPagHiperMes: number
+  repasseGuiasTotal: number
+  repasseGuiasMes: number
+  pagoGuiasTotal: number
+  saldoGuiasTotal: number
+  resultadoPlataformaTotal: number
+  resultadoPlataformaMes: number
   reservasConfirmadas: number
-  mediaAvaliacoes: number
+  guiasComSaldo: number
 }
 
 const statsInicial: Stats = {
-  total: 0,
-  ativos: 0,
-  pendentes: 0,
-  pausados: 0,
-  reprovados: 0,
-  novosMes: 0,
-  comReservas: 0,
-  semGrupo: 0,
-  receitaConfirmada: 0,
+  receitaBrutaTotal: 0,
+  receitaBrutaMes: 0,
+  taxaPlataformaTotal: 0,
+  taxaPlataformaMes: 0,
+  taxaPagHiperTotal: 0,
+  taxaPagHiperMes: 0,
+  repasseGuiasTotal: 0,
+  repasseGuiasMes: 0,
+  pagoGuiasTotal: 0,
+  saldoGuiasTotal: 0,
+  resultadoPlataformaTotal: 0,
+  resultadoPlataformaMes: 0,
   reservasConfirmadas: 0,
-  mediaAvaliacoes: 0
+  guiasComSaldo: 0
 }
 
-export default function AdminRoteirosPage() {
+type FiltroFinanceiro = 'todos' | 'com_saldo' | 'quitados' | 'sem_repasses'
+
+export default function AdminFinanceiroPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [roteiros, setRoteiros] = useState<RoteiroCompleto[]>([])
-  const [roteiroSelecionado, setRoteiroSelecionado] = useState<RoteiroCompleto | null>(null)
+  const [reservas, setReservas] = useState<ReservaCompleta[]>([])
+  const [guiasFinanceiros, setGuiasFinanceiros] = useState<GuiaFinanceiro[]>([])
   const [stats, setStats] = useState<Stats>(statsInicial)
 
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
-  const [alterandoStatusId, setAlterandoStatusId] = useState('')
-  const [criandoGrupoId, setCriandoGrupoId] = useState('')
   const [menuAberto, setMenuAberto] = useState(false)
+  const [tabelaRepassesOk, setTabelaRepassesOk] = useState(true)
 
   const [busca, setBusca] = useState('')
-  const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todos')
+  const [filtroFinanceiro, setFiltroFinanceiro] = useState<FiltroFinanceiro>('todos')
+
+  const [guiaSelecionado, setGuiaSelecionado] = useState<GuiaFinanceiro | null>(null)
+  const [modalPagamentoAberto, setModalPagamentoAberto] = useState(false)
+  const [valorPagamento, setValorPagamento] = useState('')
+  const [observacaoPagamento, setObservacaoPagamento] = useState('')
+  const [registrandoPagamento, setRegistrandoPagamento] = useState(false)
 
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
   const [senhaAtual, setSenhaAtual] = useState('')
@@ -184,10 +186,10 @@ export default function AdminRoteirosPage() {
       }
 
       setUser(parsedUser)
-      await carregarRoteiros()
+      await carregarFinanceiro()
     } catch (error) {
-      console.error('Erro ao iniciar roteiros admin:', error)
-      setErro('Não foi possível carregar os roteiros agora.')
+      console.error('Erro ao iniciar financeiro admin:', error)
+      setErro('Não foi possível carregar o financeiro agora.')
     } finally {
       setCarregando(false)
     }
@@ -199,6 +201,19 @@ export default function AdminRoteirosPage() {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .trim()
+  }
+
+  const normalizarNumero = (valor: string, fallback = 0) => {
+    const limpo = String(valor || '')
+      .replace(/\./g, '')
+      .replace(',', '.')
+      .replace(/[^\d.]/g, '')
+
+    const numero = Number(limpo)
+
+    if (!Number.isFinite(numero)) return fallback
+
+    return numero
   }
 
   const nomeUsuario = (usuario?: UsuarioLocal | UsuarioBanco | null) => {
@@ -213,37 +228,54 @@ export default function AdminRoteirosPage() {
     return roteiro?.id_guia || roteiro?.guia_id || roteiro?.user_id || roteiro?.usuario_id || ''
   }
 
-  const localRoteiro = (roteiro?: Roteiro | null) => {
+  const guiaIdDoRepasse = (repasse?: RepasseGuia | null) => {
+    return repasse?.guia_id || repasse?.id_guia || ''
+  }
+
+  const valorDoRepasse = (repasse?: RepasseGuia | null) => {
+    return Number(repasse?.valor_pago || repasse?.valor_repassado || repasse?.valor || 0)
+  }
+
+  const dataDoRepasse = (repasse?: RepasseGuia | null) => {
+    return repasse?.data_pagamento || repasse?.created_at || null
+  }
+
+  const repasseCancelado = (repasse?: RepasseGuia | null) => {
+    const status = normalizar(repasse?.status)
+
+    return status === 'cancelado' || status === 'cancelada' || status === 'estornado'
+  }
+
+  const pagamentoConfirmado = (reserva: Reserva) => {
+    const pagamento = normalizar(reserva.pagamento_status)
+    const status = normalizar(reserva.status)
+
     return (
-      roteiro?.local ||
-      roteiro?.localizacao ||
-      roteiro?.local_encontro ||
-      roteiro?.ponto_encontro ||
-      'Local a confirmar'
+      pagamento === 'pago' ||
+      pagamento === 'confirmado' ||
+      pagamento === 'aprovado' ||
+      pagamento === 'paid' ||
+      pagamento === 'approved' ||
+      status === 'confirmada' ||
+      status === 'realizada' ||
+      status === 'pago' ||
+      status === 'paga'
     )
   }
 
-  const imagemRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || roteiro?.imagem || ''
-  }
+  const dentroDoMesAtual = (valor?: string | null) => {
+    if (!valor) return false
 
-  const precoRoteiro = (roteiro?: Roteiro | null) => {
-    return Number(roteiro?.preco || roteiro?.valor || 0)
-  }
+    const data = new Date(valor)
 
-  const distanciaRoteiro = (roteiro?: Roteiro | null) => {
-    return Number(roteiro?.distancia_km || roteiro?.km || 0)
-  }
+    if (Number.isNaN(data.getTime())) return false
 
-  const limitePessoasRoteiro = (roteiro?: Roteiro | null) => {
-    return Number(roteiro?.limite_pessoas || roteiro?.capacidade || roteiro?.max_pessoas || 0)
-  }
+    const agora = new Date()
 
-  const duracaoRoteiro = (roteiro?: Roteiro | null) => {
-    if (roteiro?.duracao_horas) return `${roteiro.duracao_horas}h`
-    if (roteiro?.duracao) return roteiro.duracao
-
-    return '-'
+    return (
+      data.getFullYear() === agora.getFullYear() &&
+      data.getMonth() === agora.getMonth()
+    )
   }
 
   const formatarData = (valor?: string | null) => {
@@ -271,90 +303,6 @@ export default function AdminRoteirosPage() {
       style: 'currency',
       currency: 'BRL'
     }).format(Number(valor || 0))
-  }
-
-  const formatarNota = (valor: any) => {
-    return Number(valor || 0).toFixed(2).replace('.', ',')
-  }
-
-  const dentroDoMesAtual = (valor?: string | null) => {
-    if (!valor) return false
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return false
-
-    const agora = new Date()
-
-    return (
-      data.getFullYear() === agora.getFullYear() &&
-      data.getMonth() === agora.getMonth()
-    )
-  }
-
-  const pagamentoConfirmado = (reserva: Reserva) => {
-    const pagamento = normalizar(reserva.pagamento_status)
-    const status = normalizar(reserva.status)
-
-    return (
-      pagamento === 'pago' ||
-      pagamento === 'confirmado' ||
-      pagamento === 'aprovado' ||
-      pagamento === 'paid' ||
-      pagamento === 'approved' ||
-      status === 'confirmada' ||
-      status === 'realizada' ||
-      status === 'pago' ||
-      status === 'paga'
-    )
-  }
-
-  const statusRoteiro = (roteiro: Roteiro) => {
-    const status = normalizar(roteiro.status)
-
-    if (status) return status
-    if (roteiro.ativo === true) return 'ativo'
-    if (roteiro.ativo === false) return 'pausado'
-
-    return 'pendente'
-  }
-
-  const roteiroAtivo = (roteiro: Roteiro) => {
-    const status = statusRoteiro(roteiro)
-
-    return (
-      roteiro.ativo === true ||
-      status === 'ativo' ||
-      status === 'aprovado' ||
-      status === 'publicado'
-    )
-  }
-
-  const roteiroPendente = (roteiro: Roteiro) => {
-    const status = statusRoteiro(roteiro)
-
-    return (
-      status === 'pendente' ||
-      status === 'aguardando' ||
-      status === 'em_analise' ||
-      status === 'analise'
-    )
-  }
-
-  const roteiroPausado = (roteiro: Roteiro) => {
-    const status = statusRoteiro(roteiro)
-
-    return (
-      roteiro.ativo === false &&
-      !roteiroPendente(roteiro) &&
-      !roteiroReprovado(roteiro)
-    ) || status === 'pausado' || status === 'inativo'
-  }
-
-  const roteiroReprovado = (roteiro: Roteiro) => {
-    const status = statusRoteiro(roteiro)
-
-    return status === 'reprovado' || status === 'recusado' || status === 'negado'
   }
 
   const extrairColunaAusente = (error: any) => {
@@ -390,7 +338,7 @@ export default function AdminRoteirosPage() {
     )
   }
 
-  const erroDeConstraintStatus = (error: any) => {
+  const tabelaNaoExiste = (error: any) => {
     const texto = String(
       error?.message ||
         error?.details ||
@@ -399,46 +347,63 @@ export default function AdminRoteirosPage() {
     ).toLowerCase()
 
     return (
-      error?.code === '23514' &&
-      (
-        texto.includes('status') ||
-        texto.includes('roteiros_status') ||
-        texto.includes('check constraint')
-      )
+      error?.code === '42P01' ||
+      error?.code === 'PGRST205' ||
+      texto.includes('does not exist') ||
+      texto.includes('not exist') ||
+      texto.includes('schema cache')
     )
   }
 
-  const carregarRoteiros = async () => {
+  const carregarFinanceiro = async () => {
     setErro('')
 
-    const { data: roteirosData, error: roteirosError } = await supabase
-      .from('roteiros')
+    const { data: reservasData, error: reservasError } = await supabase
+      .from('reservas')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(1200)
+      .limit(2500)
 
-    if (roteirosError) {
-      console.error('Erro ao carregar roteiros:', roteirosError)
-      setErro('Não foi possível carregar os roteiros.')
+    if (reservasError) {
+      console.error('Erro ao carregar reservas:', reservasError)
+      setErro('Não foi possível carregar reservas para o financeiro.')
       return
     }
 
-    const roteirosBase = (roteirosData || []) as Roteiro[]
+    const reservasBase = ((reservasData || []) as Reserva[]).filter(pagamentoConfirmado)
 
-    const roteiroIds = roteirosBase.map((roteiro) => roteiro.id)
+    const roteiroIds = Array.from(
+      new Set(
+        reservasBase
+          .map((reserva) => reserva.roteiro_id)
+          .filter(Boolean) as string[]
+      )
+    )
+
+    let roteiros: Roteiro[] = []
+    let guias: UsuarioBanco[] = []
+    let repasses: RepasseGuia[] = []
+
+    if (roteiroIds.length > 0) {
+      const { data: roteirosData, error: roteirosError } = await supabase
+        .from('roteiros')
+        .select('*')
+        .in('id', roteiroIds)
+
+      if (roteirosError) {
+        console.warn('Erro ao buscar roteiros do financeiro:', roteirosError)
+      }
+
+      roteiros = (roteirosData || []) as Roteiro[]
+    }
 
     const guiaIds = Array.from(
       new Set(
-        roteirosBase
+        roteiros
           .map(guiaIdDoRoteiro)
           .filter(Boolean)
       )
     )
-
-    let guias: UsuarioBanco[] = []
-    let reservas: Reserva[] = []
-    let grupos: GrupoRoteiro[] = []
-    let avaliacoes: Avaliacao[] = []
 
     if (guiaIds.length > 0) {
       const { data: guiasData, error: guiasError } = await supabase
@@ -447,130 +412,160 @@ export default function AdminRoteirosPage() {
         .in('id', guiaIds)
 
       if (guiasError) {
-        console.warn('Erro ao buscar guias dos roteiros:', guiasError)
+        console.warn('Erro ao buscar guias do financeiro:', guiasError)
       }
 
       guias = (guiasData || []) as UsuarioBanco[]
     }
 
-    if (roteiroIds.length > 0) {
-      const { data: reservasData, error: reservasError } = await supabase
-        .from('reservas')
-        .select('*')
-        .in('roteiro_id', roteiroIds)
-        .limit(2500)
+    const repassesResult = await supabase
+      .from('repasses_guias')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(2500)
 
-      if (reservasError) {
-        console.warn('Erro ao buscar reservas dos roteiros:', reservasError)
+    if (repassesResult.error) {
+      if (tabelaNaoExiste(repassesResult.error)) {
+        setTabelaRepassesOk(false)
+        console.warn('Tabela repasses_guias ainda não encontrada:', repassesResult.error)
+      } else {
+        console.warn('Erro ao carregar repasses:', repassesResult.error)
       }
-
-      reservas = (reservasData || []) as Reserva[]
-
-      const { data: gruposData, error: gruposError } = await supabase
-        .from('grupos_roteiros')
-        .select('*')
-        .in('roteiro_id', roteiroIds)
-        .limit(1500)
-
-      if (gruposError) {
-        console.warn('Erro ao buscar grupos dos roteiros:', gruposError)
-      }
-
-      grupos = (gruposData || []) as GrupoRoteiro[]
-
-      const { data: avaliacoesData, error: avaliacoesError } = await supabase
-        .from('avaliacoes')
-        .select('id, roteiro_id, nota, status, created_at')
-        .in('roteiro_id', roteiroIds)
-        .limit(2500)
-
-      if (avaliacoesError) {
-        console.warn('Erro ao buscar avaliações dos roteiros:', avaliacoesError)
-      }
-
-      avaliacoes = (avaliacoesData || []) as Avaliacao[]
+    } else {
+      setTabelaRepassesOk(true)
+      repasses = (repassesResult.data || []) as RepasseGuia[]
     }
 
-    const roteirosCompletos: RoteiroCompleto[] = roteirosBase.map((roteiro) => {
+    const reservasCompletas: ReservaCompleta[] = reservasBase.map((reserva) => {
+      const roteiro =
+        roteiros.find((item) => item.id === reserva.roteiro_id) ||
+        null
+
       const guiaId = guiaIdDoRoteiro(roteiro)
 
       const guia =
         guias.find((item) => item.id === guiaId) ||
         null
 
-      const reservasDoRoteiro = reservas.filter((reserva) => reserva.roteiro_id === roteiro.id)
-      const reservasConfirmadas = reservasDoRoteiro.filter(pagamentoConfirmado)
+      return {
+        ...reserva,
+        roteiro,
+        guia,
+        guia_id_real: guiaId,
+        guia_nome: nomeUsuario(guia),
+        roteiro_titulo: tituloRoteiro(roteiro)
+      }
+    })
 
-      const receitaConfirmada = reservasConfirmadas.reduce(
+    const reservasComGuia = reservasCompletas.filter((reserva) => reserva.guia_id_real)
+
+    const guiasIdsFinanceiro = Array.from(
+      new Set(
+        reservasComGuia
+          .map((reserva) => reserva.guia_id_real)
+          .filter(Boolean) as string[]
+      )
+    )
+
+    const guiasCalculados: GuiaFinanceiro[] = guiasIdsFinanceiro.map((guiaId) => {
+      const guia =
+        guias.find((item) => item.id === guiaId) ||
+        null
+
+      const reservasDoGuia = reservasComGuia.filter((reserva) => reserva.guia_id_real === guiaId)
+      const repassesDoGuia = repasses.filter((repasse) => guiaIdDoRepasse(repasse) === guiaId && !repasseCancelado(repasse))
+
+      const receitaBruta = reservasDoGuia.reduce(
         (total, reserva) => total + Number(reserva.valor_total || 0),
         0
       )
 
-      const grupo =
-        grupos.find((item) => item.roteiro_id === roteiro.id) ||
-        null
+      const taxaPlataforma = receitaBruta * 0.05
+      const taxaPagHiper = 0
+      const valorLiquidoGuia = Math.max(0, receitaBruta - taxaPlataforma - taxaPagHiper)
 
-      const avaliacoesDoRoteiro = avaliacoes.filter((avaliacao) => {
-        const status = normalizar(avaliacao.status)
-        return avaliacao.roteiro_id === roteiro.id && (!status || status === 'publicada')
-      })
-
-      const somaNotas = avaliacoesDoRoteiro.reduce(
-        (total, avaliacao) => total + Number(avaliacao.nota || 0),
+      const valorPago = repassesDoGuia.reduce(
+        (total, repasse) => total + valorDoRepasse(repasse),
         0
       )
 
-      const mediaAvaliacao =
-        avaliacoesDoRoteiro.length > 0
-          ? somaNotas / avaliacoesDoRoteiro.length
-          : 0
+      const saldoPendente = Math.max(0, valorLiquidoGuia - valorPago)
+
+      const reservasOrdenadas = reservasDoGuia
+        .slice()
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+
+      const repassesOrdenados = repassesDoGuia
+        .slice()
+        .sort((a, b) => new Date(dataDoRepasse(b) || 0).getTime() - new Date(dataDoRepasse(a) || 0).getTime())
 
       return {
-        ...roteiro,
-        guia,
-        reservas: reservasDoRoteiro,
-        grupo,
-        avaliacoes: avaliacoesDoRoteiro,
+        guia_id: guiaId,
         guia_nome: nomeUsuario(guia),
-        total_reservas: reservasDoRoteiro.length,
-        reservas_confirmadas: reservasConfirmadas.length,
-        receita_confirmada: receitaConfirmada,
-        media_avaliacao: mediaAvaliacao,
-        total_avaliacoes: avaliacoesDoRoteiro.length
+        guia_email: guia?.email || '',
+        reservas: reservasDoGuia,
+        repasses: repassesDoGuia,
+        receita_bruta: receitaBruta,
+        taxa_plataforma: taxaPlataforma,
+        taxa_paghiper: taxaPagHiper,
+        valor_liquido_guia: valorLiquidoGuia,
+        valor_pago: valorPago,
+        saldo_pendente: saldoPendente,
+        reservas_confirmadas: reservasDoGuia.length,
+        ultima_reserva_em: reservasOrdenadas[0]?.created_at || null,
+        ultimo_pagamento_em: dataDoRepasse(repassesOrdenados[0])
       }
     })
 
-    const receitaConfirmada = roteirosCompletos.reduce(
-      (total, roteiro) => total + Number(roteiro.receita_confirmada || 0),
+    const receitaBrutaTotal = reservasComGuia.reduce(
+      (total, reserva) => total + Number(reserva.valor_total || 0),
       0
     )
 
-    const totalAvaliacoes = roteirosCompletos.reduce(
-      (total, roteiro) => total + Number(roteiro.total_avaliacoes || 0),
+    const reservasDoMes = reservasComGuia.filter((reserva) => dentroDoMesAtual(reserva.created_at))
+
+    const receitaBrutaMes = reservasDoMes.reduce(
+      (total, reserva) => total + Number(reserva.valor_total || 0),
       0
     )
 
-    const somaMediasPonderadas = roteirosCompletos.reduce(
-      (total, roteiro) => {
-        return total + Number(roteiro.media_avaliacao || 0) * Number(roteiro.total_avaliacoes || 0)
-      },
+    const taxaPlataformaTotal = receitaBrutaTotal * 0.05
+    const taxaPlataformaMes = receitaBrutaMes * 0.05
+
+    const taxaPagHiperTotal = 0
+    const taxaPagHiperMes = 0
+
+    const repasseGuiasTotal = Math.max(0, receitaBrutaTotal - taxaPlataformaTotal - taxaPagHiperTotal)
+    const repasseGuiasMes = Math.max(0, receitaBrutaMes - taxaPlataformaMes - taxaPagHiperMes)
+
+    const pagoGuiasTotal = guiasCalculados.reduce(
+      (total, guia) => total + guia.valor_pago,
       0
     )
 
-    setRoteiros(roteirosCompletos)
+    const saldoGuiasTotal = guiasCalculados.reduce(
+      (total, guia) => total + guia.saldo_pendente,
+      0
+    )
+
+    setReservas(reservasCompletas)
+    setGuiasFinanceiros(guiasCalculados)
 
     setStats({
-      total: roteirosCompletos.length,
-      ativos: roteirosCompletos.filter(roteiroAtivo).length,
-      pendentes: roteirosCompletos.filter(roteiroPendente).length,
-      pausados: roteirosCompletos.filter(roteiroPausado).length,
-      reprovados: roteirosCompletos.filter(roteiroReprovado).length,
-      novosMes: roteirosCompletos.filter((roteiro) => dentroDoMesAtual(roteiro.created_at)).length,
-      comReservas: roteirosCompletos.filter((roteiro) => Number(roteiro.total_reservas || 0) > 0).length,
-      semGrupo: roteirosCompletos.filter((roteiro) => !roteiro.grupo?.id).length,
-      receitaConfirmada,
-      reservasConfirmadas: reservas.filter(pagamentoConfirmado).length,
-      mediaAvaliacoes: totalAvaliacoes > 0 ? somaMediasPonderadas / totalAvaliacoes : 0
+      receitaBrutaTotal,
+      receitaBrutaMes,
+      taxaPlataformaTotal,
+      taxaPlataformaMes,
+      taxaPagHiperTotal,
+      taxaPagHiperMes,
+      repasseGuiasTotal,
+      repasseGuiasMes,
+      pagoGuiasTotal,
+      saldoGuiasTotal,
+      resultadoPlataformaTotal: taxaPlataformaTotal - taxaPagHiperTotal,
+      resultadoPlataformaMes: taxaPlataformaMes - taxaPagHiperMes,
+      reservasConfirmadas: reservasComGuia.length,
+      guiasComSaldo: guiasCalculados.filter((guia) => guia.saldo_pendente > 0).length
     })
 
     setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
@@ -582,29 +577,27 @@ export default function AdminRoteirosPage() {
     setErro('')
 
     try {
-      await carregarRoteiros()
-      setMensagem('Roteiros atualizados.')
+      await carregarFinanceiro()
+      setMensagem('Financeiro atualizado.')
     } catch (error) {
-      console.error('Erro ao atualizar roteiros:', error)
-      setErro('Não foi possível atualizar os roteiros agora.')
+      console.error('Erro ao atualizar financeiro:', error)
+      setErro('Não foi possível atualizar o financeiro agora.')
     } finally {
       setAtualizando(false)
     }
   }
 
-  const atualizarRoteiroComFallback = async (
-    roteiroId: string,
-    payloadOriginal: Record<string, any>
-  ) => {
+  const inserirRepasseComFallback = async (payloadOriginal: Record<string, any>) => {
     let payloadAtual = { ...payloadOriginal }
 
     for (let tentativa = 0; tentativa < 12; tentativa++) {
-      const { error } = await supabase
-        .from('roteiros')
-        .update(payloadAtual)
-        .eq('id', roteiroId)
+      const { data, error } = await supabase
+        .from('repasses_guias')
+        .insert(payloadAtual)
+        .select('*')
+        .maybeSingle()
 
-      if (!error) return true
+      if (!error) return data as RepasseGuia | null
 
       if (!erroDeColunaAusente(error)) {
         throw error
@@ -619,159 +612,87 @@ export default function AdminRoteirosPage() {
       delete payloadAtual[coluna]
     }
 
-    throw new Error('Não foi possível atualizar o roteiro.')
+    throw new Error('Não foi possível registrar o repasse.')
   }
 
-  const alterarStatusComTentativas = async (
-    roteiroId: string,
-    statusPossiveis: string[],
-    ativo: boolean
-  ) => {
-    let ultimoErro: any = null
+  const abrirPagamento = (guia: GuiaFinanceiro, valorPadrao?: number) => {
+    setGuiaSelecionado(guia)
+    setValorPagamento(valorPadrao ? String(valorPadrao.toFixed(2)).replace('.', ',') : '')
+    setObservacaoPagamento('')
+    setModalPagamentoAberto(true)
+    setErro('')
+    setMensagem('')
+  }
 
-    for (const status of statusPossiveis) {
-      try {
-        await atualizarRoteiroComFallback(roteiroId, {
-          status,
-          ativo,
-          updated_at: new Date().toISOString()
-        })
+  const registrarPagamento = async (event: FormEvent) => {
+    event.preventDefault()
 
-        return status
-      } catch (error: any) {
-        ultimoErro = error
-
-        if (!erroDeConstraintStatus(error)) {
-          throw error
-        }
-
-        console.warn(`Status "${status}" recusado pelo banco. Tentando próximo...`, error)
-      }
+    if (!guiaSelecionado?.guia_id) {
+      setErro('Selecione um guia para registrar o pagamento.')
+      return
     }
 
-    throw ultimoErro || new Error('Status não aceito pelo banco.')
-  }
-
-  const ativarRoteiro = async (roteiro: RoteiroCompleto) => {
-    if (!roteiro?.id) return
-
-    setAlterandoStatusId(roteiro.id)
-    setMensagem('')
-    setErro('')
-
-    try {
-      const statusUsado = await alterarStatusComTentativas(
-        roteiro.id,
-        ['ativo', 'aprovado', 'publicado'],
-        true
-      )
-
-      setMensagem(`Roteiro ativado com sucesso. Status usado: ${statusUsado}.`)
-      await carregarRoteiros()
-    } catch (error: any) {
-      console.error('Erro ao ativar roteiro:', error)
-      setErro(error?.message || 'Não foi possível ativar o roteiro.')
-    } finally {
-      setAlterandoStatusId('')
+    if (!tabelaRepassesOk) {
+      setErro('A tabela repasses_guias ainda não existe. Na próxima etapa, rode o SQL financeiro para habilitar pagamentos.')
+      return
     }
-  }
 
-  const pausarRoteiro = async (roteiro: RoteiroCompleto) => {
-    if (!roteiro?.id) return
+    const valor = normalizarNumero(valorPagamento, 0)
 
-    setAlterandoStatusId(roteiro.id)
-    setMensagem('')
-    setErro('')
-
-    try {
-      const statusUsado = await alterarStatusComTentativas(
-        roteiro.id,
-        ['pausado', 'inativo', 'pendente'],
-        false
-      )
-
-      setMensagem(`Roteiro pausado com sucesso. Status usado: ${statusUsado}.`)
-      await carregarRoteiros()
-    } catch (error: any) {
-      console.error('Erro ao pausar roteiro:', error)
-      setErro(error?.message || 'Não foi possível pausar o roteiro.')
-    } finally {
-      setAlterandoStatusId('')
+    if (valor <= 0) {
+      setErro('Informe um valor de pagamento maior que zero.')
+      return
     }
-  }
 
-  const reprovarRoteiro = async (roteiro: RoteiroCompleto) => {
-    if (!roteiro?.id) return
-
-    const confirmar = window.confirm(
-      'Deseja marcar este roteiro como reprovado/recusado?'
-    )
-
-    if (!confirmar) return
-
-    setAlterandoStatusId(roteiro.id)
-    setMensagem('')
-    setErro('')
-
-    try {
-      const statusUsado = await alterarStatusComTentativas(
-        roteiro.id,
-        ['reprovado', 'recusado', 'pendente'],
-        false
-      )
-
-      setMensagem(`Roteiro atualizado com sucesso. Status usado: ${statusUsado}.`)
-      await carregarRoteiros()
-    } catch (error: any) {
-      console.error('Erro ao reprovar roteiro:', error)
-      setErro(error?.message || 'Não foi possível reprovar o roteiro.')
-    } finally {
-      setAlterandoStatusId('')
+    if (valor > guiaSelecionado.saldo_pendente + 0.01) {
+      setErro('O valor informado é maior que o saldo pendente do guia.')
+      return
     }
-  }
 
-  const garantirGrupo = async (roteiro: RoteiroCompleto) => {
-    if (!roteiro?.id) return
-
-    setCriandoGrupoId(roteiro.id)
-    setMensagem('')
+    setRegistrandoPagamento(true)
     setErro('')
+    setMensagem('')
 
     try {
-      const response = await fetch('/api/grupos/garantir-grupo-roteiro', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          roteiroId: roteiro.id
-        })
+      const agora = new Date().toISOString()
+
+      await inserirRepasseComFallback({
+        guia_id: guiaSelecionado.guia_id,
+        id_guia: guiaSelecionado.guia_id,
+
+        valor,
+        valor_pago: valor,
+        valor_repassado: valor,
+
+        status: 'pago',
+        tipo: 'repasse_guia',
+
+        observacao: observacaoPagamento || null,
+        descricao: observacaoPagamento || `Repasse ao guia ${guiaSelecionado.guia_nome}`,
+
+        data_pagamento: agora,
+        created_at: agora,
+        updated_at: agora
       })
 
-      const data = await response.json().catch(() => null)
+      setMensagem('Pagamento registrado com sucesso.')
+      setModalPagamentoAberto(false)
+      setGuiaSelecionado(null)
+      setValorPagamento('')
+      setObservacaoPagamento('')
 
-      if (!response.ok || data?.sucesso === false) {
-        setErro(data?.erro || data?.message || 'Não foi possível garantir o grupo do roteiro.')
-        return
+      await carregarFinanceiro()
+    } catch (error: any) {
+      console.error('Erro ao registrar pagamento:', error)
+
+      if (tabelaNaoExiste(error)) {
+        setTabelaRepassesOk(false)
+        setErro('A tabela repasses_guias ainda não existe. Precisamos rodar o SQL financeiro antes de registrar pagamentos.')
+      } else {
+        setErro(error?.message || 'Não foi possível registrar o pagamento.')
       }
-
-      setMensagem('Grupo do roteiro garantido com sucesso.')
-      await carregarRoteiros()
-    } catch (error) {
-      console.error('Erro ao garantir grupo:', error)
-      setErro('Erro ao garantir grupo do roteiro.')
     } finally {
-      setCriandoGrupoId('')
-    }
-  }
-
-  const copiarTexto = async (texto: string, label = 'Informação') => {
-    try {
-      await navigator.clipboard?.writeText(texto)
-      setMensagem(`${label} copiado.`)
-    } catch (error) {
-      console.warn('Erro ao copiar:', error)
-      setMensagem(`${label}: ${texto}`)
+      setRegistrandoPagamento(false)
     }
   }
 
@@ -867,54 +788,32 @@ export default function AdminRoteirosPage() {
     router.replace('/login')
   }
 
-  const roteirosFiltrados = useMemo(() => {
+  const guiasFiltrados = useMemo(() => {
     const termo = normalizar(busca)
 
-    return roteiros.filter((roteiro) => {
-      const passaStatus =
-        filtroStatus === 'todos' ||
-        (filtroStatus === 'ativos' && roteiroAtivo(roteiro)) ||
-        (filtroStatus === 'pendentes' && roteiroPendente(roteiro)) ||
-        (filtroStatus === 'pausados' && roteiroPausado(roteiro)) ||
-        (filtroStatus === 'reprovados' && roteiroReprovado(roteiro)) ||
-        (filtroStatus === 'com_reservas' && Number(roteiro.total_reservas || 0) > 0) ||
-        (filtroStatus === 'sem_grupo' && !roteiro.grupo?.id)
+    return guiasFinanceiros.filter((guia) => {
+      const passaFiltro =
+        filtroFinanceiro === 'todos' ||
+        (filtroFinanceiro === 'com_saldo' && guia.saldo_pendente > 0) ||
+        (filtroFinanceiro === 'quitados' && guia.saldo_pendente <= 0 && guia.valor_liquido_guia > 0) ||
+        (filtroFinanceiro === 'sem_repasses' && guia.valor_pago <= 0)
 
-      if (!passaStatus) return false
+      if (!passaFiltro) return false
 
       if (!termo) return true
 
       const texto = normalizar(
         [
-          roteiro.id,
-          roteiro.titulo,
-          roteiro.nome,
-          roteiro.descricao,
-          roteiro.status,
-          roteiro.dificuldade,
-          roteiro.recorrencia,
-          roteiro.guia_nome,
-          localRoteiro(roteiro)
+          guia.guia_id,
+          guia.guia_nome,
+          guia.guia_email,
+          guia.reservas.map((reserva) => reserva.roteiro_titulo).join(' ')
         ].join(' ')
       )
 
       return texto.includes(termo)
     })
-  }, [roteiros, busca, filtroStatus])
-
-  const badgeStatus = (roteiro: RoteiroCompleto) => {
-    if (roteiroAtivo(roteiro)) return <span className="badge green">Ativo</span>
-    if (roteiroPendente(roteiro)) return <span className="badge yellow">Em análise</span>
-    if (roteiroReprovado(roteiro)) return <span className="badge red">Reprovado</span>
-
-    return <span className="badge neutral">Pausado</span>
-  }
-
-  const badgeGrupo = (roteiro: RoteiroCompleto) => {
-    if (roteiro.grupo?.id) return <span className="badge blue">Grupo criado</span>
-
-    return <span className="badge neutral">Sem grupo</span>
-  }
+  }, [guiasFinanceiros, busca, filtroFinanceiro])
 
   if (carregando || !user) {
     return (
@@ -965,7 +864,7 @@ export default function AdminRoteirosPage() {
 
         <div className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <div>Carregando roteiros...</div>
+          <div>Carregando financeiro...</div>
         </div>
       </main>
     )
@@ -1071,11 +970,6 @@ export default function AdminRoteirosPage() {
           transition: 0.2s ease;
         }
 
-        .gearBtn:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
-        }
-
         .settingsMenu {
           position: absolute;
           top: 50px;
@@ -1132,23 +1026,11 @@ export default function AdminRoteirosPage() {
           position: relative;
         }
 
-        .hero::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background:
-            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
-          background-size: 44px 44px;
-          mask-image: linear-gradient(to bottom, black, transparent);
-          pointer-events: none;
-        }
-
         .heroInner {
           position: relative;
           z-index: 2;
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 350px;
+          grid-template-columns: minmax(0, 1fr) 360px;
           gap: 22px;
           align-items: end;
         }
@@ -1195,13 +1077,6 @@ export default function AdminRoteirosPage() {
           border: 1px solid rgba(255,255,255,0.16);
           padding: 20px;
           backdrop-filter: blur(14px);
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .heroCard:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.20);
         }
 
         .heroLabel {
@@ -1249,6 +1124,12 @@ export default function AdminRoteirosPage() {
           color: #991b1b;
         }
 
+        .alert.warning {
+          background: #fffbeb;
+          border: 1px solid #fde68a;
+          color: #92400e;
+        }
+
         .statsGrid {
           display: grid;
           grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1284,7 +1165,7 @@ export default function AdminRoteirosPage() {
         }
 
         .statValue {
-          font-size: 27px;
+          font-size: 25px;
           font-weight: 950;
           line-height: 1;
           letter-spacing: -0.06em;
@@ -1322,11 +1203,6 @@ export default function AdminRoteirosPage() {
           font-size: 13px;
           font-weight: 800;
           outline: none;
-        }
-
-        .input:focus {
-          border-color: #22c55e;
-          box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.10);
         }
 
         .filters {
@@ -1402,57 +1278,36 @@ export default function AdminRoteirosPage() {
           padding: 0;
         }
 
-        .roteiroList {
+        .guideList {
           display: grid;
           gap: 10px;
         }
 
-        .roteiroCard {
+        .guideCard {
           background: #ffffff;
           border: 1px solid rgba(15, 23, 42, 0.08);
           border-radius: 22px;
-          padding: 12px;
+          padding: 13px;
           display: grid;
-          grid-template-columns: 82px minmax(0, 1fr) auto;
-          gap: 12px;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 14px;
           align-items: center;
           transition: 0.2s ease;
         }
 
-        .roteiroCard:hover {
+        .guideCard:hover {
           transform: translateY(-1px);
           box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
         }
 
-        .thumb {
-          width: 82px;
-          height: 82px;
-          border-radius: 22px;
-          background: #e2e8f0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 950;
-          overflow: hidden;
-        }
-
-        .thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .roteiroTitle {
+        .guideTitle {
           color: #0f172a;
           font-size: 15px;
           font-weight: 950;
           line-height: 1.3;
         }
 
-        .roteiroMeta {
+        .guideMeta {
           color: #64748b;
           font-size: 12px;
           line-height: 1.45;
@@ -1460,58 +1315,39 @@ export default function AdminRoteirosPage() {
           margin-top: 4px;
         }
 
-        .roteiroFooter {
-          display: flex;
-          gap: 7px;
-          flex-wrap: wrap;
-          margin-top: 8px;
-          align-items: center;
+        .guideRows {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 8px;
+          margin-top: 11px;
         }
 
-        .price {
-          color: #16a34a;
-          font-size: 13px;
-          font-weight: 950;
+        .miniMetric {
+          background: #f8fafc;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 16px;
+          padding: 10px;
         }
 
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          border-radius: 999px;
-          padding: 5px 8px;
+        .miniLabel {
+          color: #64748b;
           font-size: 10px;
           font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
         }
 
-        .badge.green {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .badge.blue {
-          background: #dbeafe;
-          color: #1d4ed8;
-        }
-
-        .badge.yellow {
-          background: #fef3c7;
-          color: #92400e;
-        }
-
-        .badge.red {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-
-        .badge.neutral {
-          background: #f1f5f9;
-          color: #475569;
+        .miniValue {
+          color: #0f172a;
+          font-size: 13px;
+          font-weight: 950;
+          margin-top: 4px;
         }
 
         .actions {
           display: grid;
           gap: 8px;
-          min-width: 160px;
+          min-width: 170px;
         }
 
         .actionBtn {
@@ -1544,21 +1380,34 @@ export default function AdminRoteirosPage() {
           border-color: #bbf7d0;
         }
 
-        .actionBtn.yellow {
-          background: #fef3c7;
-          color: #92400e;
-          border-color: #fde68a;
-        }
-
-        .actionBtn.red {
-          background: #fee2e2;
-          color: #991b1b;
-          border-color: #fecaca;
-        }
-
         .actionBtn:disabled {
           opacity: 0.55;
           cursor: not-allowed;
+        }
+
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 5px 8px;
+          font-size: 10px;
+          font-weight: 950;
+          margin-top: 8px;
+        }
+
+        .badge.green {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .badge.yellow {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .badge.neutral {
+          background: #f1f5f9;
+          color: #475569;
         }
 
         .empty {
@@ -1585,7 +1434,7 @@ export default function AdminRoteirosPage() {
 
         .modal {
           width: 100%;
-          max-width: 560px;
+          max-width: 470px;
           background: #ffffff;
           border-radius: 28px;
           box-shadow: 0 28px 90px rgba(15, 23, 42, 0.30);
@@ -1634,7 +1483,8 @@ export default function AdminRoteirosPage() {
           letter-spacing: 0.06em;
         }
 
-        .modalInput {
+        .modalInput,
+        .modalTextarea {
           width: 100%;
           border: 1px solid rgba(15, 23, 42, 0.10);
           background: #ffffff;
@@ -1646,9 +1496,10 @@ export default function AdminRoteirosPage() {
           outline: none;
         }
 
-        .modalInput:focus {
-          border-color: #22c55e;
-          box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.10);
+        .modalTextarea {
+          min-height: 90px;
+          resize: vertical;
+          line-height: 1.45;
         }
 
         .modalActions {
@@ -1688,37 +1539,14 @@ export default function AdminRoteirosPage() {
           cursor: not-allowed;
         }
 
-        .detailGrid {
-          display: grid;
-          gap: 9px;
-        }
-
-        .detailRow {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          background: #f8fafc;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 16px;
-          padding: 11px 12px;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 800;
-        }
-
-        .detailRow strong {
-          color: #0f172a;
-          text-align: right;
-        }
-
-        .descriptionBox {
+        .historyBox {
           background: #f8fafc;
           border: 1px solid rgba(15, 23, 42, 0.06);
           border-radius: 18px;
           padding: 12px;
           color: #475569;
           font-size: 12px;
-          line-height: 1.55;
+          line-height: 1.45;
           font-weight: 750;
         }
 
@@ -1730,6 +1558,10 @@ export default function AdminRoteirosPage() {
           .toolbar {
             grid-template-columns: 1fr;
           }
+
+          .guideRows {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
         }
 
         @media (max-width: 1040px) {
@@ -1737,12 +1569,11 @@ export default function AdminRoteirosPage() {
             grid-template-columns: 1fr;
           }
 
-          .roteiroCard {
-            grid-template-columns: 74px minmax(0, 1fr);
+          .guideCard {
+            grid-template-columns: 1fr;
           }
 
           .actions {
-            grid-column: 1 / -1;
             grid-template-columns: repeat(3, minmax(0, 1fr));
           }
         }
@@ -1783,6 +1614,10 @@ export default function AdminRoteirosPage() {
             width: 100%;
           }
 
+          .guideRows {
+            grid-template-columns: 1fr;
+          }
+
           .actions {
             grid-template-columns: 1fr;
           }
@@ -1797,29 +1632,12 @@ export default function AdminRoteirosPage() {
             grid-template-columns: 1fr;
           }
 
-          .roteiroCard {
-            grid-template-columns: 1fr;
-          }
-
-          .thumb {
-            width: 100%;
-            height: 160px;
-          }
-
           .modalActions {
             display: grid;
           }
 
           .btn {
             width: 100%;
-          }
-
-          .detailRow {
-            display: grid;
-          }
-
-          .detailRow strong {
-            text-align: left;
           }
         }
       `}</style>
@@ -1834,7 +1652,7 @@ export default function AdminRoteirosPage() {
 
             <div>
               <div className="brandTitle">PrussikTrails Admin</div>
-              <div className="brandSub">Roteiros da plataforma</div>
+              <div className="brandSub">Financeiro e repasses</div>
             </div>
           </div>
 
@@ -1875,14 +1693,14 @@ export default function AdminRoteirosPage() {
         <section className="hero">
           <div className="heroInner">
             <div>
-              <div className="eyebrow">Controle de experiências</div>
+              <div className="eyebrow">Central financeira</div>
 
               <h1 className="heroTitle">
-                Roteiros, guias, grupos e reservas em <span>uma central.</span>
+                Receita, taxa da plataforma e repasses em <span>visão única.</span>
               </h1>
 
               <p className="heroText">
-                Aprove, pause, acompanhe reservas, garanta grupos internos e monitore a qualidade dos roteiros cadastrados.
+                Controle valores confirmados, taxa PrussikTrails de 5%, repasses aos guias, pagamentos registrados e saldo pendente.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1892,18 +1710,21 @@ export default function AdminRoteirosPage() {
               </p>
             </div>
 
-            <aside
-              className="heroCard"
-              onClick={() => router.push('/admin/financeiro')}
-            >
-              <div className="heroLabel">Receita confirmada</div>
-              <div className="heroValue">{formatarMoeda(stats.receitaConfirmada)}</div>
+            <aside className="heroCard">
+              <div className="heroLabel">Resultado estimado do mês</div>
+              <div className="heroValue">{formatarMoeda(stats.resultadoPlataformaMes)}</div>
               <div className="heroSmall">
-                {stats.reservasConfirmadas} reserva(s) confirmada(s) vinculadas aos roteiros.
+                Receita bruta do mês: {formatarMoeda(stats.receitaBrutaMes)} · taxa 5%: {formatarMoeda(stats.taxaPlataformaMes)}.
               </div>
             </aside>
           </div>
         </section>
+
+        {!tabelaRepassesOk && (
+          <div className="alert warning">
+            A página está calculando receitas e saldos em modo estimado. Para registrar pagamentos aos guias, será necessário criar a tabela repasses_guias.
+          </div>
+        )}
 
         {mensagem && (
           <div className="alert success">{mensagem}</div>
@@ -1914,58 +1735,40 @@ export default function AdminRoteirosPage() {
         )}
 
         <section className="statsGrid">
-          <article
-            className="statCard"
-            onClick={() => setFiltroStatus('todos')}
-          >
+          <article className="statCard" onClick={() => router.push('/admin/reservas')}>
+            <div className="statIcon">💰</div>
+            <div className="statValue">{formatarMoeda(stats.receitaBrutaTotal)}</div>
+            <div className="statLabel">receita bruta confirmada</div>
+          </article>
+
+          <article className="statCard" onClick={() => setFiltroFinanceiro('todos')}>
+            <div className="statIcon">🏷️</div>
+            <div className="statValue">{formatarMoeda(stats.taxaPlataformaTotal)}</div>
+            <div className="statLabel">taxa plataforma 5%</div>
+          </article>
+
+          <article className="statCard" onClick={() => setFiltroFinanceiro('todos')}>
             <div className="statIcon">🧭</div>
-            <div className="statValue">{stats.total}</div>
-            <div className="statLabel">roteiros cadastrados</div>
+            <div className="statValue">{formatarMoeda(stats.repasseGuiasTotal)}</div>
+            <div className="statLabel">valor líquido estimado dos guias</div>
           </article>
 
-          <article
-            className="statCard"
-            onClick={() => setFiltroStatus('ativos')}
-          >
-            <div className="statIcon">✅</div>
-            <div className="statValue">{stats.ativos}</div>
-            <div className="statLabel">roteiros ativos/publicados</div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => setFiltroStatus('pendentes')}
-          >
+          <article className="statCard" onClick={() => setFiltroFinanceiro('com_saldo')}>
             <div className="statIcon">⏳</div>
-            <div className="statValue">{stats.pendentes}</div>
-            <div className="statLabel">em análise/pendentes</div>
+            <div className="statValue">{formatarMoeda(stats.saldoGuiasTotal)}</div>
+            <div className="statLabel">saldo pendente para guias</div>
           </article>
 
-          <article
-            className="statCard"
-            onClick={() => setFiltroStatus('com_reservas')}
-          >
+          <article className="statCard" onClick={() => setFiltroFinanceiro('quitados')}>
+            <div className="statIcon">✅</div>
+            <div className="statValue">{formatarMoeda(stats.pagoGuiasTotal)}</div>
+            <div className="statLabel">pagamentos registrados</div>
+          </article>
+
+          <article className="statCard" onClick={() => router.push('/admin/reservas')}>
             <div className="statIcon">🎒</div>
-            <div className="statValue">{stats.comReservas}</div>
-            <div className="statLabel">roteiros com reservas</div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => setFiltroStatus('sem_grupo')}
-          >
-            <div className="statIcon">💬</div>
-            <div className="statValue">{stats.semGrupo}</div>
-            <div className="statLabel">roteiros ainda sem grupo</div>
-          </article>
-
-          <article
-            className="statCard"
-            onClick={() => router.push('/admin/avaliacoes')}
-          >
-            <div className="statIcon">⭐</div>
-            <div className="statValue">{formatarNota(stats.mediaAvaliacoes)}</div>
-            <div className="statLabel">média de avaliações dos roteiros</div>
+            <div className="statValue">{stats.reservasConfirmadas}</div>
+            <div className="statLabel">reservas pagas/confirmadas</div>
           </article>
         </section>
 
@@ -1974,56 +1777,40 @@ export default function AdminRoteirosPage() {
             className="input"
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
-            placeholder="Buscar por roteiro, guia, local, status, dificuldade ou ID..."
+            placeholder="Buscar por guia, e-mail, roteiro ou ID..."
           />
 
           <div className="filters">
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'todos' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('todos')}
+              className={`filterBtn ${filtroFinanceiro === 'todos' ? 'active' : ''}`}
+              onClick={() => setFiltroFinanceiro('todos')}
             >
               Todos
             </button>
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'ativos' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('ativos')}
+              className={`filterBtn ${filtroFinanceiro === 'com_saldo' ? 'active' : ''}`}
+              onClick={() => setFiltroFinanceiro('com_saldo')}
             >
-              Ativos
+              Com saldo
             </button>
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'pendentes' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('pendentes')}
+              className={`filterBtn ${filtroFinanceiro === 'quitados' ? 'active' : ''}`}
+              onClick={() => setFiltroFinanceiro('quitados')}
             >
-              Pendentes
+              Quitados
             </button>
 
             <button
               type="button"
-              className={`filterBtn ${filtroStatus === 'pausados' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('pausados')}
+              className={`filterBtn ${filtroFinanceiro === 'sem_repasses' ? 'active' : ''}`}
+              onClick={() => setFiltroFinanceiro('sem_repasses')}
             >
-              Pausados
-            </button>
-
-            <button
-              type="button"
-              className={`filterBtn ${filtroStatus === 'reprovados' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('reprovados')}
-            >
-              Reprovados
-            </button>
-
-            <button
-              type="button"
-              className={`filterBtn ${filtroStatus === 'sem_grupo' ? 'active' : ''}`}
-              onClick={() => setFiltroStatus('sem_grupo')}
-            >
-              Sem grupo
+              Sem repasses
             </button>
           </div>
         </section>
@@ -2031,9 +1818,9 @@ export default function AdminRoteirosPage() {
         <section className="panel">
           <div className="panelHeader">
             <div>
-              <h2 className="panelTitle">Lista de roteiros</h2>
+              <h2 className="panelTitle">Guias e valores a receber</h2>
               <div className="panelSub">
-                {roteirosFiltrados.length} roteiro(s) encontrado(s) no filtro atual.
+                {guiasFiltrados.length} guia(s) encontrado(s) no filtro atual.
               </div>
             </div>
 
@@ -2043,253 +1830,224 @@ export default function AdminRoteirosPage() {
               onClick={atualizar}
               disabled={atualizando}
             >
-              {atualizando ? 'Atualizando...' : 'Atualizar roteiros'}
+              {atualizando ? 'Atualizando...' : 'Atualizar financeiro'}
             </button>
           </div>
 
           <div className="panelBody">
-            {roteirosFiltrados.length === 0 ? (
+            {guiasFiltrados.length === 0 ? (
               <div className="empty">
-                Nenhum roteiro encontrado com os filtros atuais.
+                Nenhum guia encontrado com os filtros atuais.
               </div>
             ) : (
-              <div className="roteiroList">
-                {roteirosFiltrados.map((roteiro) => {
-                  const imagem = imagemRoteiro(roteiro)
-                  const emAlteracao = alterandoStatusId === roteiro.id
-                  const criandoGrupo = criandoGrupoId === roteiro.id
-
-                  return (
-                    <article className="roteiroCard" key={roteiro.id}>
-                      <div className="thumb">
-                        {imagem ? (
-                          <img src={imagem} alt={tituloRoteiro(roteiro)} />
-                        ) : (
-                          'RT'
-                        )}
+              <div className="guideList">
+                {guiasFiltrados.map((guia) => (
+                  <article className="guideCard" key={guia.guia_id}>
+                    <div>
+                      <div className="guideTitle">
+                        {guia.guia_nome}
                       </div>
 
-                      <div>
-                        <div className="roteiroTitle">
-                          {tituloRoteiro(roteiro)}
-                        </div>
-
-                        <div className="roteiroMeta">
-                          Guia: {roteiro.guia_nome || 'Guia não informado'} · {localRoteiro(roteiro)}
-                          <br />
-                          Criado em {formatarData(roteiro.created_at)} · ID: {roteiro.id.slice(0, 8)}
-                          <br />
-                          Reservas: {roteiro.total_reservas || 0} · Confirmadas: {roteiro.reservas_confirmadas || 0} · Receita: {formatarMoeda(roteiro.receita_confirmada || 0)}
-                        </div>
-
-                        <div className="roteiroFooter">
-                          <span className="price">
-                            {formatarMoeda(precoRoteiro(roteiro))}
-                          </span>
-
-                          {badgeStatus(roteiro)}
-                          {badgeGrupo(roteiro)}
-
-                          {roteiro.dificuldade && (
-                            <span className="badge neutral">
-                              {roteiro.dificuldade}
-                            </span>
-                          )}
-
-                          {Number(roteiro.total_avaliacoes || 0) > 0 && (
-                            <span className="badge blue">
-                              ⭐ {formatarNota(roteiro.media_avaliacao)}
-                            </span>
-                          )}
-                        </div>
+                      <div className="guideMeta">
+                        {guia.guia_email || 'E-mail não informado'} · {guia.reservas_confirmadas} reserva(s) confirmada(s)
+                        <br />
+                        Última reserva: {formatarData(guia.ultima_reserva_em)} · último pagamento: {formatarData(guia.ultimo_pagamento_em)}
                       </div>
 
-                      <div className="actions">
-                        <button
-                          type="button"
-                          className="actionBtn primary"
-                          onClick={() => setRoteiroSelecionado(roteiro)}
-                        >
-                          Detalhes
-                        </button>
+                      {guia.saldo_pendente > 0 ? (
+                        <span className="badge yellow">Saldo pendente</span>
+                      ) : (
+                        <span className="badge green">Sem saldo pendente</span>
+                      )}
 
-                        {!roteiroAtivo(roteiro) && (
-                          <button
-                            type="button"
-                            className="actionBtn green"
-                            onClick={() => ativarRoteiro(roteiro)}
-                            disabled={emAlteracao}
-                          >
-                            {emAlteracao ? 'Atualizando...' : 'Ativar'}
-                          </button>
-                        )}
+                      <div className="guideRows">
+                        <div className="miniMetric">
+                          <div className="miniLabel">Receita bruta</div>
+                          <div className="miniValue">{formatarMoeda(guia.receita_bruta)}</div>
+                        </div>
 
-                        {roteiroAtivo(roteiro) && (
-                          <button
-                            type="button"
-                            className="actionBtn yellow"
-                            onClick={() => pausarRoteiro(roteiro)}
-                            disabled={emAlteracao}
-                          >
-                            {emAlteracao ? 'Atualizando...' : 'Pausar'}
-                          </button>
-                        )}
+                        <div className="miniMetric">
+                          <div className="miniLabel">Taxa 5%</div>
+                          <div className="miniValue">{formatarMoeda(guia.taxa_plataforma)}</div>
+                        </div>
 
-                        {!roteiroReprovado(roteiro) && (
-                          <button
-                            type="button"
-                            className="actionBtn red"
-                            onClick={() => reprovarRoteiro(roteiro)}
-                            disabled={emAlteracao}
-                          >
-                            Reprovar
-                          </button>
-                        )}
+                        <div className="miniMetric">
+                          <div className="miniLabel">Líquido guia</div>
+                          <div className="miniValue">{formatarMoeda(guia.valor_liquido_guia)}</div>
+                        </div>
 
-                        {!roteiro.grupo?.id && (
-                          <button
-                            type="button"
-                            className="actionBtn"
-                            onClick={() => garantirGrupo(roteiro)}
-                            disabled={criandoGrupo}
-                          >
-                            {criandoGrupo ? 'Criando...' : 'Criar grupo'}
-                          </button>
-                        )}
+                        <div className="miniMetric">
+                          <div className="miniLabel">Já pago</div>
+                          <div className="miniValue">{formatarMoeda(guia.valor_pago)}</div>
+                        </div>
 
-                        <button
-                          type="button"
-                          className="actionBtn"
-                          onClick={() => copiarTexto(roteiro.id, 'ID do roteiro')}
-                        >
-                          Copiar ID
-                        </button>
+                        <div className="miniMetric">
+                          <div className="miniLabel">Saldo</div>
+                          <div className="miniValue">{formatarMoeda(guia.saldo_pendente)}</div>
+                        </div>
                       </div>
-                    </article>
-                  )
-                })}
+                    </div>
+
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="actionBtn primary"
+                        onClick={() => abrirPagamento(guia)}
+                        disabled={guia.saldo_pendente <= 0}
+                      >
+                        Registrar pagamento
+                      </button>
+
+                      <button
+                        type="button"
+                        className="actionBtn green"
+                        onClick={() => abrirPagamento(guia, guia.saldo_pendente)}
+                        disabled={guia.saldo_pendente <= 0}
+                      >
+                        Pagar saldo total
+                      </button>
+
+                      <button
+                        type="button"
+                        className="actionBtn"
+                        onClick={() => {
+                          setGuiaSelecionado(guia)
+                          setModalPagamentoAberto(false)
+                        }}
+                      >
+                        Ver histórico
+                      </button>
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
           </div>
         </section>
       </div>
 
-      {roteiroSelecionado && (
+      {modalPagamentoAberto && guiaSelecionado && (
         <div className="modalOverlay">
-          <div className="modal">
+          <form className="modal" onSubmit={registrarPagamento}>
             <div className="modalHeader">
-              <h2 className="modalTitle">{tituloRoteiro(roteiroSelecionado)}</h2>
+              <h2 className="modalTitle">Registrar pagamento ao guia</h2>
               <div className="modalSub">
-                Detalhes administrativos do roteiro.
+                Guia: {guiaSelecionado.guia_nome} · saldo atual: {formatarMoeda(guiaSelecionado.saldo_pendente)}
               </div>
             </div>
 
             <div className="modalBody">
-              <div className="detailGrid">
-                <div className="detailRow">
-                  <span>ID do roteiro</span>
-                  <strong>{roteiroSelecionado.id}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Guia</span>
-                  <strong>{roteiroSelecionado.guia_nome || '-'}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Status</span>
-                  <strong>{statusRoteiro(roteiroSelecionado)}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Local</span>
-                  <strong>{localRoteiro(roteiroSelecionado)}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Valor</span>
-                  <strong>{formatarMoeda(precoRoteiro(roteiroSelecionado))}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Duração</span>
-                  <strong>{duracaoRoteiro(roteiroSelecionado)}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Distância</span>
-                  <strong>{distanciaRoteiro(roteiroSelecionado) || '-'} km</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Limite de pessoas</span>
-                  <strong>{limitePessoasRoteiro(roteiroSelecionado) || '-'}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Reservas</span>
-                  <strong>{roteiroSelecionado.total_reservas || 0}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Receita confirmada</span>
-                  <strong>{formatarMoeda(roteiroSelecionado.receita_confirmada || 0)}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Grupo interno</span>
-                  <strong>{roteiroSelecionado.grupo?.id ? 'Criado' : 'Não criado'}</strong>
-                </div>
-
-                <div className="detailRow">
-                  <span>Criado em</span>
-                  <strong>{formatarDataHora(roteiroSelecionado.created_at)}</strong>
-                </div>
+              <div className="field">
+                <label className="label">Valor pago</label>
+                <input
+                  className="modalInput"
+                  value={valorPagamento}
+                  onChange={(event) => setValorPagamento(event.target.value)}
+                  placeholder="Ex.: 250,00"
+                  inputMode="decimal"
+                />
               </div>
 
-              <div className="descriptionBox">
-                <strong>Descrição:</strong>
+              <div className="field">
+                <label className="label">Observação</label>
+                <textarea
+                  className="modalTextarea"
+                  value={observacaoPagamento}
+                  onChange={(event) => setObservacaoPagamento(event.target.value)}
+                  placeholder="Ex.: Repasse parcial via Pix em 25/05/2026."
+                />
+              </div>
+
+              <div className="historyBox">
+                Este pagamento reduzirá o saldo pendente do guia. Para evitar duplicidade, cada registro ficará no histórico de repasses.
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={registrandoPagamento}
+                >
+                  {registrandoPagamento ? 'Registrando...' : 'Confirmar pagamento'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn light"
+                  disabled={registrandoPagamento}
+                  onClick={() => setModalPagamentoAberto(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {guiaSelecionado && !modalPagamentoAberto && (
+        <div className="modalOverlay">
+          <div className="modal">
+            <div className="modalHeader">
+              <h2 className="modalTitle">Histórico do guia</h2>
+              <div className="modalSub">
+                {guiaSelecionado.guia_nome}
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <div className="historyBox">
+                <strong>Reservas confirmadas:</strong>
                 <br />
-                {roteiroSelecionado.descricao || 'Sem descrição cadastrada.'}
+                {guiaSelecionado.reservas.length > 0 ? (
+                  guiaSelecionado.reservas.slice(0, 8).map((reserva) => (
+                    <div key={reserva.id} style={{ marginTop: 8 }}>
+                      {reserva.roteiro_titulo || 'Roteiro'} · {formatarMoeda(reserva.valor_total || 0)} · {formatarData(reserva.created_at)}
+                    </div>
+                  ))
+                ) : (
+                  <span style={{ display: 'block', marginTop: 8 }}>
+                    Nenhuma reserva confirmada encontrada.
+                  </span>
+                )}
+              </div>
+
+              <div className="historyBox">
+                <strong>Pagamentos registrados:</strong>
+                <br />
+                {guiaSelecionado.repasses.length > 0 ? (
+                  guiaSelecionado.repasses.slice(0, 8).map((repasse) => (
+                    <div key={repasse.id} style={{ marginTop: 8 }}>
+                      {formatarMoeda(valorDoRepasse(repasse))} · {formatarData(dataDoRepasse(repasse))} · {repasse.observacao || repasse.descricao || 'Sem observação'}
+                    </div>
+                  ))
+                ) : (
+                  <span style={{ display: 'block', marginTop: 8 }}>
+                    Nenhum pagamento registrado para este guia.
+                  </span>
+                )}
               </div>
 
               <div className="modalActions">
                 <button
                   type="button"
                   className="btn primary"
-                  onClick={() => copiarTexto(roteiroSelecionado.id, 'ID do roteiro')}
-                >
-                  Copiar ID
-                </button>
-
-                <button
-                  type="button"
-                  className="btn green"
-                  onClick={() => {
-                    setRoteiroSelecionado(null)
-                    router.push('/admin/reservas')
-                  }}
-                >
-                  Ver reservas
-                </button>
-
-                <button
-                  type="button"
-                  className="btn green"
-                  onClick={() => {
-                    setRoteiroSelecionado(null)
-                    router.push('/admin/grupos')
-                  }}
-                >
-                  Ver grupos
-                </button>
-
-                <button
-                  type="button"
-                  className="btn light"
-                  onClick={() => setRoteiroSelecionado(null)}
+                  onClick={() => setGuiaSelecionado(null)}
                 >
                   Fechar
+                </button>
+
+                <button
+                  type="button"
+                  className="btn green"
+                  disabled={guiaSelecionado.saldo_pendente <= 0}
+                  onClick={() => {
+                    setValorPagamento(String(guiaSelecionado.saldo_pendente.toFixed(2)).replace('.', ','))
+                    setObservacaoPagamento('')
+                    setModalPagamentoAberto(true)
+                  }}
+                >
+                  Registrar pagamento
                 </button>
               </div>
             </div>
