@@ -1,204 +1,1643 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
-export default function ListaRoteiros() {
+type UsuarioLocal = {
+  id: string
+  nome?: string | null
+  email?: string | null
+  tipo?: string | null
+}
+
+type Guia = {
+  id: string
+  nome?: string | null
+  name?: string | null
+  email?: string | null
+}
+
+type Roteiro = {
+  id: string
+  titulo?: string | null
+  nome?: string | null
+  descricao?: string | null
+  preco?: number | null
+  valor?: number | null
+  status?: string | null
+  ativo?: boolean | null
+  id_guia?: string | null
+  guia_id?: string | null
+  local?: string | null
+  localizacao?: string | null
+  local_encontro?: string | null
+  ponto_encontro?: string | null
+  data_roteiro?: string | null
+  data_saida?: string | null
+  data?: string | null
+  hora_roteiro?: string | null
+  hora_saida?: string | null
+  hora?: string | null
+  dificuldade?: string | null
+  duracao_horas?: number | null
+  duracao?: string | null
+  km?: number | null
+  distancia_km?: number | null
+  limite_pessoas?: number | null
+  capacidade?: number | null
+  max_pessoas?: number | null
+  recorrencia?: string | null
+  frequencia?: string | null
+  foto_capa?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
+  imagem?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  guia_nome?: string
+  hot_score?: number
+  hot_reservas?: number
+  hot_confirmadas?: number
+}
+
+type ReservaCriada = {
+  id: string
+}
+
+export default function RoteirosPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
-  const [roteiros, setRoteiros] = useState<any[]>([])
+  const iniciouRef = useRef(false)
+
+  const [user, setUser] = useState<UsuarioLocal | null>(null)
+  const [roteiros, setRoteiros] = useState<Roteiro[]>([])
   const [carregando, setCarregando] = useState(true)
-  const [filtro, setFiltro] = useState('')
-  const [dificuldade, setDificuldade] = useState('')
+  const [reservandoId, setReservandoId] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [busca, setBusca] = useState('')
+  const [filtroDificuldade, setFiltroDificuldade] = useState('todos')
+  const [ordenacao, setOrdenacao] = useState<'quentes' | 'recentes' | 'menor_preco' | 'maior_preco'>('quentes')
+  const [roteiroSelecionado, setRoteiroSelecionado] = useState<Roteiro | null>(null)
+  const [quantidadePessoas, setQuantidadePessoas] = useState(1)
 
   useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
-    }
-    const parsedUser = JSON.parse(userData)
-    setUser(parsedUser)
-    carregarRoteiros()
+    if (iniciouRef.current) return
+    iniciouRef.current = true
+
+    iniciar()
   }, [])
 
-  const carregarRoteiros = async () => {
+  const iniciar = async () => {
     setCarregando(true)
+
     try {
-      let query = supabase
-        .from('roteiros')
-        .select('*, guia:users(id, nome, avatar_url)')
-        .eq('status', 'ativo')
+      const userData = localStorage.getItem('user')
 
-      if (filtro) {
-        query = query.ilike('titulo', `%${filtro}%`)
-      }
-      if (dificuldade) {
-        query = query.eq('dificuldade', dificuldade)
+      if (userData) {
+        try {
+          setUser(JSON.parse(userData))
+        } catch {
+          localStorage.removeItem('user')
+        }
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false })
-
-      if (error) throw error
-      setRoteiros(data || [])
-    } catch (err) {
-      console.error('Erro ao carregar roteiros:', err)
+      await carregarRoteiros()
+    } catch (error) {
+      console.error('Erro ao iniciar página de roteiros:', error)
+      setMensagem('Não foi possível carregar os roteiros agora.')
     } finally {
       setCarregando(false)
     }
   }
 
-  useEffect(() => {
-    carregarRoteiros()
-  }, [filtro, dificuldade])
+  const normalizar = (valor?: string | null) => {
+    return String(valor || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+  }
 
-  const getDificuldadeCor = (dificuldade: string) => {
-    switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return '#10b981'
-      case 'médio': return '#f59e0b'
-      case 'difícil': return '#ef4444'
-      case 'extremo': return '#8b5cf6'
-      default: return '#6b7280'
+  const tituloRoteiro = (roteiro: Roteiro) => {
+    return roteiro.titulo || roteiro.nome || 'Roteiro sem título'
+  }
+
+  const precoRoteiro = (roteiro: Roteiro) => {
+    return Number(roteiro.preco || roteiro.valor || 0)
+  }
+
+  const guiaIdRoteiro = (roteiro: Roteiro) => {
+    return roteiro.id_guia || roteiro.guia_id || ''
+  }
+
+  const localRoteiro = (roteiro: Roteiro) => {
+    return (
+      roteiro.local ||
+      roteiro.localizacao ||
+      roteiro.local_encontro ||
+      roteiro.ponto_encontro ||
+      'Local a confirmar'
+    )
+  }
+
+  const dataRoteiro = (roteiro: Roteiro) => {
+    return roteiro.data_roteiro || roteiro.data_saida || roteiro.data || null
+  }
+
+  const horaRoteiro = (roteiro: Roteiro) => {
+    return roteiro.hora_roteiro || roteiro.hora_saida || roteiro.hora || ''
+  }
+
+  const imagemRoteiro = (roteiro: Roteiro) => {
+    return (
+      roteiro.foto_capa ||
+      roteiro.foto_url ||
+      roteiro.imagem_url ||
+      roteiro.imagem ||
+      ''
+    )
+  }
+
+  const kmRoteiro = (roteiro: Roteiro) => {
+    return Number(roteiro.km || roteiro.distancia_km || 0)
+  }
+
+  const limitePessoas = (roteiro: Roteiro) => {
+    const limite =
+      roteiro.limite_pessoas ??
+      roteiro.capacidade ??
+      roteiro.max_pessoas ??
+      null
+
+    if (limite === null || limite === undefined) return 12
+
+    const numero = Number(limite)
+
+    if (!Number.isFinite(numero) || numero <= 0) return 12
+
+    return numero
+  }
+
+  const recorrenciaRoteiro = (roteiro: Roteiro) => {
+    return roteiro.recorrencia || roteiro.frequencia || 'Experiência única'
+  }
+
+  const formatarMoeda = (valor: any) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(Number(valor || 0))
+  }
+
+  const formatarData = (valor?: string | null) => {
+    if (!valor) return 'Data a combinar'
+
+    const data = new Date(valor)
+
+    if (Number.isNaN(data.getTime())) return valor
+
+    return data.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'short'
+    })
+  }
+
+  const statusPublicavel = (roteiro: Roteiro) => {
+    const status = normalizar(roteiro.status)
+
+    if (status === 'reprovado') return false
+    if (status === 'cancelado') return false
+    if (status === 'cancelada') return false
+    if (status === 'pausado') return false
+
+    if (status === 'ativo') return true
+    if (roteiro.ativo === true) return true
+
+    return true
+  }
+
+  const pagamentoConfirmado = (reserva: any) => {
+    const pagamento = normalizar(reserva?.pagamento_status)
+    const status = normalizar(reserva?.status)
+
+    return (
+      pagamento === 'pago' ||
+      pagamento === 'confirmado' ||
+      status === 'confirmada' ||
+      status === 'realizada'
+    )
+  }
+
+  const reservaCancelada = (reserva: any) => {
+    return normalizar(reserva?.status) === 'cancelada'
+  }
+
+  const carregarRoteiros = async () => {
+    setMensagem('')
+
+    try {
+      const { data, error } = await supabase
+        .from('roteiros')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Erro ao buscar roteiros:', error)
+        setRoteiros([])
+        setMensagem('Erro ao buscar roteiros.')
+        return
+      }
+
+      const roteirosBase = ((data || []) as Roteiro[]).filter(statusPublicavel)
+
+      if (roteirosBase.length === 0) {
+        setRoteiros([])
+        return
+      }
+
+      const guiaIds = Array.from(
+        new Set(
+          roteirosBase
+            .map((roteiro) => guiaIdRoteiro(roteiro))
+            .filter(Boolean)
+        )
+      )
+
+      let guias: Guia[] = []
+
+      if (guiaIds.length > 0) {
+        const { data: guiasData, error: guiasError } = await supabase
+          .from('users')
+          .select('id, nome, name, email')
+          .in('id', guiaIds)
+
+        if (!guiasError) {
+          guias = (guiasData || []) as Guia[]
+        }
+      }
+
+      const roteiroIds = roteirosBase.map((roteiro) => roteiro.id)
+
+      let reservas: any[] = []
+
+      if (roteiroIds.length > 0) {
+        const { data: reservasData, error: reservasError } = await supabase
+          .from('reservas')
+          .select('id, roteiro_id, status, pagamento_status, created_at')
+          .in('roteiro_id', roteiroIds)
+
+        if (!reservasError) {
+          reservas = reservasData || []
+        }
+      }
+
+      const agora = Date.now()
+      const trintaDias = 1000 * 60 * 60 * 24 * 30
+
+      const mapaHot = new Map<
+        string,
+        {
+          score: number
+          total: number
+          confirmadas: number
+        }
+      >()
+
+      reservas.forEach((reserva) => {
+        if (!reserva.roteiro_id) return
+        if (reservaCancelada(reserva)) return
+
+        const atual = mapaHot.get(reserva.roteiro_id) || {
+          score: 0,
+          total: 0,
+          confirmadas: 0
+        }
+
+        atual.total += 1
+
+        if (pagamentoConfirmado(reserva)) {
+          atual.score += 8
+          atual.confirmadas += 1
+        } else {
+          atual.score += 3
+        }
+
+        const dataReserva = new Date(reserva.created_at || '').getTime()
+
+        if (!Number.isNaN(dataReserva)) {
+          const idade = agora - dataReserva
+
+          if (idade <= trintaDias) atual.score += 4
+          if (idade <= trintaDias / 2) atual.score += 2
+        }
+
+        mapaHot.set(reserva.roteiro_id, atual)
+      })
+
+      const lista = roteirosBase.map((roteiro) => {
+        const guia = guias.find((item) => item.id === guiaIdRoteiro(roteiro))
+        const hot = mapaHot.get(roteiro.id) || {
+          score: 0,
+          total: 0,
+          confirmadas: 0
+        }
+
+        return {
+          ...roteiro,
+          guia_nome:
+            guia?.nome ||
+            guia?.name ||
+            guia?.email ||
+            'Guia PrussikTrails',
+          hot_score: hot.score,
+          hot_reservas: hot.total,
+          hot_confirmadas: hot.confirmadas
+        }
+      })
+
+      setRoteiros(lista)
+    } catch (error) {
+      console.error('Erro inesperado ao carregar roteiros:', error)
+      setRoteiros([])
+      setMensagem('Erro inesperado ao carregar roteiros.')
     }
   }
 
-  const getDificuldadeIcone = (dificuldade: string) => {
-    switch (dificuldade?.toLowerCase()) {
-      case 'fácil': return '🥾'
-      case 'médio': return '⛰️'
-      case 'difícil': return '🏔️'
-      case 'extremo': return '⚠️'
-      default: return '🥾'
+  const abrirReserva = (roteiro: Roteiro) => {
+    if (!user?.id) {
+      router.push('/login')
+      return
+    }
+
+    if (user.tipo !== 'cliente') {
+      setMensagem('Entre como cliente para reservar um roteiro.')
+      return
+    }
+
+    setQuantidadePessoas(1)
+    setRoteiroSelecionado(roteiro)
+  }
+
+  const confirmarReserva = async () => {
+    if (!roteiroSelecionado || !user?.id) return
+
+    setReservandoId(roteiroSelecionado.id)
+    setMensagem('')
+
+    try {
+      const quantidade = Math.max(1, Number(quantidadePessoas || 1))
+      const valorUnitario = precoRoteiro(roteiroSelecionado)
+      const valorTotal = valorUnitario * quantidade
+
+      const payload = {
+        cliente_id: user.id,
+        roteiro_id: roteiroSelecionado.id,
+        quantidade_pessoas: quantidade,
+        valor_total: valorTotal,
+        status: 'pendente',
+        pagamento_status: 'pendente',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      const { data, error } = await supabase
+        .from('reservas')
+        .insert(payload)
+        .select('id')
+        .maybeSingle()
+
+      if (error) {
+        console.error('Erro ao criar reserva:', error)
+        setMensagem('Não foi possível criar a reserva agora.')
+        return
+      }
+
+      const reserva = data as ReservaCriada | null
+
+      if (!reserva?.id) {
+        setMensagem('Reserva criada, mas não foi possível localizar o pagamento.')
+        router.push('/cliente/minhas-reservas')
+        return
+      }
+
+      setRoteiroSelecionado(null)
+      router.push(`/cliente/pagamento/${reserva.id}`)
+    } catch (error) {
+      console.error('Erro inesperado ao reservar:', error)
+      setMensagem('Erro inesperado ao reservar roteiro.')
+    } finally {
+      setReservandoId('')
     }
   }
 
-  const handleLogout = () => {
+  const sair = () => {
     localStorage.removeItem('user')
+    setUser(null)
     router.push('/login')
+  }
+
+  const dificuldadesDisponiveis = useMemo(() => {
+    const set = new Set<string>()
+
+    roteiros.forEach((roteiro) => {
+      const dificuldade = String(roteiro.dificuldade || '').trim()
+
+      if (dificuldade) set.add(dificuldade)
+    })
+
+    return Array.from(set)
+  }, [roteiros])
+
+  const roteirosFiltrados = useMemo(() => {
+    const termo = normalizar(busca)
+
+    const filtrados = roteiros.filter((roteiro) => {
+      const texto = normalizar(
+        [
+          tituloRoteiro(roteiro),
+          roteiro.descricao,
+          roteiro.guia_nome,
+          localRoteiro(roteiro),
+          roteiro.dificuldade,
+          recorrenciaRoteiro(roteiro)
+        ].join(' ')
+      )
+
+      const passaBusca = termo ? texto.includes(termo) : true
+
+      const passaDificuldade =
+        filtroDificuldade === 'todos'
+          ? true
+          : normalizar(roteiro.dificuldade) === normalizar(filtroDificuldade)
+
+      return passaBusca && passaDificuldade
+    })
+
+    return filtrados.sort((a, b) => {
+      if (ordenacao === 'menor_preco') {
+        return precoRoteiro(a) - precoRoteiro(b)
+      }
+
+      if (ordenacao === 'maior_preco') {
+        return precoRoteiro(b) - precoRoteiro(a)
+      }
+
+      if (ordenacao === 'recentes') {
+        const dataA = new Date(a.created_at || '').getTime()
+        const dataB = new Date(b.created_at || '').getTime()
+
+        return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
+      }
+
+      if (Number(b.hot_score || 0) !== Number(a.hot_score || 0)) {
+        return Number(b.hot_score || 0) - Number(a.hot_score || 0)
+      }
+
+      const dataA = new Date(a.created_at || '').getTime()
+      const dataB = new Date(b.created_at || '').getTime()
+
+      return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
+    })
+  }, [roteiros, busca, filtroDificuldade, ordenacao])
+
+  const hotLabel = (roteiro: Roteiro) => {
+    const total = Number(roteiro.hot_reservas || 0)
+    const confirmadas = Number(roteiro.hot_confirmadas || 0)
+
+    if (total === 0) return 'Novidade'
+    if (confirmadas > 0) return `${confirmadas} confirmação(ões)`
+
+    return `${total} reserva(s)`
+  }
+
+  const dificuldadeClass = (dificuldade?: string | null) => {
+    const d = normalizar(dificuldade)
+
+    if (d.includes('facil')) return 'badge-green'
+    if (d.includes('medio')) return 'badge-yellow'
+    if (d.includes('dificil') || d.includes('extremo')) return 'badge-red'
+
+    return 'badge-neutral'
   }
 
   if (carregando) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🏔️</div>
-          <div style={{ color: '#6b7280' }}>Carregando roteiros...</div>
+      <main className="loading">
+        <style>{`
+          * { box-sizing: border-box; }
+
+          body {
+            margin: 0;
+            background: #f6f7f1;
+            font-family:
+              Inter,
+              ui-sans-serif,
+              system-ui,
+              -apple-system,
+              BlinkMacSystemFont,
+              "Segoe UI",
+              sans-serif;
+          }
+
+          .loading {
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background:
+              radial-gradient(circle at top left, rgba(132, 204, 22, 0.18), transparent 30%),
+              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
+            color: #374151;
+          }
+
+          .loadingCard {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.06);
+            border-radius: 30px;
+            padding: 28px;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+            text-align: center;
+          }
+
+          .loadingCard img {
+            height: 68px;
+            width: auto;
+            margin-bottom: 12px;
+          }
+        `}</style>
+
+        <div className="loadingCard">
+          <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          <div>Carregando roteiros...</div>
         </div>
-      </div>
+      </main>
     )
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      <style jsx global>{`
-        @media (min-width: 768px) {
-          .roteiros-container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
-          .filtros-container { flex-direction: row !important; justify-content: space-between !important; align-items: center !important; }
-          .roteiros-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 24px !important; }
+    <main className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          background: #f6f7f1;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
+          color: #172018;
+        }
+
+        .header {
+          position: sticky;
+          top: 0;
+          z-index: 40;
+          background: rgba(255, 253, 247, 0.86);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+          backdrop-filter: blur(18px);
+          padding: 10px 16px;
+        }
+
+        .headerInner {
+          max-width: 1180px;
+          margin: 0 auto;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+          cursor: pointer;
+        }
+
+        .brand img {
+          height: 42px;
+          width: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .brandTitle {
+          font-size: 18px;
+          font-weight: 950;
+          color: #dc2626;
+          line-height: 1;
+          letter-spacing: -0.05em;
+        }
+
+        .brandSub {
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 700;
+          margin-top: 3px;
+        }
+
+        .headerActions {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+        }
+
+        .iconBtn {
+          height: 38px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: rgba(255,255,255,0.78);
+          border-radius: 999px;
+          padding: 0 13px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          font-size: 12px;
+          font-weight: 900;
+          transition: 0.2s ease;
+          color: #172018;
+          white-space: nowrap;
+        }
+
+        .iconBtn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
+        }
+
+        .iconBtn.primary {
+          background: #172018;
+          color: #ffffff;
+          border-color: #172018;
+        }
+
+        .container {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 22px 16px 48px;
+        }
+
+        .hero {
+          position: relative;
+          overflow: hidden;
+          border-radius: 38px;
+          padding: 30px;
+          min-height: 330px;
+          background:
+            linear-gradient(135deg, rgba(23, 32, 24, 0.76), rgba(23, 32, 24, 0.34)),
+            radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 34%),
+            linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
+          color: #ffffff;
+          box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
+          margin-bottom: 16px;
+        }
+
+        .hero::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+          background-size: 46px 46px;
+          mask-image: linear-gradient(to bottom, black, transparent);
+          pointer-events: none;
+        }
+
+        .heroContent {
+          position: relative;
+          z-index: 2;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 260px;
+          gap: 22px;
+          align-items: end;
+          min-height: 265px;
+        }
+
+        .eyebrow {
+          display: inline-flex;
+          width: fit-content;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.26);
+          background: rgba(255, 255, 255, 0.12);
+          color: #f7fee7;
+          padding: 8px 12px;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-bottom: 14px;
+        }
+
+        .heroTitle {
+          margin: 0;
+          max-width: 720px;
+          font-size: clamp(42px, 6vw, 72px);
+          line-height: 0.92;
+          font-weight: 950;
+          letter-spacing: -0.085em;
+        }
+
+        .heroTitle span {
+          color: #bef264;
+          text-shadow: 0 0 28px rgba(190, 242, 100, 0.32);
+        }
+
+        .heroText {
+          max-width: 650px;
+          color: rgba(255,255,255,0.82);
+          line-height: 1.62;
+          margin: 16px 0 0;
+          font-size: 14px;
+        }
+
+        .heroCard {
+          background: rgba(255, 255, 255, 0.14);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          border-radius: 28px;
+          padding: 18px;
+          backdrop-filter: blur(16px);
+        }
+
+        .heroCardLabel {
+          color: rgba(255,255,255,0.76);
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+        }
+
+        .heroCardValue {
+          margin-top: 8px;
+          color: #ffffff;
+          font-size: 38px;
+          font-weight: 950;
+          letter-spacing: -0.08em;
+          line-height: 1;
+        }
+
+        .heroCardText {
+          margin-top: 8px;
+          color: rgba(255,255,255,0.78);
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        .message {
+          background: #ecfdf5;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+          border-radius: 18px;
+          padding: 13px 15px;
+          margin-bottom: 16px;
+          font-size: 13px;
+          font-weight: 800;
+        }
+
+        .toolbar {
+          background: rgba(255,255,255,0.88);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 30px;
+          padding: 14px;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 190px 190px;
+          gap: 10px;
+          margin-bottom: 16px;
+        }
+
+        .input,
+        .select {
+          width: 100%;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: #fffdf7;
+          border-radius: 999px;
+          padding: 13px 15px;
+          font-size: 13px;
+          color: #172018;
+          outline: none;
+          font-weight: 800;
+        }
+
+        .input:focus,
+        .select:focus {
+          border-color: #84cc16;
+          box-shadow: 0 0 0 4px rgba(132, 204, 22, 0.12);
+        }
+
+        .statsRow {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .statCard {
+          background: rgba(255,255,255,0.84);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 26px;
+          padding: 16px;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+        }
+
+        .statValue {
+          color: #172018;
+          font-size: 28px;
+          font-weight: 950;
+          letter-spacing: -0.07em;
+        }
+
+        .statLabel {
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 850;
+          margin-top: 3px;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 16px;
+        }
+
+        .card {
+          background: rgba(255,255,255,0.90);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 32px;
+          overflow: hidden;
+          box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+          transition: 0.2s ease;
+          display: flex;
+          flex-direction: column;
+          min-height: 100%;
+        }
+
+        .card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 22px 46px rgba(15, 23, 42, 0.12);
+        }
+
+        .imageBox {
+          height: 210px;
+          background:
+            radial-gradient(circle at top right, rgba(251, 146, 60, 0.20), transparent 38%),
+            linear-gradient(135deg, #dbe7c8, #aebf8d);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .imageBox img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .imageOverlay {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to top, rgba(0,0,0,0.45), transparent 55%);
+        }
+
+        .hotPill {
+          position: absolute;
+          top: 14px;
+          left: 14px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(255, 237, 213, 0.94);
+          color: #9a3412;
+          border: 1px solid #fed7aa;
+          border-radius: 999px;
+          padding: 7px 10px;
+          font-size: 11px;
+          font-weight: 950;
+          z-index: 2;
+        }
+
+        .datePill {
+          position: absolute;
+          right: 14px;
+          bottom: 14px;
+          background: rgba(255,255,255,0.92);
+          color: #172018;
+          border-radius: 18px;
+          padding: 9px 11px;
+          font-size: 12px;
+          font-weight: 950;
+          z-index: 2;
+          text-align: center;
+          min-width: 72px;
+        }
+
+        .cardBody {
+          padding: 17px;
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+        }
+
+        .cardTitle {
+          color: #172018;
+          font-size: 19px;
+          line-height: 1.12;
+          font-weight: 950;
+          letter-spacing: -0.045em;
+          margin: 0;
+        }
+
+        .meta {
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 760;
+          margin-top: 8px;
+        }
+
+        .desc {
+          color: #475569;
+          font-size: 13px;
+          line-height: 1.55;
+          margin: 12px 0 0;
+          flex: 1;
+        }
+
+        .badgeRow {
+          display: flex;
+          gap: 7px;
+          flex-wrap: wrap;
+          margin-top: 14px;
+        }
+
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .badge-green {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .badge-yellow {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .badge-red {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+
+        .badge-neutral {
+          background: #f1f5f9;
+          color: #475569;
+        }
+
+        .cardFooter {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-top: 16px;
+        }
+
+        .price {
+          color: #16a34a;
+          font-size: 20px;
+          font-weight: 950;
+          letter-spacing: -0.05em;
+        }
+
+        .price small {
+          display: block;
+          color: #94a3b8;
+          font-size: 10px;
+          letter-spacing: 0;
+          font-weight: 850;
+          margin-top: 1px;
+        }
+
+        .reserveBtn {
+          border: none;
+          border-radius: 999px;
+          padding: 12px 15px;
+          background: #172018;
+          color: #ffffff;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .reserveBtn:hover:not(:disabled) {
+          background: #16a34a;
+          transform: translateY(-1px);
+        }
+
+        .reserveBtn:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+        }
+
+        .empty {
+          padding: 34px;
+          text-align: center;
+          color: #64748b;
+          font-size: 14px;
+          background: rgba(255,255,255,0.86);
+          border-radius: 28px;
+          border: 1px dashed #cbd5e1;
+          font-weight: 700;
+        }
+
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 999;
+          background: rgba(23, 32, 24, 0.58);
+          backdrop-filter: blur(10px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+        }
+
+        .modal {
+          width: 100%;
+          max-width: 520px;
+          background: #fffdf7;
+          border-radius: 34px;
+          overflow: hidden;
+          box-shadow: 0 30px 80px rgba(15, 23, 42, 0.35);
+          border: 1px solid rgba(255,255,255,0.18);
+        }
+
+        .modalHeader {
+          background:
+            radial-gradient(circle at top right, rgba(190, 242, 100, 0.28), transparent 36%),
+            #172018;
+          color: #ffffff;
+          padding: 24px;
+        }
+
+        .modalTitle {
+          margin: 0;
+          font-size: 28px;
+          line-height: 1;
+          font-weight: 950;
+          letter-spacing: -0.06em;
+        }
+
+        .modalText {
+          margin: 8px 0 0;
+          color: rgba(255,255,255,0.74);
+          font-size: 13px;
+          line-height: 1.55;
+        }
+
+        .modalBody {
+          padding: 22px;
+        }
+
+        .modalInfo {
+          background: #f6f7f1;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 24px;
+          padding: 14px;
+          margin-bottom: 14px;
+          color: #475569;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 750;
+        }
+
+        .quantityRow {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .quantityControls {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .quantityBtn {
+          width: 38px;
+          height: 38px;
+          border-radius: 999px;
+          border: 1px solid rgba(15,23,42,0.08);
+          background: #ffffff;
+          color: #172018;
+          font-size: 18px;
+          font-weight: 950;
+          cursor: pointer;
+        }
+
+        .quantityValue {
+          min-width: 34px;
+          text-align: center;
+          font-size: 20px;
+          font-weight: 950;
+          color: #172018;
+        }
+
+        .modalActions {
+          display: flex;
+          gap: 10px;
+        }
+
+        .cancelBtn,
+        .confirmBtn {
+          flex: 1;
+          border: none;
+          border-radius: 999px;
+          padding: 14px 15px;
+          font-size: 13px;
+          font-weight: 950;
+          cursor: pointer;
+        }
+
+        .cancelBtn {
+          background: #eef2e5;
+          color: #475569;
+        }
+
+        .confirmBtn {
+          background: #16a34a;
+          color: #ffffff;
+        }
+
+        .confirmBtn:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+        }
+
+        @media (max-width: 1080px) {
+          .grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .toolbar {
+            grid-template-columns: 1fr;
+          }
+
+          .heroContent {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 720px) {
+          .header {
+            padding: 9px 12px;
+          }
+
+          .brandSub {
+            display: none;
+          }
+
+          .headerActions .hideMobile {
+            display: none;
+          }
+
+          .container {
+            padding: 16px 12px 42px;
+          }
+
+          .hero {
+            border-radius: 28px;
+            padding: 22px;
+            min-height: auto;
+          }
+
+          .heroContent {
+            min-height: auto;
+          }
+
+          .statsRow {
+            grid-template-columns: 1fr;
+          }
+
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .imageBox {
+            height: 220px;
+          }
+        }
+
+        @media (max-width: 460px) {
+          .heroTitle {
+            font-size: 40px;
+          }
+
+          .brand img {
+            height: 38px;
+          }
+
+          .cardFooter {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .reserveBtn {
+            width: 100%;
+          }
+
+          .modalActions {
+            flex-direction: column;
+          }
         }
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>🏔️ PussikTrails</h1>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => router.push('/cliente/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Dashboard</button>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Sair</button>
+      <header className="header">
+        <div className="headerInner">
+          <div className="brand" onClick={() => router.push('/')}>
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+
+            <div>
+              <div className="brandTitle">PrussikTrails</div>
+              <div className="brandSub">Roteiros e experiências outdoor</div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="roteiros-container" style={{ padding: '16px' }}>
-        
-        {/* TÍTULO */}
-        <div style={{ marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 'bold', margin: 0, color: '#111827' }}>🌄 Explorar Roteiros</h2>
-          <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>Descubra novas aventuras e trilhas incríveis</p>
-        </div>
+          <div className="headerActions">
+            <button
+              type="button"
+              className="iconBtn hideMobile"
+              onClick={() => router.push('/')}
+            >
+              Início
+            </button>
 
-        {/* FILTROS */}
-        <div className="filtros-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          <input
-            type="text"
-            placeholder="🔍 Buscar roteiro..."
-            value={filtro}
-            onChange={(e) => setFiltro(e.target.value)}
-            style={{ flex: 1, padding: '10px 16px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '14px', outline: 'none' }}
-          />
-          <select
-            value={dificuldade}
-            onChange={(e) => setDificuldade(e.target.value)}
-            style={{ padding: '10px 16px', borderRadius: '40px', border: '1px solid #e5e7eb', fontSize: '14px', backgroundColor: 'white', cursor: 'pointer' }}
-          >
-            <option value="">Todas as dificuldades</option>
-            <option value="fácil">🥾 Fácil</option>
-            <option value="médio">⛰️ Médio</option>
-            <option value="difícil">🏔️ Difícil</option>
-            <option value="extremo">⚠️ Extremo</option>
-          </select>
-        </div>
-
-        {/* GRID DE ROTEIROS */}
-        {roteiros.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px', backgroundColor: 'white', borderRadius: '20px' }}>
-            <span style={{ fontSize: '48px' }}>🗺️</span>
-            <p style={{ marginTop: '12px', color: '#6b7280' }}>Nenhum roteiro encontrado</p>
-          </div>
-        ) : (
-          <div className="roteiros-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-            {roteiros.map((roteiro) => (
-              <div
-                key={roteiro.id}
-                onClick={() => router.push(`/roteiros/${roteiro.id}`)}
-                style={{
-                  backgroundColor: 'white',
-                  borderRadius: '20px',
-                  overflow: 'hidden',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)'
-                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)'
-                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'
-                }}
+            {user?.tipo === 'cliente' && (
+              <button
+                type="button"
+                className="iconBtn hideMobile"
+                onClick={() => router.push('/cliente/minhas-reservas')}
               >
-                <div style={{ height: '160px', backgroundColor: '#e5e7eb', overflow: 'hidden', position: 'relative' }}>
-                  {roteiro.foto_capa ? (
-                    <img src={roteiro.foto_capa} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px' }}>🏔️</div>
-                  )}
-                  <div style={{ position: 'absolute', bottom: '8px', right: '8px', backgroundColor: 'rgba(0,0,0,0.7)', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', color: 'white' }}>
-                    {getDificuldadeIcone(roteiro.dificuldade)} {roteiro.dificuldade}
-                  </div>
-                </div>
-                <div style={{ padding: '16px' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>{roteiro.titulo}</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>📍 {roteiro.localizacao}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: 'white' }}>
-                        {roteiro.guia?.nome?.charAt(0).toUpperCase() || 'G'}
-                      </div>
-                      <span style={{ fontSize: '11px', color: '#6b7280' }}>{roteiro.guia?.nome || 'Guia'}</span>
-                    </div>
-                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#16a34a' }}>
-                      R$ {roteiro.preco}
-                    </div>
-                  </div>
-                </div>
+                Reservas
+              </button>
+            )}
+
+            {user ? (
+              <>
+                <button
+                  type="button"
+                  className="iconBtn primary"
+                  onClick={() => {
+                    if (user.tipo === 'admin') router.push('/admin/dashboard')
+                    else if (user.tipo === 'guia') router.push('/guia/dashboard')
+                    else router.push('/cliente/dashboard')
+                  }}
+                >
+                  Meu painel
+                </button>
+
+                <button
+                  type="button"
+                  className="iconBtn"
+                  onClick={sair}
+                >
+                  Sair
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="iconBtn"
+                  onClick={() => router.push('/login')}
+                >
+                  Entrar
+                </button>
+
+                <button
+                  type="button"
+                  className="iconBtn primary"
+                  onClick={() => router.push('/cadastro')}
+                >
+                  Criar conta
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="container">
+        <section className="hero">
+          <div className="heroContent">
+            <div>
+              <div className="eyebrow">Escolha seu próximo caminho</div>
+
+              <h1 className="heroTitle">
+                Nem toda rota aparece no mapa.
+                <br />
+                Algumas começam <span>por coragem.</span>
+              </h1>
+
+              <p className="heroText">
+                Encontre experiências outdoor, trilhas guiadas e jornadas para sair
+                da rotina com segurança, presença e bons guias pelo caminho.
+              </p>
+            </div>
+
+            <aside className="heroCard">
+              <div className="heroCardLabel">Roteiros disponíveis</div>
+              <div className="heroCardValue">{roteiros.length}</div>
+              <div className="heroCardText">
+                Use os filtros para encontrar uma experiência com o seu ritmo.
               </div>
-            ))}
+            </aside>
+          </div>
+        </section>
+
+        {mensagem && (
+          <div className="message">
+            {mensagem}
           </div>
         )}
+
+        <section className="toolbar">
+          <input
+            className="input"
+            value={busca}
+            onChange={(event) => setBusca(event.target.value)}
+            placeholder="Buscar por trilha, local, guia ou experiência..."
+          />
+
+          <select
+            className="select"
+            value={filtroDificuldade}
+            onChange={(event) => setFiltroDificuldade(event.target.value)}
+          >
+            <option value="todos">Todas as dificuldades</option>
+
+            {dificuldadesDisponiveis.map((dificuldade) => (
+              <option value={dificuldade} key={dificuldade}>
+                {dificuldade}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="select"
+            value={ordenacao}
+            onChange={(event) => setOrdenacao(event.target.value as any)}
+          >
+            <option value="quentes">Mais quentes</option>
+            <option value="recentes">Mais recentes</option>
+            <option value="menor_preco">Menor preço</option>
+            <option value="maior_preco">Maior preço</option>
+          </select>
+        </section>
+
+        <section className="statsRow">
+          <article className="statCard">
+            <div className="statValue">{roteirosFiltrados.length}</div>
+            <div className="statLabel">roteiro(s) encontrados</div>
+          </article>
+
+          <article className="statCard">
+            <div className="statValue">
+              {roteiros.filter((r) => Number(r.hot_reservas || 0) > 0).length}
+            </div>
+            <div className="statLabel">com movimento da comunidade</div>
+          </article>
+
+          <article className="statCard">
+            <div className="statValue">
+              {roteiros.length > 0
+                ? formatarMoeda(
+                    Math.min(
+                      ...roteiros
+                        .map((roteiro) => precoRoteiro(roteiro))
+                        .filter((preco) => preco > 0)
+                    )
+                  )
+                : 'R$ 0,00'}
+            </div>
+            <div className="statLabel">menor valor disponível</div>
+          </article>
+        </section>
+
+        {roteirosFiltrados.length === 0 ? (
+          <div className="empty">
+            Nenhum roteiro encontrado com esses filtros.
+          </div>
+        ) : (
+          <section className="grid">
+            {roteirosFiltrados.map((roteiro) => {
+              const imagem = imagemRoteiro(roteiro)
+              const preco = precoRoteiro(roteiro)
+              const km = kmRoteiro(roteiro)
+
+              return (
+                <article className="card" key={roteiro.id}>
+                  <div className="imageBox">
+                    {imagem && (
+                      <img src={imagem} alt={tituloRoteiro(roteiro)} />
+                    )}
+
+                    <div className="imageOverlay" />
+
+                    <div className="hotPill">
+                      🔥 {hotLabel(roteiro)}
+                    </div>
+
+                    <div className="datePill">
+                      {formatarData(dataRoteiro(roteiro))}
+                      {horaRoteiro(roteiro) && (
+                        <div style={{ fontSize: 10, marginTop: 2 }}>
+                          {horaRoteiro(roteiro)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="cardBody">
+                    <h2 className="cardTitle">
+                      {tituloRoteiro(roteiro)}
+                    </h2>
+
+                    <div className="meta">
+                      {localRoteiro(roteiro)}
+                      <br />
+                      Guia: {roteiro.guia_nome || 'Guia PrussikTrails'}
+                    </div>
+
+                    {roteiro.descricao && (
+                      <p className="desc">
+                        {String(roteiro.descricao).slice(0, 150)}
+                        {String(roteiro.descricao).length > 150 ? '...' : ''}
+                      </p>
+                    )}
+
+                    <div className="badgeRow">
+                      <span className={`badge ${dificuldadeClass(roteiro.dificuldade)}`}>
+                        {roteiro.dificuldade || 'Nível livre'}
+                      </span>
+
+                      {(roteiro.duracao_horas || roteiro.duracao) && (
+                        <span className="badge badge-neutral">
+                          {roteiro.duracao_horas
+                            ? `${roteiro.duracao_horas}h`
+                            : roteiro.duracao}
+                        </span>
+                      )}
+
+                      {km > 0 && (
+                        <span className="badge badge-green">
+                          {km} km
+                        </span>
+                      )}
+
+                      <span className="badge badge-neutral">
+                        {recorrenciaRoteiro(roteiro)}
+                      </span>
+                    </div>
+
+                    <div className="cardFooter">
+                      <div className="price">
+                        {formatarMoeda(preco)}
+                        <small>por pessoa</small>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="reserveBtn"
+                        onClick={() => abrirReserva(roteiro)}
+                        disabled={reservandoId === roteiro.id}
+                      >
+                        {reservandoId === roteiro.id ? 'Reservando...' : 'Reservar'}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </section>
+        )}
       </div>
-    </div>
+
+      {roteiroSelecionado && (
+        <div className="modalOverlay">
+          <div className="modal">
+            <div className="modalHeader">
+              <h2 className="modalTitle">
+                Confirmar reserva
+              </h2>
+
+              <p className="modalText">
+                {tituloRoteiro(roteiroSelecionado)}
+              </p>
+            </div>
+
+            <div className="modalBody">
+              <div className="modalInfo">
+                <strong>Local:</strong> {localRoteiro(roteiroSelecionado)}
+                <br />
+                <strong>Data:</strong> {formatarData(dataRoteiro(roteiroSelecionado))}{' '}
+                {horaRoteiro(roteiroSelecionado)}
+                <br />
+                <strong>Valor por pessoa:</strong>{' '}
+                {formatarMoeda(precoRoteiro(roteiroSelecionado))}
+              </div>
+
+              <div className="quantityRow">
+                <div>
+                  <strong>Quantidade de pessoas</strong>
+                  <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>
+                    Limite sugerido: {limitePessoas(roteiroSelecionado)}
+                  </div>
+                </div>
+
+                <div className="quantityControls">
+                  <button
+                    type="button"
+                    className="quantityBtn"
+                    onClick={() =>
+                      setQuantidadePessoas((prev) => Math.max(1, prev - 1))
+                    }
+                  >
+                    −
+                  </button>
+
+                  <div className="quantityValue">{quantidadePessoas}</div>
+
+                  <button
+                    type="button"
+                    className="quantityBtn"
+                    onClick={() =>
+                      setQuantidadePessoas((prev) =>
+                        Math.min(limitePessoas(roteiroSelecionado), prev + 1)
+                      )
+                    }
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="modalInfo">
+                <strong>Total:</strong>{' '}
+                {formatarMoeda(precoRoteiro(roteiroSelecionado) * quantidadePessoas)}
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="cancelBtn"
+                  onClick={() => setRoteiroSelecionado(null)}
+                  disabled={!!reservandoId}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  className="confirmBtn"
+                  onClick={confirmarReserva}
+                  disabled={!!reservandoId}
+                >
+                  {reservandoId ? 'Criando reserva...' : 'Ir para pagamento'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
   )
 }
