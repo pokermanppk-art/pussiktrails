@@ -1,448 +1,2309 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import UploadAvatarModal from '@/components/UploadAvatarModal'
-import SettingsButton from '@/components/SettingsButton'
+
+type UsuarioLocal = {
+  id: string
+  nome?: string | null
+  email?: string | null
+  tipo?: string | null
+}
+
+type Roteiro = {
+  id: string
+  titulo?: string | null
+  nome?: string | null
+  km?: number | null
+  distancia_km?: number | null
+  preco?: number | null
+  valor?: number | null
+  foto_capa?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
+  local?: string | null
+  localizacao?: string | null
+  id_guia?: string | null
+  guia_id?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  status?: string | null
+}
+
+type Reserva = {
+  id: string
+  roteiro_id?: string | null
+  cliente_id?: string | null
+  status?: string | null
+  pagamento_status?: string | null
+  valor_total?: number | null
+  created_at?: string | null
+}
 
 type Avaliacao = {
   id: string
-  nota: number
-  comentario: string
-  cliente_id: string
-  cliente_nome: string
-  cliente_avatar?: string
-  created_at: string
+  nota?: number | null
+  comentario?: string | null
+  observacao?: string | null
+  descricao?: string | null
+  cliente_id?: string | null
+  cliente_nome?: string | null
+  cliente_avatar?: string | null
+  created_at?: string | null
+  [key: string]: any
 }
 
-export default function PerfilGuia() {
+type Stats = {
+  totalRoteiros: number
+  totalReservas: number
+  reservasConfirmadas: number
+  totalClientes: number
+  totalKm: number
+  avaliacaoMedia: number
+  totalAvaliacoes: number
+}
+
+const statsInicial: Stats = {
+  totalRoteiros: 0,
+  totalReservas: 0,
+  reservasConfirmadas: 0,
+  totalClientes: 0,
+  totalKm: 0,
+  avaliacaoMedia: 0,
+  totalAvaliacoes: 0
+}
+
+const PIX_TIPOS = [
+  { value: '', label: 'Selecione o tipo da chave' },
+  { value: 'cpf', label: 'CPF' },
+  { value: 'cnpj', label: 'CNPJ' },
+  { value: 'email', label: 'E-mail' },
+  { value: 'telefone', label: 'Telefone' },
+  { value: 'aleatoria', label: 'Chave aleatória' }
+]
+
+const METAS_KM_GUIA = [
+  { km: 32, nome: 'Bronze', icone: '🥉' },
+  { km: 96, nome: 'Prata', icone: '🥈' },
+  { km: 192, nome: 'Ouro', icone: '🥇' },
+  { km: 384, nome: 'Platina', icone: '💎' },
+  { km: 768, nome: 'Elite', icone: '⚡' },
+  { km: 1152, nome: 'Master', icone: '👑' },
+  { km: 1920, nome: 'Lenda', icone: '🌟' },
+  { km: 3840, nome: 'Lenda Absoluta', icone: '🔥' }
+]
+
+export default function PerfilGuiaPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [user, setUser] = useState<UsuarioLocal | null>(null)
   const [guia, setGuia] = useState<any>(null)
-  const [carregando, setCarregando] = useState(true)
+
   const [bio, setBio] = useState('')
   const [editandoBio, setEditandoBio] = useState(false)
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
-  const [modalAberto, setModalAberto] = useState(false)
+
+  const [pixTipo, setPixTipo] = useState('')
+  const [pixChave, setPixChave] = useState('')
+  const [cadastur, setCadastur] = useState('')
+
+  const [avatarPreview, setAvatarPreview] = useState('')
+  const [enviandoAvatar, setEnviandoAvatar] = useState(false)
+
+  const [stats, setStats] = useState<Stats>(statsInicial)
+  const [roteiros, setRoteiros] = useState<Roteiro[]>([])
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([])
+
+  const [carregando, setCarregando] = useState(true)
+  const [salvandoBio, setSalvandoBio] = useState(false)
+  const [salvandoDados, setSalvandoDados] = useState(false)
+
+  const [menuAberto, setMenuAberto] = useState(false)
+  const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
+  const [senhaAtual, setSenhaAtual] = useState('')
+  const [novaSenha, setNovaSenha] = useState('')
+  const [confirmarSenha, setConfirmarSenha] = useState('')
+  const [alterandoSenha, setAlterandoSenha] = useState(false)
+
   const [mensagem, setMensagem] = useState('')
-  const [curtidas, setCurtidas] = useState<Record<string, number>>({})
-  const [usuarioCurtiu, setUsuarioCurtiu] = useState<Record<string, boolean>>({})
-  const [usuarioLogado, setUsuarioLogado] = useState<any>(null)
+  const [erro, setErro] = useState('')
 
-  const [medalhas, setMedalhas] = useState<any[]>([])
-  const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
+  useEffect(() => {
+    iniciar()
+  }, [])
 
-  const [stats, setStats] = useState({
-    totalRoteiros: 0,
-    totalReservas: 0,
-    totalClientes: 0,
-    totalKm: 0,
-    avaliacaoMedia: 0,
-    totalAvaliacoes: 0,
-    medalhaNivel: 'bronze'
-  })
+  const iniciar = async () => {
+    setCarregando(true)
+    setErro('')
+    setMensagem('')
 
-  const metasKmGuia = [
-    { km: 32, nome: '🥉 Bronze' }, { km: 96, nome: '🥈 Prata' },
-    { km: 192, nome: '🥇 Ouro' }, { km: 384, nome: '💎 Platina' },
-    { km: 768, nome: '⚡ Elite' }, { km: 1152, nome: '👑 Master' },
-    { km: 1920, nome: '🌟 Lenda' }, { km: 3840, nome: '🔥 Lenda Absoluta' }
-  ]
+    try {
+      const userData = localStorage.getItem('user')
 
-  const getNivelPorKm = (km: number) => {
-    for (let i = metasKmGuia.length - 1; i >= 0; i--) {
-      if (km >= metasKmGuia[i].km) return metasKmGuia[i].nome
+      if (!userData) {
+        router.replace('/login')
+        return
+      }
+
+      const parsedUser = JSON.parse(userData) as UsuarioLocal
+
+      if (parsedUser.tipo !== 'guia') {
+        router.replace('/login')
+        return
+      }
+
+      setUser(parsedUser)
+      await carregarDados(parsedUser.id)
+    } catch (error) {
+      console.error('Erro ao iniciar perfil do guia:', error)
+      setErro('Não foi possível carregar seu perfil agora.')
+    } finally {
+      setCarregando(false)
     }
-    return '🥉 Bronze'
   }
 
-  const getIconePorKm = (km: number) => {
-    if (km >= 3840) return '🔥'
-    if (km >= 1920) return '🌟'
-    if (km >= 1152) return '👑'
-    if (km >= 768) return '⚡'
-    if (km >= 384) return '💎'
-    if (km >= 192) return '🥇'
-    if (km >= 96) return '🥈'
-    if (km >= 32) return '🥉'
-    return '🥉'
+  const normalizar = (valor: any) => {
+    return String(valor || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+  }
+
+  const pagamentoConfirmado = (reserva: Reserva) => {
+    const pagamento = normalizar(reserva.pagamento_status)
+    const status = normalizar(reserva.status)
+
+    return (
+      pagamento === 'pago' ||
+      pagamento === 'confirmado' ||
+      pagamento === 'aprovado' ||
+      pagamento === 'paid' ||
+      pagamento === 'approved' ||
+      status === 'confirmada' ||
+      status === 'realizada' ||
+      status === 'pago' ||
+      status === 'paga'
+    )
+  }
+
+  const formatarMoeda = (valor: any) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(Number(valor || 0))
+  }
+
+  const formatarData = (valor?: string | null) => {
+    if (!valor) return ''
+
+    const data = new Date(valor)
+
+    if (Number.isNaN(data.getTime())) return ''
+
+    return data.toLocaleDateString('pt-BR')
+  }
+
+  const nomeGuia = () => {
+    return guia?.nome || user?.nome || user?.email || 'Guia PrussikTrails'
+  }
+
+  const avatarGuia = () => {
+    return (
+      avatarPreview ||
+      guia?.avatar_url ||
+      guia?.foto_url ||
+      guia?.imagem_url ||
+      ''
+    )
+  }
+
+  const fotoRoteiro = (roteiro: Roteiro) => {
+    return roteiro.foto_capa || roteiro.foto_url || roteiro.imagem_url || ''
+  }
+
+  const valorRoteiro = (roteiro: Roteiro) => {
+    return Number(roteiro.preco || roteiro.valor || 0)
+  }
+
+  const kmRoteiro = (roteiro: Roteiro) => {
+    return Number(roteiro.km || roteiro.distancia_km || 0)
+  }
+
+  const getNivelPorKm = (km: number) => {
+    for (let i = METAS_KM_GUIA.length - 1; i >= 0; i--) {
+      if (km >= METAS_KM_GUIA[i].km) return METAS_KM_GUIA[i]
+    }
+
+    return METAS_KM_GUIA[0]
   }
 
   const calcularProximoMarcoKm = (km: number) => {
-    for (const meta of metasKmGuia) if (km < meta.km) return meta.km
-    return metasKmGuia[metasKmGuia.length - 1].km
+    for (const meta of METAS_KM_GUIA) {
+      if (km < meta.km) return meta.km
+    }
+
+    return METAS_KM_GUIA[METAS_KM_GUIA.length - 1].km
+  }
+
+  const calcularMarcoAnteriorKm = (km: number) => {
+    let anterior = 0
+
+    for (const meta of METAS_KM_GUIA) {
+      if (km >= meta.km) anterior = meta.km
+    }
+
+    return anterior
   }
 
   const calcularProgressoKm = (km: number) => {
     const proximo = calcularProximoMarcoKm(km)
-    const anterior = metasKmGuia.find(m => m.km < proximo)?.km || 0
-    if (proximo === anterior) return 100
-    return Math.min(((km - anterior) / (proximo - anterior)) * 100, 100)
+    const anterior = calcularMarcoAnteriorKm(km)
+
+    if (proximo <= anterior) return 100
+
+    return Math.max(0, Math.min(((km - anterior) / (proximo - anterior)) * 100, 100))
   }
 
-  const conquistasKm = [
-    { nome: 'Primeira Trilha', icone: '🥾', km: 0, desbloqueado: stats.totalKm >= 0 },
-    { nome: 'Explorador', icone: '🌱', km: 32, desbloqueado: stats.totalKm >= 32 },
-    { nome: 'Caminhante', icone: '🚶', km: 96, desbloqueado: stats.totalKm >= 96 },
-    { nome: 'Aventureiro', icone: '🏔️', km: 384, desbloqueado: stats.totalKm >= 384 },
-    { nome: 'Mestre', icone: '👑', km: 1152, desbloqueado: stats.totalKm >= 1152 },
-    { nome: 'Lenda', icone: '🌟', km: 1920, desbloqueado: stats.totalKm >= 1920 },
-    { nome: 'Lenda Absoluta', icone: '🔥', km: 3840, desbloqueado: stats.totalKm >= 3840 },
-  ]
+  const erroDeColunaAusente = (error: any) => {
+    const texto = String(
+      error?.message ||
+        error?.details ||
+        error?.hint ||
+        ''
+    ).toLowerCase()
 
-  useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (!userData) { router.push('/login'); return }
-    const parsedUser = JSON.parse(userData)
-    if (parsedUser.tipo !== 'guia') { router.push('/login'); return }
-    setUsuarioLogado(parsedUser)
-    setUser(parsedUser)
-    carregarDados(parsedUser.id)
-  }, [])
+    return (
+      error?.code === '42703' ||
+      error?.code === 'PGRST204' ||
+      texto.includes('could not find') ||
+      texto.includes('schema cache') ||
+      texto.includes('column')
+    )
+  }
 
-  const carregarDados = async (guiaId: string) => {
-    setCarregando(true)
-    try {
-      const { data: guiaData } = await supabase.from('users').select('*').eq('id', guiaId).single()
-      if (guiaData) {
-        setGuia(guiaData)
-        setBio(guiaData.bio || '')
-        if (guiaData.avatar_url) setAvatarPreview(guiaData.avatar_url)
+  const extrairColunaAusente = (error: any) => {
+    const texto = [error?.message, error?.details, error?.hint]
+      .filter(Boolean)
+      .join(' ')
+
+    const matchAspas = texto.match(/'([^']+)'/)
+    if (matchAspas?.[1]) return matchAspas[1]
+
+    const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
+    if (matchColumn?.[1]) return matchColumn[1]
+
+    return ''
+  }
+
+  const atualizarUsuarioComFallback = async (
+    userId: string,
+    payloadOriginal: Record<string, any>
+  ) => {
+    let payloadAtual = { ...payloadOriginal }
+
+    for (let tentativa = 0; tentativa < 12; tentativa++) {
+      const { data, error } = await supabase
+        .from('users')
+        .update(payloadAtual)
+        .eq('id', userId)
+        .select('*')
+        .maybeSingle()
+
+      if (!error) return data
+
+      if (!erroDeColunaAusente(error)) throw error
+
+      const coluna = extrairColunaAusente(error)
+
+      if (!coluna || !(coluna in payloadAtual)) throw error
+
+      delete payloadAtual[coluna]
+    }
+
+    throw new Error('Não foi possível atualizar o perfil após ajustar colunas.')
+  }
+
+  const buscarRoteirosDoGuia = async (guiaId: string) => {
+    const campos = ['id_guia', 'guia_id', 'user_id', 'usuario_id']
+    const mapa = new Map<string, Roteiro>()
+
+    for (const campo of campos) {
+      const { data, error } = await supabase
+        .from('roteiros')
+        .select('*')
+        .eq(campo, guiaId)
+
+      if (!error && data) {
+        ;(data as Roteiro[]).forEach((roteiro) => {
+          if (roteiro?.id) mapa.set(roteiro.id, roteiro)
+        })
       }
+    }
 
-      const { data: roteiros } = await supabase.from('roteiros').select('id, km').eq('id_guia', guiaId)
-      const totalRoteiros = roteiros?.length || 0
-      const totalKm = roteiros?.reduce((acc, r) => acc + (r.km || 0), 0) || 0
-      const roteirosIds = roteiros?.map(r => r.id) || []
+    return Array.from(mapa.values())
+  }
 
-      let totalReservas = 0
-      let clientesUnicos = new Set()
-      if (roteirosIds.length > 0) {
-        const { data: reservas } = await supabase
-          .from('reservas')
-          .select('cliente_id')
-          .in('roteiro_id', roteirosIds)
-        totalReservas = reservas?.length || 0
-        reservas?.forEach(r => clientesUnicos.add(r.cliente_id))
-      }
+  const buscarAvaliacoesDoGuia = async (guiaId: string) => {
+    const campos = ['guia_id', 'id_guia']
+    let lista: Avaliacao[] = []
 
-      const { data: avaliacoesData } = await supabase
+    for (const campo of campos) {
+      const { data, error } = await supabase
         .from('avaliacoes')
-        .select(`id, nota, comentario, created_at, cliente_id, cliente:cliente_id (nome, avatar_url)`)
-        .eq('guia_id', guiaId)
+        .select('*')
+        .eq(campo, guiaId)
         .order('created_at', { ascending: false })
 
-      const avaliacoesFormatadas = (avaliacoesData || []).map((a: any) => ({
-        id: a.id, nota: a.nota, comentario: a.comentario,
-        created_at: a.created_at, cliente_id: a.cliente_id,
-        cliente_nome: a.cliente?.nome || 'Cliente',
-        cliente_avatar: a.cliente?.avatar_url
-      }))
-      setAvaliacoes(avaliacoesFormatadas)
+      if (!error && data) {
+        lista = data as Avaliacao[]
+        break
+      }
+    }
 
-      if (avaliacoesFormatadas.length > 0 && usuarioLogado) {
-        const avaliacaoIds = avaliacoesFormatadas.map(a => a.id)
-        const { data: curtidasData } = await supabase
-          .from('curtidas_avaliacoes')
-          .select('avaliacao_id')
-          .in('avaliacao_id', avaliacaoIds)
-        const map: Record<string, number> = {}
-        curtidasData?.forEach((c: any) => { map[c.avaliacao_id] = (map[c.avaliacao_id] || 0) + 1 })
-        setCurtidas(map)
+    const clienteIds = Array.from(
+      new Set(
+        lista
+          .map((avaliacao) => avaliacao.cliente_id)
+          .filter(Boolean) as string[]
+      )
+    )
 
-        const { data: minhasCurtidas } = await supabase
-          .from('curtidas_avaliacoes')
-          .select('avaliacao_id')
-          .eq('usuario_id', usuarioLogado.id)
-          .in('avaliacao_id', avaliacaoIds)
-        const curtidasMap: Record<string, boolean> = {}
-        minhasCurtidas?.forEach((c: any) => { curtidasMap[c.avaliacao_id] = true })
-        setUsuarioCurtiu(curtidasMap)
+    if (clienteIds.length === 0) return lista
+
+    const { data: clientes } = await supabase
+      .from('users')
+      .select('id, nome, email, avatar_url')
+      .in('id', clienteIds)
+
+    return lista.map((avaliacao) => {
+      const cliente = (clientes || []).find((item: any) => item.id === avaliacao.cliente_id)
+
+      return {
+        ...avaliacao,
+        cliente_nome: cliente?.nome || cliente?.email || 'Cliente',
+        cliente_avatar: cliente?.avatar_url || ''
+      }
+    })
+  }
+
+  const carregarDados = async (guiaId: string) => {
+    try {
+      const { data: guiaData, error: guiaError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', guiaId)
+        .maybeSingle()
+
+      if (guiaError) {
+        console.warn('Erro ao buscar guia:', guiaError)
       }
 
-      const media = avaliacoesFormatadas.length
-        ? avaliacoesFormatadas.reduce((acc, a) => acc + a.nota, 0) / avaliacoesFormatadas.length
-        : 0
+      if (guiaData) {
+        setGuia(guiaData)
+        setBio(guiaData.bio_guia || guiaData.bio || '')
+        setPixTipo(guiaData.pix_tipo || '')
+        setPixChave(guiaData.pix_chave || '')
+        setCadastur(guiaData.cadastur || '')
+        setAvatarPreview(guiaData.avatar_url || guiaData.foto_url || guiaData.imagem_url || '')
+      }
 
-      let medalha = 'bronze'
-      if (totalRoteiros >= 10) medalha = 'black'
-      else if (totalRoteiros >= 7) medalha = 'platina'
-      else if (totalRoteiros >= 4) medalha = 'ouro'
-      else if (totalRoteiros >= 2) medalha = 'prata'
+      const roteirosDoGuia = await buscarRoteirosDoGuia(guiaId)
+      setRoteiros(roteirosDoGuia)
+
+      const roteiroIds = roteirosDoGuia.map((roteiro) => roteiro.id).filter(Boolean)
+
+      let reservas: Reserva[] = []
+
+      if (roteiroIds.length > 0) {
+        const { data: reservasData, error: reservasError } = await supabase
+          .from('reservas')
+          .select('*')
+          .in('roteiro_id', roteiroIds)
+
+        if (reservasError) {
+          console.warn('Erro ao buscar reservas do guia:', reservasError)
+        } else {
+          reservas = (reservasData || []) as Reserva[]
+        }
+      }
+
+      const avaliacoesDoGuia = await buscarAvaliacoesDoGuia(guiaId)
+      setAvaliacoes(avaliacoesDoGuia)
+
+      const totalKm = roteirosDoGuia.reduce(
+        (total, roteiro) => total + kmRoteiro(roteiro),
+        0
+      )
+
+      const reservasConfirmadas = reservas.filter(pagamentoConfirmado)
+
+      const clientesUnicos = new Set(
+        reservas
+          .map((reserva) => reserva.cliente_id)
+          .filter(Boolean)
+      )
+
+      const avaliacaoMedia =
+        avaliacoesDoGuia.length > 0
+          ? avaliacoesDoGuia.reduce((total, avaliacao) => total + Number(avaliacao.nota || 0), 0) / avaliacoesDoGuia.length
+          : 0
 
       setStats({
-        totalRoteiros, totalReservas, totalClientes: clientesUnicos.size,
-        totalKm, avaliacaoMedia: media, totalAvaliacoes: avaliacoesFormatadas.length, medalhaNivel: medalha
+        totalRoteiros: roteirosDoGuia.length,
+        totalReservas: reservas.length,
+        reservasConfirmadas: reservasConfirmadas.length,
+        totalClientes: clientesUnicos.size,
+        totalKm,
+        avaliacaoMedia,
+        totalAvaliacoes: avaliacoesDoGuia.length
       })
-
-      await carregarMedalhas(guiaId)
-    } catch (err) { console.error(err) } finally { setCarregando(false) }
-  }
-
-  const carregarMedalhas = async (guiaId: string) => {
-    setCarregandoMedalhas(true)
-    try {
-      const listaPadrao = [
-        { nome: 'KM Guiados', icone: '👣', meta: 32, progresso: stats.totalKm || 0 },
-        { nome: 'Guias Avaliados', icone: '⭐', meta: 5, progresso: stats.totalAvaliacoes || 0 },
-        { nome: 'Trilhas Guiadas', icone: '🥾', meta: 1, progresso: stats.totalRoteiros || 0 },
-        { nome: 'Clientes Atendidos', icone: '👥', meta: 5, progresso: stats.totalClientes || 0 }
-      ]
-      setMedalhas(listaPadrao)
-    } catch (err) { console.error(err) } finally { setCarregandoMedalhas(false) }
-  }
-
-  const curtirAvaliacao = async (avaliacaoId: string, clienteId: string) => {
-    if (!usuarioLogado) { router.push('/login'); return }
-    if (usuarioCurtiu[avaliacaoId]) {
-      await supabase.from('curtidas_avaliacoes').delete().eq('avaliacao_id', avaliacaoId).eq('usuario_id', usuarioLogado.id)
-      setUsuarioCurtiu(prev => ({ ...prev, [avaliacaoId]: false }))
-      setCurtidas(prev => ({ ...prev, [avaliacaoId]: Math.max((prev[avaliacaoId] || 0) - 1, 0) }))
-    } else {
-      await supabase.from('curtidas_avaliacoes').insert({ avaliacao_id: avaliacaoId, dono_id: clienteId, usuario_id: usuarioLogado.id })
-      setUsuarioCurtiu(prev => ({ ...prev, [avaliacaoId]: true }))
-      setCurtidas(prev => ({ ...prev, [avaliacaoId]: (prev[avaliacaoId] || 0) + 1 }))
+    } catch (error) {
+      console.error('Erro ao carregar dados do perfil:', error)
+      setErro('Não foi possível carregar todos os dados do perfil.')
     }
   }
 
   const salvarBio = async () => {
-    if (!user?.id) { setMensagem('❌ Usuário não identificado'); return }
-    setMensagem(''); setEditandoBio(false)
+    if (!user?.id) return
+
+    setSalvandoBio(true)
+    setErro('')
+    setMensagem('')
+
     try {
-      const response = await fetch('/api/guia/bio', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, bio })
+      const atualizado = await atualizarUsuarioComFallback(user.id, {
+        bio_guia: bio,
+        bio,
+        updated_at: new Date().toISOString()
       })
-      const result = await response.json()
-      if (result.success) {
-        setMensagem('✅ Biografia atualizada!')
-        setUser((prev: any) => ({ ...prev, bio }))
-        setGuia((prev: any) => ({ ...prev, bio }))
-      } else {
-        setMensagem(`❌ ${result.error}`)
+
+      setGuia((prev: any) => ({
+        ...prev,
+        ...(atualizado || {}),
+        bio_guia: bio,
+        bio
+      }))
+
+      setEditandoBio(false)
+      setMensagem('Biografia atualizada com sucesso.')
+    } catch (error: any) {
+      console.error('Erro ao salvar bio:', error)
+      setErro(error?.message || 'Não foi possível salvar a biografia.')
+    } finally {
+      setSalvandoBio(false)
+      setTimeout(() => setMensagem(''), 2800)
+    }
+  }
+
+  const salvarDadosPrivados = async () => {
+    if (!user?.id) return
+
+    setSalvandoDados(true)
+    setErro('')
+    setMensagem('')
+
+    try {
+      const atualizado = await atualizarUsuarioComFallback(user.id, {
+        pix_tipo: pixTipo || null,
+        pix_chave: pixChave || null,
+        cadastur: cadastur || null,
+        updated_at: new Date().toISOString()
+      })
+
+      setGuia((prev: any) => ({
+        ...prev,
+        ...(atualizado || {}),
+        pix_tipo: pixTipo,
+        pix_chave: pixChave,
+        cadastur
+      }))
+
+      setMensagem('Dados do guia atualizados com sucesso.')
+    } catch (error: any) {
+      console.error('Erro ao salvar dados privados:', error)
+      setErro(error?.message || 'Não foi possível salvar os dados do guia.')
+    } finally {
+      setSalvandoDados(false)
+      setTimeout(() => setMensagem(''), 2800)
+    }
+  }
+
+  const uploadAvatar = async (file: File) => {
+    if (!user?.id) return
+
+    setEnviandoAvatar(true)
+    setErro('')
+    setMensagem('')
+
+    try {
+      const extensao = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const caminho = `guias/${user.id}/avatar-${Date.now()}.${extensao}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(caminho, file, {
+          upsert: true,
+          contentType: file.type || 'image/jpeg'
+        })
+
+      if (uploadError) throw uploadError
+
+      const { data } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(caminho)
+
+      const publicUrl = data?.publicUrl || ''
+
+      if (!publicUrl) {
+        throw new Error('Não foi possível gerar a URL pública da foto.')
       }
+
+      await atualizarUsuarioComFallback(user.id, {
+        avatar_url: publicUrl,
+        foto_url: publicUrl,
+        imagem_url: publicUrl,
+        updated_at: new Date().toISOString()
+      })
+
+      setAvatarPreview(publicUrl)
+      setGuia((prev: any) => ({
+        ...prev,
+        avatar_url: publicUrl,
+        foto_url: publicUrl,
+        imagem_url: publicUrl
+      }))
+
+      setMensagem('Foto de perfil atualizada com sucesso.')
+    } catch (error: any) {
+      console.error('Erro ao enviar avatar:', error)
+      setErro(
+        error?.message?.includes('Bucket not found')
+          ? 'O bucket avatars ainda não existe no Supabase Storage.'
+          : error?.message || 'Não foi possível atualizar a foto.'
+      )
+    } finally {
+      setEnviandoAvatar(false)
+      setTimeout(() => setMensagem(''), 2800)
+    }
+  }
+
+  const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    await uploadAvatar(file)
+
+    event.target.value = ''
+  }
+
+  const abrirAlterarSenha = () => {
+    setMenuAberto(false)
+    setErro('')
+    setMensagem('')
+    setSenhaAtual('')
+    setNovaSenha('')
+    setConfirmarSenha('')
+    setModalSenhaAberto(true)
+  }
+
+  const alterarSenha = async (event: FormEvent) => {
+    event.preventDefault()
+
+    if (!user?.id) {
+      router.replace('/login')
+      return
+    }
+
+    setErro('')
+    setMensagem('')
+
+    if (!senhaAtual) {
+      setErro('Informe a senha atual.')
+      return
+    }
+
+    if (!novaSenha || novaSenha.length < 6) {
+      setErro('A nova senha deve ter pelo menos 6 caracteres.')
+      return
+    }
+
+    if (novaSenha !== confirmarSenha) {
+      setErro('As senhas não conferem.')
+      return
+    }
+
+    setAlterandoSenha(true)
+
+    try {
+      const response = await fetch('/api/alterar-senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          usuarioId: user.id,
+          usuario_id: user.id,
+          senhaAtual,
+          senha_atual: senhaAtual,
+          novaSenha,
+          nova_senha: novaSenha
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        setErro(data?.erro || data?.message || 'Não foi possível alterar a senha.')
+        return
+      }
+
+      setMensagem('Senha alterada com sucesso.')
+      setModalSenhaAberto(false)
+      setSenhaAtual('')
+      setNovaSenha('')
+      setConfirmarSenha('')
     } catch (error) {
-      setMensagem('❌ Erro ao conectar com o servidor')
+      console.error('Erro ao alterar senha:', error)
+      setErro('Erro ao alterar senha.')
+    } finally {
+      setAlterandoSenha(false)
     }
-    setTimeout(() => setMensagem(''), 3000)
   }
 
-  const cancelarEdicaoBio = () => {
-    setEditandoBio(false)
-    if (guia) setBio(guia.bio || '')
-  }
+  const sair = async () => {
+    setMenuAberto(false)
 
-  const handleLogout = () => {
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.warn('Aviso ao encerrar sessão:', error)
+    }
+
     localStorage.removeItem('user')
-    router.push('/login')
+    localStorage.removeItem('usuario')
+    localStorage.removeItem('token')
+    localStorage.removeItem('session')
+
+    router.replace('/login')
   }
 
-  const getMedalhaCor = (nivel: string) => {
-    switch (nivel) {
-      case 'bronze': return '#cd7f32'
-      case 'prata': return '#c0c0c0'
-      case 'ouro': return '#ffd700'
-      case 'platina': return '#e5e4e2'
-      case 'black': return '#111111'
-      default: return '#cd7f32'
-    }
-  }
-
-  const getMedalhaIcone = (nivel: string) => {
-    switch (nivel) {
-      case 'bronze': return '🥉'
-      case 'prata': return '🥈'
-      case 'ouro': return '🥇'
-      case 'platina': return '💎'
-      case 'black': return '🖤'
-      default: return '🥉'
-    }
-  }
-
-  const getMedalhaNome = (nivel: string) => {
-    switch (nivel) {
-      case 'bronze': return 'Bronze'
-      case 'prata': return 'Prata'
-      case 'ouro': return 'Ouro'
-      case 'platina': return 'Platina'
-      case 'black': return 'Black'
-      default: return 'Bronze'
-    }
-  }
-
-  const getProximoNivel = (nivel: string) => {
-    switch (nivel) {
-      case 'bronze': return 'Prata (2 roteiros)'
-      case 'prata': return 'Ouro (4 roteiros)'
-      case 'ouro': return 'Platina (7 roteiros)'
-      case 'platina': return 'Black (10 roteiros)'
-      case 'black': return '🏆 Máximo alcançado!'
-      default: return 'Prata (2 roteiros)'
-    }
-  }
-
-  const getNotaEstrelas = (nota: number) => '★'.repeat(nota) + '☆'.repeat(5 - nota)
-
-  const proximoMarcoKm = calcularProximoMarcoKm(stats.totalKm)
+  const nivelAtual = getNivelPorKm(stats.totalKm)
+  const proximoMarco = calcularProximoMarcoKm(stats.totalKm)
   const progressoKm = calcularProgressoKm(stats.totalKm)
 
-  if (!user || !guia) {
-    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Carregando...</div>
+  const conquistasKm = [
+    { nome: 'Primeira trilha', icone: '🥾', km: 0, desbloqueado: stats.totalKm >= 0 },
+    { nome: 'Explorador', icone: '🌱', km: 32, desbloqueado: stats.totalKm >= 32 },
+    { nome: 'Caminhante', icone: '🚶', km: 96, desbloqueado: stats.totalKm >= 96 },
+    { nome: 'Aventureiro', icone: '🧭', km: 384, desbloqueado: stats.totalKm >= 384 },
+    { nome: 'Mestre', icone: '👑', km: 1152, desbloqueado: stats.totalKm >= 1152 },
+    { nome: 'Lenda', icone: '🌟', km: 1920, desbloqueado: stats.totalKm >= 1920 },
+    { nome: 'Lenda Absoluta', icone: '🔥', km: 3840, desbloqueado: stats.totalKm >= 3840 }
+  ]
+
+  const medalhas = [
+    {
+      nome: 'KM Guiados',
+      icone: '👣',
+      progresso: stats.totalKm,
+      meta: 32,
+      desbloqueado: stats.totalKm >= 32
+    },
+    {
+      nome: 'Guias Avaliados',
+      icone: '⭐',
+      progresso: stats.totalAvaliacoes,
+      meta: 5,
+      desbloqueado: stats.totalAvaliacoes >= 5
+    },
+    {
+      nome: 'Trilhas Guiadas',
+      icone: '🥾',
+      progresso: stats.totalRoteiros,
+      meta: 1,
+      desbloqueado: stats.totalRoteiros >= 1
+    },
+    {
+      nome: 'Clientes Atendidos',
+      icone: '👥',
+      progresso: stats.totalClientes,
+      meta: 5,
+      desbloqueado: stats.totalClientes >= 5
+    },
+    {
+      nome: 'Guia Pioneiro Beta',
+      icone: '🏕️',
+      progresso: guia?.medalha_guia_pioneiro_beta || guia?.guia_pioneiro_beta ? 1 : 0,
+      meta: 1,
+      desbloqueado: Boolean(guia?.medalha_guia_pioneiro_beta || guia?.guia_pioneiro_beta)
+    }
+  ]
+
+  const principaisRoteiros = roteiros.slice(0, 3)
+
+  if (carregando) {
+    return (
+      <main className="loading">
+        <style>{`
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            background: #f6f7f1;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          }
+          .loading {
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background:
+              radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
+              radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
+              linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
+            color: #172018;
+          }
+          .loadingCard {
+            background: rgba(255,255,255,0.92);
+            border: 1px solid rgba(15,23,42,0.06);
+            border-radius: 30px;
+            padding: 28px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(15,23,42,0.08);
+          }
+          .loadingCard img {
+            height: 64px;
+            width: auto;
+            margin-bottom: 12px;
+          }
+        `}</style>
+
+        <div className="loadingCard">
+          <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          <div>Carregando perfil do guia...</div>
+        </div>
+      </main>
+    )
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      <UploadAvatarModal isOpen={modalAberto} onClose={() => setModalAberto(false)} userId={user.id} onAvatarUpdated={setAvatarPreview} />
+    <main className="page">
+      <style>{`
+        * { box-sizing: border-box; }
 
-      {/* HEADER - IGUAL AO DO CLIENTE (COM SETTINGS) */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <SettingsButton userId={user.id} userEmail={user.email} />
-            <button onClick={() => router.push('/guia/dashboard')} style={{ backgroundColor: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>← Dashboard</button>
-            <button onClick={handleLogout} style={{ backgroundColor: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '40px', fontSize: '12px', cursor: 'pointer' }}>Sair</button>
+        body {
+          margin: 0;
+          background: #f6f7f1;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
+            linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
+          color: #172018;
+        }
+
+        .header {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          background: rgba(255,253,247,0.88);
+          border-bottom: 1px solid rgba(15,23,42,0.06);
+          backdrop-filter: blur(18px);
+          padding: 10px 16px;
+        }
+
+        .headerInner {
+          max-width: 1180px;
+          margin: 0 auto;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          cursor: pointer;
+          min-width: 0;
+        }
+
+        .brand img {
+          height: 42px;
+          width: auto;
+          display: block;
+          object-fit: contain;
+        }
+
+        .brandText {
+          min-width: 0;
+        }
+
+        .brandTitle {
+          color: #dc2626;
+          font-size: 17px;
+          font-weight: 950;
+          line-height: 1;
+          letter-spacing: -0.05em;
+        }
+
+        .brandSub {
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 800;
+          margin-top: 3px;
+        }
+
+        .headerActions {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .gearBtn {
+          width: 42px;
+          height: 42px;
+          border: 1px solid rgba(15,23,42,0.08);
+          background: rgba(255,255,255,0.84);
+          color: #172018;
+          border-radius: 999px;
+          cursor: pointer;
+          font-size: 18px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 8px 20px rgba(15,23,42,0.05);
+        }
+
+        .settingsMenu {
+          position: absolute;
+          top: 50px;
+          right: 0;
+          width: 230px;
+          background: #ffffff;
+          border: 1px solid rgba(15,23,42,0.10);
+          border-radius: 22px;
+          box-shadow: 0 22px 60px rgba(15,23,42,0.16);
+          padding: 8px;
+          z-index: 80;
+        }
+
+        .menuButton {
+          width: 100%;
+          border: none;
+          background: transparent;
+          color: #172018;
+          padding: 12px 13px;
+          border-radius: 16px;
+          text-align: left;
+          font-size: 13px;
+          font-weight: 900;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .menuButton:hover {
+          background: #f8fafc;
+        }
+
+        .menuButton.danger {
+          color: #991b1b;
+        }
+
+        .container {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 22px 16px 54px;
+        }
+
+        .hero {
+          position: relative;
+          overflow: hidden;
+          border-radius: 38px;
+          padding: 28px;
+          background:
+            linear-gradient(135deg, rgba(23,32,24,0.78), rgba(23,32,24,0.34)),
+            radial-gradient(circle at top right, rgba(190,242,100,0.30), transparent 34%),
+            linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
+          color: #ffffff;
+          box-shadow: 0 24px 60px rgba(23,32,24,0.18);
+          margin-bottom: 16px;
+        }
+
+        .heroGrid {
+          display: grid;
+          grid-template-columns: 220px minmax(0,1fr) 280px;
+          gap: 20px;
+          align-items: end;
+        }
+
+        .avatarCard {
+          background: rgba(255,255,255,0.14);
+          border: 1px solid rgba(255,255,255,0.18);
+          border-radius: 32px;
+          padding: 14px;
+          backdrop-filter: blur(14px);
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .avatarCard:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 16px 38px rgba(0,0,0,0.18);
+        }
+
+        .avatarBox {
+          height: 190px;
+          border-radius: 26px;
+          background: rgba(255,255,255,0.10);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          border: 1px solid rgba(255,255,255,0.16);
+        }
+
+        .avatarBox img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .avatarFallback {
+          width: 86px;
+          height: 86px;
+          border-radius: 999px;
+          background: #bef264;
+          color: #172018;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 34px;
+          font-weight: 950;
+        }
+
+        .avatarHint {
+          margin-top: 10px;
+          color: rgba(255,255,255,0.82);
+          font-size: 11px;
+          font-weight: 850;
+          text-align: center;
+        }
+
+        .fileInput {
+          display: none;
+        }
+
+        .eyebrow {
+          display: inline-flex;
+          width: fit-content;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.24);
+          background: rgba(255,255,255,0.12);
+          color: #f7fee7;
+          padding: 8px 12px;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-bottom: 12px;
+        }
+
+        .heroTitle {
+          margin: 0;
+          font-size: clamp(38px, 5.2vw, 68px);
+          line-height: 0.92;
+          font-weight: 950;
+          letter-spacing: -0.085em;
+        }
+
+        .heroText {
+          max-width: 620px;
+          color: rgba(255,255,255,0.82);
+          line-height: 1.6;
+          margin: 14px 0 0;
+          font-size: 14px;
+          font-weight: 650;
+        }
+
+        .cadasturBadge {
+          margin-top: 14px;
+          display: inline-flex;
+          border-radius: 999px;
+          padding: 8px 12px;
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.18);
+          color: #ffffff;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .progressHeroCard {
+          background: rgba(255,255,255,0.14);
+          border: 1px solid rgba(255,255,255,0.18);
+          border-radius: 30px;
+          padding: 18px;
+          backdrop-filter: blur(14px);
+        }
+
+        .progressIcon {
+          width: 62px;
+          height: 62px;
+          border-radius: 24px;
+          background: rgba(190,242,100,0.22);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 32px;
+        }
+
+        .progressTitle {
+          margin-top: 12px;
+          font-size: 26px;
+          font-weight: 950;
+          letter-spacing: -0.05em;
+        }
+
+        .progressSmall {
+          color: rgba(255,255,255,0.76);
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+          margin-top: 6px;
+        }
+
+        .barOuter {
+          margin-top: 12px;
+          height: 10px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.18);
+          overflow: hidden;
+        }
+
+        .barInner {
+          height: 100%;
+          border-radius: 999px;
+          background: #bef264;
+          width: ${progressoKm}%;
+        }
+
+        .alert {
+          border-radius: 18px;
+          padding: 13px 15px;
+          margin-bottom: 16px;
+          font-size: 13px;
+          font-weight: 850;
+          line-height: 1.45;
+        }
+
+        .alert.success {
+          background: #ecfdf5;
+          border: 1px solid #bbf7d0;
+          color: #166534;
+        }
+
+        .alert.error {
+          background: #fee2e2;
+          border: 1px solid #fecaca;
+          color: #991b1b;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: minmax(0,1fr) 360px;
+          gap: 16px;
+          align-items: start;
+        }
+
+        .stack {
+          display: grid;
+          gap: 16px;
+        }
+
+        .card {
+          background: rgba(255,255,255,0.90);
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 30px;
+          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+          overflow: hidden;
+        }
+
+        .cardHeader {
+          padding: 18px 20px;
+          border-bottom: 1px solid rgba(15,23,42,0.06);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .cardTitle {
+          margin: 0;
+          color: #172018;
+          font-size: 18px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .cardSub {
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+        }
+
+        .cardBody {
+          padding: 18px;
+        }
+
+        .btn {
+          border: none;
+          border-radius: 999px;
+          padding: 11px 14px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 22px rgba(15,23,42,0.10);
+        }
+
+        .btn:disabled {
+          opacity: 0.62;
+          cursor: not-allowed;
+        }
+
+        .btn.dark {
+          background: #172018;
+          color: #ffffff;
+        }
+
+        .btn.green {
+          background: #16a34a;
+          color: #ffffff;
+        }
+
+        .btn.light {
+          background: #eef2e5;
+          color: #475569;
+        }
+
+        .textarea,
+        .input,
+        .select {
+          width: 100%;
+          border: 1px solid rgba(15,23,42,0.08);
+          background: #fffdf7;
+          border-radius: 18px;
+          padding: 13px 14px;
+          font-size: 14px;
+          color: #172018;
+          outline: none;
+          font-weight: 750;
+        }
+
+        .textarea {
+          min-height: 130px;
+          resize: vertical;
+          line-height: 1.55;
+        }
+
+        .textarea:focus,
+        .input:focus,
+        .select:focus {
+          border-color: #84cc16;
+          box-shadow: 0 0 0 4px rgba(132,204,22,0.12);
+        }
+
+        .bioText {
+          color: #475569;
+          font-size: 14px;
+          line-height: 1.7;
+          font-weight: 650;
+          white-space: pre-wrap;
+        }
+
+        .formGrid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+
+        .field {
+          display: grid;
+          gap: 7px;
+        }
+
+        .field.full {
+          grid-column: 1 / -1;
+        }
+
+        .label {
+          color: #475569;
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.07em;
+        }
+
+        .helper {
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 700;
+        }
+
+        .benefitCard {
+          background:
+            radial-gradient(circle at top right, rgba(190,242,100,0.24), transparent 38%),
+            #172018;
+          color: #ffffff;
+          border-radius: 30px;
+          padding: 20px;
+          box-shadow: 0 18px 42px rgba(23,32,24,0.16);
+        }
+
+        .benefitPill {
+          display: inline-flex;
+          border-radius: 999px;
+          background: rgba(190,242,100,0.16);
+          border: 1px solid rgba(190,242,100,0.22);
+          color: #d9f99d;
+          padding: 7px 10px;
+          font-size: 10px;
+          font-weight: 950;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+        }
+
+        .benefitTitle {
+          margin-top: 12px;
+          font-size: 24px;
+          font-weight: 950;
+          line-height: 1.02;
+          letter-spacing: -0.055em;
+        }
+
+        .benefitText {
+          margin-top: 10px;
+          color: rgba(255,255,255,0.78);
+          font-size: 13px;
+          line-height: 1.55;
+          font-weight: 700;
+        }
+
+        .statsGrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0,1fr));
+          gap: 10px;
+        }
+
+        .statBox {
+          background: #fffdf7;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 22px;
+          padding: 14px;
+        }
+
+        .statIcon {
+          font-size: 22px;
+          margin-bottom: 8px;
+        }
+
+        .statValue {
+          color: #172018;
+          font-size: 22px;
+          font-weight: 950;
+          line-height: 1;
+          letter-spacing: -0.05em;
+        }
+
+        .statLabel {
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 850;
+          line-height: 1.35;
+        }
+
+        .achievementGrid,
+        .medalGrid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0,1fr));
+          gap: 10px;
+        }
+
+        .achievement,
+        .medal {
+          background: #fffdf7;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 22px;
+          padding: 14px;
+          text-align: center;
+          transition: 0.2s ease;
+        }
+
+        .achievement.locked,
+        .medal.locked {
+          opacity: 0.42;
+          filter: grayscale(0.8);
+        }
+
+        .achievementIcon,
+        .medalIcon {
+          font-size: 28px;
+          margin-bottom: 8px;
+        }
+
+        .achievementName,
+        .medalName {
+          color: #172018;
+          font-size: 12px;
+          font-weight: 950;
+          line-height: 1.25;
+        }
+
+        .achievementMeta,
+        .medalMeta {
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .timeline {
+          display: grid;
+          gap: 8px;
+        }
+
+        .timelineItem {
+          display: grid;
+          grid-template-columns: 64px minmax(0,1fr) auto;
+          gap: 10px;
+          align-items: center;
+          background: #fffdf7;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 18px;
+          padding: 10px;
+        }
+
+        .timelineKm {
+          color: #172018;
+          font-size: 13px;
+          font-weight: 950;
+        }
+
+        .timelineName {
+          color: #475569;
+          font-size: 12px;
+          font-weight: 850;
+        }
+
+        .timelineStatus {
+          border-radius: 999px;
+          padding: 5px 8px;
+          font-size: 10px;
+          font-weight: 950;
+          background: #eef2e5;
+          color: #64748b;
+        }
+
+        .timelineStatus.ok {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .reviewList {
+          display: grid;
+          gap: 10px;
+        }
+
+        .review {
+          background: #fffdf7;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 22px;
+          padding: 14px;
+        }
+
+        .reviewTop {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          align-items: center;
+        }
+
+        .reviewName {
+          color: #172018;
+          font-size: 13px;
+          font-weight: 950;
+        }
+
+        .stars {
+          color: #f59e0b;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .reviewText {
+          margin-top: 8px;
+          color: #475569;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 650;
+        }
+
+        .reviewDate {
+          margin-top: 8px;
+          color: #94a3b8;
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .routeGrid {
+          display: grid;
+          gap: 10px;
+        }
+
+        .routeCard {
+          display: grid;
+          grid-template-columns: 86px minmax(0,1fr);
+          gap: 12px;
+          background: #fffdf7;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 22px;
+          padding: 10px;
+          cursor: pointer;
+        }
+
+        .routePhoto {
+          height: 76px;
+          border-radius: 18px;
+          background: #eef2e5;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #64748b;
+          font-size: 24px;
+        }
+
+        .routePhoto img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .routeTitle {
+          color: #172018;
+          font-size: 13px;
+          font-weight: 950;
+          line-height: 1.25;
+        }
+
+        .routeMeta {
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 750;
+          line-height: 1.35;
+        }
+
+        .routePrice {
+          margin-top: 8px;
+          color: #16a34a;
+          font-size: 13px;
+          font-weight: 950;
+        }
+
+        .empty {
+          background: #fffdf7;
+          border: 1px dashed rgba(15,23,42,0.14);
+          border-radius: 22px;
+          padding: 22px;
+          color: #64748b;
+          text-align: center;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 750;
+        }
+
+        .actionRow {
+          display: flex;
+          gap: 9px;
+          flex-wrap: wrap;
+          margin-top: 12px;
+        }
+
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          background: rgba(15,23,42,0.52);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+        }
+
+        .modal {
+          width: 100%;
+          max-width: 460px;
+          background: #ffffff;
+          border-radius: 28px;
+          box-shadow: 0 28px 90px rgba(15,23,42,0.28);
+          overflow: hidden;
+        }
+
+        .modalHeader {
+          padding: 20px;
+          border-bottom: 1px solid rgba(15,23,42,0.08);
+        }
+
+        .modalTitle {
+          margin: 0;
+          color: #172018;
+          font-size: 20px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .modalSub {
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 750;
+          line-height: 1.45;
+        }
+
+        .modalBody {
+          padding: 20px;
+          display: grid;
+          gap: 12px;
+        }
+
+        .modalActions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 8px;
+        }
+
+        @media (max-width: 1060px) {
+          .heroGrid,
+          .grid {
+            grid-template-columns: 1fr;
+          }
+
+          .heroGrid {
+            align-items: start;
+          }
+
+          .avatarCard {
+            max-width: 240px;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .header {
+            padding: 9px 12px;
+          }
+
+          .brandTitle,
+          .brandSub {
+            display: none;
+          }
+
+          .container {
+            padding: 16px 12px 42px;
+          }
+
+          .hero,
+          .card {
+            border-radius: 28px;
+          }
+
+          .hero {
+            padding: 20px;
+          }
+
+          .avatarBox {
+            height: 170px;
+          }
+
+          .formGrid,
+          .statsGrid,
+          .achievementGrid,
+          .medalGrid {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .timelineItem {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .heroTitle {
+            font-size: 38px;
+          }
+
+          .formGrid,
+          .statsGrid,
+          .achievementGrid,
+          .medalGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .routeCard {
+            grid-template-columns: 1fr;
+          }
+
+          .routePhoto {
+            height: 150px;
+          }
+
+          .actionRow,
+          .modalActions {
+            display: grid;
+          }
+
+          .btn {
+            width: 100%;
+          }
+        }
+      `}</style>
+
+      <header className="header">
+        <div className="headerInner">
+          <div className="brand" onClick={() => router.push('/guia/dashboard')}>
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+
+            <div className="brandText">
+              <div className="brandTitle">PrussikTrails</div>
+              <div className="brandSub">Perfil do guia</div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '16px' }}>
-        
-        {/* CARD PERFIL */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '20px', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-            <button onClick={() => setModalAberto(true)} style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: 'none', cursor: 'pointer', marginBottom: '12px' }}>
-              {avatarPreview ? <img src={avatarPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: '36px', color: 'white' }}>{guia.nome?.charAt(0).toUpperCase() || 'G'}</span>}
+          <div className="headerActions">
+            <button
+              type="button"
+              className="gearBtn"
+              onClick={() => setMenuAberto((aberto) => !aberto)}
+              aria-label="Configurações"
+            >
+              ⚙️
             </button>
-            <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>{guia.nome || guia.email || 'Guia'}</h2>
-            <p style={{ color: '#6b7280', fontSize: '11px', marginTop: '4px' }}>📅 Guia desde {new Date().getFullYear()}</p>
-            
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '12px', flexWrap: 'wrap' }}>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalKm}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>KM</div></div>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalRoteiros}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>Roteiros</div></div>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>{stats.totalClientes}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>Clientes</div></div>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f59e0b' }}>{stats.avaliacaoMedia.toFixed(1)}</div><div style={{ fontSize: '9px', color: '#6b7280' }}>⭐</div></div>
-            </div>
-          </div>
-          
-          {editandoBio ? (
-            <div style={{ marginTop: '16px' }}>
-              <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={3} placeholder="Sua biografia profissional..." style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: '13px', resize: 'vertical' }} />
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button onClick={salvarBio} style={{ backgroundColor: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Salvar</button>
-                <button onClick={cancelarEdicaoBio} style={{ backgroundColor: '#e5e7eb', padding: '6px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cancelar</button>
+
+            {menuAberto && (
+              <div className="settingsMenu">
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={() => {
+                    setMenuAberto(false)
+                    router.push('/guia/financeiro')
+                  }}
+                >
+                  💰 Financeiro
+                </button>
+
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={abrirAlterarSenha}
+                >
+                  🔐 Alterar senha
+                </button>
+
+                <button
+                  type="button"
+                  className="menuButton danger"
+                  onClick={sair}
+                >
+                  🚪 Sair
+                </button>
               </div>
-            </div>
-          ) : (
-            <div onClick={() => setEditandoBio(true)} style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '12px', cursor: 'pointer', maxHeight: '80px', overflowY: 'auto' }}>
-              {bio ? <p style={{ margin: 0, fontSize: '12px', color: '#4b5563' }}>{bio}</p> : <p style={{ margin: 0, fontSize: '12px', color: '#9ca3af' }}>✏️ Clique para adicionar uma biografia...</p>}
-            </div>
-          )}
-          {mensagem && <div style={{ marginTop: '12px', padding: '8px', borderRadius: '8px', textAlign: 'center', fontSize: '12px', backgroundColor: mensagem.includes('✅') ? '#dcfce7' : '#fee2e2', color: mensagem.includes('✅') ? '#16a34a' : '#dc2626' }}>{mensagem}</div>}
-        </div>
-
-        {/* BARRA PROGRESSO KM */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-            <span style={{ fontSize: '32px' }}>{getIconePorKm(stats.totalKm)}</span>
-            <div><div style={{ fontWeight: 'bold', fontSize: '14px' }}>{getNivelPorKm(stats.totalKm)}</div><div style={{ fontSize: '10px', color: '#6b7280' }}>{stats.totalKm} km guiados</div></div>
-          </div>
-          <p style={{ marginBottom: '8px', fontSize: '11px', color: '#4b5563' }}>🎯 Próximo marco: <strong>{proximoMarcoKm} km</strong> (faltam {Math.max(0, proximoMarcoKm - stats.totalKm)} km)</p>
-          <div style={{ backgroundColor: '#e5e7eb', borderRadius: '20px', height: '6px', overflow: 'hidden' }}>
-            <div style={{ width: `${progressoKm}%`, backgroundColor: '#3b82f6', height: '100%', borderRadius: '20px' }} />
+            )}
           </div>
         </div>
+      </header>
 
-        {/* CONQUISTAS POR KM */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>🏅 Conquistas por KM</h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-            {conquistasKm.map((c, i) => (
-              <div key={i} style={{ flex: '0 0 auto', width: '65px', backgroundColor: c.desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', border: c.desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: c.desbloqueado ? 1 : 0.6 }}>
-                <div style={{ fontSize: '24px' }}>{c.icone}</div>
-                <div style={{ fontSize: '8px', fontWeight: 'bold' }}>{c.nome.split(' ')[0]}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* EVOLUÇÃO DO GUIA */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>🏅 Evolução</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '50px', height: '50px', borderRadius: '50%', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${getMedalhaCor(stats.medalhaNivel)}` }}>
-              <span style={{ fontSize: '24px' }}>{getMedalhaIcone(stats.medalhaNivel)}</span>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 'bold', fontSize: '14px', color: getMedalhaCor(stats.medalhaNivel) }}>{getMedalhaNome(stats.medalhaNivel)}</div>
-              <div style={{ fontSize: '10px', color: '#6b7280' }}>🎯 {getProximoNivel(stats.medalhaNivel)}</div>
-              <div style={{ marginTop: '6px' }}>
-                <div style={{ backgroundColor: '#e5e7eb', borderRadius: '10px', height: '4px' }}>
-                  <div style={{ backgroundColor: getMedalhaCor(stats.medalhaNivel), width: `${Math.min(100, (stats.totalRoteiros / 2) * 100)}%`, height: '4px', borderRadius: '10px' }} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* MEDALHAS ESPECIAIS */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>🎖️ Medalhas</h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-            {medalhas.map((m, idx) => {
-              const desbloqueado = m.progresso >= m.meta
-              return (
-                <div key={idx} style={{ flex: '0 0 auto', width: '70px', backgroundColor: desbloqueado ? '#dcfce7' : '#f9fafb', borderRadius: '12px', padding: '8px 4px', textAlign: 'center', border: desbloqueado ? '1px solid #bbf7d0' : '1px solid #e5e7eb', opacity: desbloqueado ? 1 : 0.6 }}>
-                  <div style={{ fontSize: '24px', position: 'relative', display: 'inline-block' }}>
-                    {m.icone}
-                    {!desbloqueado && <span style={{ position: 'absolute', top: '-5px', right: '-8px', fontSize: '10px' }}>🔒</span>}
+      <div className="container">
+        <section className="hero">
+          <div className="heroGrid">
+            <div
+              className="avatarCard"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <div className="avatarBox">
+                {avatarGuia() ? (
+                  <img src={avatarGuia()} alt={nomeGuia()} />
+                ) : (
+                  <div className="avatarFallback">
+                    {nomeGuia().slice(0, 1).toUpperCase()}
                   </div>
-                  <div style={{ fontSize: '8px', fontWeight: 'bold' }}>{m.nome.split(' ')[0]}</div>
-                  <div style={{ fontSize: '7px', color: '#9ca3af' }}>{m.progresso}/{m.meta}</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+                )}
+              </div>
 
-        {/* AVALIAÇÕES */}
-        <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '16px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px' }}>💬 Avaliações ({stats.totalAvaliacoes})</h3>
-          {avaliacoes.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '24px', backgroundColor: '#f9fafb', borderRadius: '16px' }}>
-              <span style={{ fontSize: '32px' }}>💬</span>
-              <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Nenhuma avaliação ainda</p>
+              <div className="avatarHint">
+                {enviandoAvatar ? 'Enviando foto...' : 'Clique para alterar sua foto'}
+              </div>
+
+              <input
+                ref={fileInputRef}
+                className="fileInput"
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarChange}
+              />
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {avaliacoes.slice(0, 5).map((a) => (
-                <div key={a.id} style={{ backgroundColor: '#f9fafb', borderRadius: '16px', padding: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '12px', fontWeight: 'bold' }}>
-                        {a.cliente_nome?.charAt(0).toUpperCase() || 'C'}
-                      </div>
-                      <div><div style={{ fontWeight: 'bold', fontSize: '12px' }}>{a.cliente_nome}</div><div style={{ fontSize: '10px', color: '#f59e0b' }}>{getNotaEstrelas(a.nota)}</div></div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ fontSize: '9px', color: '#9ca3af' }}>{new Date(a.created_at).toLocaleDateString('pt-BR')}</div>
-                      <button onClick={() => curtirAvaliacao(a.id, guia.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}>{usuarioCurtiu[a.id] ? '❤️' : '🤍'}</button>
-                      <span style={{ fontSize: '10px', color: '#6b7280' }}>{curtidas[a.id] || 0}</span>
-                    </div>
-                  </div>
-                  {a.comentario && <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#4b5563' }}>“{a.comentario}”</p>}
+
+            <div>
+              <div className="eyebrow">Perfil privado do guia</div>
+
+              <h1 className="heroTitle">
+                {nomeGuia()}
+              </h1>
+
+              <p className="heroText">
+                Organize sua presença como guia, acompanhe sua evolução, mantenha seus dados profissionais atualizados e fortaleça sua reputação dentro da comunidade PrussikTrails.
+              </p>
+
+              {cadastur ? (
+                <div className="cadasturBadge">
+                  CADASTUR: {cadastur}
                 </div>
-              ))}
-              {stats.totalAvaliacoes > 5 && (
-                <button onClick={() => router.push('/guia/avaliacoes')} style={{ textAlign: 'center', color: '#16a34a', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '8px' }}>Ver todas →</button>
+              ) : (
+                <div className="cadasturBadge">
+                  CADASTUR ainda não informado
+                </div>
               )}
             </div>
-          )}
-        </div>
+
+            <aside className="progressHeroCard">
+              <div className="progressIcon">{nivelAtual.icone}</div>
+              <div className="progressTitle">{nivelAtual.nome}</div>
+              <div className="progressSmall">
+                {stats.totalKm.toFixed(1)} km guiados · próximo marco em {proximoMarco} km.
+              </div>
+
+              <div className="barOuter">
+                <div className="barInner" />
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        {mensagem && <div className="alert success">{mensagem}</div>}
+        {erro && <div className="alert error">{erro}</div>}
+
+        <section className="grid">
+          <div className="stack">
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Bio do guia</h2>
+                  <div className="cardSub">
+                    Essa apresentação ajuda o cliente a entender seu estilo, sua experiência e sua forma de conduzir trilhas.
+                  </div>
+                </div>
+
+                {!editandoBio && (
+                  <button
+                    type="button"
+                    className="btn light"
+                    onClick={() => setEditandoBio(true)}
+                  >
+                    Editar bio
+                  </button>
+                )}
+              </div>
+
+              <div className="cardBody">
+                {editandoBio ? (
+                  <>
+                    <textarea
+                      className="textarea"
+                      value={bio}
+                      onChange={(event) => setBio(event.target.value)}
+                      placeholder="Conte quem você é, sua experiência, seu estilo de condução e o que os aventureiros podem esperar das suas trilhas."
+                    />
+
+                    <div className="actionRow">
+                      <button
+                        type="button"
+                        className="btn green"
+                        onClick={salvarBio}
+                        disabled={salvandoBio}
+                      >
+                        {salvandoBio ? 'Salvando...' : 'Salvar bio'}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn light"
+                        disabled={salvandoBio}
+                        onClick={() => {
+                          setBio(guia?.bio_guia || guia?.bio || '')
+                          setEditandoBio(false)
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bioText">
+                    {bio || 'Sua bio ainda não foi preenchida. Escreva uma apresentação simples, humana e confiável para os aventureiros conhecerem melhor você.'}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Recebimentos e credencial</h2>
+                  <div className="cardSub">
+                    A chave PIX fica privada para repasses. O CADASTUR poderá aparecer no seu perfil público quando preenchido.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                <div className="formGrid">
+                  <div className="field">
+                    <label className="label">Tipo da chave PIX</label>
+                    <select
+                      className="select"
+                      value={pixTipo}
+                      onChange={(event) => setPixTipo(event.target.value)}
+                    >
+                      {PIX_TIPOS.map((tipo) => (
+                        <option key={tipo.value} value={tipo.value}>
+                          {tipo.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <label className="label">Chave PIX para recebimentos</label>
+                    <input
+                      className="input"
+                      value={pixChave}
+                      onChange={(event) => setPixChave(event.target.value)}
+                      placeholder="Informe sua chave PIX"
+                    />
+                  </div>
+
+                  <div className="field full">
+                    <label className="label">CADASTUR</label>
+                    <input
+                      className="input"
+                      value={cadastur}
+                      onChange={(event) => setCadastur(event.target.value)}
+                      placeholder="Informe seu número CADASTUR, se possuir"
+                    />
+                    <div className="helper">
+                      O CADASTUR será exibido no perfil público do guia quando estiver preenchido. A chave PIX não aparece publicamente.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="actionRow">
+                  <button
+                    type="button"
+                    className="btn green"
+                    onClick={salvarDadosPrivados}
+                    disabled={salvandoDados}
+                  >
+                    {salvandoDados ? 'Salvando...' : 'Salvar dados'}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Resumo de evolução</h2>
+                  <div className="cardSub">
+                    Indicadores principais da sua jornada como guia dentro da plataforma.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                <div className="statsGrid">
+                  <div className="statBox">
+                    <div className="statIcon">🥾</div>
+                    <div className="statValue">{stats.totalRoteiros}</div>
+                    <div className="statLabel">roteiros cadastrados</div>
+                  </div>
+
+                  <div className="statBox">
+                    <div className="statIcon">📅</div>
+                    <div className="statValue">{stats.totalReservas}</div>
+                    <div className="statLabel">reservas recebidas</div>
+                  </div>
+
+                  <div className="statBox">
+                    <div className="statIcon">✅</div>
+                    <div className="statValue">{stats.reservasConfirmadas}</div>
+                    <div className="statLabel">reservas confirmadas</div>
+                  </div>
+
+                  <div className="statBox">
+                    <div className="statIcon">👥</div>
+                    <div className="statValue">{stats.totalClientes}</div>
+                    <div className="statLabel">clientes atendidos</div>
+                  </div>
+
+                  <div className="statBox">
+                    <div className="statIcon">👣</div>
+                    <div className="statValue">{stats.totalKm.toFixed(1)}</div>
+                    <div className="statLabel">km guiados</div>
+                  </div>
+
+                  <div className="statBox">
+                    <div className="statIcon">⭐</div>
+                    <div className="statValue">{stats.avaliacaoMedia.toFixed(1)}</div>
+                    <div className="statLabel">média de avaliação</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Conquistas por km</h2>
+                  <div className="cardSub">
+                    As conquistas acompanham sua evolução real em quilômetros guiados.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                <div className="achievementGrid">
+                  {conquistasKm.map((item) => (
+                    <div
+                      key={item.nome}
+                      className={`achievement ${item.desbloqueado ? '' : 'locked'}`}
+                    >
+                      <div className="achievementIcon">{item.icone}</div>
+                      <div className="achievementName">{item.nome}</div>
+                      <div className="achievementMeta">
+                        {item.km === 0 ? 'Início da jornada' : `${item.km} km`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Evolução da jornada</h2>
+                  <div className="cardSub">
+                    Marcos de progressão do guia dentro da comunidade PrussikTrails.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                <div className="timeline">
+                  {METAS_KM_GUIA.map((meta) => {
+                    const conquistado = stats.totalKm >= meta.km
+
+                    return (
+                      <div className="timelineItem" key={meta.nome}>
+                        <div className="timelineKm">{meta.km} km</div>
+                        <div className="timelineName">
+                          {meta.icone} {meta.nome}
+                        </div>
+                        <div className={`timelineStatus ${conquistado ? 'ok' : ''}`}>
+                          {conquistado ? 'Conquistado' : 'Em progresso'}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside className="stack">
+            <section className="benefitCard">
+              <div className="benefitPill">
+                Benefício de fundador
+              </div>
+
+              <div className="benefitTitle">
+                Guia Pioneiro Beta
+              </div>
+
+              <div className="benefitText">
+                Durante a fase Beta, a taxa PrussikTrails será de 5% sobre cada reserva confirmada. Após o Beta, a taxa padrão passará para 7%.
+              </div>
+
+              <div className="benefitText">
+                Guias ativos nesta fase inicial poderão manter o benefício de 5% por tempo determinado e receber a medalha Guia Pioneiro Beta no perfil.
+              </div>
+
+              <div className="benefitText">
+                Taxa atual cadastrada: <strong>{Number(guia?.taxa_plataforma_percentual || 5).toFixed(2)}%</strong>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Medalhas</h2>
+                  <div className="cardSub">
+                    Reconhecimentos da sua atuação como guia.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                <div className="medalGrid">
+                  {medalhas.map((medalha) => (
+                    <div
+                      key={medalha.nome}
+                      className={`medal ${medalha.desbloqueado ? '' : 'locked'}`}
+                    >
+                      <div className="medalIcon">{medalha.icone}</div>
+                      <div className="medalName">{medalha.nome}</div>
+                      <div className="medalMeta">
+                        {medalha.desbloqueado
+                          ? 'Liberada'
+                          : `${medalha.progresso}/${medalha.meta}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Principais roteiros</h2>
+                  <div className="cardSub">
+                    Prévia dos roteiros que também aparecerão no seu perfil público.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                {principaisRoteiros.length === 0 ? (
+                  <div className="empty">
+                    Nenhum roteiro cadastrado ainda.
+                  </div>
+                ) : (
+                  <div className="routeGrid">
+                    {principaisRoteiros.map((roteiro) => (
+                      <div
+                        className="routeCard"
+                        key={roteiro.id}
+                        onClick={() => router.push(`/roteiros/${roteiro.id}`)}
+                      >
+                        <div className="routePhoto">
+                          {fotoRoteiro(roteiro) ? (
+                            <img src={fotoRoteiro(roteiro)} alt={roteiro.titulo || roteiro.nome || 'Roteiro'} />
+                          ) : (
+                            <span>🥾</span>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="routeTitle">
+                            {roteiro.titulo || roteiro.nome || 'Roteiro'}
+                          </div>
+
+                          <div className="routeMeta">
+                            {roteiro.local || roteiro.localizacao || 'Local a confirmar'}
+                            <br />
+                            {kmRoteiro(roteiro).toFixed(1)} km
+                          </div>
+
+                          <div className="routePrice">
+                            {formatarMoeda(valorRoteiro(roteiro))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="actionRow">
+                  <button
+                    type="button"
+                    className="btn dark"
+                    onClick={() => router.push('/guia/roteiros')}
+                  >
+                    Meus roteiros
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn light"
+                    onClick={() => router.push('/guia/roteiros/novo')}
+                  >
+                    Novo roteiro
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Avaliações</h2>
+                  <div className="cardSub">
+                    Comentários e notas recebidas dos aventureiros.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn light"
+                  onClick={() => router.push('/guia/avaliacoes')}
+                >
+                  Ver painel
+                </button>
+              </div>
+
+              <div className="cardBody">
+                {avaliacoes.length === 0 ? (
+                  <div className="empty">
+                    Você ainda não recebeu avaliações. Elas aparecerão aqui depois das experiências confirmadas.
+                  </div>
+                ) : (
+                  <div className="reviewList">
+                    {avaliacoes.slice(0, 5).map((avaliacao) => (
+                      <div className="review" key={avaliacao.id}>
+                        <div className="reviewTop">
+                          <div className="reviewName">
+                            {avaliacao.cliente_nome || 'Cliente'}
+                          </div>
+
+                          <div className="stars">
+                            ⭐ {Number(avaliacao.nota || 0).toFixed(1)}
+                          </div>
+                        </div>
+
+                        <div className="reviewText">
+                          {avaliacao.comentario || avaliacao.observacao || avaliacao.descricao || 'Avaliação sem comentário escrito.'}
+                        </div>
+
+                        <div className="reviewDate">
+                          {formatarData(avaliacao.created_at)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </aside>
+        </section>
       </div>
-    </div>
+
+      {modalSenhaAberto && (
+        <div className="modalOverlay">
+          <form className="modal" onSubmit={alterarSenha}>
+            <div className="modalHeader">
+              <h2 className="modalTitle">Alterar senha</h2>
+              <div className="modalSub">
+                Atualize sua senha de acesso ao painel do guia.
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <div className="field">
+                <label className="label">Senha atual</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={senhaAtual}
+                  onChange={(event) => setSenhaAtual(event.target.value)}
+                  placeholder="Digite sua senha atual"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Nova senha</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={novaSenha}
+                  onChange={(event) => setNovaSenha(event.target.value)}
+                  placeholder="Mínimo de 6 caracteres"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Confirmar nova senha</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={confirmarSenha}
+                  onChange={(event) => setConfirmarSenha(event.target.value)}
+                  placeholder="Repita a nova senha"
+                />
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="submit"
+                  className="btn dark"
+                  disabled={alterandoSenha}
+                >
+                  {alterandoSenha ? 'Alterando...' : 'Salvar nova senha'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn light"
+                  disabled={alterandoSenha}
+                  onClick={() => setModalSenhaAberto(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+    </main>
   )
 }

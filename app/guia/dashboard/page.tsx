@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
 type UsuarioLocal = {
   id: string
   nome?: string | null
-  name?: string | null
   email?: string | null
   tipo?: string | null
 }
@@ -23,6 +22,8 @@ type Roteiro = {
   ativo?: boolean | null
   id_guia?: string | null
   guia_id?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
   local?: string | null
   localizacao?: string | null
   local_encontro?: string | null
@@ -66,7 +67,6 @@ type Reserva = {
 type Cliente = {
   id: string
   nome?: string | null
-  name?: string | null
   email?: string | null
 }
 
@@ -97,7 +97,7 @@ type GrupoMembro = {
 type GrupoMensagem = {
   id: string
   grupo_id: string
-  mensagem: string
+  mensagem?: string | null
   tipo?: string | null
   status?: string | null
   created_at?: string | null
@@ -121,6 +121,20 @@ type AvaliacaoResumo = {
   experienciaSuperouPercentual: number
 }
 
+type FinanceiroResumoGuia = {
+  receita_bruta: number
+  taxa_percentual: number
+  taxa_plataforma: number
+  taxa_paghiper: number
+  valor_liquido_guia: number
+  valor_pago: number
+  saldo_pendente: number
+  reservas_confirmadas: number
+  roteiros_total: number
+  repasses_total: number
+  ultimo_pagamento_em?: string | null
+}
+
 type Stats = {
   roteirosTotal: number
   roteirosAtivos: number
@@ -131,11 +145,15 @@ type Stats = {
   pessoasReservadas: number
   receitaBruta: number
   taxaPlataforma: number
+  taxaPercentual: number
+  valorLiquidoGuia: number
+  valorPagoGuia: number
   saldoLiquidoGuia: number
   gruposTotal: number
   gruposAtivos: number
   clientesNosGrupos: number
   notificacoesGrupos: number
+  repassesRegistrados: number
 }
 
 type NotificacaoGuia = {
@@ -147,6 +165,8 @@ type NotificacaoGuia = {
   created_at?: string | null
 }
 
+type RoteiroStatus = 'ativo' | 'pendente' | 'reprovado' | 'pausado'
+
 const statsInicial: Stats = {
   roteirosTotal: 0,
   roteirosAtivos: 0,
@@ -157,11 +177,15 @@ const statsInicial: Stats = {
   pessoasReservadas: 0,
   receitaBruta: 0,
   taxaPlataforma: 0,
+  taxaPercentual: 5,
+  valorLiquidoGuia: 0,
+  valorPagoGuia: 0,
   saldoLiquidoGuia: 0,
   gruposTotal: 0,
   gruposAtivos: 0,
   clientesNosGrupos: 0,
-  notificacoesGrupos: 0
+  notificacoesGrupos: 0,
+  repassesRegistrados: 0
 }
 
 const avaliacaoResumoInicial: AvaliacaoResumo = {
@@ -184,10 +208,19 @@ export default function GuiaDashboardPage() {
   const [stats, setStats] = useState<Stats>(statsInicial)
   const [avaliacaoResumo, setAvaliacaoResumo] = useState<AvaliacaoResumo>(avaliacaoResumoInicial)
   const [notificacoes, setNotificacoes] = useState<NotificacaoGuia[]>([])
+
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
   const [mensagem, setMensagem] = useState('')
+  const [erro, setErro] = useState('')
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
+
+  const [menuAberto, setMenuAberto] = useState(false)
+  const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
+  const [senhaAtual, setSenhaAtual] = useState('')
+  const [novaSenha, setNovaSenha] = useState('')
+  const [confirmarSenha, setConfirmarSenha] = useState('')
+  const [alterandoSenha, setAlterandoSenha] = useState(false)
 
   useEffect(() => {
     if (iniciouRef.current) return
@@ -198,6 +231,7 @@ export default function GuiaDashboardPage() {
   const iniciar = async () => {
     setCarregando(true)
     setMensagem('')
+    setErro('')
 
     try {
       const userData = localStorage.getItem('user')
@@ -218,7 +252,7 @@ export default function GuiaDashboardPage() {
       await carregarTudo(parsedUser.id)
     } catch (error) {
       console.error('Erro ao iniciar dashboard do guia:', error)
-      setMensagem('Não foi possível carregar seu painel agora.')
+      setErro('Não foi possível carregar seu painel agora.')
     } finally {
       setCarregando(false)
     }
@@ -238,7 +272,7 @@ export default function GuiaDashboardPage() {
   }
 
   const nomeUsuario = (usuario?: UsuarioLocal | null) => {
-    return usuario?.nome || usuario?.name || 'Guia'
+    return usuario?.nome || usuario?.email || 'Guia'
   }
 
   const tituloRoteiro = (roteiro?: Roteiro | null) => {
@@ -326,10 +360,41 @@ export default function GuiaDashboardPage() {
     return formatarData(valor)
   }
 
-  const statusRoteiro = (roteiro: Roteiro) => {
+  const statusRoteiro = (roteiro: Roteiro): RoteiroStatus => {
     const status = normalizar(roteiro.status)
 
-    if (status) return status
+    if (
+      status === 'ativo' ||
+      status === 'aprovado' ||
+      status === 'aprovada' ||
+      status === 'publicado' ||
+      status === 'publicada'
+    ) {
+      return 'ativo'
+    }
+
+    if (
+      status === 'pendente' ||
+      status === 'aguardando' ||
+      status === 'em_analise' ||
+      status === 'em análise'
+    ) {
+      return 'pendente'
+    }
+
+    if (
+      status === 'reprovado' ||
+      status === 'reprovada' ||
+      status === 'rejeitado' ||
+      status === 'rejeitada'
+    ) {
+      return 'reprovado'
+    }
+
+    if (status === 'pausado' || status === 'pausada') {
+      return 'pausado'
+    }
+
     if (roteiro.ativo === true) return 'ativo'
     if (roteiro.ativo === false) return 'pausado'
 
@@ -357,30 +422,53 @@ export default function GuiaDashboardPage() {
     )
   }
 
+  const carregarFinanceiroDoGuia = async (guiaId: string) => {
+    try {
+      const response = await fetch(
+        `/api/guia/financeiro/resumo?guiaId=${encodeURIComponent(guiaId)}&_ts=${Date.now()}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-store',
+            Pragma: 'no-cache'
+          }
+        }
+      )
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Aviso ao carregar financeiro do guia:', data)
+        return null as FinanceiroResumoGuia | null
+      }
+
+      return (data?.resumo || null) as FinanceiroResumoGuia | null
+    } catch (error) {
+      console.warn('Erro ao carregar financeiro do guia:', error)
+      return null as FinanceiroResumoGuia | null
+    }
+  }
+
   const buscarRoteirosDoGuia = async (guiaId: string) => {
-    const tentativaIdGuia = await supabase
-      .from('roteiros')
-      .select('*')
-      .eq('id_guia', guiaId)
-      .order('created_at', { ascending: false })
+    const campos = ['id_guia', 'guia_id', 'user_id', 'usuario_id']
+    const mapa = new Map<string, Roteiro>()
 
-    if (!tentativaIdGuia.error) {
-      return (tentativaIdGuia.data || []) as Roteiro[]
+    for (const campo of campos) {
+      const { data, error } = await supabase
+        .from('roteiros')
+        .select('*')
+        .eq(campo, guiaId)
+        .order('created_at', { ascending: false })
+
+      if (!error && data) {
+        ;(data as Roteiro[]).forEach((roteiro) => {
+          if (roteiro?.id) mapa.set(roteiro.id, roteiro)
+        })
+      }
     }
 
-    const tentativaGuiaId = await supabase
-      .from('roteiros')
-      .select('*')
-      .eq('guia_id', guiaId)
-      .order('created_at', { ascending: false })
-
-    if (!tentativaGuiaId.error) {
-      return (tentativaGuiaId.data || []) as Roteiro[]
-    }
-
-    console.warn('Busca de roteiros do guia falhou:', tentativaIdGuia.error, tentativaGuiaId.error)
-
-    return []
+    return Array.from(mapa.values())
   }
 
   const carregarAvaliacoesDoGuia = async (guiaId: string) => {
@@ -388,14 +476,16 @@ export default function GuiaDashboardPage() {
       const response = await fetch('/api/avaliacoes/estatisticas', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
         },
         body: JSON.stringify({
           guiaId,
           status: 'publicada',
           limite: 500,
           limiteComentarios: 8
-        })
+        }),
+        cache: 'no-store'
       })
 
       const data = await response.json().catch(() => null)
@@ -500,6 +590,7 @@ export default function GuiaDashboardPage() {
   const carregarTudo = async (guiaId: string) => {
     try {
       const resumoAvaliacoes = await carregarAvaliacoesDoGuia(guiaId)
+      const resumoFinanceiro = await carregarFinanceiroDoGuia(guiaId)
 
       const roteirosData = await buscarRoteirosDoGuia(guiaId)
       setRoteiros(roteirosData)
@@ -508,19 +599,7 @@ export default function GuiaDashboardPage() {
       setGrupos(gruposData)
 
       if (roteirosData.length === 0) {
-        const statsZerados = {
-          ...statsInicial,
-          gruposTotal: gruposData.length,
-          gruposAtivos: gruposData.filter((grupo) => normalizar(grupo.status) === 'ativo').length,
-          clientesNosGrupos: gruposData.reduce(
-            (total, grupo) => total + Number(grupo.clientes_count || 0),
-            0
-          ),
-          notificacoesGrupos: gruposData.reduce(
-            (total, grupo) => total + Number(grupo.notificacoes_nao_lidas || 0),
-            0
-          )
-        }
+        const statsZerados = calcularStats([], [], gruposData, resumoFinanceiro)
 
         setReservas([])
         setStats(statsZerados)
@@ -540,7 +619,7 @@ export default function GuiaDashboardPage() {
       if (reservasError) {
         console.warn('Erro ao buscar reservas do guia:', reservasError)
 
-        const statsCalculados = calcularStats(roteirosData, [], gruposData)
+        const statsCalculados = calcularStats(roteirosData, [], gruposData, resumoFinanceiro)
 
         setReservas([])
         setStats(statsCalculados)
@@ -562,12 +641,14 @@ export default function GuiaDashboardPage() {
       let clientes: Cliente[] = []
 
       if (clienteIds.length > 0) {
-        const { data: clientesData } = await supabase
+        const { data: clientesData, error: clientesError } = await supabase
           .from('users')
-          .select('id, nome, name, email')
+          .select('id, nome, email')
           .in('id', clienteIds)
 
-        clientes = (clientesData || []) as Cliente[]
+        if (!clientesError && clientesData) {
+          clientes = clientesData as Cliente[]
+        }
       }
 
       const reservasCompletas = reservasBase.map((reserva) => {
@@ -585,7 +666,6 @@ export default function GuiaDashboardPage() {
           roteiro_titulo: tituloRoteiro(roteiro),
           cliente_nome:
             cliente?.nome ||
-            cliente?.name ||
             cliente?.email ||
             'Cliente'
         }
@@ -596,10 +676,12 @@ export default function GuiaDashboardPage() {
       const statsCalculados = calcularStats(
         roteirosData,
         reservasCompletas,
-        gruposData
+        gruposData,
+        resumoFinanceiro
       )
 
       setStats(statsCalculados)
+
       montarNotificacoes(
         roteirosData,
         reservasCompletas,
@@ -607,26 +689,27 @@ export default function GuiaDashboardPage() {
         statsCalculados,
         resumoAvaliacoes
       )
+
       setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
     } catch (error) {
       console.error('Erro ao carregar dados do guia:', error)
-      setMensagem('Não foi possível atualizar seu painel agora.')
+      setErro('Não foi possível atualizar seu painel agora.')
     }
   }
 
   const calcularStats = (
     roteirosLista: Roteiro[],
     reservasLista: Reserva[],
-    gruposLista: GrupoRoteiro[]
-  ) => {
+    gruposLista: GrupoRoteiro[],
+    financeiroResumo?: FinanceiroResumoGuia | null
+  ): Stats => {
     const roteirosAtivos = roteirosLista.filter(
       (roteiro) => statusRoteiro(roteiro) === 'ativo'
     ).length
 
-    const roteirosPendentes = roteirosLista.filter((roteiro) => {
-      const status = statusRoteiro(roteiro)
-      return status === 'pendente' || status === 'aguardando' || status === 'em_analise'
-    }).length
+    const roteirosPendentes = roteirosLista.filter(
+      (roteiro) => statusRoteiro(roteiro) === 'pendente'
+    ).length
 
     const reservasConfirmadas = reservasLista.filter(pagamentoConfirmado)
 
@@ -647,13 +730,33 @@ export default function GuiaDashboardPage() {
       0
     )
 
-    const receitaBruta = reservasConfirmadas.reduce(
+    const receitaBrutaLocal = reservasConfirmadas.reduce(
       (total, reserva) => total + Number(reserva.valor_total || 0),
       0
     )
 
-    const taxaPlataforma = receitaBruta * 0.05
-    const saldoLiquidoGuia = receitaBruta - taxaPlataforma
+    const taxaPercentual = Number(financeiroResumo?.taxa_percentual ?? 5)
+
+    const receitaBruta = Number(
+      financeiroResumo?.receita_bruta ?? receitaBrutaLocal
+    )
+
+    const taxaPlataforma = Number(
+      financeiroResumo?.taxa_plataforma ??
+        receitaBruta * (taxaPercentual / 100)
+    )
+
+    const valorLiquidoGuia = Number(
+      financeiroResumo?.valor_liquido_guia ??
+        Math.max(0, receitaBruta - taxaPlataforma)
+    )
+
+    const valorPagoGuia = Number(financeiroResumo?.valor_pago ?? 0)
+
+    const saldoLiquidoGuia = Number(
+      financeiroResumo?.saldo_pendente ??
+        Math.max(0, valorLiquidoGuia - valorPagoGuia)
+    )
 
     const gruposAtivos = gruposLista.filter(
       (grupo) => normalizar(grupo.status) === 'ativo'
@@ -674,16 +777,22 @@ export default function GuiaDashboardPage() {
       roteirosAtivos,
       roteirosPendentes,
       reservasTotal: reservasLista.length,
-      reservasConfirmadas: reservasConfirmadas.length,
+      reservasConfirmadas: Number(
+        financeiroResumo?.reservas_confirmadas ?? reservasConfirmadas.length
+      ),
       reservasPendentes: reservasPendentes.length,
       pessoasReservadas,
       receitaBruta,
       taxaPlataforma,
+      taxaPercentual,
+      valorLiquidoGuia,
+      valorPagoGuia,
       saldoLiquidoGuia,
       gruposTotal: gruposLista.length,
       gruposAtivos,
       clientesNosGrupos,
-      notificacoesGrupos
+      notificacoesGrupos,
+      repassesRegistrados: Number(financeiroResumo?.repasses_total ?? 0)
     }
   }
 
@@ -722,10 +831,9 @@ export default function GuiaDashboardPage() {
       })
     }
 
-    const roteirosPendentes = roteirosLista.filter((roteiro) => {
-      const status = statusRoteiro(roteiro)
-      return status === 'pendente' || status === 'aguardando' || status === 'em_analise'
-    })
+    const roteirosPendentes = roteirosLista.filter(
+      (roteiro) => statusRoteiro(roteiro) === 'pendente'
+    )
 
     if (roteirosPendentes.length > 0) {
       lista.push({
@@ -754,8 +862,8 @@ export default function GuiaDashboardPage() {
     if (statsAtuais.saldoLiquidoGuia > 0) {
       lista.push({
         id: 'saldo-guia',
-        titulo: 'Saldo estimado disponível',
-        texto: 'Saldo líquido estimado já considera 5% de taxa da plataforma.',
+        titulo: 'Saldo pendente atualizado',
+        texto: `Você tem ${formatarMoeda(statsAtuais.saldoLiquidoGuia)} pendente após ${statsAtuais.repassesRegistrados} repasse(s) registrado(s) pelo ADMIN.`,
         emoji: '💰',
         destino: '/guia/financeiro',
         created_at: new Date().toISOString()
@@ -766,7 +874,7 @@ export default function GuiaDashboardPage() {
       lista.push({
         id: 'estrutura',
         titulo: 'Organize sua operação',
-        texto: 'Mantenha roteiros, grupos, reservas e avaliações sempre acompanhados.',
+        texto: 'Mantenha roteiros, grupos, reservas, financeiro e avaliações sempre acompanhados.',
         emoji: '🌿',
         destino: '/guia/roteiros',
         created_at: new Date().toISOString()
@@ -781,13 +889,105 @@ export default function GuiaDashboardPage() {
 
     setAtualizando(true)
     setMensagem('')
+    setErro('')
 
     try {
       await carregarTudo(user.id)
       setMensagem('Painel atualizado.')
+      setTimeout(() => setMensagem(''), 2600)
     } finally {
       setAtualizando(false)
     }
+  }
+
+  const abrirAlterarSenha = () => {
+    setMenuAberto(false)
+    setErro('')
+    setMensagem('')
+    setSenhaAtual('')
+    setNovaSenha('')
+    setConfirmarSenha('')
+    setModalSenhaAberto(true)
+  }
+
+  const alterarSenha = async (event: FormEvent) => {
+    event.preventDefault()
+
+    if (!user?.id) {
+      router.replace('/login')
+      return
+    }
+
+    setErro('')
+    setMensagem('')
+
+    if (!senhaAtual) {
+      setErro('Informe a senha atual.')
+      return
+    }
+
+    if (!novaSenha || novaSenha.length < 6) {
+      setErro('A nova senha deve ter pelo menos 6 caracteres.')
+      return
+    }
+
+    if (novaSenha !== confirmarSenha) {
+      setErro('As senhas não conferem.')
+      return
+    }
+
+    setAlterandoSenha(true)
+
+    try {
+      const response = await fetch('/api/alterar-senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          usuarioId: user.id,
+          usuario_id: user.id,
+          senhaAtual,
+          senha_atual: senhaAtual,
+          novaSenha,
+          nova_senha: novaSenha
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        setErro(data?.erro || data?.message || 'Não foi possível alterar a senha.')
+        return
+      }
+
+      setMensagem('Senha alterada com sucesso.')
+      setModalSenhaAberto(false)
+      setSenhaAtual('')
+      setNovaSenha('')
+      setConfirmarSenha('')
+    } catch (error) {
+      console.error('Erro ao alterar senha:', error)
+      setErro('Erro ao alterar senha.')
+    } finally {
+      setAlterandoSenha(false)
+    }
+  }
+
+  const sair = async () => {
+    setMenuAberto(false)
+
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.warn('Aviso ao encerrar sessão:', error)
+    }
+
+    localStorage.removeItem('user')
+    localStorage.removeItem('usuario')
+    localStorage.removeItem('token')
+    localStorage.removeItem('session')
+
+    router.replace('/login')
   }
 
   const badgeRoteiro = (roteiro: Roteiro) => {
@@ -960,43 +1160,60 @@ export default function GuiaDashboardPage() {
           margin-top: 3px;
         }
 
-        .headerActions {
-          display: flex;
-          gap: 6px;
-          align-items: center;
+        .settingsWrap {
+          position: relative;
         }
 
-        .iconBtn {
-          height: 38px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          background: rgba(255,255,255,0.78);
+        .gearBtn {
+          width: 42px;
+          height: 42px;
+          border: 1px solid rgba(15,23,42,0.08);
+          background: rgba(255,255,255,0.84);
+          color: #172018;
           border-radius: 999px;
-          padding: 0 13px;
+          cursor: pointer;
+          font-size: 18px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 900;
-          transition: 0.2s ease;
+          box-shadow: 0 8px 20px rgba(15,23,42,0.05);
+        }
+
+        .settingsMenu {
+          position: absolute;
+          top: 50px;
+          right: 0;
+          width: 230px;
+          background: #ffffff;
+          border: 1px solid rgba(15,23,42,0.10);
+          border-radius: 22px;
+          box-shadow: 0 22px 60px rgba(15,23,42,0.16);
+          padding: 8px;
+          z-index: 80;
+        }
+
+        .menuButton {
+          width: 100%;
+          border: none;
+          background: transparent;
           color: #172018;
-          white-space: nowrap;
+          padding: 12px 13px;
+          border-radius: 16px;
+          text-align: left;
+          font-size: 13px;
+          font-weight: 900;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
 
-        .iconBtn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
+        .menuButton:hover {
+          background: #f8fafc;
         }
 
-        .iconBtn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .iconBtn.primary {
-          background: #172018;
-          color: #ffffff;
-          border-color: #172018;
+        .menuButton.danger {
+          color: #991b1b;
         }
 
         .container {
@@ -1147,6 +1364,17 @@ export default function GuiaDashboardPage() {
           background: #ecfdf5;
           color: #166534;
           border: 1px solid #bbf7d0;
+          border-radius: 18px;
+          padding: 13px 15px;
+          margin-bottom: 16px;
+          font-size: 13px;
+          font-weight: 800;
+        }
+
+        .error {
+          background: #fee2e2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
           border-radius: 18px;
           padding: 13px 15px;
           margin-bottom: 16px;
@@ -1516,6 +1744,110 @@ export default function GuiaDashboardPage() {
           font-weight: 700;
         }
 
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 100;
+          background: rgba(15,23,42,0.52);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+        }
+
+        .modal {
+          width: 100%;
+          max-width: 460px;
+          background: #ffffff;
+          border-radius: 28px;
+          box-shadow: 0 28px 90px rgba(15,23,42,0.28);
+          overflow: hidden;
+        }
+
+        .modalHeader {
+          padding: 20px;
+          border-bottom: 1px solid rgba(15,23,42,0.08);
+        }
+
+        .modalTitle {
+          margin: 0;
+          color: #172018;
+          font-size: 20px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+        }
+
+        .modalSub {
+          margin-top: 5px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 750;
+          line-height: 1.45;
+        }
+
+        .modalBody {
+          padding: 20px;
+          display: grid;
+          gap: 12px;
+        }
+
+        .field {
+          display: grid;
+          gap: 7px;
+        }
+
+        .label {
+          color: #475569;
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.07em;
+        }
+
+        .input {
+          width: 100%;
+          border: 1px solid rgba(15,23,42,0.08);
+          background: #fffdf7;
+          border-radius: 18px;
+          padding: 13px 14px;
+          font-size: 14px;
+          color: #172018;
+          outline: none;
+          font-weight: 750;
+        }
+
+        .modalActions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 8px;
+        }
+
+        .btn {
+          border: none;
+          border-radius: 999px;
+          padding: 11px 14px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .btn.dark {
+          background: #172018;
+          color: #ffffff;
+        }
+
+        .btn.light {
+          background: #eef2e5;
+          color: #475569;
+        }
+
+        .btn:disabled {
+          opacity: 0.62;
+          cursor: not-allowed;
+        }
+
         @media (max-width: 1180px) {
           .utilityGrid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1536,10 +1868,6 @@ export default function GuiaDashboardPage() {
 
           .brandTitle,
           .brandSub {
-            display: none;
-          }
-
-          .headerActions .hideMobile {
             display: none;
           }
 
@@ -1589,6 +1917,14 @@ export default function GuiaDashboardPage() {
           .brand img {
             height: 38px;
           }
+
+          .modalActions {
+            display: grid;
+          }
+
+          .btn {
+            width: 100%;
+          }
         }
       `}</style>
 
@@ -1603,49 +1939,57 @@ export default function GuiaDashboardPage() {
             </div>
           </div>
 
-          <div className="headerActions">
+          <div className="settingsWrap">
             <button
               type="button"
-              className="iconBtn primary"
-              onClick={() => router.push('/guia/roteiros/novo')}
+              className="gearBtn"
+              onClick={() => setMenuAberto((aberto) => !aberto)}
+              aria-label="Configurações"
             >
-              Novo roteiro
+              ⚙️
             </button>
 
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/guia/grupos')}
-            >
-              Grupos
-            </button>
+            {menuAberto && (
+              <div className="settingsMenu">
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={() => {
+                    setMenuAberto(false)
+                    router.push('/guia/perfil')
+                  }}
+                >
+                  👤 Perfil
+                </button>
 
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/guia/avaliacoes')}
-            >
-              Avaliações
-            </button>
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={() => {
+                    setMenuAberto(false)
+                    router.push('/guia/financeiro')
+                  }}
+                >
+                  💰 Financeiro
+                </button>
 
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={atualizarDashboard}
-              disabled={atualizando}
-              title="Atualizar painel"
-            >
-              {atualizando ? '…' : '↻'}
-            </button>
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={abrirAlterarSenha}
+                >
+                  🔐 Alterar senha
+                </button>
 
-            <button
-              type="button"
-              className="iconBtn"
-              onClick={() => router.push('/guia/perfil')}
-              title="Perfil"
-            >
-              👤
-            </button>
+                <button
+                  type="button"
+                  className="menuButton danger"
+                  onClick={sair}
+                >
+                  🚪 Sair
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -1663,7 +2007,7 @@ export default function GuiaDashboardPage() {
               </h1>
 
               <p className="heroText">
-                Acompanhe roteiros, reservas, grupos internos, saldo estimado e avaliações dos clientes.
+                Acompanhe roteiros, reservas, grupos internos, saldo atualizado e avaliações dos clientes.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1684,17 +2028,18 @@ export default function GuiaDashboardPage() {
                 <button
                   type="button"
                   className="heroMiniBtn"
-                  onClick={() => router.push('/guia/avaliacoes')}
+                  onClick={() => router.push('/guia/financeiro')}
                 >
-                  Ver avaliações
+                  Ver financeiro
                 </button>
 
                 <button
                   type="button"
                   className="heroMiniBtn"
-                  onClick={() => router.push('/guia/grupos')}
+                  onClick={atualizarDashboard}
+                  disabled={atualizando}
                 >
-                  Ver grupos
+                  {atualizando ? 'Atualizando...' : 'Atualizar painel'}
                 </button>
               </div>
             </div>
@@ -1717,17 +2062,11 @@ export default function GuiaDashboardPage() {
           </div>
         </section>
 
-        {mensagem && (
-          <div className="message">
-            {mensagem}
-          </div>
-        )}
+        {mensagem && <div className="message">{mensagem}</div>}
+        {erro && <div className="error">{erro}</div>}
 
         <section className="utilityGrid">
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/guia/roteiros')}
-          >
+          <article className="utilityCard" onClick={() => router.push('/guia/roteiros')}>
             <div className="utilityIcon">🧭</div>
             <div className="utilityTitle">Roteiros</div>
             <div className="utilityValue">{stats.roteirosTotal}</div>
@@ -1736,10 +2075,7 @@ export default function GuiaDashboardPage() {
             </div>
           </article>
 
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/guia/grupos')}
-          >
+          <article className="utilityCard" onClick={() => router.push('/guia/grupos')}>
             <div className="utilityIcon">💬</div>
             <div className="utilityTitle">Grupos</div>
             <div className="utilityValue">{stats.gruposTotal}</div>
@@ -1748,10 +2084,7 @@ export default function GuiaDashboardPage() {
             </div>
           </article>
 
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/guia/reservas')}
-          >
+          <article className="utilityCard" onClick={() => router.push('/guia/reservas')}>
             <div className="utilityIcon">🎒</div>
             <div className="utilityTitle">Reservas</div>
             <div className="utilityValue">{stats.reservasTotal}</div>
@@ -1760,24 +2093,16 @@ export default function GuiaDashboardPage() {
             </div>
           </article>
 
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/guia/avaliacoes')}
-          >
+          <article className="utilityCard" onClick={() => router.push('/guia/avaliacoes')}>
             <div className="utilityIcon">⭐</div>
             <div className="utilityTitle">Avaliações</div>
-            <div className="utilityValue">
-              {formatarNota(avaliacaoResumo.mediaNota)}
-            </div>
+            <div className="utilityValue">{formatarNota(avaliacaoResumo.mediaNota)}</div>
             <div className="utilityText">
               {avaliacaoResumo.total} avaliação(ões) recebida(s).
             </div>
           </article>
 
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/guia/grupos')}
-          >
+          <article className="utilityCard" onClick={() => router.push('/guia/grupos')}>
             <div className="utilityIcon">🔔</div>
             <div className="utilityTitle">Avisos</div>
             <div className="utilityValue">{stats.notificacoesGrupos}</div>
@@ -1786,17 +2111,12 @@ export default function GuiaDashboardPage() {
             </div>
           </article>
 
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/guia/financeiro')}
-          >
+          <article className="utilityCard" onClick={() => router.push('/guia/financeiro')}>
             <div className="utilityIcon">💰</div>
-            <div className="utilityTitle">Saldo guia</div>
-            <div className="utilityValue">
-              {formatarMoeda(stats.saldoLiquidoGuia)}
-            </div>
+            <div className="utilityTitle">Saldo pendente</div>
+            <div className="utilityValue">{formatarMoeda(stats.saldoLiquidoGuia)}</div>
             <div className="utilityText">
-              Estimado com desconto de 5% da plataforma.
+              {stats.repassesRegistrados} repasse(s) já registrado(s) pelo ADMIN.
             </div>
           </article>
         </section>
@@ -1812,11 +2132,7 @@ export default function GuiaDashboardPage() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  className="textLink"
-                  onClick={() => router.push('/guia/grupos')}
-                >
+                <button type="button" className="textLink" onClick={() => router.push('/guia/grupos')}>
                   Ver grupos
                 </button>
               </div>
@@ -1857,13 +2173,8 @@ export default function GuiaDashboardPage() {
                             </div>
 
                             <div className="itemFooter">
-                              <span className="price">
-                                {grupo.notificacoes_nao_lidas || 0} aviso(s)
-                              </span>
-
-                              <span className="badge badge-green">
-                                {grupo.status || 'ativo'}
-                              </span>
+                              <span className="price">{grupo.notificacoes_nao_lidas || 0} aviso(s)</span>
+                              <span className="badge badge-green">{grupo.status || 'ativo'}</span>
                             </div>
                           </div>
                         </article>
@@ -1878,16 +2189,10 @@ export default function GuiaDashboardPage() {
               <div className="panelHeader">
                 <div>
                   <h2 className="panelTitle">Seus roteiros</h2>
-                  <div className="panelSub">
-                    Controle rápido dos roteiros cadastrados.
-                  </div>
+                  <div className="panelSub">Controle rápido dos roteiros cadastrados.</div>
                 </div>
 
-                <button
-                  type="button"
-                  className="textLink"
-                  onClick={() => router.push('/guia/roteiros')}
-                >
+                <button type="button" className="textLink" onClick={() => router.push('/guia/roteiros')}>
                   Ver todos
                 </button>
               </div>
@@ -1917,9 +2222,7 @@ export default function GuiaDashboardPage() {
                           </div>
 
                           <div>
-                            <div className="itemTitle">
-                              {tituloRoteiro(roteiro)}
-                            </div>
+                            <div className="itemTitle">{tituloRoteiro(roteiro)}</div>
 
                             <div className="itemMeta">
                               {localRoteiro(roteiro)}
@@ -1929,10 +2232,7 @@ export default function GuiaDashboardPage() {
                             </div>
 
                             <div className="itemFooter">
-                              <span className="price">
-                                {formatarMoeda(precoRoteiro(roteiro))}
-                              </span>
-
+                              <span className="price">{formatarMoeda(precoRoteiro(roteiro))}</span>
                               {badgeRoteiro(roteiro)}
                             </div>
                           </div>
@@ -1948,16 +2248,10 @@ export default function GuiaDashboardPage() {
               <div className="panelHeader">
                 <div>
                   <h2 className="panelTitle">Reservas recentes</h2>
-                  <div className="panelSub">
-                    Movimento dos seus roteiros.
-                  </div>
+                  <div className="panelSub">Movimento dos seus roteiros.</div>
                 </div>
 
-                <button
-                  type="button"
-                  className="textLink"
-                  onClick={() => router.push('/guia/reservas')}
-                >
+                <button type="button" className="textLink" onClick={() => router.push('/guia/reservas')}>
                   Ver reservas
                 </button>
               </div>
@@ -1977,19 +2271,14 @@ export default function GuiaDashboardPage() {
                       >
                         <div className="thumb">
                           {imagemRoteiro(reserva.roteiro) ? (
-                            <img
-                              src={imagemRoteiro(reserva.roteiro)}
-                              alt={reserva.roteiro_titulo || 'Roteiro'}
-                            />
+                            <img src={imagemRoteiro(reserva.roteiro)} alt={reserva.roteiro_titulo || 'Roteiro'} />
                           ) : (
                             'RS'
                           )}
                         </div>
 
                         <div>
-                          <div className="itemTitle">
-                            {reserva.roteiro_titulo || 'Roteiro'}
-                          </div>
+                          <div className="itemTitle">{reserva.roteiro_titulo || 'Roteiro'}</div>
 
                           <div className="itemMeta">
                             Cliente: {reserva.cliente_nome || 'Cliente'}
@@ -1998,10 +2287,7 @@ export default function GuiaDashboardPage() {
                           </div>
 
                           <div className="itemFooter">
-                            <span className="price">
-                              {formatarMoeda(reserva.valor_total || 0)}
-                            </span>
-
+                            <span className="price">{formatarMoeda(reserva.valor_total || 0)}</span>
                             {badgeReserva(reserva)}
                           </div>
                         </div>
@@ -2017,16 +2303,12 @@ export default function GuiaDashboardPage() {
             <section className="reviewBox">
               <div className="financeLabel">Avaliações do guia</div>
 
-              <div className="financeValue">
-                {formatarNota(avaliacaoResumo.mediaNota)}
-              </div>
+              <div className="financeValue">{formatarNota(avaliacaoResumo.mediaNota)}</div>
 
-              <div className="heroStars">
-                {estrelas(avaliacaoResumo.mediaNota)}
-              </div>
+              <div className="heroStars">{estrelas(avaliacaoResumo.mediaNota)}</div>
 
               <div className="financeText">
-                Média geral das avaliações recebidas pelos clientes. Segurança, orientação e experiência entram como indicadores estratégicos da sua reputação.
+                Média geral das avaliações recebidas pelos clientes.
               </div>
 
               <div className="financeRows">
@@ -2046,11 +2328,7 @@ export default function GuiaDashboardPage() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                className="financeButton"
-                onClick={() => router.push('/guia/avaliacoes')}
-              >
+              <button type="button" className="financeButton" onClick={() => router.push('/guia/avaliacoes')}>
                 Ver painel de avaliações
               </button>
             </section>
@@ -2058,13 +2336,10 @@ export default function GuiaDashboardPage() {
             <section className="financeBox">
               <div className="financeLabel">Financeiro do guia</div>
 
-              <div className="financeValue">
-                {formatarMoeda(stats.saldoLiquidoGuia)}
-              </div>
+              <div className="financeValue">{formatarMoeda(stats.saldoLiquidoGuia)}</div>
 
               <div className="financeText">
-                Valor líquido estimado das reservas confirmadas, já descontando
-                5% da taxa da plataforma.
+                Saldo pendente atualizado após os repasses registrados pelo ADMIN.
               </div>
 
               <div className="financeRows">
@@ -2074,21 +2349,32 @@ export default function GuiaDashboardPage() {
                 </div>
 
                 <div className="financeRow">
-                  <span>Taxa PrussikTrails 5%</span>
+                  <span>Taxa PrussikTrails {stats.taxaPercentual}%</span>
                   <strong>{formatarMoeda(stats.taxaPlataforma)}</strong>
                 </div>
 
                 <div className="financeRow">
-                  <span>Líquido estimado</span>
+                  <span>Líquido antes dos repasses</span>
+                  <strong>{formatarMoeda(stats.valorLiquidoGuia)}</strong>
+                </div>
+
+                <div className="financeRow">
+                  <span>Já repassado pelo ADMIN</span>
+                  <strong>{formatarMoeda(stats.valorPagoGuia)}</strong>
+                </div>
+
+                <div className="financeRow">
+                  <span>Repasses registrados</span>
+                  <strong>{stats.repassesRegistrados}</strong>
+                </div>
+
+                <div className="financeRow">
+                  <span>Saldo pendente</span>
                   <strong>{formatarMoeda(stats.saldoLiquidoGuia)}</strong>
                 </div>
               </div>
 
-              <button
-                type="button"
-                className="financeButton"
-                onClick={() => router.push('/guia/financeiro')}
-              >
+              <button type="button" className="financeButton" onClick={() => router.push('/guia/financeiro')}>
                 Acompanhar financeiro
               </button>
             </section>
@@ -2097,17 +2383,13 @@ export default function GuiaDashboardPage() {
               <div className="panelHeader">
                 <div>
                   <h2 className="panelTitle">Pendências e avisos</h2>
-                  <div className="panelSub">
-                    O que merece atenção agora.
-                  </div>
+                  <div className="panelSub">O que merece atenção agora.</div>
                 </div>
               </div>
 
               <div className="panelBody">
                 {notificacoes.length === 0 ? (
-                  <div className="empty">
-                    Nenhum aviso por enquanto.
-                  </div>
+                  <div className="empty">Nenhum aviso por enquanto.</div>
                 ) : (
                   <div className="notificationList">
                     {notificacoes.map((notificacao) => (
@@ -2115,27 +2397,15 @@ export default function GuiaDashboardPage() {
                         className="notification"
                         key={notificacao.id}
                         onClick={() => {
-                          if (notificacao.destino) {
-                            router.push(notificacao.destino)
-                          }
+                          if (notificacao.destino) router.push(notificacao.destino)
                         }}
                       >
-                        <div className="notificationIcon">
-                          {notificacao.emoji}
-                        </div>
+                        <div className="notificationIcon">{notificacao.emoji}</div>
 
                         <div>
-                          <div className="notificationTitle">
-                            {notificacao.titulo}
-                          </div>
-
-                          <div className="notificationText">
-                            {notificacao.texto}
-                          </div>
-
-                          <div className="notificationTime">
-                            {tempoRelativo(notificacao.created_at)}
-                          </div>
+                          <div className="notificationTitle">{notificacao.titulo}</div>
+                          <div className="notificationText">{notificacao.texto}</div>
+                          <div className="notificationTime">{tempoRelativo(notificacao.created_at)}</div>
                         </div>
                       </article>
                     ))}
@@ -2148,56 +2418,33 @@ export default function GuiaDashboardPage() {
               <div className="panelHeader">
                 <div>
                   <h2 className="panelTitle">Estrutura do guia</h2>
-                  <div className="panelSub">
-                    Atalhos úteis para operar melhor.
-                  </div>
+                  <div className="panelSub">Atalhos úteis para operar melhor.</div>
                 </div>
               </div>
 
               <div className="panelBody">
                 <div className="list">
-                  <button
-                    type="button"
-                    className="iconBtn primary"
-                    style={{ width: '100%', height: 44 }}
-                    onClick={() => router.push('/guia/roteiros/novo')}
-                  >
+                  <button type="button" className="gearBtn" style={{ width: '100%', height: 44 }} onClick={() => router.push('/guia/roteiros/novo')}>
                     Criar novo roteiro
                   </button>
 
-                  <button
-                    type="button"
-                    className="iconBtn"
-                    style={{ width: '100%', height: 44 }}
-                    onClick={() => router.push('/guia/grupos')}
-                  >
+                  <button type="button" className="gearBtn" style={{ width: '100%', height: 44 }} onClick={() => router.push('/guia/grupos')}>
                     Administrar grupos
                   </button>
 
-                  <button
-                    type="button"
-                    className="iconBtn"
-                    style={{ width: '100%', height: 44 }}
-                    onClick={() => router.push('/guia/avaliacoes')}
-                  >
+                  <button type="button" className="gearBtn" style={{ width: '100%', height: 44 }} onClick={() => router.push('/guia/avaliacoes')}>
                     Acompanhar avaliações
                   </button>
 
-                  <button
-                    type="button"
-                    className="iconBtn"
-                    style={{ width: '100%', height: 44 }}
-                    onClick={() => router.push('/guia/roteiros')}
-                  >
+                  <button type="button" className="gearBtn" style={{ width: '100%', height: 44 }} onClick={() => router.push('/guia/financeiro')}>
+                    Acompanhar financeiro
+                  </button>
+
+                  <button type="button" className="gearBtn" style={{ width: '100%', height: 44 }} onClick={() => router.push('/guia/roteiros')}>
                     Revisar meus roteiros
                   </button>
 
-                  <button
-                    type="button"
-                    className="iconBtn"
-                    style={{ width: '100%', height: 44 }}
-                    onClick={() => router.push('/guia/perfil')}
-                  >
+                  <button type="button" className="gearBtn" style={{ width: '100%', height: 44 }} onClick={() => router.push('/guia/perfil')}>
                     Meu perfil de guia
                   </button>
                 </div>
@@ -2206,6 +2453,64 @@ export default function GuiaDashboardPage() {
           </div>
         </section>
       </div>
+
+      {modalSenhaAberto && (
+        <div className="modalOverlay">
+          <form className="modal" onSubmit={alterarSenha}>
+            <div className="modalHeader">
+              <h2 className="modalTitle">Alterar senha</h2>
+              <div className="modalSub">
+                Atualize sua senha de acesso ao painel do guia.
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <div className="field">
+                <label className="label">Senha atual</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={senhaAtual}
+                  onChange={(event) => setSenhaAtual(event.target.value)}
+                  placeholder="Digite sua senha atual"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Nova senha</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={novaSenha}
+                  onChange={(event) => setNovaSenha(event.target.value)}
+                  placeholder="Mínimo de 6 caracteres"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Confirmar nova senha</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={confirmarSenha}
+                  onChange={(event) => setConfirmarSenha(event.target.value)}
+                  placeholder="Repita a nova senha"
+                />
+              </div>
+
+              <div className="modalActions">
+                <button type="submit" className="btn dark" disabled={alterandoSenha}>
+                  {alterandoSenha ? 'Alterando...' : 'Salvar nova senha'}
+                </button>
+
+                <button type="button" className="btn light" disabled={alterandoSenha} onClick={() => setModalSenhaAberto(false)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   )
 }
