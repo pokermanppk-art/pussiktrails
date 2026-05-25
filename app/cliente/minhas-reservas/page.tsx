@@ -3,62 +3,71 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import { v4 as uuidv4 } from 'uuid'
 
-type ReservaCompleta = {
+type UsuarioLocal = {
   id: string
-  cliente_id?: string
-  id_cliente?: string
-  roteiro_id?: string
-  id_roteiro?: string
-  id_guia?: string
-  guia_id?: string
-  chat_id?: string | null
-  data_trilha?: string
-  data_reserva?: string
-  created_at?: string
-  quantidade_pessoas?: number
-  quantidade?: number
-  valor_total?: number
-  valor?: number
-  status?: string
-  pagamento_status?: string
-  comprovante_url?: string | null
-  comprovante_status?: string | null
-  comprovante_origem?: string | null
-  pagamento_confirmado_em?: string | null
-  cliente_confirmou?: boolean
-  guia_confirmou?: boolean
-  roteiro?: any
-  guia_nome?: string
-  roteiro_titulo?: string
+  nome?: string
+  email?: string
+  tipo?: string
 }
 
-export default function MinhasReservas() {
+type ReservaRaw = {
+  id: string
+  cliente_id?: string | null
+  roteiro_id?: string | null
+  quantidade_pessoas?: number | null
+  valor_total?: number | null
+  status?: string | null
+  pagamento_status?: string | null
+  chat_id?: string | null
+  created_at?: string | null
+}
+
+type Roteiro = {
+  id: string
+  titulo?: string | null
+  preco?: number | null
+  id_guia?: string | null
+  local?: string | null
+  localizacao?: string | null
+  data_roteiro?: string | null
+  hora_roteiro?: string | null
+  local_encontro?: string | null
+}
+
+type Guia = {
+  id: string
+  nome?: string | null
+  email?: string | null
+}
+
+type ReservaCompleta = ReservaRaw & {
+  roteiro?: Roteiro | null
+  guia_nome?: string
+  roteiro_titulo?: string
+  valor_final: number
+}
+
+export default function MinhasReservasPage() {
   const router = useRouter()
   const carregouRef = useRef(false)
 
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<UsuarioLocal | null>(null)
   const [reservas, setReservas] = useState<ReservaCompleta[]>([])
   const [carregando, setCarregando] = useState(true)
+  const [reconciliando, setReconciliando] = useState(false)
   const [mensagem, setMensagem] = useState('')
-  const [menuAbertoId, setMenuAbertoId] = useState<string | null>(null)
-
-  const [modalComprovanteAberto, setModalComprovanteAberto] = useState(false)
-  const [reservaSelecionada, setReservaSelecionada] =
-    useState<ReservaCompleta | null>(null)
-  const [arquivoComprovante, setArquivoComprovante] =
-    useState<File | null>(null)
-  const [enviandoComprovante, setEnviandoComprovante] = useState(false)
 
   useEffect(() => {
     if (carregouRef.current) return
-
     carregouRef.current = true
     iniciarPagina()
   }, [])
 
   const iniciarPagina = async () => {
+    setCarregando(true)
+    setMensagem('')
+
     try {
       const userData = localStorage.getItem('user')
 
@@ -67,1335 +76,931 @@ export default function MinhasReservas() {
         return
       }
 
-      const parsedUser = JSON.parse(userData)
+      const parsedUser: UsuarioLocal = JSON.parse(userData)
 
       if (parsedUser.tipo !== 'cliente') {
-        router.push('/')
+        router.push('/login')
         return
       }
 
       setUser(parsedUser)
-      await carregarReservas(parsedUser)
+
+      await carregarReservas(parsedUser.id)
+
+      // Tentativa silenciosa de reconciliar pagamentos pendentes PagHiper.
+      await reconciliarPagHiper(parsedUser.id, true)
+
+      // Recarrega depois da reconciliação para refletir pagamento confirmado.
+      await carregarReservas(parsedUser.id)
     } catch (error) {
       console.error('Erro ao iniciar minhas reservas:', error)
-      setMensagem('Erro ao carregar usuário. Faça login novamente.')
+      setMensagem('Erro ao carregar suas reservas.')
+    } finally {
       setCarregando(false)
     }
   }
 
-  const getClienteId = (usuario: any) => {
-    return (
-      usuario?.id ||
-      usuario?.user_id ||
-      usuario?.uid ||
-      usuario?.auth_id ||
-      ''
-    )
-  }
-
-  const buscarReservasPorColuna = async (
-    coluna: string,
-    clienteId: string
-  ) => {
-    return await supabase
+  const carregarReservas = async (clienteId: string) => {
+    const { data: reservasData, error: reservasError } = await supabase
       .from('reservas')
       .select('*')
-      .eq(coluna, clienteId)
+      .eq('cliente_id', clienteId)
       .order('created_at', { ascending: false })
-  }
 
-  const carregarReservas = async (usuarioParam?: any) => {
-    setCarregando(true)
-    setMensagem('')
-
-    const usuario = usuarioParam || user
-    const clienteId = getClienteId(usuario)
-
-    if (!clienteId) {
-      setMensagem('Não foi possível identificar o cliente logado.')
-      setReservas([])
-      setCarregando(false)
+    if (reservasError) {
+      console.error('Erro ao buscar reservas:', reservasError)
+      setMensagem('Erro ao buscar reservas.')
       return
     }
 
-    try {
-      let reservasData: any[] = []
-      let reservasError: any = null
+    const reservasBase = (reservasData || []) as ReservaRaw[]
 
-      const tentativaClienteId = await buscarReservasPorColuna(
-        'cliente_id',
-        clienteId
+    if (reservasBase.length === 0) {
+      setReservas([])
+      return
+    }
+
+    const roteiroIds = Array.from(
+      new Set(
+        reservasBase
+          .map((reserva) => reserva.roteiro_id)
+          .filter(Boolean) as string[]
       )
+    )
 
-      if (!tentativaClienteId.error) {
-        reservasData = tentativaClienteId.data || []
-      } else {
-        const tentativaIdCliente = await buscarReservasPorColuna(
-          'id_cliente',
-          clienteId
+    let roteiros: Roteiro[] = []
+
+    if (roteiroIds.length > 0) {
+      const { data: roteirosData, error: roteirosError } = await supabase
+        .from('roteiros')
+        .select(
+          'id, titulo, preco, id_guia, local, localizacao, data_roteiro, hora_roteiro, local_encontro'
         )
+        .in('id', roteiroIds)
 
-        if (!tentativaIdCliente.error) {
-          reservasData = tentativaIdCliente.data || []
-        } else {
-          reservasError = tentativaClienteId.error
+      if (roteirosError) {
+        console.warn('Erro ao buscar roteiros:', roteirosError)
+      } else {
+        roteiros = (roteirosData || []) as Roteiro[]
+      }
+    }
+
+    const guiaIds = Array.from(
+      new Set(
+        roteiros
+          .map((roteiro) => roteiro.id_guia)
+          .filter(Boolean) as string[]
+      )
+    )
+
+    let guias: Guia[] = []
+
+    if (guiaIds.length > 0) {
+      const { data: guiasData, error: guiasError } = await supabase
+        .from('users')
+        .select('id, nome, email')
+        .in('id', guiaIds)
+
+      if (guiasError) {
+        console.warn('Erro ao buscar guias:', guiasError)
+      } else {
+        guias = (guiasData || []) as Guia[]
+      }
+    }
+
+    const reservasCompletas: ReservaCompleta[] = reservasBase.map((reserva) => {
+      const roteiro = roteiros.find((item) => item.id === reserva.roteiro_id) || null
+      const guia = guias.find((item) => item.id === roteiro?.id_guia) || null
+
+      const quantidade = Number(reserva.quantidade_pessoas || 1)
+      const valorReserva = Number(reserva.valor_total || 0)
+      const valorRoteiro = Number(roteiro?.preco || 0)
+
+      const valorFinal =
+        valorReserva > 0
+          ? valorReserva
+          : valorRoteiro > 0
+            ? valorRoteiro * quantidade
+            : 0
+
+      return {
+        ...reserva,
+        roteiro,
+        guia_nome: guia?.nome || 'Guia',
+        roteiro_titulo: roteiro?.titulo || 'Roteiro não encontrado',
+        valor_final: valorFinal
+      }
+    })
+
+    setReservas(reservasCompletas)
+  }
+
+  const reconciliarPagHiper = async (
+    clienteId: string,
+    silencioso = false
+  ) => {
+    if (!clienteId) return
+
+    if (!silencioso) {
+      setMensagem('')
+      setReconciliando(true)
+    }
+
+    try {
+      const response = await fetch('/api/paghiper/reconciliar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          clienteId
+        })
+      })
+
+      const texto = await response.text()
+
+      let data: any = null
+
+      try {
+        data = texto ? JSON.parse(texto) : null
+      } catch {
+        console.warn('Reconciliação retornou resposta não JSON:', texto)
+      }
+
+      if (!response.ok) {
+        console.warn('Falha ao reconciliar PagHiper:', data || texto)
+
+        if (!silencioso) {
+          setMensagem(
+            'Não foi possível consultar a PagHiper agora. Tente novamente em alguns segundos.'
+          )
         }
-      }
 
-      if (reservasError) {
-        throw reservasError
-      }
-
-      if (!reservasData || reservasData.length === 0) {
-        setReservas([])
-        setCarregando(false)
         return
       }
 
-      const roteiroIds = [
-        ...new Set(
-          reservasData
-            .map((reserva) => reserva.roteiro_id || reserva.id_roteiro)
-            .filter(Boolean)
-            .map((id) => String(id))
-        )
-      ]
-
-      let roteirosMap: Record<string, any> = {}
-
-      if (roteiroIds.length > 0) {
-        const { data: roteirosData, error: roteirosError } = await supabase
-          .from('roteiros')
-          .select('*')
-          .in('id', roteiroIds)
-
-        if (roteirosError) {
-          console.warn('Erro ao buscar roteiros:', roteirosError)
-        }
-
-        if (roteirosData) {
-          roteirosMap = roteirosData.reduce((acc, roteiro) => {
-            acc[String(roteiro.id)] = roteiro
-            return acc
-          }, {} as Record<string, any>)
-        }
+      if (!silencioso) {
+        setMensagem('Status de pagamento atualizado.')
       }
+    } catch (error) {
+      console.warn('Erro ao chamar reconciliação PagHiper:', error)
 
-      const guiaIds = [
-        ...new Set(
-          reservasData
-            .map((reserva) => {
-              const roteiroId =
-                reserva.roteiro_id ||
-                reserva.id_roteiro
-
-              const roteiro = roteiroId
-                ? roteirosMap[String(roteiroId)]
-                : null
-
-              return (
-                reserva.id_guia ||
-                reserva.guia_id ||
-                roteiro?.id_guia ||
-                roteiro?.guia_id ||
-                roteiro?.guia
-              )
-            })
-            .filter(Boolean)
-            .map((id) => String(id))
+      if (!silencioso) {
+        setMensagem(
+          'Não foi possível atualizar o status PagHiper neste momento.'
         )
-      ]
-
-      let guiasMap: Record<string, string> = {}
-
-      if (guiaIds.length > 0) {
-        const { data: guiasData, error: guiasError } = await supabase
-          .from('users')
-          .select('id, nome, email')
-          .in('id', guiaIds)
-
-        if (guiasError) {
-          console.warn('Erro ao buscar guias:', guiasError)
-        }
-
-        if (guiasData) {
-          guiasMap = guiasData.reduce((acc, guia) => {
-            acc[String(guia.id)] =
-              guia.nome ||
-              guia.email ||
-              'Guia'
-            return acc
-          }, {} as Record<string, string>)
-        }
       }
+    } finally {
+      if (!silencioso) {
+        setReconciliando(false)
+      }
+    }
+  }
 
-      const reservasCompletas: ReservaCompleta[] = reservasData.map(
-        (reserva) => {
-          const roteiroId =
-            reserva.roteiro_id ||
-            reserva.id_roteiro
+  const recarregar = async () => {
+    if (!user?.id) return
 
-          const roteiro = roteiroId
-            ? roteirosMap[String(roteiroId)]
-            : null
+    setCarregando(true)
+    setMensagem('')
 
-          const guiaId =
-            reserva.id_guia ||
-            reserva.guia_id ||
-            roteiro?.id_guia ||
-            roteiro?.guia_id ||
-            roteiro?.guia
-
-          const quantidadePessoas = Number(
-            reserva.quantidade_pessoas ||
-            reserva.quantidade ||
-            1
-          )
-
-          const precoRoteiro = Number(
-            roteiro?.preco || 0
-          )
-
-          const valorBase =
-            reserva.valor_total ??
-            reserva.valor ??
-            (precoRoteiro * quantidadePessoas)
-
-          const valorTotal = Number(valorBase || 0)
-
-          const tituloRoteiro =
-            roteiro?.titulo ||
-            roteiro?.nome ||
-            reserva.roteiro_titulo ||
-            reserva.titulo_roteiro ||
-            reserva.titulo ||
-            'Roteiro não encontrado'
-
-          return {
-            ...reserva,
-            roteiro: roteiro || null,
-            guia_nome: guiaId
-              ? guiasMap[String(guiaId)] || 'Guia'
-              : 'Guia',
-            roteiro_titulo: tituloRoteiro,
-            quantidade_pessoas: quantidadePessoas,
-            valor_total: valorTotal
-          }
-        }
-      )
-
-      setReservas(reservasCompletas)
-    } catch (err: any) {
-      console.error('Erro ao carregar reservas:', err)
-
-      setMensagem(
-        err?.message ||
-        'Erro ao carregar reservas. Tente novamente.'
-      )
-
-      setReservas([])
+    try {
+      await reconciliarPagHiper(user.id, false)
+      await carregarReservas(user.id)
     } finally {
       setCarregando(false)
     }
   }
 
-  const podeCancelarReserva = (reserva: ReservaCompleta) => {
-    if (reserva.status === 'cancelada') return false
-    if (reserva.status === 'realizada') return false
-
-    return (
-      reserva.status === 'pendente' ||
-      reserva.status === 'confirmada'
-    )
-  }
-
-  const cancelarReserva = async (reserva: ReservaCompleta) => {
-    const confirmacao = prompt(
-      'Atenção: esta ação cancelará a reserva. Para confirmar, digite CANCELAR.'
+  const cancelarReserva = async (reservaId: string) => {
+    const confirmar = window.confirm(
+      'Tem certeza que deseja cancelar esta reserva? Esta ação deve ser usada apenas quando realmente necessário.'
     )
 
-    if (confirmacao !== 'CANCELAR') {
-      setMensagem('Cancelamento não realizado.')
-      return
-    }
+    if (!confirmar) return
 
-    const { error } = await supabase
-      .from('reservas')
-      .update({ status: 'cancelada' })
-      .eq('id', reserva.id)
-
-    if (error) {
-      console.error('Erro ao cancelar reserva:', error)
-      setMensagem('Erro ao cancelar reserva.')
-      return
-    }
-
-    setMenuAbertoId(null)
-    setMensagem('Reserva cancelada com sucesso.')
-
-    if (user) {
-      await carregarReservas(user)
-    }
-  }
-
-  const abrirModalComprovante = (reserva: ReservaCompleta) => {
-    setReservaSelecionada(reserva)
-    setArquivoComprovante(null)
-    setMensagem('')
-    setModalComprovanteAberto(true)
-  }
-
-  const fecharModalComprovante = () => {
-    if (enviandoComprovante) return
-
-    setModalComprovanteAberto(false)
-    setReservaSelecionada(null)
-    setArquivoComprovante(null)
-  }
-
-  const enviarComprovante = async () => {
-    if (!reservaSelecionada) {
-      setMensagem('Reserva não selecionada.')
-      return
-    }
-
-    if (!arquivoComprovante) {
-      setMensagem('Selecione um arquivo de comprovante.')
-      return
-    }
-
-    setEnviandoComprovante(true)
     setMensagem('')
 
     try {
-      const fileExt =
-        arquivoComprovante.name.split('.').pop() || 'arquivo'
-
-      const fileName =
-        `${reservaSelecionada.id}_${uuidv4()}.${fileExt}`
-
-      const filePath =
-        `comprovantes/${fileName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('comprovantes')
-        .upload(filePath, arquivoComprovante, {
-          cacheControl: '3600',
-          upsert: false
-        })
-
-      if (uploadError) {
-        throw uploadError
-      }
-
-      const {
-        data: { publicUrl }
-      } = supabase.storage
-        .from('comprovantes')
-        .getPublicUrl(filePath)
-
-      const novoPagamentoStatus =
-        reservaSelecionada.pagamento_status === 'pago'
-          ? 'pago'
-          : 'aguardando_aprovacao'
-
-      const novoComprovanteStatus =
-        reservaSelecionada.pagamento_status === 'pago'
-          ? reservaSelecionada.comprovante_status || 'paghiper_confirmado'
-          : 'enviado'
-
-      const { error: updateError } = await supabase
+      const { error } = await supabase
         .from('reservas')
         .update({
-          comprovante_url: publicUrl,
-          comprovante_status: novoComprovanteStatus,
-          comprovante_origem:
-            reservaSelecionada.pagamento_status === 'pago'
-              ? reservaSelecionada.comprovante_origem || 'paghiper'
-              : 'cliente',
-          pagamento_status: novoPagamentoStatus
+          status: 'cancelada'
         })
-        .eq('id', reservaSelecionada.id)
+        .eq('id', reservaId)
 
-      if (updateError) {
-        throw updateError
+      if (error) {
+        console.error('Erro ao cancelar reserva:', error)
+        setMensagem('Erro ao cancelar reserva.')
+        return
       }
 
-      setMensagem('✅ Comprovante enviado com sucesso!')
-      setModalComprovanteAberto(false)
-      setReservaSelecionada(null)
-      setArquivoComprovante(null)
-
-      if (user) {
-        await carregarReservas(user)
+      if (user?.id) {
+        await carregarReservas(user.id)
       }
-    } catch (error: any) {
-      console.error('Erro ao enviar comprovante:', error)
 
-      setMensagem(
-        error?.message ||
-        'Erro ao enviar comprovante. Verifique o bucket comprovantes no Supabase Storage.'
-      )
-    } finally {
-      setEnviandoComprovante(false)
+      setMensagem('Reserva cancelada.')
+    } catch (error) {
+      console.error('Erro ao cancelar reserva:', error)
+      setMensagem('Erro ao cancelar reserva.')
     }
   }
 
-  const getStatusBadge = (
-    status?: string,
-    pagamentoStatus?: string
-  ) => {
-    if (pagamentoStatus === 'pago') {
-      return {
-        text: '✓ Reserva confirmada',
-        bg: '#dcfce7',
-        color: '#16a34a'
-      }
-    }
-
-    if (status === 'realizada') {
-      return {
-        text: '✓ Realizada',
-        bg: '#e0e7ff',
-        color: '#4f46e5'
-      }
-    }
-
-    if (status === 'confirmada') {
-      return {
-        text: '✓ Confirmada',
-        bg: '#dcfce7',
-        color: '#16a34a'
-      }
-    }
-
-    if (status === 'cancelada') {
-      return {
-        text: '✗ Cancelada',
-        bg: '#fee2e2',
-        color: '#dc2626'
-      }
-    }
-
-    if (pagamentoStatus === 'aguardando_aprovacao') {
-      return {
-        text: '⏳ Comprovante em análise',
-        bg: '#dbeafe',
-        color: '#1d4ed8'
-      }
-    }
-
-    return {
-      text: '⏳ Aguardando pagamento',
-      bg: '#fef3c7',
-      color: '#d97706'
-    }
-  }
-
-  const getPagamentoBadge = (pagamentoStatus?: string) => {
-    if (pagamentoStatus === 'pago') {
-      return {
-        text: '✅ Pago',
-        bg: '#dcfce7',
-        color: '#16a34a'
-      }
-    }
-
-    if (pagamentoStatus === 'aguardando_aprovacao') {
-      return {
-        text: '⏳ Em análise',
-        bg: '#dbeafe',
-        color: '#1d4ed8'
-      }
-    }
-
-    return {
-      text: '⏳ Pendente',
-      bg: '#fef3c7',
-      color: '#d97706'
-    }
-  }
-
-  const formatarData = (reserva: ReservaCompleta) => {
-    const valor =
-      reserva.data_trilha ||
-      reserva.data_reserva ||
-      reserva.created_at
-
-    if (!valor) return 'A definir'
-
-    const data = new Date(valor)
-
-    if (isNaN(data.getTime())) return 'A definir'
-
-    return data.toLocaleDateString('pt-BR')
-  }
-
-  const handlePagar = (reservaId: string) => {
-    router.push(`/cliente/pagamento/${reservaId}`)
-  }
-
-  const abrirChat = (chatId: string) => {
-    router.push(`/chat/${chatId}`)
-  }
-
-  const handleLogout = () => {
+  const sair = () => {
     localStorage.removeItem('user')
     router.push('/login')
   }
 
+  const formatarData = (data?: string | null) => {
+    if (!data) return '-'
+
+    const date = new Date(data)
+
+    if (Number.isNaN(date.getTime())) {
+      return data
+    }
+
+    return date.toLocaleDateString('pt-BR')
+  }
+
+  const pagamentoConfirmado = (reserva: ReservaCompleta) => {
+    const pagamento = String(reserva.pagamento_status || '').toLowerCase()
+    const status = String(reserva.status || '').toLowerCase()
+
+    return (
+      pagamento === 'pago' ||
+      pagamento === 'confirmado' ||
+      status === 'confirmada'
+    )
+  }
+
+  const reservaCancelada = (reserva: ReservaCompleta) => {
+    return String(reserva.status || '').toLowerCase() === 'cancelada'
+  }
+
+  const badgePagamento = (reserva: ReservaCompleta) => {
+    if (pagamentoConfirmado(reserva)) {
+      return <span className="badge badge-green">Pago</span>
+    }
+
+    return <span className="badge badge-yellow">Pendente</span>
+  }
+
+  const badgeStatus = (reserva: ReservaCompleta) => {
+    if (reservaCancelada(reserva)) {
+      return <span className="badge badge-red">Cancelada</span>
+    }
+
+    if (pagamentoConfirmado(reserva)) {
+      return <span className="badge badge-green">Confirmada</span>
+    }
+
+    return <span className="badge badge-yellow">Aguardando pagamento</span>
+  }
+
   if (carregando) {
     return (
-      <div className="reservas-loading">
-        <style jsx global>{`
-          @keyframes spin {
-            to {
-              transform: rotate(360deg);
-            }
+      <main className="loadingPage">
+        <style>{`
+          * {
+            box-sizing: border-box;
           }
 
-          .reservas-loading {
+          body {
+            margin: 0;
+            background: #f3f4f6;
+            font-family:
+              Inter,
+              ui-sans-serif,
+              system-ui,
+              -apple-system,
+              BlinkMacSystemFont,
+              "Segoe UI",
+              sans-serif;
+          }
+
+          .loadingPage {
             min-height: 100vh;
             min-height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
-            background-color: #f3f4f6;
-            padding: 20px;
+            background: #f3f4f6;
+            color: #374151;
           }
 
-          .spinner {
-            width: 42px;
-            height: 42px;
-            border: 3px solid #e5e7eb;
-            border-top-color: #16a34a;
-            border-radius: 999px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 12px;
+          .loadingCard {
+            background: #ffffff;
+            border-radius: 24px;
+            padding: 26px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            text-align: center;
+          }
+
+          .logoImg {
+            height: 48px;
+            width: auto;
+            object-fit: contain;
+            margin-bottom: 12px;
           }
         `}</style>
 
-        <div style={{ textAlign: 'center' }}>
-          <div className="spinner" />
-
-          <p style={{ color: '#6b7280' }}>
-            Carregando suas reservas...
-          </p>
+        <div className="loadingCard">
+          <img
+            src="/logo-prussik-display.png"
+            alt="PrussikTrails"
+            className="logoImg"
+          />
+          <p>Carregando suas reservas...</p>
         </div>
-      </div>
+      </main>
     )
   }
 
   return (
-    <>
-      <style jsx global>{`
-        .reservas-page {
+    <main className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          background: #f3f4f6;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .page {
           min-height: 100vh;
           min-height: 100dvh;
-          background-color: #f3f4f6;
+          background:
+            radial-gradient(circle at top left, rgba(22, 163, 74, 0.08), transparent 32%),
+            linear-gradient(180deg, #f9fafb 0%, #eef2f7 100%);
+          color: #111827;
         }
 
-        .reservas-header {
-          background-color: #ffffff;
+        .header {
+          background: #ffffff;
           border-bottom: 1px solid #e5e7eb;
-          padding: 12px 16px;
+          padding: 14px 18px;
           position: sticky;
           top: 0;
-          z-index: 50;
+          z-index: 30;
         }
 
-        .reservas-header-inner {
-          max-width: 1280px;
+        .headerInner {
+          max-width: 1240px;
           margin: 0 auto;
           display: flex;
           justify-content: space-between;
           align-items: center;
+          gap: 14px;
           flex-wrap: wrap;
-          gap: 12px;
         }
 
-        .reservas-actions {
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .brand img {
+          height: 44px;
+          width: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .brandText {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .brandTitle {
+          color: #dc2626;
+          font-weight: 900;
+          font-size: 20px;
+          line-height: 1;
+        }
+
+        .brandSubtitle {
+          color: #6b7280;
+          font-size: 12px;
+        }
+
+        .actions {
           display: flex;
           gap: 8px;
-          align-items: center;
           flex-wrap: wrap;
-        }
-
-        .reservas-main {
-          max-width: 1280px;
-          margin: 0 auto;
-          padding: 16px;
-        }
-
-        .empty-card,
-        .table-card {
-          background-color: #ffffff;
-          border-radius: 24px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        }
-
-        .empty-card {
-          padding: 48px 20px;
-          text-align: center;
-        }
-
-        .table-card {
-          overflow: hidden;
-        }
-
-        .reservas-table-wrapper {
-          overflow-x: auto;
-        }
-
-        .reservas-table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-
-        .reservas-table th {
-          padding: 12px;
-          text-align: left;
-          font-weight: 600;
-          font-size: 12px;
-          color: #6b7280;
-          background-color: #f9fafb;
-          border-bottom: 1px solid #e5e7eb;
-          white-space: nowrap;
-        }
-
-        .reservas-table td {
-          padding: 12px;
-          font-size: 12px;
-          color: #6b7280;
-          border-bottom: 1px solid #f3f4f6;
-          vertical-align: middle;
-        }
-
-        .mobile-list {
-          display: none;
-        }
-
-        .reserva-mobile-card {
-          background: #ffffff;
-          border-radius: 20px;
-          padding: 16px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-          margin-bottom: 12px;
-        }
-
-        .badge {
-          display: inline-block;
-          padding: 4px 10px;
-          border-radius: 20px;
-          font-size: 10px;
-          font-weight: 700;
-          white-space: nowrap;
         }
 
         .btn {
           border: none;
-          border-radius: 40px;
-          padding: 7px 14px;
-          cursor: pointer;
+          border-radius: 999px;
+          padding: 10px 14px;
           font-size: 12px;
-          font-weight: 600;
+          font-weight: 800;
+          cursor: pointer;
+          transition: 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .btn:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+        }
+
+        .btn-light {
+          background: #f3f4f6;
+          color: #374151;
+        }
+
+        .btn-dark {
+          background: #111827;
+          color: #ffffff;
         }
 
         .btn-green {
-          background-color: #16a34a;
+          background: #16a34a;
           color: #ffffff;
         }
 
         .btn-red {
-          background-color: #dc2626;
+          background: #dc2626;
           color: #ffffff;
         }
 
-        .btn-red-outline {
-          background-color: #fff5f5;
-          color: #dc2626;
-          border: 1px solid #fecaca;
-        }
-
-        .btn-dark {
-          background-color: #111827;
-          color: #ffffff;
-        }
-
-        .btn-light {
-          background-color: #f3f4f6;
-          color: #374151;
-        }
-
-        .btn-blue {
-          background-color: #2563eb;
-          color: #ffffff;
-        }
-
-        .btn-purple {
-          background-color: #4f46e5;
-          color: #ffffff;
-        }
-
-        .btn-outline {
-          background-color: #ffffff;
-          color: #374151;
-          border: 1px solid #d1d5db;
-        }
-
-        .mensagem {
+        .btn-soft-red {
           background: #fee2e2;
           color: #991b1b;
-          padding: 12px 14px;
-          border-radius: 14px;
-          margin-bottom: 16px;
-          font-size: 13px;
         }
 
-        .mensagem.sucesso {
+        .btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+        }
+
+        .container {
+          max-width: 1240px;
+          margin: 0 auto;
+          padding: 22px 16px 46px;
+        }
+
+        .pageTitle {
+          margin-bottom: 18px;
+        }
+
+        .pageTitle h1 {
+          margin: 0;
+          font-size: 28px;
+          font-weight: 900;
+          color: #111827;
+        }
+
+        .pageTitle p {
+          margin: 6px 0 0;
+          color: #6b7280;
+          font-size: 14px;
+        }
+
+        .message {
+          margin-bottom: 16px;
+          padding: 13px 14px;
+          border-radius: 16px;
+          font-size: 13px;
+          background: #eff6ff;
+          color: #1e40af;
+          border: 1px solid #bfdbfe;
+        }
+
+        .empty {
+          background: #ffffff;
+          border-radius: 26px;
+          border: 1px solid #eef2f7;
+          padding: 32px;
+          text-align: center;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+
+        .empty h2 {
+          margin: 0 0 8px;
+          color: #111827;
+          font-size: 22px;
+        }
+
+        .empty p {
+          margin: 0 0 18px;
+          color: #6b7280;
+        }
+
+        .tableCard {
+          background: #ffffff;
+          border-radius: 26px;
+          border: 1px solid #eef2f7;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          overflow: hidden;
+        }
+
+        .desktopTable {
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        .desktopTable th {
+          text-align: left;
+          padding: 14px 12px;
+          color: #6b7280;
+          font-size: 12px;
+          border-bottom: 1px solid #e5e7eb;
+          background: #f9fafb;
+        }
+
+        .desktopTable td {
+          padding: 14px 12px;
+          border-bottom: 1px solid #f3f4f6;
+          font-size: 13px;
+          color: #374151;
+          vertical-align: middle;
+        }
+
+        .desktopTable tr:last-child td {
+          border-bottom: none;
+        }
+
+        .roteiroNome {
+          color: #111827;
+          font-weight: 900;
+        }
+
+        .valor {
+          color: #16a34a;
+          font-weight: 900;
+        }
+
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 900;
+          white-space: nowrap;
+        }
+
+        .badge-green {
           background: #dcfce7;
           color: #166534;
         }
 
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(17, 24, 39, 0.55);
+        .badge-yellow {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .badge-red {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+
+        .rowActions {
           display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 18px;
-          z-index: 100;
-        }
-
-        .modal-card {
-          width: 100%;
-          max-width: 460px;
-          background: #ffffff;
-          border-radius: 24px;
-          padding: 22px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.25);
-        }
-
-        .modal-title {
-          margin: 0 0 6px;
-          font-size: 21px;
-          color: #111827;
-          font-weight: 800;
-        }
-
-        .modal-subtitle {
-          margin: 0 0 18px;
-          font-size: 13px;
-          color: #6b7280;
-          line-height: 1.45;
-        }
-
-        .file-input {
-          width: 100%;
-          border: 1px dashed #d1d5db;
-          border-radius: 16px;
-          padding: 14px;
-          font-size: 13px;
-          background: #f9fafb;
-          margin-bottom: 16px;
-          box-sizing: border-box;
-        }
-
-        .modal-actions {
-          display: flex;
-          gap: 10px;
+          gap: 8px;
           justify-content: flex-end;
           flex-wrap: wrap;
         }
 
-        @media (max-width: 760px) {
-          .reservas-table-wrapper {
+        .mobileList {
+          display: none;
+        }
+
+        .mobileCard {
+          background: #ffffff;
+          border-radius: 22px;
+          border: 1px solid #eef2f7;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          padding: 16px;
+          margin-bottom: 12px;
+        }
+
+        .mobileTop {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: flex-start;
+          margin-bottom: 12px;
+        }
+
+        .mobileTitle {
+          color: #111827;
+          font-weight: 900;
+          font-size: 15px;
+        }
+
+        .mobileMeta {
+          display: grid;
+          gap: 6px;
+          color: #6b7280;
+          font-size: 13px;
+          margin-bottom: 12px;
+        }
+
+        .mobileMeta strong {
+          color: #374151;
+        }
+
+        @media (max-width: 860px) {
+          .desktopWrap {
             display: none;
           }
 
-          .mobile-list {
+          .mobileList {
             display: block;
           }
 
-          .reservas-main {
-            padding: 14px 12px;
-          }
-
-          .reservas-header-inner {
+          .headerInner {
             align-items: flex-start;
           }
 
-          .reservas-actions {
+          .actions {
             width: 100%;
           }
 
-          .btn {
+          .actions .btn {
             flex: 1;
-            text-align: center;
-            padding: 9px 12px;
           }
 
-          .modal-actions {
-            flex-direction: column-reverse;
+          .pageTitle h1 {
+            font-size: 24px;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .container {
+            padding: 16px 12px 38px;
           }
 
-          .modal-actions .btn {
-            width: 100%;
+          .header {
+            padding: 12px;
+          }
+
+          .brand img {
+            height: 38px;
+          }
+
+          .brandTitle {
+            font-size: 18px;
+          }
+
+          .rowActions {
+            justify-content: stretch;
+          }
+
+          .rowActions .btn {
+            flex: 1;
           }
         }
       `}</style>
 
-      <div className="reservas-page">
-        <div className="reservas-header">
-          <div className="reservas-header-inner">
-            <div>
-              <h1
-                style={{
-                  fontSize: '20px',
-                  fontWeight: 'bold',
-                  color: '#dc2626',
-                  margin: 0
-                }}
-              >
-                PrussikTrails
-              </h1>
-
-              <p
-                style={{
-                  margin: '2px 0 0',
-                  fontSize: '11px',
-                  color: '#6b7280'
-                }}
-              >
-                Minhas Reservas
-              </p>
+      <header className="header">
+        <div className="headerInner">
+          <div className="brand">
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+            <div className="brandText">
+              <div className="brandTitle">PrussikTrails</div>
+              <div className="brandSubtitle">Minhas Reservas</div>
             </div>
+          </div>
 
-            <div className="reservas-actions">
-              <button
-                onClick={() => router.push('/cliente/dashboard')}
-                className="btn btn-light"
-              >
-                ← Voltar
-              </button>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn btn-light"
+              onClick={() => router.push('/cliente/dashboard')}
+            >
+              Dashboard
+            </button>
 
-              <button
-                onClick={() => router.push('/cliente/perfil')}
-                className="btn btn-dark"
-              >
-                Perfil
-              </button>
+            <button
+              type="button"
+              className="btn btn-dark"
+              onClick={() => router.push('/cliente/perfil')}
+            >
+              Perfil
+            </button>
 
-              <button
-                onClick={() => carregarReservas(user)}
-                className="btn btn-green"
-              >
-                Recarregar
-              </button>
+            <button
+              type="button"
+              className="btn btn-green"
+              onClick={recarregar}
+              disabled={reconciliando}
+            >
+              {reconciliando ? 'Verificando...' : 'Recarregar'}
+            </button>
 
-              <button
-                onClick={handleLogout}
-                className="btn btn-red"
-              >
-                Sair
-              </button>
-            </div>
+            <button
+              type="button"
+              className="btn btn-red"
+              onClick={sair}
+            >
+              Sair
+            </button>
           </div>
         </div>
+      </header>
 
-        <div className="reservas-main">
-          <div style={{ marginBottom: '20px' }}>
-            <h2
-              style={{
-                fontSize: '22px',
-                fontWeight: 'bold',
-                color: '#111827',
-                margin: 0
-              }}
-            >
-              📋 Minhas Reservas
-            </h2>
+      <div className="container">
+        <section className="pageTitle">
+          <h1>Minhas Reservas</h1>
+          <p>
+            Acompanhe suas aventuras. A confirmação PagHiper é atualizada automaticamente ou pelo botão Recarregar.
+          </p>
+        </section>
 
-            <p
-              style={{
-                color: '#6b7280',
-                fontSize: '13px',
-                marginTop: '4px'
-              }}
-            >
-              Acompanhe suas aventuras, pagamentos e chat com o guia.
-            </p>
+        {mensagem && (
+          <div className="message">
+            {mensagem}
           </div>
+        )}
 
-          {mensagem && (
-            <div
-              className={`mensagem ${
-                mensagem.includes('✅') ? 'sucesso' : ''
-              }`}
+        {reservas.length === 0 ? (
+          <section className="empty">
+            <h2>Nenhuma reserva encontrada</h2>
+            <p>Você ainda não possui reservas cadastradas.</p>
+
+            <button
+              type="button"
+              className="btn btn-green"
+              onClick={() => router.push('/roteiros')}
             >
-              {mensagem}
-            </div>
-          )}
+              Explorar roteiros
+            </button>
+          </section>
+        ) : (
+          <>
+            <section className="tableCard desktopWrap">
+              <table className="desktopTable">
+                <thead>
+                  <tr>
+                    <th>Roteiro</th>
+                    <th>Guia</th>
+                    <th>Data</th>
+                    <th>Pessoas</th>
+                    <th>Valor</th>
+                    <th>Pagamento</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Ações</th>
+                  </tr>
+                </thead>
 
-          {reservas.length === 0 ? (
-            <div className="empty-card">
-              <div
-                style={{
-                  fontSize: '48px',
-                  marginBottom: '12px'
-                }}
-              >
-                📭
-              </div>
+                <tbody>
+                  {reservas.map((reserva) => {
+                    const podePagar =
+                      !pagamentoConfirmado(reserva) &&
+                      !reservaCancelada(reserva)
 
-              <div
-                style={{
-                  fontWeight: 'bold',
-                  color: '#374151',
-                  marginBottom: '6px'
-                }}
-              >
-                Você ainda não fez nenhuma reserva
-              </div>
+                    const podeCancelar =
+                      !reservaCancelada(reserva) &&
+                      !pagamentoConfirmado(reserva)
 
-              <div
-                style={{
-                  color: '#6b7280',
-                  marginBottom: '20px',
-                  fontSize: '13px'
-                }}
-              >
-                Explore os roteiros disponíveis e reserve sua próxima aventura.
-              </div>
-
-              <button
-                onClick={() => router.push('/cliente/roteiros')}
-                className="btn btn-green"
-              >
-                Explorar roteiros →
-              </button>
-            </div>
-          ) : (
-            <div className="table-card">
-              <div className="reservas-table-wrapper">
-                <table className="reservas-table">
-                  <thead>
-                    <tr>
-                      <th>Roteiro</th>
-                      <th>Guia</th>
-                      <th>Data</th>
-                      <th style={{ textAlign: 'center' }}>Pessoas</th>
-                      <th style={{ textAlign: 'center' }}>Valor</th>
-                      <th style={{ textAlign: 'center' }}>Pagamento</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'center' }}>Ações</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {reservas.map((reserva) => {
-                      const statusBadge = getStatusBadge(
-                        reserva.status,
-                        reserva.pagamento_status
-                      )
-
-                      const pagamentoBadge = getPagamentoBadge(
-                        reserva.pagamento_status
-                      )
-
-                      const precisaPagar =
-                        reserva.status !== 'cancelada' &&
-                        reserva.pagamento_status !== 'pago'
-
-                      const podeEnviarComprovante =
-                        reserva.status !== 'cancelada' &&
-                        reserva.pagamento_status !== 'pago'
-
-                      const podeCancelar =
-                        podeCancelarReserva(reserva)
-
-                      return (
-                        <tr key={reserva.id}>
-                          <td
-                            style={{
-                              fontWeight: 600,
-                              color: '#111827'
-                            }}
-                          >
-                            {reserva.roteiro_titulo}
-                          </td>
-
-                          <td>{reserva.guia_nome}</td>
-
-                          <td>{formatarData(reserva)}</td>
-
-                          <td style={{ textAlign: 'center' }}>
-                            {reserva.quantidade_pessoas || 1}
-                          </td>
-
-                          <td
-                            style={{
-                              textAlign: 'center',
-                              fontWeight: 700,
-                              color: '#16a34a'
-                            }}
-                          >
-                            R$ {(Number(reserva.valor_total) || 0).toFixed(2)}
-                          </td>
-
-                          <td style={{ textAlign: 'center' }}>
-                            <span
-                              className="badge"
-                              style={{
-                                backgroundColor: pagamentoBadge.bg,
-                                color: pagamentoBadge.color
-                              }}
-                            >
-                              {pagamentoBadge.text}
-                            </span>
-                          </td>
-
-                          <td>
-                            <span
-                              className="badge"
-                              style={{
-                                backgroundColor: statusBadge.bg,
-                                color: statusBadge.color
-                              }}
-                            >
-                              {statusBadge.text}
-                            </span>
-                          </td>
-
-                          <td style={{ textAlign: 'center' }}>
-                            <div
-                              style={{
-                                display: 'flex',
-                                gap: '6px',
-                                justifyContent: 'center',
-                                flexWrap: 'wrap'
-                              }}
-                            >
-                              {precisaPagar && (
-                                <button
-                                  onClick={() => handlePagar(reserva.id)}
-                                  className="btn btn-green"
-                                >
-                                  💳 Pagar
-                                </button>
-                              )}
-
-                              {reserva.chat_id && (
-                                <button
-                                  onClick={() => abrirChat(reserva.chat_id || '')}
-                                  className="btn btn-purple"
-                                >
-                                  💬 Chat
-                                </button>
-                              )}
-
-                              {podeEnviarComprovante && (
-                                <button
-                                  onClick={() => abrirModalComprovante(reserva)}
-                                  className="btn btn-blue"
-                                >
-                                  📎 Comprovante
-                                </button>
-                              )}
-
-                              {reserva.comprovante_url && (
-                                <button
-                                  onClick={() =>
-                                    window.open(
-                                      reserva.comprovante_url || '',
-                                      '_blank'
-                                    )
-                                  }
-                                  className="btn btn-outline"
-                                >
-                                  Ver comprovante
-                                </button>
-                              )}
-
-                              {podeCancelar && (
-                                <button
-                                  onClick={() =>
-                                    setMenuAbertoId(
-                                      menuAbertoId === reserva.id
-                                        ? null
-                                        : reserva.id
-                                    )
-                                  }
-                                  className="btn btn-light"
-                                >
-                                  Mais opções
-                                </button>
-                              )}
-
-                              {podeCancelar && menuAbertoId === reserva.id && (
-                                <button
-                                  onClick={() => cancelarReserva(reserva)}
-                                  className="btn btn-red-outline"
-                                >
-                                  Cancelar reserva
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="mobile-list">
-                {reservas.map((reserva) => {
-                  const statusBadge = getStatusBadge(
-                    reserva.status,
-                    reserva.pagamento_status
-                  )
-
-                  const pagamentoBadge = getPagamentoBadge(
-                    reserva.pagamento_status
-                  )
-
-                  const precisaPagar =
-                    reserva.status !== 'cancelada' &&
-                    reserva.pagamento_status !== 'pago'
-
-                  const podeEnviarComprovante =
-                    reserva.status !== 'cancelada' &&
-                    reserva.pagamento_status !== 'pago'
-
-                  const podeCancelar =
-                    podeCancelarReserva(reserva)
-
-                  return (
-                    <div
-                      key={reserva.id}
-                      className="reserva-mobile-card"
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          gap: '12px',
-                          marginBottom: '10px'
-                        }}
-                      >
-                        <div>
-                          <div
-                            style={{
-                              fontWeight: 700,
-                              color: '#111827',
-                              fontSize: '15px'
-                            }}
-                          >
+                    return (
+                      <tr key={reserva.id}>
+                        <td>
+                          <div className="roteiroNome">
                             {reserva.roteiro_titulo}
                           </div>
+                        </td>
 
-                          <div
-                            style={{
-                              color: '#6b7280',
-                              fontSize: '12px',
-                              marginTop: '3px'
-                            }}
-                          >
-                            Guia: {reserva.guia_nome}
+                        <td>{reserva.guia_nome}</td>
+
+                        <td>{formatarData(reserva.created_at)}</td>
+
+                        <td>{reserva.quantidade_pessoas || 1}</td>
+
+                        <td>
+                          <span className="valor">
+                            R$ {reserva.valor_final.toFixed(2)}
+                          </span>
+                        </td>
+
+                        <td>{badgePagamento(reserva)}</td>
+
+                        <td>{badgeStatus(reserva)}</td>
+
+                        <td>
+                          <div className="rowActions">
+                            {podePagar && (
+                              <button
+                                type="button"
+                                className="btn btn-green"
+                                onClick={() =>
+                                  router.push(`/cliente/pagamento/${reserva.id}`)
+                                }
+                              >
+                                Pagar
+                              </button>
+                            )}
+
+                            {podeCancelar && (
+                              <button
+                                type="button"
+                                className="btn btn-soft-red"
+                                onClick={() => cancelarReserva(reserva.id)}
+                              >
+                                Cancelar
+                              </button>
+                            )}
                           </div>
-                        </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </section>
 
-                        <div
-                          style={{
-                            fontWeight: 800,
-                            color: '#16a34a',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          R$ {(Number(reserva.valor_total) || 0).toFixed(2)}
-                        </div>
+            <section className="mobileList">
+              {reservas.map((reserva) => {
+                const podePagar =
+                  !pagamentoConfirmado(reserva) &&
+                  !reservaCancelada(reserva)
+
+                const podeCancelar =
+                  !reservaCancelada(reserva) &&
+                  !pagamentoConfirmado(reserva)
+
+                return (
+                  <article className="mobileCard" key={reserva.id}>
+                    <div className="mobileTop">
+                      <div className="mobileTitle">
+                        {reserva.roteiro_titulo}
                       </div>
 
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1fr',
-                          gap: '8px',
-                          fontSize: '12px',
-                          color: '#6b7280',
-                          marginBottom: '12px'
-                        }}
-                      >
-                        <div>📅 {formatarData(reserva)}</div>
-                        <div>👥 {reserva.quantidade_pessoas || 1} pessoa(s)</div>
+                      {badgeStatus(reserva)}
+                    </div>
+
+                    <div className="mobileMeta">
+                      <div>
+                        <strong>Guia:</strong> {reserva.guia_nome}
                       </div>
 
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: '8px',
-                          flexWrap: 'wrap',
-                          marginBottom: '12px'
-                        }}
-                      >
-                        <span
-                          className="badge"
-                          style={{
-                            backgroundColor: pagamentoBadge.bg,
-                            color: pagamentoBadge.color
-                          }}
-                        >
-                          {pagamentoBadge.text}
-                        </span>
+                      <div>
+                        <strong>Data:</strong> {formatarData(reserva.created_at)}
+                      </div>
 
-                        <span
-                          className="badge"
-                          style={{
-                            backgroundColor: statusBadge.bg,
-                            color: statusBadge.color
-                          }}
-                        >
-                          {statusBadge.text}
+                      <div>
+                        <strong>Pessoas:</strong> {reserva.quantidade_pessoas || 1}
+                      </div>
+
+                      <div>
+                        <strong>Valor:</strong>{' '}
+                        <span className="valor">
+                          R$ {reserva.valor_final.toFixed(2)}
                         </span>
                       </div>
 
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: '8px',
-                          flexWrap: 'wrap'
-                        }}
-                      >
-                        {precisaPagar && (
-                          <button
-                            onClick={() => handlePagar(reserva.id)}
-                            className="btn btn-green"
-                            style={{ flex: 1 }}
-                          >
-                            💳 Pagar
-                          </button>
-                        )}
-
-                        {reserva.chat_id && (
-                          <button
-                            onClick={() => abrirChat(reserva.chat_id || '')}
-                            className="btn btn-purple"
-                            style={{ flex: 1 }}
-                          >
-                            💬 Chat
-                          </button>
-                        )}
-
-                        {podeEnviarComprovante && (
-                          <button
-                            onClick={() => abrirModalComprovante(reserva)}
-                            className="btn btn-blue"
-                            style={{ flex: 1 }}
-                          >
-                            📎 Comprovante
-                          </button>
-                        )}
-
-                        {reserva.comprovante_url && (
-                          <button
-                            onClick={() =>
-                              window.open(
-                                reserva.comprovante_url || '',
-                                '_blank'
-                              )
-                            }
-                            className="btn btn-outline"
-                            style={{ flex: 1 }}
-                          >
-                            Ver comprovante
-                          </button>
-                        )}
-
-                        {podeCancelar && (
-                          <button
-                            onClick={() =>
-                              setMenuAbertoId(
-                                menuAbertoId === reserva.id
-                                  ? null
-                                  : reserva.id
-                              )
-                            }
-                            className="btn btn-light"
-                            style={{ flex: 1 }}
-                          >
-                            Mais opções
-                          </button>
-                        )}
-
-                        {podeCancelar && menuAbertoId === reserva.id && (
-                          <button
-                            onClick={() => cancelarReserva(reserva)}
-                            className="btn btn-red-outline"
-                            style={{ flex: 1 }}
-                          >
-                            Cancelar reserva
-                          </button>
-                        )}
+                      <div>
+                        <strong>Pagamento:</strong> {badgePagamento(reserva)}
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {modalComprovanteAberto && reservaSelecionada && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <h3 className="modal-title">
-              Enviar comprovante
-            </h3>
+                    <div className="rowActions">
+                      {podePagar && (
+                        <button
+                          type="button"
+                          className="btn btn-green"
+                          onClick={() =>
+                            router.push(`/cliente/pagamento/${reserva.id}`)
+                          }
+                        >
+                          Pagar
+                        </button>
+                      )}
 
-            <p className="modal-subtitle">
-              Reserva: <strong>{reservaSelecionada.roteiro_titulo}</strong>
-              <br />
-              Envie uma imagem ou PDF do comprovante de pagamento.
-            </p>
-
-            <input
-              type="file"
-              accept="image/*,.pdf"
-              className="file-input"
-              onChange={(event) =>
-                setArquivoComprovante(
-                  event.target.files?.[0] || null
+                      {podeCancelar && (
+                        <button
+                          type="button"
+                          className="btn btn-soft-red"
+                          onClick={() => cancelarReserva(reserva.id)}
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </article>
                 )
-              }
-            />
-
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="btn btn-light"
-                onClick={fecharModalComprovante}
-                disabled={enviandoComprovante}
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-blue"
-                onClick={enviarComprovante}
-                disabled={enviandoComprovante}
-              >
-                {enviandoComprovante
-                  ? 'Enviando...'
-                  : '📎 Enviar comprovante'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+              })}
+            </section>
+          </>
+        )}
+      </div>
+    </main>
   )
 }
