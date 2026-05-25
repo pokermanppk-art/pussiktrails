@@ -60,8 +60,6 @@ type Reserva = {
   status?: string | null
   pagamento_status?: string | null
   created_at?: string | null
-  data_trilha?: string | null
-  data_roteiro?: string | null
   cliente_nome?: string
   roteiro_titulo?: string
   roteiro?: Roteiro | null
@@ -74,11 +72,52 @@ type Cliente = {
   email?: string | null
 }
 
+type GrupoRoteiro = {
+  id: string
+  roteiro_id?: string | null
+  guia_id?: string | null
+  titulo?: string | null
+  status?: string | null
+  aviso_fixado?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  roteiro?: Roteiro | null
+  membros_count?: number
+  clientes_count?: number
+  notificacoes_nao_lidas?: number
+  mensagens_count?: number
+}
+
+type GrupoMembro = {
+  id: string
+  grupo_id: string
+  user_id: string
+  papel?: string | null
+  status?: string | null
+}
+
+type GrupoMensagem = {
+  id: string
+  grupo_id: string
+  mensagem: string
+  tipo?: string | null
+  status?: string | null
+  created_at?: string | null
+}
+
+type GrupoNotificacao = {
+  id: string
+  grupo_id: string
+  user_id_destino: string
+  lida?: boolean | null
+  tipo?: string | null
+  created_at?: string | null
+}
+
 type Stats = {
   roteirosTotal: number
   roteirosAtivos: number
   roteirosPendentes: number
-  roteirosPausados: number
   reservasTotal: number
   reservasConfirmadas: number
   reservasPendentes: number
@@ -86,6 +125,10 @@ type Stats = {
   receitaBruta: number
   taxaPlataforma: number
   saldoLiquidoGuia: number
+  gruposTotal: number
+  gruposAtivos: number
+  clientesNosGrupos: number
+  notificacoesGrupos: number
 }
 
 type NotificacaoGuia = {
@@ -101,14 +144,17 @@ const statsInicial: Stats = {
   roteirosTotal: 0,
   roteirosAtivos: 0,
   roteirosPendentes: 0,
-  roteirosPausados: 0,
   reservasTotal: 0,
   reservasConfirmadas: 0,
   reservasPendentes: 0,
   pessoasReservadas: 0,
   receitaBruta: 0,
   taxaPlataforma: 0,
-  saldoLiquidoGuia: 0
+  saldoLiquidoGuia: 0,
+  gruposTotal: 0,
+  gruposAtivos: 0,
+  clientesNosGrupos: 0,
+  notificacoesGrupos: 0
 }
 
 export default function GuiaDashboardPage() {
@@ -118,6 +164,7 @@ export default function GuiaDashboardPage() {
   const [user, setUser] = useState<UsuarioLocal | null>(null)
   const [roteiros, setRoteiros] = useState<Roteiro[]>([])
   const [reservas, setReservas] = useState<Reserva[]>([])
+  const [grupos, setGrupos] = useState<GrupoRoteiro[]>([])
   const [stats, setStats] = useState<Stats>(statsInicial)
   const [notificacoes, setNotificacoes] = useState<NotificacaoGuia[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -224,17 +271,11 @@ export default function GuiaDashboardPage() {
     return data.toLocaleDateString('pt-BR')
   }
 
-  const formatarHora = (valor?: string | null) => {
-    if (!valor) return ''
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return ''
-
-    return data.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+  const formatarMoeda = (valor: any) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(Number(valor || 0))
   }
 
   const tempoRelativo = (valor?: string | null) => {
@@ -258,18 +299,10 @@ export default function GuiaDashboardPage() {
     return formatarData(valor)
   }
 
-  const formatarMoeda = (valor: any) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(Number(valor || 0))
-  }
-
   const statusRoteiro = (roteiro: Roteiro) => {
     const status = normalizar(roteiro.status)
 
     if (status) return status
-
     if (roteiro.ativo === true) return 'ativo'
     if (roteiro.ativo === false) return 'pausado'
 
@@ -287,8 +320,13 @@ export default function GuiaDashboardPage() {
     return (
       pagamento === 'pago' ||
       pagamento === 'confirmado' ||
+      pagamento === 'aprovado' ||
+      pagamento === 'paid' ||
+      pagamento === 'approved' ||
       status === 'confirmada' ||
-      status === 'realizada'
+      status === 'realizada' ||
+      status === 'pago' ||
+      status === 'paga'
     )
   }
 
@@ -320,19 +358,119 @@ export default function GuiaDashboardPage() {
     return []
   }
 
+  const carregarGruposDoGuia = async (
+    guiaId: string,
+    roteirosLista: Roteiro[]
+  ) => {
+    const { data: gruposData, error: gruposError } = await supabase
+      .from('grupos_roteiros')
+      .select('*')
+      .eq('guia_id', guiaId)
+      .order('created_at', { ascending: false })
+
+    if (gruposError) {
+      console.warn('Erro ao buscar grupos do guia:', gruposError)
+      return []
+    }
+
+    const gruposBase = (gruposData || []) as GrupoRoteiro[]
+
+    if (gruposBase.length === 0) {
+      return []
+    }
+
+    const grupoIds = gruposBase.map((grupo) => grupo.id)
+
+    let membros: GrupoMembro[] = []
+    let mensagens: GrupoMensagem[] = []
+    let notificacoes: GrupoNotificacao[] = []
+
+    const { data: membrosData, error: membrosError } = await supabase
+      .from('grupo_membros')
+      .select('*')
+      .in('grupo_id', grupoIds)
+      .eq('status', 'ativo')
+
+    if (!membrosError) {
+      membros = (membrosData || []) as GrupoMembro[]
+    }
+
+    const { data: mensagensData, error: mensagensError } = await supabase
+      .from('grupo_mensagens')
+      .select('*')
+      .in('grupo_id', grupoIds)
+      .eq('status', 'ativa')
+      .order('created_at', { ascending: false })
+      .limit(120)
+
+    if (!mensagensError) {
+      mensagens = (mensagensData || []) as GrupoMensagem[]
+    }
+
+    const { data: notificacoesData, error: notificacoesError } = await supabase
+      .from('grupo_notificacoes')
+      .select('*')
+      .in('grupo_id', grupoIds)
+      .eq('user_id_destino', guiaId)
+      .eq('lida', false)
+
+    if (!notificacoesError) {
+      notificacoes = (notificacoesData || []) as GrupoNotificacao[]
+    }
+
+    return gruposBase.map((grupo) => {
+      const membrosGrupo = membros.filter((membro) => membro.grupo_id === grupo.id)
+      const clientesGrupo = membrosGrupo.filter((membro) => membro.papel === 'cliente')
+      const mensagensGrupo = mensagens.filter((mensagem) => mensagem.grupo_id === grupo.id)
+      const notificacoesGrupo = notificacoes.filter(
+        (notificacao) => notificacao.grupo_id === grupo.id
+      )
+
+      const roteiro =
+        roteirosLista.find((item) => item.id === grupo.roteiro_id) ||
+        null
+
+      return {
+        ...grupo,
+        roteiro,
+        membros_count: membrosGrupo.length,
+        clientes_count: clientesGrupo.length,
+        mensagens_count: mensagensGrupo.length,
+        notificacoes_nao_lidas: notificacoesGrupo.length
+      }
+    })
+  }
+
   const carregarTudo = async (guiaId: string) => {
     try {
       const roteirosData = await buscarRoteirosDoGuia(guiaId)
       setRoteiros(roteirosData)
 
+      const gruposData = await carregarGruposDoGuia(guiaId, roteirosData)
+      setGrupos(gruposData)
+
       if (roteirosData.length === 0) {
+        const statsZerados = {
+          ...statsInicial,
+          gruposTotal: gruposData.length,
+          gruposAtivos: gruposData.filter((grupo) => normalizar(grupo.status) === 'ativo').length,
+          clientesNosGrupos: gruposData.reduce(
+            (total, grupo) => total + Number(grupo.clientes_count || 0),
+            0
+          ),
+          notificacoesGrupos: gruposData.reduce(
+            (total, grupo) => total + Number(grupo.notificacoes_nao_lidas || 0),
+            0
+          )
+        }
+
         setReservas([])
-        setStats(statsInicial)
+        setStats(statsZerados)
         setNotificacoes([
           {
             id: 'primeiro-roteiro',
             titulo: 'Crie seu primeiro roteiro',
-            texto: 'Cadastre uma experiência com foto, local, data, hora e valor para começar a receber reservas.',
+            texto: 'Ao criar o roteiro, o grupo interno nasce automaticamente para você administrar.',
             emoji: '🧭',
             destino: '/guia/roteiros/novo',
             created_at: new Date().toISOString()
@@ -353,8 +491,9 @@ export default function GuiaDashboardPage() {
       if (reservasError) {
         console.warn('Erro ao buscar reservas do guia:', reservasError)
         setReservas([])
-        calcularStats(roteirosData, [])
-        montarNotificacoes(roteirosData, [])
+        const statsCalculados = calcularStats(roteirosData, [], gruposData)
+        setStats(statsCalculados)
+        montarNotificacoes(roteirosData, [], gruposData, statsCalculados)
         setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
         return
       }
@@ -404,8 +543,20 @@ export default function GuiaDashboardPage() {
       })
 
       setReservas(reservasCompletas)
-      calcularStats(roteirosData, reservasCompletas)
-      montarNotificacoes(roteirosData, reservasCompletas)
+
+      const statsCalculados = calcularStats(
+        roteirosData,
+        reservasCompletas,
+        gruposData
+      )
+
+      setStats(statsCalculados)
+      montarNotificacoes(
+        roteirosData,
+        reservasCompletas,
+        gruposData,
+        statsCalculados
+      )
       setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
     } catch (error) {
       console.error('Erro ao carregar dados do guia:', error)
@@ -413,7 +564,11 @@ export default function GuiaDashboardPage() {
     }
   }
 
-  const calcularStats = (roteirosLista: Roteiro[], reservasLista: Reserva[]) => {
+  const calcularStats = (
+    roteirosLista: Roteiro[],
+    reservasLista: Reserva[],
+    gruposLista: GrupoRoteiro[]
+  ) => {
     const roteirosAtivos = roteirosLista.filter(
       (roteiro) => statusRoteiro(roteiro) === 'ativo'
     ).length
@@ -422,10 +577,6 @@ export default function GuiaDashboardPage() {
       const status = statusRoteiro(roteiro)
       return status === 'pendente' || status === 'aguardando' || status === 'em_analise'
     }).length
-
-    const roteirosPausados = roteirosLista.filter(
-      (roteiro) => statusRoteiro(roteiro) === 'pausado'
-    ).length
 
     const reservasConfirmadas = reservasLista.filter(pagamentoConfirmado)
     const reservasPendentes = reservasLista.filter((reserva) => {
@@ -453,26 +604,60 @@ export default function GuiaDashboardPage() {
     const taxaPlataforma = receitaBruta * 0.05
     const saldoLiquidoGuia = receitaBruta - taxaPlataforma
 
-    setStats({
+    const gruposAtivos = gruposLista.filter(
+      (grupo) => normalizar(grupo.status) === 'ativo'
+    ).length
+
+    const clientesNosGrupos = gruposLista.reduce(
+      (total, grupo) => total + Number(grupo.clientes_count || 0),
+      0
+    )
+
+    const notificacoesGrupos = gruposLista.reduce(
+      (total, grupo) => total + Number(grupo.notificacoes_nao_lidas || 0),
+      0
+    )
+
+    return {
       roteirosTotal: roteirosLista.length,
       roteirosAtivos,
       roteirosPendentes,
-      roteirosPausados,
       reservasTotal: reservasLista.length,
       reservasConfirmadas: reservasConfirmadas.length,
       reservasPendentes: reservasPendentes.length,
       pessoasReservadas,
       receitaBruta,
       taxaPlataforma,
-      saldoLiquidoGuia
-    })
+      saldoLiquidoGuia,
+      gruposTotal: gruposLista.length,
+      gruposAtivos,
+      clientesNosGrupos,
+      notificacoesGrupos
+    }
   }
 
   const montarNotificacoes = (
     roteirosLista: Roteiro[],
-    reservasLista: Reserva[]
+    reservasLista: Reserva[],
+    gruposLista: GrupoRoteiro[],
+    statsAtuais: Stats
   ) => {
     const lista: NotificacaoGuia[] = []
+
+    const gruposComAvisos = gruposLista.filter(
+      (grupo) => Number(grupo.notificacoes_nao_lidas || 0) > 0
+    )
+
+    gruposComAvisos.slice(0, 3).forEach((grupo) => {
+      lista.push({
+        id: `grupo-${grupo.id}`,
+        titulo: 'Grupo com nova atividade',
+        texto: `${grupo.titulo || tituloRoteiro(grupo.roteiro)} tem ${grupo.notificacoes_nao_lidas} aviso(s) novo(s).`,
+        emoji: '💬',
+        destino: `/guia/grupos/${grupo.id}`,
+        created_at: grupo.updated_at || grupo.created_at || new Date().toISOString()
+      })
+    })
 
     const roteirosPendentes = roteirosLista.filter((roteiro) => {
       const status = statusRoteiro(roteiro)
@@ -500,18 +685,29 @@ export default function GuiaDashboardPage() {
           : 'Nova reserva aguardando pagamento',
         texto: `${reserva.cliente_nome || 'Cliente'} em ${reserva.roteiro_titulo || 'roteiro'} · ${formatarMoeda(reserva.valor_total || 0)}`,
         emoji: pagamentoConfirmado(reserva) ? '✅' : '🎒',
-        destino: '/guia/reservas',
+        destino: pagamentoConfirmado(reserva) ? '/guia/grupos' : '/guia/reservas',
         created_at: reserva.created_at
       })
     })
 
-    if (stats.saldoLiquidoGuia > 0) {
+    if (statsAtuais.saldoLiquidoGuia > 0) {
       lista.push({
         id: 'saldo-guia',
         titulo: 'Saldo estimado disponível',
-        texto: `Seu saldo líquido estimado é calculado com 5% de taxa da plataforma.`,
+        texto: `Saldo líquido estimado já considera 5% de taxa da plataforma.`,
         emoji: '💰',
         destino: '/guia/financeiro',
+        created_at: new Date().toISOString()
+      })
+    }
+
+    if (gruposLista.length === 0 && roteirosLista.length > 0) {
+      lista.push({
+        id: 'grupos-a-criar',
+        titulo: 'Grupos internos',
+        texto: 'Novos roteiros já devem criar grupos automaticamente. Revise se seus roteiros antigos precisam de grupo.',
+        emoji: '🌿',
+        destino: '/guia/grupos',
         created_at: new Date().toISOString()
       })
     }
@@ -520,7 +716,7 @@ export default function GuiaDashboardPage() {
       lista.push({
         id: 'estrutura',
         titulo: 'Organize sua operação',
-        texto: 'Mantenha fotos, datas, locais e valores dos seus roteiros sempre atualizados.',
+        texto: 'Mantenha fotos, datas, locais, valores e grupos dos roteiros sempre atualizados.',
         emoji: '🌿',
         destino: '/guia/roteiros',
         created_at: new Date().toISOString()
@@ -583,6 +779,10 @@ export default function GuiaDashboardPage() {
   const roteirosRecentes = useMemo(() => {
     return roteiros.slice(0, 5)
   }, [roteiros])
+
+  const gruposRecentes = useMemo(() => {
+    return grupos.slice(0, 4)
+  }, [grupos])
 
   const melhorRoteiro = useMemo(() => {
     if (roteiros.length === 0) return null
@@ -928,7 +1128,7 @@ export default function GuiaDashboardPage() {
 
         .utilityGrid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 12px;
           margin-bottom: 16px;
         }
@@ -970,7 +1170,7 @@ export default function GuiaDashboardPage() {
 
         .utilityValue {
           color: #172018;
-          font-size: 26px;
+          font-size: 24px;
           font-weight: 950;
           letter-spacing: -0.07em;
           margin-top: 7px;
@@ -1043,7 +1243,8 @@ export default function GuiaDashboardPage() {
         }
 
         .roteiroCard,
-        .reservaCard {
+        .reservaCard,
+        .grupoCard {
           border: 1px solid rgba(15, 23, 42, 0.06);
           background: #fffdf7;
           border-radius: 26px;
@@ -1057,7 +1258,8 @@ export default function GuiaDashboardPage() {
         }
 
         .roteiroCard:hover,
-        .reservaCard:hover {
+        .reservaCard:hover,
+        .grupoCard:hover {
           transform: translateY(-1px);
           box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
         }
@@ -1278,11 +1480,13 @@ export default function GuiaDashboardPage() {
           font-weight: 700;
         }
 
-        @media (max-width: 1040px) {
+        @media (max-width: 1120px) {
           .utilityGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
           }
+        }
 
+        @media (max-width: 1040px) {
           .mainGrid,
           .heroContent {
             grid-template-columns: 1fr;
@@ -1326,7 +1530,8 @@ export default function GuiaDashboardPage() {
           }
 
           .roteiroCard,
-          .reservaCard {
+          .reservaCard,
+          .grupoCard {
             grid-template-columns: 74px minmax(0, 1fr);
           }
 
@@ -1374,9 +1579,9 @@ export default function GuiaDashboardPage() {
             <button
               type="button"
               className="iconBtn hideMobile"
-              onClick={() => router.push('/guia/roteiros')}
+              onClick={() => router.push('/guia/grupos')}
             >
-              Roteiros
+              Grupos
             </button>
 
             <button
@@ -1410,12 +1615,12 @@ export default function GuiaDashboardPage() {
               <h1 className="heroTitle">
                 Oi, {primeiroNome(nomeUsuario(user))}.
                 <br />
-                Seus roteiros são sua <span>operação.</span>
+                Agora seus roteiros também têm <span>grupo próprio.</span>
               </h1>
 
               <p className="heroText">
-                Acompanhe reservas, roteiros ativos, pendências, saldo estimado e
-                próximos passos para manter sua estrutura pronta para receber aventureiros.
+                Acompanhe reservas, roteiros, grupos internos, participantes confirmados,
+                mensagens e saldo estimado da sua operação.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1436,24 +1641,26 @@ export default function GuiaDashboardPage() {
                 <button
                   type="button"
                   className="heroMiniBtn"
-                  onClick={() => router.push('/guia/roteiros')}
+                  onClick={() => router.push('/guia/grupos')}
                 >
-                  Organizar roteiros
+                  Ver grupos
                 </button>
               </div>
             </div>
 
             <aside className="heroCard">
-              <div className="heroCardLabel">Roteiro destaque</div>
+              <div className="heroCardLabel">Grupo em destaque</div>
 
               <div className="heroCardValue">
-                {melhorRoteiro ? tituloRoteiro(melhorRoteiro) : 'Comece pelo primeiro'}
+                {gruposRecentes[0]
+                  ? gruposRecentes[0].titulo || tituloRoteiro(gruposRecentes[0].roteiro)
+                  : 'Sem grupos ainda'}
               </div>
 
               <div className="heroCardText">
-                {melhorRoteiro
-                  ? `${localRoteiro(melhorRoteiro)} · ${formatarMoeda(precoRoteiro(melhorRoteiro))}`
-                  : 'Cadastre uma experiência clara, com foto e informações simples.'}
+                {gruposRecentes[0]
+                  ? `${gruposRecentes[0].clientes_count || 0} cliente(s) confirmado(s) · ${gruposRecentes[0].notificacoes_nao_lidas || 0} aviso(s)`
+                  : 'Ao criar um roteiro, o grupo interno será criado automaticamente.'}
               </div>
             </aside>
           </div>
@@ -1480,6 +1687,18 @@ export default function GuiaDashboardPage() {
 
           <article
             className="utilityCard"
+            onClick={() => router.push('/guia/grupos')}
+          >
+            <div className="utilityIcon">💬</div>
+            <div className="utilityTitle">Grupos</div>
+            <div className="utilityValue">{stats.gruposTotal}</div>
+            <div className="utilityText">
+              {stats.gruposAtivos} ativo(s), {stats.clientesNosGrupos} cliente(s).
+            </div>
+          </article>
+
+          <article
+            className="utilityCard"
             onClick={() => router.push('/guia/reservas')}
           >
             <div className="utilityIcon">🎒</div>
@@ -1492,13 +1711,13 @@ export default function GuiaDashboardPage() {
 
           <article
             className="utilityCard"
-            onClick={() => router.push('/guia/reservas')}
+            onClick={() => router.push('/guia/grupos')}
           >
-            <div className="utilityIcon">👥</div>
-            <div className="utilityTitle">Pessoas</div>
-            <div className="utilityValue">{stats.pessoasReservadas}</div>
+            <div className="utilityIcon">🔔</div>
+            <div className="utilityTitle">Avisos</div>
+            <div className="utilityValue">{stats.notificacoesGrupos}</div>
             <div className="utilityText">
-              Total de participantes vinculados às suas reservas.
+              Notificações novas nos grupos dos roteiros.
             </div>
           </article>
 
@@ -1520,6 +1739,77 @@ export default function GuiaDashboardPage() {
         <section className="mainGrid">
           <div>
             <section className="panel">
+              <div className="panelHeader">
+                <div>
+                  <h2 className="panelTitle">Grupos dos roteiros</h2>
+                  <div className="panelSub">
+                    Acompanhe os grupos criados automaticamente para suas experiências.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="textLink"
+                  onClick={() => router.push('/guia/grupos')}
+                >
+                  Ver grupos
+                </button>
+              </div>
+
+              <div className="panelBody">
+                {gruposRecentes.length === 0 ? (
+                  <div className="empty">
+                    Nenhum grupo criado ainda. Ao cadastrar um roteiro, o grupo interno será preparado automaticamente.
+                  </div>
+                ) : (
+                  <div className="list">
+                    {gruposRecentes.map((grupo) => {
+                      const imagem = imagemRoteiro(grupo.roteiro)
+
+                      return (
+                        <article
+                          className="grupoCard"
+                          key={grupo.id}
+                          onClick={() => router.push(`/guia/grupos/${grupo.id}`)}
+                        >
+                          <div className="thumb">
+                            {imagem ? (
+                              <img src={imagem} alt={tituloRoteiro(grupo.roteiro)} />
+                            ) : (
+                              'GP'
+                            )}
+                          </div>
+
+                          <div>
+                            <div className="itemTitle">
+                              {grupo.titulo || tituloRoteiro(grupo.roteiro)}
+                            </div>
+
+                            <div className="itemMeta">
+                              {localRoteiro(grupo.roteiro)}
+                              <br />
+                              {grupo.clientes_count || 0} cliente(s) · {grupo.mensagens_count || 0} mensagem(ns)
+                            </div>
+
+                            <div className="itemFooter">
+                              <span className="price">
+                                {grupo.notificacoes_nao_lidas || 0} aviso(s)
+                              </span>
+
+                              <span className="badge badge-green">
+                                {grupo.status || 'ativo'}
+                              </span>
+                            </div>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="panel" style={{ marginTop: 16 }}>
               <div className="panelHeader">
                 <div>
                   <h2 className="panelTitle">Seus roteiros</h2>
@@ -1639,7 +1929,7 @@ export default function GuiaDashboardPage() {
                           <div className="itemMeta">
                             Cliente: {reserva.cliente_nome || 'Cliente'}
                             <br />
-                            Criada em {formatarData(reserva.created_at)} {formatarHora(reserva.created_at)}
+                            Criada em {formatarData(reserva.created_at)}
                           </div>
 
                           <div className="itemFooter">
@@ -1767,6 +2057,15 @@ export default function GuiaDashboardPage() {
                     onClick={() => router.push('/guia/roteiros/novo')}
                   >
                     Criar novo roteiro
+                  </button>
+
+                  <button
+                    type="button"
+                    className="iconBtn"
+                    style={{ width: '100%', height: 44 }}
+                    onClick={() => router.push('/guia/grupos')}
+                  >
+                    Administrar grupos
                   </button>
 
                   <button
