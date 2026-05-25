@@ -1,201 +1,687 @@
 'use client'
 
-import { useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { supabase } from '@/lib/supabase/client'
-import bcrypt from 'bcryptjs'
+
+type FormCadastro = {
+  nome: string
+  email: string
+  telefone: string
+  cpf: string
+  data_nascimento: string
+  senha: string
+  confirmar_senha: string
+  tipo: 'cliente' | 'guia'
+}
+
+const formInicial: FormCadastro = {
+  nome: '',
+  email: '',
+  telefone: '',
+  cpf: '',
+  data_nascimento: '',
+  senha: '',
+  confirmar_senha: '',
+  tipo: 'cliente'
+}
 
 export default function CadastroPage() {
   const router = useRouter()
-  const [tipo, setTipo] = useState('cliente')
-  const [nome, setNome] = useState('')
-  const [email, setEmail] = useState('')
-  const [celular, setCelular] = useState('')
-  const [cpf, setCpf] = useState('')
-  const [dataNascimento, setDataNascimento] = useState('')
-  const [senha, setSenha] = useState('')
-  const [confirmarSenha, setConfirmarSenha] = useState('')
-  const [instagram, setInstagram] = useState('')
-  const [cadastur, setCadastur] = useState('')
-  const [cnpj, setCnpj] = useState('')
+
+  const [form, setForm] = useState<FormCadastro>(formInicial)
   const [carregando, setCarregando] = useState(false)
-  const [erro, setErro] = useState('')
-  const [sucesso, setSucesso] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [tipoMensagem, setTipoMensagem] = useState<'erro' | 'sucesso' | ''>('')
 
-  const formatarCPF = (valor: string) => {
-    let numeros = valor.replace(/\D/g, '')
-    if (numeros.length > 11) numeros = numeros.slice(0, 11)
-    if (numeros.length <= 3) return numeros
-    if (numeros.length <= 6) return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
-    if (numeros.length <= 9) return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
-    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
-  }
+  useEffect(() => {
+    const userData = localStorage.getItem('user')
 
-  const formatarCelular = (valor: string) => {
-    let numeros = valor.replace(/\D/g, '')
-    if (numeros.length > 11) numeros = numeros.slice(0, 11)
-    if (numeros.length <= 2) return numeros
-    if (numeros.length <= 7) return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`
-    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7, 11)}`
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErro('')
-    setSucesso('')
-    setCarregando(true)
-
-    if (senha !== confirmarSenha) {
-      setErro('As senhas não conferem')
-      setCarregando(false)
-      return
-    }
-
-    if (senha.length < 6) {
-      setErro('A senha deve ter pelo menos 6 caracteres')
-      setCarregando(false)
-      return
-    }
-
-    if (!dataNascimento) {
-      setErro('Data de nascimento é obrigatória')
-      setCarregando(false)
-      return
-    }
-
-    const cpfLimpo = cpf.replace(/\D/g, '')
-    const celularLimpo = celular.replace(/\D/g, '')
-    const instagramLimpo = instagram.replace('@', '').trim()
-    const cnpjLimpo = cnpj.replace(/\D/g, '')
-
-    // 🔐 Gerar hash da senha
-    const salt = await bcrypt.genSalt(10)
-    const senhaHash = await bcrypt.hash(senha, salt)
-
-    const dadosBase = {
-      nome,
-      email,
-      celular: celularLimpo,
-      cpf: cpfLimpo,
-      data_nascimento: dataNascimento,
-      senha_hash: senhaHash,  // 👈 AGORA USA HASH!
-      tipo,
-      status: tipo === 'cliente' ? 'ativo' : 'pendente',
-      created_at: new Date().toISOString(),
-    }
-
-    const dadosGuia = tipo === 'guia' ? {
-      instagram: instagramLimpo,
-      cadastur,
-      cnpj: cnpjLimpo,
-    } : {}
-
-    const dadosCompletos = { ...dadosBase, ...dadosGuia }
+    if (!userData) return
 
     try {
-      const { error } = await supabase
-        .from('users')
-        .insert([dadosCompletos])
+      const user = JSON.parse(userData)
 
-      if (error) {
-        if (error.message.includes('duplicate key')) {
-          setErro('CPF, e-mail ou celular já cadastrado')
-        } else {
-          setErro(error.message)
-        }
-        setCarregando(false)
+      if (user?.tipo === 'cliente') {
+        router.replace('/cliente/dashboard')
         return
       }
 
-      setSucesso('Cadastro realizado com sucesso! Redirecionando...')
-      setTimeout(() => router.push('/login'), 2000)
+      if (user?.tipo === 'guia') {
+        router.replace('/guia/dashboard')
+        return
+      }
 
-    } catch (err: any) {
-      setErro(err.message || 'Erro ao cadastrar')
+      if (user?.tipo === 'admin') {
+        router.replace('/admin/dashboard')
+      }
+    } catch {
+      localStorage.removeItem('user')
+    }
+  }, [router])
+
+  const somenteNumeros = (valor: string) => {
+    return String(valor || '').replace(/\D/g, '')
+  }
+
+  const formatarTelefone = (valor: string) => {
+    const numeros = somenteNumeros(valor).slice(0, 11)
+
+    if (numeros.length <= 2) {
+      return numeros
+    }
+
+    if (numeros.length <= 7) {
+      return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`
+    }
+
+    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`
+  }
+
+  const formatarCpf = (valor: string) => {
+    const numeros = somenteNumeros(valor).slice(0, 11)
+
+    if (numeros.length <= 3) {
+      return numeros
+    }
+
+    if (numeros.length <= 6) {
+      return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
+    }
+
+    if (numeros.length <= 9) {
+      return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
+    }
+
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9)}`
+  }
+
+  const atualizarCampo = (campo: keyof FormCadastro, valor: string) => {
+    if (campo === 'telefone') {
+      setForm((prev) => ({
+        ...prev,
+        telefone: formatarTelefone(valor)
+      }))
+      return
+    }
+
+    if (campo === 'cpf') {
+      setForm((prev) => ({
+        ...prev,
+        cpf: formatarCpf(valor)
+      }))
+      return
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      [campo]: valor
+    }))
+  }
+
+  const validarEmail = (email: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  }
+
+  const validarFormulario = () => {
+    const nome = form.nome.trim()
+    const email = form.email.trim().toLowerCase()
+    const telefone = somenteNumeros(form.telefone)
+    const cpf = somenteNumeros(form.cpf)
+
+    if (!nome) {
+      return 'Informe seu nome.'
+    }
+
+    if (!email || !validarEmail(email)) {
+      return 'Informe um e-mail válido.'
+    }
+
+    if (!telefone || telefone.length < 10) {
+      return 'Informe um celular válido.'
+    }
+
+    if (!cpf || cpf.length !== 11) {
+      return 'Informe um CPF válido.'
+    }
+
+    if (!form.data_nascimento) {
+      return 'Informe sua data de nascimento.'
+    }
+
+    if (!form.senha || form.senha.length < 6) {
+      return 'A senha deve ter pelo menos 6 caracteres.'
+    }
+
+    if (form.senha !== form.confirmar_senha) {
+      return 'As senhas não conferem.'
+    }
+
+    return ''
+  }
+
+  const cadastrar = async (event: FormEvent) => {
+    event.preventDefault()
+
+    setMensagem('')
+    setTipoMensagem('')
+
+    const erroValidacao = validarFormulario()
+
+    if (erroValidacao) {
+      setMensagem(erroValidacao)
+      setTipoMensagem('erro')
+      return
+    }
+
+    setCarregando(true)
+
+    try {
+      const response = await fetch('/api/cadastro', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          nome: form.nome.trim(),
+          email: form.email.trim().toLowerCase(),
+          telefone: form.telefone.trim(),
+          celular: form.telefone.trim(),
+          cpf: somenteNumeros(form.cpf),
+          data_nascimento: form.data_nascimento,
+          nascimento: form.data_nascimento,
+          senha: form.senha,
+          password: form.senha,
+          confirmar_senha: form.confirmar_senha,
+          tipo: form.tipo
+        })
+      })
+
+      const texto = await response.text()
+
+      let data: any = null
+
+      try {
+        data = texto ? JSON.parse(texto) : null
+      } catch {
+        throw new Error('A rota de cadastro retornou uma resposta inválida.')
+      }
+
+      if (!response.ok || !data?.sucesso) {
+        throw new Error(
+          data?.erro ||
+            data?.message ||
+            'Não foi possível realizar o cadastro.'
+        )
+      }
+
+      const usuario = {
+        id: data.usuario?.id,
+        nome: data.usuario?.nome || form.nome.trim(),
+        email: data.usuario?.email || form.email.trim().toLowerCase(),
+        tipo: data.usuario?.tipo || form.tipo
+      }
+
+      localStorage.setItem('user', JSON.stringify(usuario))
+
+      setMensagem('Cadastro realizado com sucesso!')
+      setTipoMensagem('sucesso')
+
+      setTimeout(() => {
+        if (usuario.tipo === 'guia') {
+          router.replace('/guia/dashboard')
+          return
+        }
+
+        router.replace('/cliente/dashboard')
+      }, 600)
+    } catch (error: any) {
+      console.error('Erro ao cadastrar:', error)
+
+      setMensagem(
+        error?.message ||
+          'Erro ao cadastrar. Verifique os dados e tente novamente.'
+      )
+      setTipoMensagem('erro')
+    } finally {
       setCarregando(false)
     }
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-      <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '32px', maxWidth: '450px', width: '100%', boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}>
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{ fontSize: '48px', marginBottom: '8px' }}>🏔️</div>
-          <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>PussikTrails</h1>
-          <p style={{ color: '#6b7280', marginTop: '8px', fontSize: '14px' }}>Crie sua conta</p>
-        </div>
+    <main className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-            <button type="button" onClick={() => setTipo('cliente')} style={{ flex: 1, padding: '10px', borderRadius: '40px', border: 'none', cursor: 'pointer', fontWeight: '600', backgroundColor: tipo === 'cliente' ? '#16a34a' : '#f3f4f6', color: tipo === 'cliente' ? 'white' : '#374151' }}>Aventureiro</button>
-            <button type="button" onClick={() => setTipo('guia')} style={{ flex: 1, padding: '10px', borderRadius: '40px', border: 'none', cursor: 'pointer', fontWeight: '600', backgroundColor: tipo === 'guia' ? '#16a34a' : '#f3f4f6', color: tipo === 'guia' ? 'white' : '#374151' }}>Guia</button>
+        body {
+          margin: 0;
+          background: #f3f4f6;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
+            linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
+          color: #111827;
+        }
+
+        .topBar {
+          height: 64px;
+          background: #dc2626;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 16px;
+        }
+
+        .topLogo {
+          height: 42px;
+          width: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .container {
+          width: 100%;
+          max-width: 680px;
+          margin: 0 auto;
+          padding: 26px 18px 44px;
+        }
+
+        .card {
+          background: #ffffff;
+          border-radius: 32px;
+          padding: 28px;
+          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
+          border: 1px solid #eef2f7;
+        }
+
+        .brand {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 16px;
+        }
+
+        .brand img {
+          height: 70px;
+          width: auto;
+          object-fit: contain;
+        }
+
+        .title {
+          margin: 0;
+          text-align: center;
+          font-size: 30px;
+          font-weight: 900;
+          color: #111827;
+          letter-spacing: -0.04em;
+        }
+
+        .subtitle {
+          margin: 8px auto 24px;
+          text-align: center;
+          color: #6b7280;
+          font-size: 14px;
+          line-height: 1.55;
+          max-width: 440px;
+        }
+
+        .tipoBox {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin-bottom: 18px;
+        }
+
+        .tipoButton {
+          border: 1px solid #e5e7eb;
+          background: #f9fafb;
+          color: #374151;
+          border-radius: 999px;
+          padding: 13px 14px;
+          font-weight: 900;
+          font-size: 13px;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .tipoButton.active {
+          background: #111827;
+          border-color: #111827;
+          color: #ffffff;
+        }
+
+        .form {
+          display: grid;
+          gap: 15px;
+        }
+
+        .formGroup {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+
+        label {
+          font-size: 13px;
+          font-weight: 800;
+          color: #374151;
+        }
+
+        input {
+          width: 100%;
+          border: 1px solid #e5e7eb;
+          border-radius: 18px;
+          padding: 15px 16px;
+          font-size: 16px;
+          color: #111827;
+          background: #ffffff;
+          outline: none;
+          transition: 0.2s ease;
+        }
+
+        input:focus {
+          border-color: #16a34a;
+          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+        }
+
+        input::placeholder {
+          color: #9ca3af;
+        }
+
+        .message {
+          padding: 14px 16px;
+          border-radius: 18px;
+          font-size: 14px;
+          line-height: 1.45;
+          text-align: center;
+          font-weight: 700;
+        }
+
+        .message.erro {
+          background: #fee2e2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
+        }
+
+        .message.sucesso {
+          background: #dcfce7;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+        }
+
+        .submitButton {
+          width: 100%;
+          border: none;
+          border-radius: 999px;
+          padding: 16px;
+          background: #15803d;
+          color: #ffffff;
+          font-size: 18px;
+          font-weight: 900;
+          cursor: pointer;
+          transition: 0.2s ease;
+          margin-top: 8px;
+        }
+
+        .submitButton:hover:not(:disabled) {
+          background: #166534;
+          transform: translateY(-1px);
+          box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
+        }
+
+        .submitButton:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .divider {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          align-items: center;
+          gap: 14px;
+          margin: 22px 0;
+          color: #9ca3af;
+          font-size: 14px;
+        }
+
+        .divider::before,
+        .divider::after {
+          content: "";
+          height: 1px;
+          background: #e5e7eb;
+        }
+
+        .loginButton {
+          width: 100%;
+          border: 1px solid #16a34a;
+          border-radius: 999px;
+          padding: 15px;
+          background: #ffffff;
+          color: #16a34a;
+          font-size: 17px;
+          font-weight: 900;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .loginButton:hover {
+          background: #f0fdf4;
+        }
+
+        .hint {
+          margin: 14px 0 0;
+          text-align: center;
+          color: #9ca3af;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        @media (max-width: 520px) {
+          .topBar {
+            height: 62px;
+          }
+
+          .container {
+            padding: 20px 14px 34px;
+          }
+
+          .card {
+            border-radius: 28px;
+            padding: 24px 18px;
+          }
+
+          .brand img {
+            height: 60px;
+          }
+
+          .title {
+            font-size: 26px;
+          }
+
+          input {
+            font-size: 16px;
+            padding: 14px 15px;
+          }
+
+          .submitButton {
+            font-size: 17px;
+          }
+        }
+      `}</style>
+
+      <header className="topBar">
+        <img
+          src="/logo-prussik-display.png"
+          alt="PrussikTrails"
+          className="topLogo"
+        />
+      </header>
+
+      <div className="container">
+        <section className="card">
+          <div className="brand">
+            <img
+              src="/logo-prussik-display.png"
+              alt="PrussikTrails"
+            />
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>Nome completo *</label>
-            <input type="text" required value={nome} onChange={(e) => setNome(e.target.value)} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
+          <h1 className="title">Criar conta</h1>
+
+          <p className="subtitle">
+            Cadastre-se para reservar roteiros, acompanhar suas aventuras e acessar o app PrussikTrails.
+          </p>
+
+          <div className="tipoBox">
+            <button
+              type="button"
+              className={`tipoButton ${form.tipo === 'cliente' ? 'active' : ''}`}
+              onClick={() => atualizarCampo('tipo', 'cliente')}
+            >
+              Sou cliente
+            </button>
+
+            <button
+              type="button"
+              className={`tipoButton ${form.tipo === 'guia' ? 'active' : ''}`}
+              onClick={() => atualizarCampo('tipo', 'guia')}
+            >
+              Sou guia
+            </button>
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>E-mail *</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
-          </div>
+          <form className="form" onSubmit={cadastrar}>
+            <div className="formGroup">
+              <label>Nome completo *</label>
+              <input
+                value={form.nome}
+                onChange={(event) =>
+                  atualizarCampo('nome', event.target.value)
+                }
+                placeholder="Seu nome completo"
+                autoComplete="name"
+              />
+            </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>Celular *</label>
-            <input type="tel" required placeholder="(11) 99999-9999" value={celular} onChange={(e) => setCelular(formatarCelular(e.target.value))} maxLength={15} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
-          </div>
+            <div className="formGroup">
+              <label>E-mail *</label>
+              <input
+                value={form.email}
+                onChange={(event) =>
+                  atualizarCampo('email', event.target.value)
+                }
+                placeholder="seuemail@email.com"
+                type="email"
+                autoComplete="email"
+              />
+            </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>CPF *</label>
-            <input type="text" required placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(formatarCPF(e.target.value))} maxLength={14} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
-          </div>
+            <div className="formGroup">
+              <label>Celular *</label>
+              <input
+                value={form.telefone}
+                onChange={(event) =>
+                  atualizarCampo('telefone', event.target.value)
+                }
+                placeholder="(11) 98888-8888"
+                inputMode="tel"
+                autoComplete="tel"
+              />
+            </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>Data de nascimento *</label>
-            <input type="date" required value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
-          </div>
+            <div className="formGroup">
+              <label>CPF *</label>
+              <input
+                value={form.cpf}
+                onChange={(event) =>
+                  atualizarCampo('cpf', event.target.value)
+                }
+                placeholder="000.000.000-00"
+                inputMode="numeric"
+                autoComplete="off"
+              />
+            </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>Senha *</label>
-            <input type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
-          </div>
+            <div className="formGroup">
+              <label>Data de nascimento *</label>
+              <input
+                value={form.data_nascimento}
+                onChange={(event) =>
+                  atualizarCampo('data_nascimento', event.target.value)
+                }
+                type="date"
+                autoComplete="bday"
+              />
+            </div>
 
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>Confirmar senha *</label>
-            <input type="password" required value={confirmarSenha} onChange={(e) => setConfirmarSenha(e.target.value)} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
-          </div>
+            <div className="formGroup">
+              <label>Senha *</label>
+              <input
+                value={form.senha}
+                onChange={(event) =>
+                  atualizarCampo('senha', event.target.value)
+                }
+                type="password"
+                placeholder="Mínimo de 6 caracteres"
+                autoComplete="new-password"
+              />
+            </div>
 
-          {tipo === 'guia' && (
-            <>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>Instagram *</label>
-                <input type="text" required placeholder="@usuario" value={instagram} onChange={(e) => setInstagram(e.target.value)} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
+            <div className="formGroup">
+              <label>Confirmar senha *</label>
+              <input
+                value={form.confirmar_senha}
+                onChange={(event) =>
+                  atualizarCampo('confirmar_senha', event.target.value)
+                }
+                type="password"
+                placeholder="Digite a senha novamente"
+                autoComplete="new-password"
+              />
+            </div>
+
+            {mensagem && (
+              <div className={`message ${tipoMensagem}`}>
+                {mensagem}
               </div>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>Cadastur *</label>
-                <input type="text" required value={cadastur} onChange={(e) => setCadastur(e.target.value)} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
-              </div>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>CNPJ *</label>
-                <input type="text" required placeholder="00.000.000/0000-00" value={cnpj} onChange={(e) => setCnpj(e.target.value)} style={{ width: '100%', padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', fontSize: '14px', outline: 'none' }} onFocus={(e) => e.target.style.borderColor = '#16a34a'} onBlur={(e) => e.target.style.borderColor = '#e5e7eb'} />
-              </div>
-            </>
-          )}
+            )}
 
-          {erro && <div style={{ backgroundColor: '#fee2e2', color: '#dc2626', padding: '12px', borderRadius: '12px', fontSize: '13px', textAlign: 'center', marginBottom: '16px' }}>{erro}</div>}
-          {sucesso && <div style={{ backgroundColor: '#dcfce7', color: '#16a34a', padding: '12px', borderRadius: '12px', fontSize: '13px', textAlign: 'center', marginBottom: '16px' }}>{sucesso}</div>}
+            <button
+              type="submit"
+              className="submitButton"
+              disabled={carregando}
+            >
+              {carregando ? 'Cadastrando...' : 'Cadastrar'}
+            </button>
+          </form>
 
-          <button type="submit" disabled={carregando} style={{ width: '100%', backgroundColor: '#16a34a', color: 'white', padding: '14px', borderRadius: '40px', border: 'none', cursor: carregando ? 'not-allowed' : 'pointer', fontSize: '16px', fontWeight: '600', opacity: carregando ? 0.6 : 1 }} onMouseEnter={(e) => { if (!carregando) e.currentTarget.style.backgroundColor = '#15803d' }} onMouseLeave={(e) => { if (!carregando) e.currentTarget.style.backgroundColor = '#16a34a' }}>{carregando ? 'Cadastrando...' : 'Cadastrar'}</button>
-        </form>
+          <div className="divider">ou</div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '24px 0' }}><div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} /><span style={{ fontSize: '12px', color: '#9ca3af' }}>ou</span><div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} /></div>
+          <button
+            type="button"
+            className="loginButton"
+            onClick={() => router.push('/login')}
+          >
+            Já tenho conta
+          </button>
 
-        <Link href="/login" style={{ textDecoration: 'none' }}>
-          <button style={{ width: '100%', backgroundColor: 'transparent', color: '#16a34a', padding: '14px', borderRadius: '40px', border: '1px solid #16a34a', cursor: 'pointer', fontSize: '16px', fontWeight: '600', transition: 'all 0.2s' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#16a34a'; e.currentTarget.style.color = 'white' }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#16a34a' }}>Já tenho conta</button>
-        </Link>
+          <p className="hint">
+            Ao cadastrar, você poderá acessar o app instalado pelo celular.
+          </p>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
