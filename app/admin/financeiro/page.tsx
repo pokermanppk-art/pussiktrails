@@ -5,17 +5,19 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
 type UsuarioLocal = {
-  id: string
+  id?: string | null
   nome?: string | null
-  name?: string | null
   email?: string | null
   tipo?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  uid?: string | null
+  email_admin?: string | null
 }
 
 type UsuarioBanco = {
   id: string
   nome?: string | null
-  name?: string | null
   email?: string | null
   tipo?: string | null
 }
@@ -69,6 +71,7 @@ type RepasseGuia = {
 type ReservaCompleta = Reserva & {
   roteiro?: Roteiro | null
   guia?: UsuarioBanco | null
+  guia_id_original?: string | null
   guia_id_real?: string | null
   guia_nome?: string
   roteiro_titulo?: string
@@ -138,7 +141,7 @@ export default function AdminFinanceiroPage() {
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
   const [menuAberto, setMenuAberto] = useState(false)
-  const [tabelaRepassesOk, setTabelaRepassesOk] = useState(true)
+  const [repassesOk, setRepassesOk] = useState(true)
 
   const [busca, setBusca] = useState('')
   const [filtroFinanceiro, setFiltroFinanceiro] = useState<FiltroFinanceiro>('todos')
@@ -161,7 +164,6 @@ export default function AdminFinanceiroPage() {
 
   useEffect(() => {
     if (iniciouRef.current) return
-
     iniciouRef.current = true
     iniciar()
   }, [])
@@ -217,8 +219,14 @@ export default function AdminFinanceiroPage() {
     return numero
   }
 
+  const uuidValido = (valor?: string | null) => {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
+      String(valor || '')
+    )
+  }
+
   const nomeUsuario = (usuario?: UsuarioLocal | UsuarioBanco | null) => {
-    return usuario?.nome || usuario?.name || usuario?.email || ''
+    return usuario?.nome || usuario?.email || ''
   }
 
   const tituloRoteiro = (roteiro?: Roteiro | null) => {
@@ -247,7 +255,6 @@ export default function AdminFinanceiroPage() {
 
   const repasseCancelado = (repasse?: RepasseGuia | null) => {
     const status = normalizar(repasse?.status)
-
     return status === 'cancelado' || status === 'cancelada' || status === 'estornado'
   }
 
@@ -277,10 +284,7 @@ export default function AdminFinanceiroPage() {
 
     const agora = new Date()
 
-    return (
-      data.getFullYear() === agora.getFullYear() &&
-      data.getMonth() === agora.getMonth()
-    )
+    return data.getFullYear() === agora.getFullYear() && data.getMonth() === agora.getMonth()
   }
 
   const formatarData = (valor?: string | null) => {
@@ -293,16 +297,6 @@ export default function AdminFinanceiroPage() {
     return data.toLocaleDateString('pt-BR')
   }
 
-  const formatarDataHora = (valor?: string | null) => {
-    if (!valor) return '-'
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return valor
-
-    return data.toLocaleString('pt-BR')
-  }
-
   const formatarMoeda = (valor: any) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -310,23 +304,20 @@ export default function AdminFinanceiroPage() {
     }).format(Number(valor || 0))
   }
 
-  const tabelaNaoExisteOuSemPermissao = (error: any) => {
-    const texto = String(
-      error?.message ||
-        error?.details ||
-        error?.hint ||
-        ''
-    ).toLowerCase()
+  const localizarGuiaPorIdOuPrefixo = (guiaId: string, lista: UsuarioBanco[]) => {
+    const id = String(guiaId || '').trim()
 
-    return (
-      error?.code === '42P01' ||
-      error?.code === '42501' ||
-      error?.code === 'PGRST205' ||
-      texto.includes('does not exist') ||
-      texto.includes('not exist') ||
-      texto.includes('schema cache') ||
-      texto.includes('permission denied')
-    )
+    if (!id) return null
+
+    const exato = lista.find((guia) => guia.id === id)
+
+    if (exato) return exato
+
+    if (!uuidValido(id)) {
+      return lista.find((guia) => guia.id?.startsWith(id)) || null
+    }
+
+    return null
   }
 
   const nomeGuiaComFallback = (guiaId: string, guia?: UsuarioBanco | null) => {
@@ -336,6 +327,30 @@ export default function AdminFinanceiroPage() {
     if (guiaId) return `Guia ${guiaId.slice(0, 8)}`
 
     return 'Guia não identificado'
+  }
+
+  const carregarRepassesPelaApi = async () => {
+    try {
+      const response = await fetch('/api/admin/financeiro/repasses', {
+        method: 'GET',
+        cache: 'no-store'
+      })
+
+      const json = await response.json().catch(() => null)
+
+      if (!response.ok || json?.sucesso === false) {
+        setRepassesOk(false)
+        console.warn('Erro ao carregar repasses pela rota backend:', json)
+        return [] as RepasseGuia[]
+      }
+
+      setRepassesOk(true)
+      return (json?.repasses || []) as RepasseGuia[]
+    } catch (error) {
+      setRepassesOk(false)
+      console.warn('Erro ao carregar repasses pela rota backend:', error)
+      return [] as RepasseGuia[]
+    }
   }
 
   const carregarFinanceiro = async () => {
@@ -365,7 +380,6 @@ export default function AdminFinanceiroPage() {
 
     let roteiros: Roteiro[] = []
     let guias: UsuarioBanco[] = []
-    let repasses: RepasseGuia[] = []
 
     if (roteiroIds.length > 0) {
       const { data: roteirosData, error: roteirosError } = await supabase
@@ -380,66 +394,69 @@ export default function AdminFinanceiroPage() {
       roteiros = (roteirosData || []) as Roteiro[]
     }
 
-    const guiaIdsDosRoteiros = roteiros
-      .map(guiaIdDoRoteiro)
-      .filter(Boolean)
+    const guiaIdsDosRoteiros = roteiros.map(guiaIdDoRoteiro).filter(Boolean)
+    const guiaIdsDasReservas = reservasBase.map(guiaIdDaReserva).filter(Boolean)
 
-    const guiaIdsDasReservas = reservasBase
-      .map(guiaIdDaReserva)
-      .filter(Boolean)
-
-    const guiaIds = Array.from(
+    const guiaIdsBrutos = Array.from(
       new Set([...guiaIdsDosRoteiros, ...guiaIdsDasReservas])
-    )
+    ) as string[]
 
-    if (guiaIds.length > 0) {
+    const guiaIdsUuid = guiaIdsBrutos.filter(uuidValido)
+    const guiaIdsCurtos = guiaIdsBrutos.filter((id) => id && !uuidValido(id))
+
+    if (guiaIdsUuid.length > 0) {
       const { data: guiasData, error: guiasError } = await supabase
         .from('users')
-        .select('id, nome, name, email, tipo')
-        .in('id', guiaIds)
+        .select('id, nome, email, tipo')
+        .in('id', guiaIdsUuid)
 
       if (guiasError) {
-        console.warn('Erro ao buscar guias do financeiro:', guiasError)
+        console.warn('Erro ao buscar guias por UUID:', guiasError)
       }
 
       guias = (guiasData || []) as UsuarioBanco[]
     }
 
-    const repassesResult = await supabase
-      .from('repasses_guias')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(2500)
+    if (guiaIdsCurtos.length > 0) {
+      const { data: usuariosData, error: usuariosError } = await supabase
+        .from('users')
+        .select('id, nome, email, tipo')
+        .limit(5000)
 
-    if (repassesResult.error) {
-      if (tabelaNaoExisteOuSemPermissao(repassesResult.error)) {
-        setTabelaRepassesOk(false)
-        console.warn('Tabela repasses_guias indisponível no client:', repassesResult.error)
+      if (usuariosError) {
+        console.warn('Erro ao resolver guias por prefixo:', usuariosError)
       } else {
-        console.warn('Erro ao carregar repasses:', repassesResult.error)
+        const usuarios = (usuariosData || []) as UsuarioBanco[]
+
+        const encontradosPorPrefixo = usuarios.filter((usuario) =>
+          guiaIdsCurtos.some((prefixo) => usuario.id?.startsWith(prefixo))
+        )
+
+        const mapa = new Map<string, UsuarioBanco>()
+
+        ;[...guias, ...encontradosPorPrefixo].forEach((guia) => {
+          mapa.set(guia.id, guia)
+        })
+
+        guias = Array.from(mapa.values())
       }
-    } else {
-      setTabelaRepassesOk(true)
-      repasses = (repassesResult.data || []) as RepasseGuia[]
     }
 
+    const repasses = await carregarRepassesPelaApi()
+
     const reservasCompletas: ReservaCompleta[] = reservasBase.map((reserva) => {
-      const roteiro =
-        roteiros.find((item) => item.id === reserva.roteiro_id) ||
-        null
-
-      const guiaId = guiaIdDoRoteiro(roteiro) || guiaIdDaReserva(reserva)
-
-      const guia =
-        guias.find((item) => item.id === guiaId) ||
-        null
+      const roteiro = roteiros.find((item) => item.id === reserva.roteiro_id) || null
+      const guiaIdOriginal = guiaIdDoRoteiro(roteiro) || guiaIdDaReserva(reserva)
+      const guia = localizarGuiaPorIdOuPrefixo(guiaIdOriginal, guias)
+      const guiaIdReal = guia?.id || guiaIdOriginal
 
       return {
         ...reserva,
         roteiro,
         guia,
-        guia_id_real: guiaId,
-        guia_nome: nomeGuiaComFallback(guiaId, guia),
+        guia_id_original: guiaIdOriginal,
+        guia_id_real: guiaIdReal,
+        guia_nome: nomeGuiaComFallback(guiaIdReal, guia),
         roteiro_titulo: tituloRoteiro(roteiro)
       }
     })
@@ -455,12 +472,21 @@ export default function AdminFinanceiroPage() {
     )
 
     const guiasCalculados: GuiaFinanceiro[] = guiasIdsFinanceiro.map((guiaId) => {
-      const guia =
-        guias.find((item) => item.id === guiaId) ||
-        null
-
+      const guia = localizarGuiaPorIdOuPrefixo(guiaId, guias) || null
       const reservasDoGuia = reservasComGuia.filter((reserva) => reserva.guia_id_real === guiaId)
-      const repassesDoGuia = repasses.filter((repasse) => guiaIdDoRepasse(repasse) === guiaId && !repasseCancelado(repasse))
+
+      const repassesDoGuia = repasses.filter((repasse) => {
+        const idRepasse = guiaIdDoRepasse(repasse)
+
+        return (
+          !repasseCancelado(repasse) &&
+          (
+            idRepasse === guiaId ||
+            Boolean(idRepasse && guiaId && idRepasse.startsWith(guiaId)) ||
+            Boolean(idRepasse && guiaId && guiaId.startsWith(idRepasse))
+          )
+        )
+      })
 
       const receitaBruta = reservasDoGuia.reduce(
         (total, reserva) => total + Number(reserva.valor_total || 0),
@@ -487,8 +513,8 @@ export default function AdminFinanceiroPage() {
         .sort((a, b) => new Date(dataDoRepasse(b) || 0).getTime() - new Date(dataDoRepasse(a) || 0).getTime())
 
       return {
-        guia_id: guiaId,
-        guia_nome: nomeGuiaComFallback(guiaId, guia),
+        guia_id: guia?.id || guiaId,
+        guia_nome: nomeGuiaComFallback(guia?.id || guiaId, guia),
         guia_email: guia?.email || '',
         reservas: reservasDoGuia,
         repasses: repassesDoGuia,
@@ -585,7 +611,7 @@ export default function AdminFinanceiroPage() {
   const registrarPagamento = async (event: FormEvent) => {
     event.preventDefault()
 
-    if (!user?.id) {
+    if (!user?.id && !user?.email) {
       router.replace('/login')
       return
     }
@@ -618,10 +644,23 @@ export default function AdminFinanceiroPage() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          adminId: user.id,
+          adminId: user.id || user.user_id || user.usuario_id || user.uid || '',
+          adminEmail: user.email || user.email_admin || '',
+          adminTipo: user.tipo || '',
+
           guiaId: guiaSelecionado.guia_id,
+          guiaNome: guiaSelecionado.guia_nome,
+
           valor,
-          observacao: observacaoPagamento || ''
+          observacao: observacaoPagamento || '',
+
+          reservaIds: guiaSelecionado.reservas
+            .map((reserva) => reserva.id)
+            .filter(Boolean),
+
+          roteiroIds: guiaSelecionado.reservas
+            .map((reserva) => reserva.roteiro_id)
+            .filter(Boolean)
         })
       })
 
@@ -632,7 +671,6 @@ export default function AdminFinanceiroPage() {
         return
       }
 
-      setTabelaRepassesOk(true)
       setMensagem('Pagamento registrado com sucesso.')
       setModalPagamentoAberto(false)
       setGuiaSelecionado(null)
@@ -772,46 +810,10 @@ export default function AdminFinanceiroPage() {
       <main className="loading">
         <style>{`
           * { box-sizing: border-box; }
-
-          body {
-            margin: 0;
-            font-family:
-              Inter,
-              ui-sans-serif,
-              system-ui,
-              -apple-system,
-              BlinkMacSystemFont,
-              "Segoe UI",
-              sans-serif;
-            background: #0f172a;
-          }
-
-          .loading {
-            min-height: 100vh;
-            min-height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #e5e7eb;
-            background:
-              radial-gradient(circle at top left, rgba(34,197,94,0.16), transparent 30%),
-              linear-gradient(135deg, #020617, #0f172a);
-          }
-
-          .loadingCard {
-            background: rgba(15, 23, 42, 0.92);
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            border-radius: 26px;
-            padding: 28px;
-            text-align: center;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.35);
-          }
-
-          .loadingCard img {
-            height: 58px;
-            width: auto;
-            margin-bottom: 12px;
-          }
+          body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; }
+          .loading { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; color: #e5e7eb; background: radial-gradient(circle at top left, rgba(34,197,94,0.16), transparent 30%), linear-gradient(135deg, #020617, #0f172a); }
+          .loadingCard { background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 26px; padding: 28px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
+          .loadingCard img { height: 58px; width: auto; margin-bottom: 12px; }
         `}</style>
 
         <div className="loadingCard">
@@ -825,776 +827,98 @@ export default function AdminFinanceiroPage() {
   return (
     <main className="page">
       <style>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        body {
-          margin: 0;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-          background: #f8fafc;
-        }
-
-        .page {
-          min-height: 100vh;
-          min-height: 100dvh;
-          background:
-            radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.10), transparent 30%),
-            radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.10), transparent 30%),
-            linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-          color: #0f172a;
-        }
-
-        .header {
-          position: sticky;
-          top: 0;
-          z-index: 50;
-          background: rgba(248, 250, 252, 0.88);
-          border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-          backdrop-filter: blur(18px);
-          padding: 12px 18px;
-        }
-
-        .headerInner {
-          max-width: 1240px;
-          margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          cursor: pointer;
-          min-width: 0;
-        }
-
-        .brand img {
-          height: 40px;
-          width: auto;
-          display: block;
-        }
-
-        .brandTitle {
-          font-size: 17px;
-          font-weight: 950;
-          color: #0f172a;
-          letter-spacing: -0.045em;
-          line-height: 1;
-        }
-
-        .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 800;
-          margin-top: 3px;
-        }
-
-        .settingsWrap {
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-        }
-
-        .gearBtn {
-          width: 42px;
-          height: 42px;
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          background: rgba(255, 255, 255, 0.86);
-          color: #0f172a;
-          border-radius: 999px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .settingsMenu {
-          position: absolute;
-          top: 50px;
-          right: 0;
-          width: 220px;
-          background: #ffffff;
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          border-radius: 22px;
-          box-shadow: 0 22px 60px rgba(15, 23, 42, 0.16);
-          padding: 8px;
-          z-index: 80;
-        }
-
-        .menuButton {
-          width: 100%;
-          border: none;
-          background: transparent;
-          color: #0f172a;
-          padding: 12px 13px;
-          border-radius: 16px;
-          text-align: left;
-          font-size: 13px;
-          font-weight: 900;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .menuButton:hover {
-          background: #f8fafc;
-        }
-
-        .menuButton.danger {
-          color: #991b1b;
-        }
-
-        .container {
-          max-width: 1240px;
-          margin: 0 auto;
-          padding: 24px 18px 52px;
-        }
-
-        .hero {
-          background:
-            radial-gradient(circle at top right, rgba(34, 197, 94, 0.18), transparent 30%),
-            linear-gradient(135deg, #0f172a, #1e293b);
-          color: #ffffff;
-          border-radius: 34px;
-          padding: 28px;
-          box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
-          margin-bottom: 18px;
-          overflow: hidden;
-          position: relative;
-        }
-
-        .heroInner {
-          position: relative;
-          z-index: 2;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 360px;
-          gap: 22px;
-          align-items: end;
-        }
-
-        .eyebrow {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          padding: 8px 12px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(255,255,255,0.08);
-          color: #bbf7d0;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin-bottom: 14px;
-        }
-
-        .heroTitle {
-          margin: 0;
-          font-size: clamp(38px, 5.5vw, 66px);
-          line-height: 0.94;
-          font-weight: 950;
-          letter-spacing: -0.08em;
-        }
-
-        .heroTitle span {
-          color: #86efac;
-        }
-
-        .heroText {
-          max-width: 720px;
-          color: rgba(255,255,255,0.76);
-          font-size: 14px;
-          line-height: 1.6;
-          font-weight: 650;
-          margin: 16px 0 0;
-        }
-
-        .heroCard {
-          border-radius: 28px;
-          background: rgba(255,255,255,0.10);
-          border: 1px solid rgba(255,255,255,0.16);
-          padding: 20px;
-          backdrop-filter: blur(14px);
-        }
-
-        .heroLabel {
-          color: rgba(255,255,255,0.66);
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.10em;
-        }
-
-        .heroValue {
-          margin-top: 8px;
-          color: #ffffff;
-          font-size: 38px;
-          line-height: 1;
-          font-weight: 950;
-          letter-spacing: -0.07em;
-        }
-
-        .heroSmall {
-          color: rgba(255,255,255,0.72);
-          font-size: 12px;
-          font-weight: 750;
-          line-height: 1.45;
-          margin-top: 8px;
-        }
-
-        .alert {
-          border-radius: 18px;
-          padding: 13px 15px;
-          margin-bottom: 16px;
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .alert.success {
-          background: #ecfdf5;
-          border: 1px solid #bbf7d0;
-          color: #166534;
-        }
-
-        .alert.error {
-          background: #fee2e2;
-          border: 1px solid #fecaca;
-          color: #991b1b;
-        }
-
-        .alert.warning {
-          background: #fffbeb;
-          border: 1px solid #fde68a;
-          color: #92400e;
-        }
-
-        .statsGrid {
-          display: grid;
-          grid-template-columns: repeat(6, minmax(0, 1fr));
-          gap: 12px;
-          margin-bottom: 18px;
-        }
-
-        .statCard {
-          background: rgba(255,255,255,0.88);
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          border-radius: 24px;
-          padding: 15px;
-          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .statCard:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 16px 34px rgba(15, 23, 42, 0.10);
-        }
-
-        .statIcon {
-          width: 38px;
-          height: 38px;
-          border-radius: 16px;
-          background: #ecfdf5;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 19px;
-          margin-bottom: 11px;
-        }
-
-        .statValue {
-          font-size: 25px;
-          font-weight: 950;
-          line-height: 1;
-          letter-spacing: -0.06em;
-          color: #0f172a;
-        }
-
-        .statLabel {
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 850;
-          line-height: 1.35;
-          margin-top: 7px;
-        }
-
-        .toolbar {
-          background: rgba(255,255,255,0.92);
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          border-radius: 26px;
-          padding: 14px;
-          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 10px;
-          align-items: center;
-          margin-bottom: 18px;
-        }
-
-        .input {
-          width: 100%;
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          background: #ffffff;
-          color: #0f172a;
-          border-radius: 999px;
-          padding: 12px 14px;
-          font-size: 13px;
-          font-weight: 800;
-          outline: none;
-        }
-
-        .filters {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        .filterBtn {
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          background: #ffffff;
-          color: #475569;
-          border-radius: 999px;
-          padding: 10px 13px;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-
-        .filterBtn.active {
-          background: #0f172a;
-          color: #ffffff;
-          border-color: #0f172a;
-        }
-
-        .panel {
-          background: rgba(255,255,255,0.92);
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          border-radius: 28px;
-          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07);
-          overflow: hidden;
-        }
-
-        .panelHeader {
-          padding: 16px 18px;
-          border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: center;
-          flex-wrap: wrap;
-        }
-
-        .panelTitle {
-          margin: 0;
-          color: #0f172a;
-          font-size: 18px;
-          line-height: 1.15;
-          font-weight: 950;
-          letter-spacing: -0.04em;
-        }
-
-        .panelSub {
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-          margin-top: 4px;
-        }
-
-        .panelBody {
-          padding: 14px;
-        }
-
-        .textLink {
-          border: none;
-          background: transparent;
-          color: #16a34a;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          padding: 0;
-        }
-
-        .guideList {
-          display: grid;
-          gap: 10px;
-        }
-
-        .guideCard {
-          background: #ffffff;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          border-radius: 22px;
-          padding: 13px;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 14px;
-          align-items: center;
-          transition: 0.2s ease;
-        }
-
-        .guideCard:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
-        }
-
-        .guideTitle {
-          color: #0f172a;
-          font-size: 15px;
-          font-weight: 950;
-          line-height: 1.3;
-        }
-
-        .guideMeta {
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-          margin-top: 4px;
-        }
-
-        .guideRows {
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: 8px;
-          margin-top: 11px;
-        }
-
-        .miniMetric {
-          background: #f8fafc;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 16px;
-          padding: 10px;
-        }
-
-        .miniLabel {
-          color: #64748b;
-          font-size: 10px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-        }
-
-        .miniValue {
-          color: #0f172a;
-          font-size: 13px;
-          font-weight: 950;
-          margin-top: 4px;
-        }
-
-        .actions {
-          display: grid;
-          gap: 8px;
-          min-width: 170px;
-        }
-
-        .actionBtn {
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          background: #ffffff;
-          color: #0f172a;
-          border-radius: 999px;
-          padding: 9px 12px;
-          font-size: 11px;
-          font-weight: 950;
-          cursor: pointer;
-          transition: 0.2s ease;
-          white-space: nowrap;
-        }
-
-        .actionBtn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
-        }
-
-        .actionBtn.primary {
-          background: #0f172a;
-          color: #ffffff;
-          border-color: #0f172a;
-        }
-
-        .actionBtn.green {
-          background: #dcfce7;
-          color: #166534;
-          border-color: #bbf7d0;
-        }
-
-        .actionBtn:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-        }
-
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          border-radius: 999px;
-          padding: 5px 8px;
-          font-size: 10px;
-          font-weight: 950;
-          margin-top: 8px;
-        }
-
-        .badge.green {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .badge.yellow {
-          background: #fef3c7;
-          color: #92400e;
-        }
-
-        .empty {
-          padding: 24px;
-          text-align: center;
-          color: #64748b;
-          background: #ffffff;
-          border: 1px dashed #cbd5e1;
-          border-radius: 22px;
-          font-size: 13px;
-          font-weight: 750;
-        }
-
-        .modalOverlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(15, 23, 42, 0.54);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 18px;
-          z-index: 100;
-        }
-
-        .modal {
-          width: 100%;
-          max-width: 470px;
-          background: #ffffff;
-          border-radius: 28px;
-          box-shadow: 0 28px 90px rgba(15, 23, 42, 0.30);
-          overflow: hidden;
-          max-height: 90vh;
-          overflow-y: auto;
-        }
-
-        .modalHeader {
-          padding: 20px;
-          border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-        }
-
-        .modalTitle {
-          margin: 0;
-          color: #0f172a;
-          font-size: 20px;
-          font-weight: 950;
-          letter-spacing: -0.04em;
-        }
-
-        .modalSub {
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 750;
-          line-height: 1.45;
-          margin-top: 5px;
-        }
-
-        .modalBody {
-          padding: 20px;
-          display: grid;
-          gap: 12px;
-        }
-
-        .field {
-          display: grid;
-          gap: 6px;
-        }
-
-        .label {
-          color: #475569;
-          font-size: 12px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-        }
-
-        .modalInput,
-        .modalTextarea {
-          width: 100%;
-          border: 1px solid rgba(15, 23, 42, 0.10);
-          background: #ffffff;
-          color: #0f172a;
-          border-radius: 16px;
-          padding: 13px 14px;
-          font-size: 14px;
-          font-weight: 800;
-          outline: none;
-        }
-
-        .modalTextarea {
-          min-height: 90px;
-          resize: vertical;
-          line-height: 1.45;
-        }
-
-        .modalActions {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          margin-top: 8px;
-        }
-
-        .btn {
-          border: none;
-          border-radius: 999px;
-          padding: 12px 15px;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .btn.primary {
-          background: #0f172a;
-          color: #ffffff;
-        }
-
-        .btn.light {
-          background: #f1f5f9;
-          color: #475569;
-        }
-
-        .btn.green {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .historyBox {
-          background: #f8fafc;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 18px;
-          padding: 12px;
-          color: #475569;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-        }
-
-        @media (max-width: 1180px) {
-          .statsGrid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-
-          .toolbar {
-            grid-template-columns: 1fr;
-          }
-
-          .guideRows {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 1040px) {
-          .heroInner {
-            grid-template-columns: 1fr;
-          }
-
-          .guideCard {
-            grid-template-columns: 1fr;
-          }
-
-          .actions {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 720px) {
-          .header {
-            padding: 10px 12px;
-          }
-
-          .brandTitle,
-          .brandSub {
-            display: none;
-          }
-
-          .container {
-            padding: 16px 12px 42px;
-          }
-
-          .hero,
-          .panel {
-            border-radius: 24px;
-          }
-
-          .hero {
-            padding: 22px;
-          }
-
-          .statsGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .filters {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .filterBtn {
-            width: 100%;
-          }
-
-          .guideRows {
-            grid-template-columns: 1fr;
-          }
-
-          .actions {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .heroTitle {
-            font-size: 38px;
-          }
-
-          .statsGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .modalActions {
-            display: grid;
-          }
-
-          .btn {
-            width: 100%;
-          }
-        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; }
+        .page { min-height: 100vh; min-height: 100dvh; background: radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.10), transparent 30%), radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.10), transparent 30%), linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%); color: #0f172a; }
+        .header { position: sticky; top: 0; z-index: 50; background: rgba(248, 250, 252, 0.88); border-bottom: 1px solid rgba(15, 23, 42, 0.08); backdrop-filter: blur(18px); padding: 12px 18px; }
+        .headerInner { max-width: 1240px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .brand { display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; }
+        .brand img { height: 40px; width: auto; display: block; }
+        .brandTitle { font-size: 17px; font-weight: 950; color: #0f172a; letter-spacing: -0.045em; line-height: 1; }
+        .brandSub { color: #64748b; font-size: 11px; font-weight: 800; margin-top: 3px; }
+        .settingsWrap { position: relative; display: flex; align-items: center; justify-content: flex-end; }
+        .gearBtn { width: 42px; height: 42px; border: 1px solid rgba(15, 23, 42, 0.10); background: rgba(255, 255, 255, 0.86); color: #0f172a; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; transition: 0.2s ease; }
+        .settingsMenu { position: absolute; top: 50px; right: 0; width: 220px; background: #ffffff; border: 1px solid rgba(15, 23, 42, 0.10); border-radius: 22px; box-shadow: 0 22px 60px rgba(15, 23, 42, 0.16); padding: 8px; z-index: 80; }
+        .menuButton { width: 100%; border: none; background: transparent; color: #0f172a; padding: 12px 13px; border-radius: 16px; text-align: left; font-size: 13px; font-weight: 900; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        .menuButton:hover { background: #f8fafc; }
+        .menuButton.danger { color: #991b1b; }
+        .container { max-width: 1240px; margin: 0 auto; padding: 24px 18px 52px; }
+        .hero { background: radial-gradient(circle at top right, rgba(34, 197, 94, 0.18), transparent 30%), linear-gradient(135deg, #0f172a, #1e293b); color: #ffffff; border-radius: 34px; padding: 28px; box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22); margin-bottom: 18px; overflow: hidden; position: relative; }
+        .heroInner { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: end; }
+        .eyebrow { display: inline-flex; width: fit-content; border-radius: 999px; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08); color: #bbf7d0; font-size: 11px; font-weight: 950; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
+        .heroTitle { margin: 0; font-size: clamp(38px, 5.5vw, 66px); line-height: 0.94; font-weight: 950; letter-spacing: -0.08em; }
+        .heroTitle span { color: #86efac; }
+        .heroText { max-width: 720px; color: rgba(255,255,255,0.76); font-size: 14px; line-height: 1.6; font-weight: 650; margin: 16px 0 0; }
+        .heroCard { border-radius: 28px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.16); padding: 20px; backdrop-filter: blur(14px); }
+        .heroLabel { color: rgba(255,255,255,0.66); font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.10em; }
+        .heroValue { margin-top: 8px; color: #ffffff; font-size: 38px; line-height: 1; font-weight: 950; letter-spacing: -0.07em; }
+        .heroSmall { color: rgba(255,255,255,0.72); font-size: 12px; font-weight: 750; line-height: 1.45; margin-top: 8px; }
+        .alert { border-radius: 18px; padding: 13px 15px; margin-bottom: 16px; font-size: 13px; font-weight: 800; }
+        .alert.success { background: #ecfdf5; border: 1px solid #bbf7d0; color: #166534; }
+        .alert.error { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; }
+        .alert.warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+        .statsGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+        .statCard { background: rgba(255,255,255,0.88); border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 24px; padding: 15px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06); cursor: pointer; transition: 0.2s ease; }
+        .statCard:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(15, 23, 42, 0.10); }
+        .statIcon { width: 38px; height: 38px; border-radius: 16px; background: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 19px; margin-bottom: 11px; }
+        .statValue { font-size: 25px; font-weight: 950; line-height: 1; letter-spacing: -0.06em; color: #0f172a; }
+        .statLabel { color: #64748b; font-size: 12px; font-weight: 850; line-height: 1.35; margin-top: 7px; }
+        .toolbar { background: rgba(255,255,255,0.92); border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 26px; padding: 14px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-bottom: 18px; }
+        .input { width: 100%; border: 1px solid rgba(15, 23, 42, 0.10); background: #ffffff; color: #0f172a; border-radius: 999px; padding: 12px 14px; font-size: 13px; font-weight: 800; outline: none; }
+        .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+        .filterBtn { border: 1px solid rgba(15, 23, 42, 0.10); background: #ffffff; color: #475569; border-radius: 999px; padding: 10px 13px; font-size: 12px; font-weight: 950; cursor: pointer; white-space: nowrap; }
+        .filterBtn.active { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+        .panel { background: rgba(255,255,255,0.92); border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 28px; box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07); overflow: hidden; }
+        .panelHeader { padding: 16px 18px; border-bottom: 1px solid rgba(15, 23, 42, 0.08); display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .panelTitle { margin: 0; color: #0f172a; font-size: 18px; line-height: 1.15; font-weight: 950; letter-spacing: -0.04em; }
+        .panelSub { color: #64748b; font-size: 12px; line-height: 1.45; font-weight: 750; margin-top: 4px; }
+        .panelBody { padding: 14px; }
+        .textLink { border: none; background: transparent; color: #16a34a; font-size: 12px; font-weight: 950; cursor: pointer; padding: 0; }
+        .guideList { display: grid; gap: 10px; }
+        .guideCard { background: #ffffff; border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 22px; padding: 13px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; transition: 0.2s ease; }
+        .guideCard:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08); }
+        .guideTitle { color: #0f172a; font-size: 15px; font-weight: 950; line-height: 1.3; }
+        .guideMeta { color: #64748b; font-size: 12px; line-height: 1.45; font-weight: 750; margin-top: 4px; }
+        .guideRows { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 11px; }
+        .miniMetric { background: #f8fafc; border: 1px solid rgba(15, 23, 42, 0.06); border-radius: 16px; padding: 10px; }
+        .miniLabel { color: #64748b; font-size: 10px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.06em; }
+        .miniValue { color: #0f172a; font-size: 13px; font-weight: 950; margin-top: 4px; }
+        .actions { display: grid; gap: 8px; min-width: 170px; }
+        .actionBtn { border: 1px solid rgba(15, 23, 42, 0.10); background: #ffffff; color: #0f172a; border-radius: 999px; padding: 9px 12px; font-size: 11px; font-weight: 950; cursor: pointer; transition: 0.2s ease; white-space: nowrap; }
+        .actionBtn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08); }
+        .actionBtn.primary { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+        .actionBtn.green { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+        .actionBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+        .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 8px; font-size: 10px; font-weight: 950; margin-top: 8px; }
+        .badge.green { background: #dcfce7; color: #166534; }
+        .badge.yellow { background: #fef3c7; color: #92400e; }
+        .empty { padding: 24px; text-align: center; color: #64748b; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 22px; font-size: 13px; font-weight: 750; }
+        .modalOverlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.54); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 100; }
+        .modal { width: 100%; max-width: 470px; background: #ffffff; border-radius: 28px; box-shadow: 0 28px 90px rgba(15, 23, 42, 0.30); overflow: hidden; max-height: 90vh; overflow-y: auto; }
+        .modalHeader { padding: 20px; border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
+        .modalTitle { margin: 0; color: #0f172a; font-size: 20px; font-weight: 950; letter-spacing: -0.04em; }
+        .modalSub { color: #64748b; font-size: 12px; font-weight: 750; line-height: 1.45; margin-top: 5px; }
+        .modalBody { padding: 20px; display: grid; gap: 12px; }
+        .field { display: grid; gap: 6px; }
+        .label { color: #475569; font-size: 12px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.06em; }
+        .modalInput, .modalTextarea { width: 100%; border: 1px solid rgba(15, 23, 42, 0.10); background: #ffffff; color: #0f172a; border-radius: 16px; padding: 13px 14px; font-size: 14px; font-weight: 800; outline: none; }
+        .modalTextarea { min-height: 90px; resize: vertical; line-height: 1.45; }
+        .modalActions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+        .btn { border: none; border-radius: 999px; padding: 12px 15px; font-size: 12px; font-weight: 950; cursor: pointer; transition: 0.2s ease; }
+        .btn.primary { background: #0f172a; color: #ffffff; }
+        .btn.light { background: #f1f5f9; color: #475569; }
+        .btn.green { background: #dcfce7; color: #166534; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .historyBox { background: #f8fafc; border: 1px solid rgba(15, 23, 42, 0.06); border-radius: 18px; padding: 12px; color: #475569; font-size: 12px; line-height: 1.45; font-weight: 750; }
+        @media (max-width: 1180px) { .statsGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .toolbar { grid-template-columns: 1fr; } .guideRows { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 1040px) { .heroInner { grid-template-columns: 1fr; } .guideCard { grid-template-columns: 1fr; } .actions { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 720px) { .header { padding: 10px 12px; } .brandTitle, .brandSub { display: none; } .container { padding: 16px 12px 42px; } .hero, .panel { border-radius: 24px; } .hero { padding: 22px; } .statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filters { display: grid; grid-template-columns: 1fr 1fr; } .filterBtn { width: 100%; } .guideRows { grid-template-columns: 1fr; } .actions { grid-template-columns: 1fr; } }
+        @media (max-width: 480px) { .heroTitle { font-size: 38px; } .statsGrid { grid-template-columns: 1fr; } .modalActions { display: grid; } .btn { width: 100%; } }
       `}</style>
 
       <header className="header">
         <div className="headerInner">
-          <div
-            className="brand"
-            onClick={() => router.push('/admin/dashboard')}
-          >
+          <div className="brand" onClick={() => router.push('/admin/dashboard')}>
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
 
             <div>
@@ -1615,19 +939,11 @@ export default function AdminFinanceiroPage() {
 
             {menuAberto && (
               <div className="settingsMenu">
-                <button
-                  type="button"
-                  className="menuButton"
-                  onClick={abrirAlterarSenha}
-                >
+                <button type="button" className="menuButton" onClick={abrirAlterarSenha}>
                   🔐 Alterar senha
                 </button>
 
-                <button
-                  type="button"
-                  className="menuButton danger"
-                  onClick={sair}
-                >
+                <button type="button" className="menuButton danger" onClick={sair}>
                   🚪 Sair
                 </button>
               </div>
@@ -1667,19 +983,14 @@ export default function AdminFinanceiroPage() {
           </div>
         </section>
 
-        {!tabelaRepassesOk && (
+        {!repassesOk && (
           <div className="alert warning">
-            A tela carregou em modo estimado porque a tabela de repasses não pôde ser lida diretamente pelo client. O registro de pagamento usa rota segura do backend.
+            A tela não conseguiu carregar os repasses pela rota segura. Confira se a rota /api/admin/financeiro/repasses existe e se a SERVICE_ROLE está configurada.
           </div>
         )}
 
-        {mensagem && (
-          <div className="alert success">{mensagem}</div>
-        )}
-
-        {erro && (
-          <div className="alert error">{erro}</div>
-        )}
+        {mensagem && <div className="alert success">{mensagem}</div>}
+        {erro && <div className="alert error">{erro}</div>}
 
         <section className="statsGrid">
           <article className="statCard" onClick={() => router.push('/admin/reservas')}>
@@ -1728,35 +1039,19 @@ export default function AdminFinanceiroPage() {
           />
 
           <div className="filters">
-            <button
-              type="button"
-              className={`filterBtn ${filtroFinanceiro === 'todos' ? 'active' : ''}`}
-              onClick={() => setFiltroFinanceiro('todos')}
-            >
+            <button type="button" className={`filterBtn ${filtroFinanceiro === 'todos' ? 'active' : ''}`} onClick={() => setFiltroFinanceiro('todos')}>
               Todos
             </button>
 
-            <button
-              type="button"
-              className={`filterBtn ${filtroFinanceiro === 'com_saldo' ? 'active' : ''}`}
-              onClick={() => setFiltroFinanceiro('com_saldo')}
-            >
+            <button type="button" className={`filterBtn ${filtroFinanceiro === 'com_saldo' ? 'active' : ''}`} onClick={() => setFiltroFinanceiro('com_saldo')}>
               Com saldo
             </button>
 
-            <button
-              type="button"
-              className={`filterBtn ${filtroFinanceiro === 'quitados' ? 'active' : ''}`}
-              onClick={() => setFiltroFinanceiro('quitados')}
-            >
+            <button type="button" className={`filterBtn ${filtroFinanceiro === 'quitados' ? 'active' : ''}`} onClick={() => setFiltroFinanceiro('quitados')}>
               Quitados
             </button>
 
-            <button
-              type="button"
-              className={`filterBtn ${filtroFinanceiro === 'sem_repasses' ? 'active' : ''}`}
-              onClick={() => setFiltroFinanceiro('sem_repasses')}
-            >
+            <button type="button" className={`filterBtn ${filtroFinanceiro === 'sem_repasses' ? 'active' : ''}`} onClick={() => setFiltroFinanceiro('sem_repasses')}>
               Sem repasses
             </button>
           </div>
@@ -1771,29 +1066,20 @@ export default function AdminFinanceiroPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              className="textLink"
-              onClick={atualizar}
-              disabled={atualizando}
-            >
+            <button type="button" className="textLink" onClick={atualizar} disabled={atualizando}>
               {atualizando ? 'Atualizando...' : 'Atualizar financeiro'}
             </button>
           </div>
 
           <div className="panelBody">
             {guiasFiltrados.length === 0 ? (
-              <div className="empty">
-                Nenhum guia encontrado com os filtros atuais.
-              </div>
+              <div className="empty">Nenhum guia encontrado com os filtros atuais.</div>
             ) : (
               <div className="guideList">
                 {guiasFiltrados.map((guia) => (
                   <article className="guideCard" key={guia.guia_id}>
                     <div>
-                      <div className="guideTitle">
-                        {guia.guia_nome}
-                      </div>
+                      <div className="guideTitle">{guia.guia_nome}</div>
 
                       <div className="guideMeta">
                         {guia.guia_email || 'E-mail não informado'} · {guia.reservas_confirmadas} reserva(s) confirmada(s)
@@ -1836,21 +1122,11 @@ export default function AdminFinanceiroPage() {
                     </div>
 
                     <div className="actions">
-                      <button
-                        type="button"
-                        className="actionBtn primary"
-                        onClick={() => abrirPagamento(guia)}
-                        disabled={guia.saldo_pendente <= 0}
-                      >
+                      <button type="button" className="actionBtn primary" onClick={() => abrirPagamento(guia)} disabled={guia.saldo_pendente <= 0}>
                         Registrar pagamento
                       </button>
 
-                      <button
-                        type="button"
-                        className="actionBtn green"
-                        onClick={() => abrirPagamento(guia, guia.saldo_pendente)}
-                        disabled={guia.saldo_pendente <= 0}
-                      >
+                      <button type="button" className="actionBtn green" onClick={() => abrirPagamento(guia, guia.saldo_pendente)} disabled={guia.saldo_pendente <= 0}>
                         Pagar saldo total
                       </button>
 
@@ -1910,20 +1186,11 @@ export default function AdminFinanceiroPage() {
               </div>
 
               <div className="modalActions">
-                <button
-                  type="submit"
-                  className="btn primary"
-                  disabled={registrandoPagamento}
-                >
+                <button type="submit" className="btn primary" disabled={registrandoPagamento}>
                   {registrandoPagamento ? 'Registrando...' : 'Confirmar pagamento'}
                 </button>
 
-                <button
-                  type="button"
-                  className="btn light"
-                  disabled={registrandoPagamento}
-                  onClick={() => setModalPagamentoAberto(false)}
-                >
+                <button type="button" className="btn light" disabled={registrandoPagamento} onClick={() => setModalPagamentoAberto(false)}>
                   Cancelar
                 </button>
               </div>
@@ -1937,9 +1204,7 @@ export default function AdminFinanceiroPage() {
           <div className="modal">
             <div className="modalHeader">
               <h2 className="modalTitle">Histórico do guia</h2>
-              <div className="modalSub">
-                {guiaSelecionado.guia_nome}
-              </div>
+              <div className="modalSub">{guiaSelecionado.guia_nome}</div>
             </div>
 
             <div className="modalBody">
@@ -1976,11 +1241,7 @@ export default function AdminFinanceiroPage() {
               </div>
 
               <div className="modalActions">
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => setGuiaSelecionado(null)}
-                >
+                <button type="button" className="btn primary" onClick={() => setGuiaSelecionado(null)}>
                   Fechar
                 </button>
 
@@ -2007,9 +1268,7 @@ export default function AdminFinanceiroPage() {
           <form className="modal" onSubmit={alterarSenha}>
             <div className="modalHeader">
               <h2 className="modalTitle">Alterar senha</h2>
-              <div className="modalSub">
-                Atualize sua senha de acesso administrativo.
-              </div>
+              <div className="modalSub">Atualize sua senha de acesso administrativo.</div>
             </div>
 
             <div className="modalBody">
@@ -2047,20 +1306,11 @@ export default function AdminFinanceiroPage() {
               </div>
 
               <div className="modalActions">
-                <button
-                  type="submit"
-                  className="btn primary"
-                  disabled={alterandoSenha}
-                >
+                <button type="submit" className="btn primary" disabled={alterandoSenha}>
                   {alterandoSenha ? 'Alterando...' : 'Salvar nova senha'}
                 </button>
 
-                <button
-                  type="button"
-                  className="btn light"
-                  disabled={alterandoSenha}
-                  onClick={() => setModalSenhaAberto(false)}
-                >
+                <button type="button" className="btn light" disabled={alterandoSenha} onClick={() => setModalSenhaAberto(false)}>
                   Cancelar
                 </button>
               </div>

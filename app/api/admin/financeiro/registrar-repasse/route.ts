@@ -10,6 +10,13 @@ const supabaseServiceKey =
   process.env.SUPABASE_SERVICE_KEY ||
   ''
 
+type UsuarioBanco = {
+  id: string
+  nome?: string | null
+  email?: string | null
+  tipo?: string | null
+}
+
 function json(data: any, status = 200) {
   return NextResponse.json(data, { status })
 }
@@ -58,7 +65,27 @@ function normalizarNumero(valor: any) {
 
 function uuidValido(valor: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
-    valor
+    String(valor || '')
+  )
+}
+
+function listaTextos(valor: any) {
+  if (!Array.isArray(valor)) return []
+
+  return valor
+    .map((item) => limparTexto(item))
+    .filter(Boolean)
+}
+
+function ehAdmin(valor: any) {
+  const tipo = normalizar(valor)
+
+  return (
+    tipo === 'admin' ||
+    tipo === 'adm' ||
+    tipo === 'administrador' ||
+    tipo === 'superadmin' ||
+    tipo === 'super_admin'
   )
 }
 
@@ -112,21 +139,218 @@ function tabelaNaoExiste(error: any) {
   )
 }
 
-async function buscarUsuario(supabase: any, userId: string) {
+async function buscarUsuarioPorId(supabase: any, userId: string) {
   if (!userId || !uuidValido(userId)) return null
 
   const { data, error } = await supabase
     .from('users')
-    .select('id, nome, name, email, tipo')
+    .select('id, nome, email, tipo')
     .eq('id', userId)
     .maybeSingle()
 
   if (error) {
-    console.warn('Erro ao buscar usuário:', error)
+    console.warn('Erro ao buscar usuário por ID:', error)
     return null
   }
 
-  return data || null
+  return (data || null) as UsuarioBanco | null
+}
+
+async function buscarUsuarioPorEmail(supabase: any, email: string) {
+  const emailLimpo = limparTexto(email).toLowerCase()
+
+  if (!emailLimpo) return null
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, nome, email, tipo')
+    .ilike('email', emailLimpo)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('Erro ao buscar usuário por e-mail:', error)
+    return null
+  }
+
+  return (data || null) as UsuarioBanco | null
+}
+
+async function buscarUsuarioPorPrefixo(supabase: any, prefixo: string) {
+  const prefixoLimpo = limparTexto(prefixo)
+
+  if (!prefixoLimpo || prefixoLimpo.length < 6) return null
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, nome, email, tipo')
+    .limit(5000)
+
+  if (error) {
+    console.warn('Erro ao buscar usuários para resolver prefixo:', error)
+    return null
+  }
+
+  const usuarios = (data || []) as UsuarioBanco[]
+
+  return (
+    usuarios.find((usuario) => usuario.id?.startsWith(prefixoLimpo)) ||
+    null
+  )
+}
+
+async function buscarAdmin(
+  supabase: any,
+  adminId: string,
+  adminEmail: string,
+  adminTipo: string
+) {
+  let admin: UsuarioBanco | null = null
+
+  if (adminId && uuidValido(adminId)) {
+    admin = await buscarUsuarioPorId(supabase, adminId)
+  }
+
+  if (!admin && adminEmail) {
+    admin = await buscarUsuarioPorEmail(supabase, adminEmail)
+  }
+
+  if (admin?.id && ehAdmin(admin.tipo)) {
+    return admin
+  }
+
+  // fallback controlado para o padrão atual do app via localStorage
+  // só entra se o front enviou tipo admin e houver algum identificador mínimo
+  if (ehAdmin(adminTipo) && (uuidValido(adminId) || adminEmail)) {
+    return {
+      id: uuidValido(adminId) ? adminId : '',
+      nome: 'Admin',
+      email: adminEmail || null,
+      tipo: 'admin'
+    } as UsuarioBanco
+  }
+
+  return null
+}
+
+function guiaIdDoRoteiro(roteiro: any) {
+  return limparTexto(
+    roteiro?.id_guia ||
+      roteiro?.guia_id ||
+      roteiro?.user_id ||
+      roteiro?.usuario_id ||
+      ''
+  )
+}
+
+async function resolverGuiaPorRoteiros(
+  supabase: any,
+  roteiroIds: string[]
+) {
+  const idsValidos = roteiroIds.filter(uuidValido)
+
+  if (idsValidos.length === 0) return null
+
+  const { data, error } = await supabase
+    .from('roteiros')
+    .select('id, id_guia, guia_id, user_id, usuario_id')
+    .in('id', idsValidos)
+
+  if (error) {
+    console.warn('Erro ao resolver guia por roteiros:', error)
+    return null
+  }
+
+  const roteiros = data || []
+
+  for (const roteiro of roteiros) {
+    const guiaId = guiaIdDoRoteiro(roteiro)
+
+    if (uuidValido(guiaId)) {
+      const guia = await buscarUsuarioPorId(supabase, guiaId)
+
+      if (guia?.id) return guia
+    }
+
+    if (guiaId && !uuidValido(guiaId)) {
+      const guia = await buscarUsuarioPorPrefixo(supabase, guiaId)
+
+      if (guia?.id) return guia
+    }
+  }
+
+  return null
+}
+
+async function resolverGuiaPorReservas(
+  supabase: any,
+  reservaIds: string[]
+) {
+  const idsValidos = reservaIds.filter(uuidValido)
+
+  if (idsValidos.length === 0) return null
+
+  const { data, error } = await supabase
+    .from('reservas')
+    .select('id, roteiro_id, guia_id, id_guia')
+    .in('id', idsValidos)
+
+  if (error) {
+    console.warn('Erro ao resolver guia por reservas:', error)
+    return null
+  }
+
+  const reservas = data || []
+
+  for (const reserva of reservas) {
+    const guiaDireto = limparTexto(reserva?.guia_id || reserva?.id_guia || '')
+
+    if (uuidValido(guiaDireto)) {
+      const guia = await buscarUsuarioPorId(supabase, guiaDireto)
+
+      if (guia?.id) return guia
+    }
+
+    if (guiaDireto && !uuidValido(guiaDireto)) {
+      const guia = await buscarUsuarioPorPrefixo(supabase, guiaDireto)
+
+      if (guia?.id) return guia
+    }
+  }
+
+  const roteiroIds = reservas
+    .map((reserva: any) => limparTexto(reserva?.roteiro_id))
+    .filter(Boolean)
+
+  return resolverGuiaPorRoteiros(supabase, roteiroIds)
+}
+
+async function resolverGuia(
+  supabase: any,
+  guiaId: string,
+  reservaIds: string[],
+  roteiroIds: string[]
+) {
+  if (guiaId && uuidValido(guiaId)) {
+    const guia = await buscarUsuarioPorId(supabase, guiaId)
+
+    if (guia?.id) return guia
+  }
+
+  if (guiaId && !uuidValido(guiaId)) {
+    const guia = await buscarUsuarioPorPrefixo(supabase, guiaId)
+
+    if (guia?.id) return guia
+  }
+
+  const guiaPorRoteiro = await resolverGuiaPorRoteiros(supabase, roteiroIds)
+
+  if (guiaPorRoteiro?.id) return guiaPorRoteiro
+
+  const guiaPorReserva = await resolverGuiaPorReservas(supabase, reservaIds)
+
+  if (guiaPorReserva?.id) return guiaPorReserva
+
+  return null
 }
 
 async function inserirRepasseComFallback(
@@ -186,11 +410,34 @@ export async function POST(request: NextRequest) {
         body.usuario_id
     )
 
-    const guiaId = limparTexto(
+    const adminEmail = limparTexto(
+      body.adminEmail ||
+        body.admin_email ||
+        body.email ||
+        ''
+    )
+
+    const adminTipo = limparTexto(
+      body.adminTipo ||
+        body.admin_tipo ||
+        body.tipo ||
+        ''
+    )
+
+    const guiaIdOriginal = limparTexto(
       body.guiaId ||
         body.guia_id ||
         body.id_guia
     )
+
+    const guiaNomeEnviado = limparTexto(
+      body.guiaNome ||
+        body.guia_nome ||
+        ''
+    )
+
+    const reservaIds = listaTextos(body.reservaIds || body.reserva_ids)
+    const roteiroIds = listaTextos(body.roteiroIds || body.roteiro_ids)
 
     const valor = normalizarNumero(
       body.valor ||
@@ -206,21 +453,11 @@ export async function POST(request: NextRequest) {
         ''
     )
 
-    if (!adminId || !uuidValido(adminId)) {
+    if ((!adminId || !uuidValido(adminId)) && !adminEmail && !ehAdmin(adminTipo)) {
       return json(
         {
           sucesso: false,
-          erro: 'Admin inválido.'
-        },
-        400
-      )
-    }
-
-    if (!guiaId || !uuidValido(guiaId)) {
-      return json(
-        {
-          sucesso: false,
-          erro: 'Guia inválido.'
+          erro: 'Admin inválido. Não foi enviado ID válido, e-mail ou tipo administrativo.'
         },
         400
       )
@@ -236,39 +473,60 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const admin = await buscarUsuario(supabase, adminId)
+    const admin = await buscarAdmin(supabase, adminId, adminEmail, adminTipo)
 
-    if (!admin?.id || normalizar(admin.tipo) !== 'admin') {
+    if (!admin) {
       return json(
         {
           sucesso: false,
-          erro: 'Usuário sem permissão administrativa.'
+          erro: 'Usuário sem permissão administrativa ou admin não localizado.',
+          debug: {
+            adminIdRecebido: adminId || null,
+            adminEmailRecebido: adminEmail || null,
+            adminTipoRecebido: adminTipo || null
+          }
         },
         403
       )
     }
 
-    const guia = await buscarUsuario(supabase, guiaId)
+    const guia = await resolverGuia(
+      supabase,
+      guiaIdOriginal,
+      reservaIds,
+      roteiroIds
+    )
 
     if (!guia?.id) {
       return json(
         {
           sucesso: false,
-          erro: 'Guia não encontrado.'
+          erro:
+            'Guia não encontrado. O sistema recebeu um ID curto ou inválido e não conseguiu resolver pelo roteiro/reserva.',
+          debug: {
+            guiaIdRecebido: guiaIdOriginal || null,
+            guiaNomeEnviado: guiaNomeEnviado || null,
+            reservaIdsRecebidos: reservaIds.length,
+            roteiroIdsRecebidos: roteiroIds.length
+          }
         },
         404
       )
     }
 
     const agora = new Date().toISOString()
-    const nomeGuia = guia.nome || guia.name || guia.email || guiaId
+    const nomeGuia = guia.nome || guia.email || guiaNomeEnviado || guia.id
 
     const payload = {
-      guia_id: guiaId,
-      id_guia: guiaId,
+      guia_id: guia.id,
+      id_guia: guia.id,
 
-      admin_id: adminId,
-      criado_por: adminId,
+      ...(admin?.id && uuidValido(admin.id)
+        ? {
+            admin_id: admin.id,
+            criado_por: admin.id
+          }
+        : {}),
 
       valor,
       valor_pago: valor,
@@ -291,6 +549,11 @@ export async function POST(request: NextRequest) {
       sucesso: true,
       mensagem: 'Repasse registrado com sucesso.',
       repasse: resultado.data,
+      admin: {
+        id: admin.id || null,
+        nome: admin.nome || admin.email || 'Admin',
+        email: admin.email || null
+      },
       guia: {
         id: guia.id,
         nome: nomeGuia,
