@@ -1,184 +1,416 @@
 'use client'
 
-import { useState } from 'react'
+import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 
-export default function RecuperarSenha() {
+export default function RecuperarSenhaPage() {
   const router = useRouter()
-  const [identificador, setIdentificador] = useState('')
-  const [enviando, setEnviando] = useState(false)
+
+  const [email, setEmail] = useState('')
+  const [carregando, setCarregando] = useState(false)
   const [mensagem, setMensagem] = useState('')
-  const [erro, setErro] = useState('')
+  const [tipoMensagem, setTipoMensagem] = useState<'erro' | 'sucesso' | ''>('')
+  const [linkTeste, setLinkTeste] = useState('')
 
-  const formatarCPF = (valor: string) => {
-    let numeros = valor.replace(/\D/g, '')
-    if (numeros.length > 11) numeros = numeros.slice(0, 11)
-    if (numeros.length <= 3) return numeros
-    if (numeros.length <= 6) return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
-    if (numeros.length <= 9) return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
-    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
+  const validarEmail = (valor: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)
   }
 
-  const handleIdentificadorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let valor = e.target.value
-    // Se parecer com CPF (11 dígitos), formata
-    if (valor.replace(/\D/g, '').length <= 11 && /^\d+$/.test(valor.replace(/\D/g, ''))) {
-      valor = formatarCPF(valor)
-    }
-    setIdentificador(valor)
-  }
+  const solicitarRecuperacao = async (event: FormEvent) => {
+    event.preventDefault()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setEnviando(true)
     setMensagem('')
-    setErro('')
+    setTipoMensagem('')
+    setLinkTeste('')
+
+    const emailFinal = email.trim().toLowerCase()
+
+    if (!emailFinal || !validarEmail(emailFinal)) {
+      setMensagem('Informe um e-mail válido.')
+      setTipoMensagem('erro')
+      return
+    }
+
+    setCarregando(true)
 
     try {
       const response = await fetch('/api/recuperar-senha', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identificador })
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: emailFinal
+        })
       })
 
-      const data = await response.json()
+      const texto = await response.text()
 
-      if (response.ok) {
-        setMensagem(data.message || 'E-mail enviado! Verifique sua caixa de entrada.')
-        setTimeout(() => router.push('/login'), 5000)
-      } else {
-        setErro(data.error || 'Erro ao processar solicitação')
+      let data: any = null
+
+      try {
+        data = texto ? JSON.parse(texto) : null
+      } catch {
+        throw new Error('A rota de recuperação retornou uma resposta inválida.')
       }
-    } catch (err) {
-      setErro('Erro ao conectar com o servidor')
+
+      if (!response.ok || !data?.sucesso) {
+        throw new Error(
+          data?.erro ||
+            data?.message ||
+            'Não foi possível solicitar a recuperação de senha.'
+        )
+      }
+
+      setMensagem(
+        data?.mensagem ||
+          'Se este e-mail estiver cadastrado, enviaremos as instruções de recuperação.'
+      )
+      setTipoMensagem('sucesso')
+
+      if (data?.linkRecuperacao) {
+        setLinkTeste(data.linkRecuperacao)
+      }
+    } catch (error: any) {
+      console.error('Erro ao solicitar recuperação de senha:', error)
+
+      setMensagem(
+        error?.message ||
+          'Erro ao solicitar recuperação de senha. Tente novamente.'
+      )
+      setTipoMensagem('erro')
     } finally {
-      setEnviando(false)
+      setCarregando(false)
     }
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px', width: '100%', display: 'flex', justifyContent: 'center' }}>
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '24px',
-          padding: '40px',
-          maxWidth: '450px',
-          width: '100%',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.08)'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔐</div>
-            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>Recuperar senha</h1>
-            <p style={{ color: '#6b7280', marginTop: '8px', fontSize: '14px' }}>
-              Digite seu CPF ou e-mail cadastrado
-            </p>
+    <main className="page">
+      <style>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          background: #f3f4f6;
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        }
+
+        .page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
+            linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
+          color: #111827;
+        }
+
+        .topBar {
+          height: 64px;
+          background: #dc2626;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 16px;
+        }
+
+        .topLogo {
+          height: 42px;
+          width: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .container {
+          width: 100%;
+          max-width: 560px;
+          margin: 0 auto;
+          padding: 34px 18px 44px;
+        }
+
+        .card {
+          background: #ffffff;
+          border-radius: 32px;
+          padding: 30px;
+          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
+          border: 1px solid #eef2f7;
+        }
+
+        .brand {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 18px;
+        }
+
+        .brand img {
+          height: 72px;
+          width: auto;
+          object-fit: contain;
+        }
+
+        .title {
+          margin: 0;
+          text-align: center;
+          font-size: 30px;
+          font-weight: 900;
+          color: #111827;
+          letter-spacing: -0.04em;
+        }
+
+        .subtitle {
+          margin: 10px auto 26px;
+          text-align: center;
+          color: #6b7280;
+          font-size: 14px;
+          line-height: 1.6;
+          max-width: 430px;
+        }
+
+        .form {
+          display: grid;
+          gap: 16px;
+        }
+
+        .formGroup {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+
+        label {
+          font-size: 13px;
+          font-weight: 800;
+          color: #374151;
+        }
+
+        input {
+          width: 100%;
+          border: 1px solid #e5e7eb;
+          border-radius: 18px;
+          padding: 15px 16px;
+          font-size: 16px;
+          color: #111827;
+          background: #ffffff;
+          outline: none;
+          transition: 0.2s ease;
+        }
+
+        input:focus {
+          border-color: #16a34a;
+          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+        }
+
+        input::placeholder {
+          color: #9ca3af;
+        }
+
+        .message {
+          padding: 14px 16px;
+          border-radius: 18px;
+          font-size: 14px;
+          line-height: 1.45;
+          text-align: center;
+          font-weight: 700;
+        }
+
+        .message.erro {
+          background: #fee2e2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
+        }
+
+        .message.sucesso {
+          background: #dcfce7;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+        }
+
+        .submitButton {
+          width: 100%;
+          border: none;
+          border-radius: 999px;
+          padding: 16px;
+          background: #15803d;
+          color: #ffffff;
+          font-size: 17px;
+          font-weight: 900;
+          cursor: pointer;
+          transition: 0.2s ease;
+          margin-top: 4px;
+        }
+
+        .submitButton:hover:not(:disabled) {
+          background: #166534;
+          transform: translateY(-1px);
+          box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
+        }
+
+        .submitButton:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .secondaryButton {
+          width: 100%;
+          border: 1px solid #16a34a;
+          border-radius: 999px;
+          padding: 15px;
+          background: #ffffff;
+          color: #16a34a;
+          font-size: 16px;
+          font-weight: 900;
+          cursor: pointer;
+          transition: 0.2s ease;
+          margin-top: 12px;
+        }
+
+        .secondaryButton:hover {
+          background: #f0fdf4;
+        }
+
+        .testBox {
+          margin-top: 18px;
+          padding: 14px;
+          border-radius: 18px;
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+          color: #1e40af;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .testLink {
+          display: block;
+          margin-top: 8px;
+          word-break: break-all;
+          color: #2563eb;
+          font-weight: 800;
+          text-decoration: underline;
+          cursor: pointer;
+        }
+
+        .hint {
+          margin: 16px 0 0;
+          text-align: center;
+          color: #9ca3af;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        @media (max-width: 520px) {
+          .topBar {
+            height: 62px;
+          }
+
+          .container {
+            padding: 24px 14px 34px;
+          }
+
+          .card {
+            border-radius: 28px;
+            padding: 24px 18px;
+          }
+
+          .brand img {
+            height: 62px;
+          }
+
+          .title {
+            font-size: 26px;
+          }
+
+          input {
+            font-size: 16px;
+            padding: 14px 15px;
+          }
+        }
+      `}</style>
+
+      <header className="topBar">
+        <img
+          src="/logo-prussik-display.png"
+          alt="PrussikTrails"
+          className="topLogo"
+        />
+      </header>
+
+      <div className="container">
+        <section className="card">
+          <div className="brand">
+            <img
+              src="/logo-prussik-display.png"
+              alt="PrussikTrails"
+            />
           </div>
 
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-                CPF ou E-mail
-              </label>
+          <h1 className="title">Recuperar senha</h1>
+
+          <p className="subtitle">
+            Informe o e-mail cadastrado. Se ele existir na plataforma, enviaremos
+            um link para você criar uma nova senha.
+          </p>
+
+          <form className="form" onSubmit={solicitarRecuperacao}>
+            <div className="formGroup">
+              <label>E-mail cadastrado *</label>
               <input
-                type="text"
-                required
-                placeholder="Ex: 000.000.000-00 ou seu@email.com"
-                value={identificador}
-                onChange={handleIdentificadorChange}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#16a34a'
-                  e.target.style.boxShadow = '0 0 0 3px rgba(22,163,74,0.1)'
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#e5e7eb'
-                  e.target.style.boxShadow = 'none'
-                }}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="seuemail@email.com"
+                type="email"
+                autoComplete="email"
               />
             </div>
 
-            {erro && (
-              <div style={{
-                backgroundColor: '#fee2e2',
-                color: '#dc2626',
-                padding: '12px',
-                borderRadius: '12px',
-                fontSize: '13px',
-                textAlign: 'center',
-                marginBottom: '16px'
-              }}>
-                {erro}
-              </div>
-            )}
-
             {mensagem && (
-              <div style={{
-                backgroundColor: '#dcfce7',
-                color: '#16a34a',
-                padding: '12px',
-                borderRadius: '12px',
-                fontSize: '13px',
-                textAlign: 'center',
-                marginBottom: '16px'
-              }}>
+              <div className={`message ${tipoMensagem}`}>
                 {mensagem}
               </div>
             )}
 
             <button
               type="submit"
-              disabled={enviando}
-              style={{
-                width: '100%',
-                backgroundColor: '#16a34a',
-                color: 'white',
-                padding: '12px 24px',
-                borderRadius: '40px',
-                border: 'none',
-                cursor: enviando ? 'not-allowed' : 'pointer',
-                fontSize: '16px',
-                fontWeight: '600',
-                opacity: enviando ? 0.6 : 1,
-                transition: 'background-color 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (!enviando) e.currentTarget.style.backgroundColor = '#15803d'
-              }}
-              onMouseLeave={(e) => {
-                if (!enviando) e.currentTarget.style.backgroundColor = '#16a34a'
-              }}
+              className="submitButton"
+              disabled={carregando}
             >
-              {enviando ? 'Enviando...' : 'Enviar link de recuperação'}
+              {carregando ? 'Enviando...' : 'Enviar link de recuperação'}
             </button>
           </form>
 
-          <div style={{ textAlign: 'center', marginTop: '24px' }}>
-            <Link href="/login" style={{ fontSize: '13px', color: '#16a34a', textDecoration: 'none' }}>
-              ← Voltar para o login
-            </Link>
-          </div>
+          {linkTeste && (
+            <div className="testBox">
+              Link de teste do MVP:
+              <button
+                type="button"
+                className="testLink"
+                onClick={() => router.push(linkTeste.replace(window.location.origin, ''))}
+              >
+                {linkTeste}
+              </button>
+            </div>
+          )}
 
-          <p style={{
-            textAlign: 'center',
-            fontSize: '11px',
-            color: '#9ca3af',
-            marginTop: '32px',
-            marginBottom: 0
-          }}>
-            Você receberá um e‑mail com um link para redefinir sua senha. O link é válido por 1 hora.
+          <button
+            type="button"
+            className="secondaryButton"
+            onClick={() => router.push('/login')}
+          >
+            Voltar para login
+          </button>
+
+          <p className="hint">
+            O link expira em 1 hora por segurança.
           </p>
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
