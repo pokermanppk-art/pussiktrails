@@ -38,6 +38,8 @@ type Reserva = {
   id: string
   cliente_id?: string | null
   roteiro_id?: string | null
+  guia_id?: string | null
+  id_guia?: string | null
   quantidade_pessoas?: number | null
   valor_total?: number | null
   status?: string | null
@@ -106,6 +108,8 @@ type Stats = {
   guiasComSaldo: number
 }
 
+type FiltroFinanceiro = 'todos' | 'com_saldo' | 'quitados' | 'sem_repasses'
+
 const statsInicial: Stats = {
   receitaBrutaTotal: 0,
   receitaBrutaMes: 0,
@@ -123,14 +127,11 @@ const statsInicial: Stats = {
   guiasComSaldo: 0
 }
 
-type FiltroFinanceiro = 'todos' | 'com_saldo' | 'quitados' | 'sem_repasses'
-
 export default function AdminFinanceiroPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [reservas, setReservas] = useState<ReservaCompleta[]>([])
   const [guiasFinanceiros, setGuiasFinanceiros] = useState<GuiaFinanceiro[]>([])
   const [stats, setStats] = useState<Stats>(statsInicial)
 
@@ -217,7 +218,7 @@ export default function AdminFinanceiroPage() {
   }
 
   const nomeUsuario = (usuario?: UsuarioLocal | UsuarioBanco | null) => {
-    return usuario?.nome || usuario?.name || usuario?.email || 'Usuário'
+    return usuario?.nome || usuario?.name || usuario?.email || ''
   }
 
   const tituloRoteiro = (roteiro?: Roteiro | null) => {
@@ -226,6 +227,10 @@ export default function AdminFinanceiroPage() {
 
   const guiaIdDoRoteiro = (roteiro?: Roteiro | null) => {
     return roteiro?.id_guia || roteiro?.guia_id || roteiro?.user_id || roteiro?.usuario_id || ''
+  }
+
+  const guiaIdDaReserva = (reserva?: Reserva | null) => {
+    return reserva?.guia_id || reserva?.id_guia || ''
   }
 
   const guiaIdDoRepasse = (repasse?: RepasseGuia | null) => {
@@ -305,40 +310,7 @@ export default function AdminFinanceiroPage() {
     }).format(Number(valor || 0))
   }
 
-  const extrairColunaAusente = (error: any) => {
-    const texto = [error?.message, error?.details, error?.hint]
-      .filter(Boolean)
-      .join(' ')
-
-    const matchAspas = texto.match(/'([^']+)'/)
-
-    if (matchAspas?.[1]) return matchAspas[1]
-
-    const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
-
-    if (matchColumn?.[1]) return matchColumn[1]
-
-    return ''
-  }
-
-  const erroDeColunaAusente = (error: any) => {
-    const texto = String(
-      error?.message ||
-        error?.details ||
-        error?.hint ||
-        ''
-    ).toLowerCase()
-
-    return (
-      error?.code === '42703' ||
-      error?.code === 'PGRST204' ||
-      texto.includes('could not find') ||
-      texto.includes('schema cache') ||
-      texto.includes('column')
-    )
-  }
-
-  const tabelaNaoExiste = (error: any) => {
+  const tabelaNaoExisteOuSemPermissao = (error: any) => {
     const texto = String(
       error?.message ||
         error?.details ||
@@ -348,11 +320,22 @@ export default function AdminFinanceiroPage() {
 
     return (
       error?.code === '42P01' ||
+      error?.code === '42501' ||
       error?.code === 'PGRST205' ||
       texto.includes('does not exist') ||
       texto.includes('not exist') ||
-      texto.includes('schema cache')
+      texto.includes('schema cache') ||
+      texto.includes('permission denied')
     )
+  }
+
+  const nomeGuiaComFallback = (guiaId: string, guia?: UsuarioBanco | null) => {
+    const nome = nomeUsuario(guia)
+
+    if (nome) return nome
+    if (guiaId) return `Guia ${guiaId.slice(0, 8)}`
+
+    return 'Guia não identificado'
   }
 
   const carregarFinanceiro = async () => {
@@ -397,12 +380,16 @@ export default function AdminFinanceiroPage() {
       roteiros = (roteirosData || []) as Roteiro[]
     }
 
+    const guiaIdsDosRoteiros = roteiros
+      .map(guiaIdDoRoteiro)
+      .filter(Boolean)
+
+    const guiaIdsDasReservas = reservasBase
+      .map(guiaIdDaReserva)
+      .filter(Boolean)
+
     const guiaIds = Array.from(
-      new Set(
-        roteiros
-          .map(guiaIdDoRoteiro)
-          .filter(Boolean)
-      )
+      new Set([...guiaIdsDosRoteiros, ...guiaIdsDasReservas])
     )
 
     if (guiaIds.length > 0) {
@@ -425,9 +412,9 @@ export default function AdminFinanceiroPage() {
       .limit(2500)
 
     if (repassesResult.error) {
-      if (tabelaNaoExiste(repassesResult.error)) {
+      if (tabelaNaoExisteOuSemPermissao(repassesResult.error)) {
         setTabelaRepassesOk(false)
-        console.warn('Tabela repasses_guias ainda não encontrada:', repassesResult.error)
+        console.warn('Tabela repasses_guias indisponível no client:', repassesResult.error)
       } else {
         console.warn('Erro ao carregar repasses:', repassesResult.error)
       }
@@ -441,7 +428,7 @@ export default function AdminFinanceiroPage() {
         roteiros.find((item) => item.id === reserva.roteiro_id) ||
         null
 
-      const guiaId = guiaIdDoRoteiro(roteiro)
+      const guiaId = guiaIdDoRoteiro(roteiro) || guiaIdDaReserva(reserva)
 
       const guia =
         guias.find((item) => item.id === guiaId) ||
@@ -452,7 +439,7 @@ export default function AdminFinanceiroPage() {
         roteiro,
         guia,
         guia_id_real: guiaId,
-        guia_nome: nomeUsuario(guia),
+        guia_nome: nomeGuiaComFallback(guiaId, guia),
         roteiro_titulo: tituloRoteiro(roteiro)
       }
     })
@@ -501,7 +488,7 @@ export default function AdminFinanceiroPage() {
 
       return {
         guia_id: guiaId,
-        guia_nome: nomeUsuario(guia),
+        guia_nome: nomeGuiaComFallback(guiaId, guia),
         guia_email: guia?.email || '',
         reservas: reservasDoGuia,
         repasses: repassesDoGuia,
@@ -548,7 +535,6 @@ export default function AdminFinanceiroPage() {
       0
     )
 
-    setReservas(reservasCompletas)
     setGuiasFinanceiros(guiasCalculados)
 
     setStats({
@@ -587,34 +573,6 @@ export default function AdminFinanceiroPage() {
     }
   }
 
-  const inserirRepasseComFallback = async (payloadOriginal: Record<string, any>) => {
-    let payloadAtual = { ...payloadOriginal }
-
-    for (let tentativa = 0; tentativa < 12; tentativa++) {
-      const { data, error } = await supabase
-        .from('repasses_guias')
-        .insert(payloadAtual)
-        .select('*')
-        .maybeSingle()
-
-      if (!error) return data as RepasseGuia | null
-
-      if (!erroDeColunaAusente(error)) {
-        throw error
-      }
-
-      const coluna = extrairColunaAusente(error)
-
-      if (!coluna || !(coluna in payloadAtual)) {
-        throw error
-      }
-
-      delete payloadAtual[coluna]
-    }
-
-    throw new Error('Não foi possível registrar o repasse.')
-  }
-
   const abrirPagamento = (guia: GuiaFinanceiro, valorPadrao?: number) => {
     setGuiaSelecionado(guia)
     setValorPagamento(valorPadrao ? String(valorPadrao.toFixed(2)).replace('.', ',') : '')
@@ -627,13 +585,13 @@ export default function AdminFinanceiroPage() {
   const registrarPagamento = async (event: FormEvent) => {
     event.preventDefault()
 
-    if (!guiaSelecionado?.guia_id) {
-      setErro('Selecione um guia para registrar o pagamento.')
+    if (!user?.id) {
+      router.replace('/login')
       return
     }
 
-    if (!tabelaRepassesOk) {
-      setErro('A tabela repasses_guias ainda não existe. Na próxima etapa, rode o SQL financeiro para habilitar pagamentos.')
+    if (!guiaSelecionado?.guia_id) {
+      setErro('Selecione um guia para registrar o pagamento.')
       return
     }
 
@@ -654,27 +612,27 @@ export default function AdminFinanceiroPage() {
     setMensagem('')
 
     try {
-      const agora = new Date().toISOString()
-
-      await inserirRepasseComFallback({
-        guia_id: guiaSelecionado.guia_id,
-        id_guia: guiaSelecionado.guia_id,
-
-        valor,
-        valor_pago: valor,
-        valor_repassado: valor,
-
-        status: 'pago',
-        tipo: 'repasse_guia',
-
-        observacao: observacaoPagamento || null,
-        descricao: observacaoPagamento || `Repasse ao guia ${guiaSelecionado.guia_nome}`,
-
-        data_pagamento: agora,
-        created_at: agora,
-        updated_at: agora
+      const response = await fetch('/api/admin/financeiro/registrar-repasse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          adminId: user.id,
+          guiaId: guiaSelecionado.guia_id,
+          valor,
+          observacao: observacaoPagamento || ''
+        })
       })
 
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        setErro(data?.erro || data?.message || 'Não foi possível registrar o pagamento.')
+        return
+      }
+
+      setTabelaRepassesOk(true)
       setMensagem('Pagamento registrado com sucesso.')
       setModalPagamentoAberto(false)
       setGuiaSelecionado(null)
@@ -684,13 +642,7 @@ export default function AdminFinanceiroPage() {
       await carregarFinanceiro()
     } catch (error: any) {
       console.error('Erro ao registrar pagamento:', error)
-
-      if (tabelaNaoExiste(error)) {
-        setTabelaRepassesOk(false)
-        setErro('A tabela repasses_guias ainda não existe. Precisamos rodar o SQL financeiro antes de registrar pagamentos.')
-      } else {
-        setErro(error?.message || 'Não foi possível registrar o pagamento.')
-      }
+      setErro(error?.message || 'Erro ao registrar pagamento.')
     } finally {
       setRegistrandoPagamento(false)
     }
@@ -1405,11 +1357,6 @@ export default function AdminFinanceiroPage() {
           color: #92400e;
         }
 
-        .badge.neutral {
-          background: #f1f5f9;
-          color: #475569;
-        }
-
         .empty {
           padding: 24px;
           text-align: center;
@@ -1722,7 +1669,7 @@ export default function AdminFinanceiroPage() {
 
         {!tabelaRepassesOk && (
           <div className="alert warning">
-            A página está calculando receitas e saldos em modo estimado. Para registrar pagamentos aos guias, será necessário criar a tabela repasses_guias.
+            A tela carregou em modo estimado porque a tabela de repasses não pôde ser lida diretamente pelo client. O registro de pagamento usa rota segura do backend.
           </div>
         )}
 
@@ -1954,7 +1901,7 @@ export default function AdminFinanceiroPage() {
                   className="modalTextarea"
                   value={observacaoPagamento}
                   onChange={(event) => setObservacaoPagamento(event.target.value)}
-                  placeholder="Ex.: Repasse parcial via Pix em 25/05/2026."
+                  placeholder="Ex.: Repasse parcial via Pix."
                 />
               </div>
 
