@@ -59,6 +59,28 @@ export default function CadastroPage() {
     }
   }, [router])
 
+  // Função para calcular idade a partir da data de nascimento
+  const calcularIdade = (dataNascimento: string): number => {
+    if (!dataNascimento) return 0
+    
+    const hoje = new Date()
+    const nascimento = new Date(dataNascimento)
+    
+    let idade = hoje.getFullYear() - nascimento.getFullYear()
+    const mes = hoje.getMonth() - nascimento.getMonth()
+    
+    if (mes < 0 || (mes === 0 && hoje.getDate() < nascimento.getDate())) {
+      idade--
+    }
+    
+    return idade
+  }
+
+  // Verificar se o usuário é maior de idade (>= 18 anos)
+  const isMaiorDeIdade = (dataNascimento: string): boolean => {
+    return calcularIdade(dataNascimento) >= 18
+  }
+
   const somenteNumeros = (valor: string) => {
     return String(valor || '').replace(/\D/g, '')
   }
@@ -146,6 +168,12 @@ export default function CadastroPage() {
 
     if (!form.data_nascimento) {
       return 'Informe sua data de nascimento.'
+    }
+
+    // VALIDAÇÃO DE IDADE - BLOQUEIA MENORES DE 18 ANOS
+    if (!isMaiorDeIdade(form.data_nascimento)) {
+      const idade = calcularIdade(form.data_nascimento)
+      return `❌ Cadastro não permitido para menores de 18 anos. Você tem ${idade} anos.`
     }
 
     if (!form.senha || form.senha.length < 6) {
@@ -624,6 +652,9 @@ export default function CadastroPage() {
                 type="date"
                 autoComplete="bday"
               />
+              <small style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                ⚠️ Apenas maiores de 18 anos podem se cadastrar.
+              </small>
             </div>
 
             <div className="formGroup">
