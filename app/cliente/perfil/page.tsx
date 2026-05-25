@@ -75,9 +75,9 @@ const METAS_JORNADA: TierJornada[] = [
     km: 0,
     fotos: 0,
     icone: '🎒',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/01_backpack_montanha.svg',
+    svg: '/medalhas/progressao/01_mochila_de_partida.svg',
     cor: '#8b5e34',
-    descricao: 'O início simbólico do seu Passaporte Prussik.'
+    descricao: 'O início simbólico do seu Passaporte PrussikTrails.'
   },
   {
     key: 'barraca_base',
@@ -86,7 +86,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 32,
     fotos: 5,
     icone: '⛺',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/02_tenda_montanha.svg',
+    svg: '/medalhas/progressao/02_barraca_base.svg',
     cor: '#64748b',
     descricao: 'Você começou a firmar presença nas trilhas.'
   },
@@ -97,7 +97,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 96,
     fotos: 15,
     icone: '🔥',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/03_fogueira_noturna.svg',
+    svg: '/medalhas/progressao/03_fogueira_da_jornada.svg',
     cor: '#b45309',
     descricao: 'Sua história outdoor já começou a ganhar memória.'
   },
@@ -108,7 +108,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 192,
     fotos: 30,
     icone: '🏮',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/04_lanterna_trilha.svg',
+    svg: '/medalhas/progressao/04_lanterna_da_serra.svg',
     cor: '#365314',
     descricao: 'Você segue avançando com constância e direção.'
   },
@@ -119,7 +119,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 384,
     fotos: 60,
     icone: '🪧',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/05_placa_de_trilha.svg',
+    svg: '/medalhas/progressao/05_rumo_certo.svg',
     cor: '#3f6212',
     descricao: 'Sua jornada já tem caminho, escolhas e identidade.'
   },
@@ -130,7 +130,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 768,
     fotos: 120,
     icone: '🪢',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/06_escalada_carabiner.svg',
+    svg: '/medalhas/progressao/06_prussik.svg',
     cor: '#334155',
     descricao: 'Um marco avançado de técnica, presença e aventura.'
   },
@@ -141,7 +141,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 1152,
     fotos: 200,
     icone: '💧',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/07_queda_dagua.svg',
+    svg: '/medalhas/progressao/07_cachoeira_viva.svg',
     cor: '#0f766e',
     descricao: 'Sua jornada atravessa paisagens, memórias e experiências.'
   },
@@ -152,7 +152,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 1920,
     fotos: 400,
     icone: '🌄',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/08_amanhecer_cume.svg',
+    svg: '/medalhas/progressao/08_amanhecer_no_cume.svg',
     cor: '#ca8a04',
     descricao: 'Uma conquista rara de continuidade e evolução.'
   },
@@ -163,7 +163,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 3840,
     fotos: 1000,
     icone: '🔭',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/09_binoculos_explorador.svg',
+    svg: '/medalhas/progressao/09_mirante_do_explorador.svg',
     cor: '#111827',
     descricao: 'Um olhar amplo sobre tudo o que você já viveu nas trilhas.'
   },
@@ -174,7 +174,7 @@ const METAS_JORNADA: TierJornada[] = [
     km: 7680,
     fotos: 2000,
     icone: '🗺️',
-    svg: '/medalhas/prussik_svg_icones_colecao_02/10_mapa_exploracao.svg',
+    svg: '/medalhas/progressao/10_mapa_lendario.svg',
     cor: '#0f172a',
     descricao: 'O nível lendário da jornada Prussik: cada trilha virou história.'
   }
@@ -806,7 +806,7 @@ export default function PerfilCliente() {
       <AvatarCropModal
         open={cropAberto}
         imageSrc={cropImageSrc}
-        title="Ajustar foto do passaporte"
+        title="Foto do Passaporte"
         onCancel={() => {
           if (enviandoAvatar) return
           setCropAberto(false)
@@ -821,7 +821,7 @@ export default function PerfilCliente() {
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
             <div>
               <strong>PrussikTrails</strong>
-              <span>Passaporte Prussik</span>
+              <span>Passaporte PrussikTrails</span>
             </div>
           </button>
 
@@ -852,14 +852,6 @@ export default function PerfilCliente() {
                 <span>{(nome || user.email || 'A').charAt(0).toUpperCase()}</span>
               )}
             </button>
-            <button
-              type="button"
-              className="avatarHintButton"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={enviandoAvatar}
-            >
-              {enviandoAvatar ? 'Salvando foto...' : 'Ajustar foto'}
-            </button>
             <input
               ref={fileInputRef}
               className="hiddenInput"
@@ -870,7 +862,7 @@ export default function PerfilCliente() {
           </div>
 
           <div className="heroTextBlock">
-            <div className="kicker">Passaporte Prussik</div>
+            <div className="kicker">Passaporte PrussikTrails</div>
 
             {editandoNome ? (
               <div className="nameEditRow">
@@ -978,7 +970,7 @@ export default function PerfilCliente() {
                   </>
                 ) : (
                   <p className="bioText">
-                    {bio || 'Clique em editar para adicionar uma biografia simples ao seu Passaporte Prussik.'}
+                    {bio || 'Clique em editar para adicionar uma biografia simples ao seu Passaporte PrussikTrails.'}
                   </p>
                 )}
               </div>
@@ -1004,7 +996,7 @@ export default function PerfilCliente() {
                             className={desbloqueado ? 'medalSvg' : 'medalSvg lockedSvg'}
                           />
                         </div>
-                        <strong>{meta.nome}</strong>
+                        <strong>{meta.titulo}</strong>
                         <small>{desbloqueado ? 'Conquistada' : 'Bloqueada'}</small>
                       </article>
                     )
@@ -1282,25 +1274,28 @@ const styles = `
 
   .brand img {
     width: auto;
-    height: 46px;
+    height: 54px;
     object-fit: contain;
+    flex: 0 0 auto;
   }
 
   .brand strong {
     display: block;
-    color: #dc2626;
-    font-size: 19px;
-    font-weight: 950;
-    line-height: 1;
-    letter-spacing: -0.05em;
+    color: #1f3f2d;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(30px, 3.6vw, 50px);
+    font-weight: 800;
+    line-height: 0.9;
+    letter-spacing: -0.055em;
   }
 
   .brand span {
     display: block;
-    margin-top: 3px;
-    color: #64748b;
-    font-size: 11px;
-    font-weight: 800;
+    margin-top: 7px;
+    color: #7b8375;
+    font-size: clamp(10px, 1.15vw, 15px);
+    font-weight: 850;
+    letter-spacing: 0.24em;
   }
 
   .topActions {
@@ -1514,6 +1509,9 @@ const styles = `
     border-radius: 30px;
     padding: 18px;
     backdrop-filter: blur(14px);
+    text-align: center;
+    display: grid;
+    justify-items: center;
   }
 
   .rankMedal,
@@ -1557,6 +1555,8 @@ const styles = `
     border: 0;
     background: transparent;
     box-shadow: none;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .rankSvgMedal img {
@@ -1741,6 +1741,9 @@ const styles = `
     padding: 12px 8px;
     text-align: center;
     opacity: 1;
+    display: grid;
+    justify-items: center;
+    align-content: start;
   }
 
   .tierCard:not(.unlocked) {
@@ -1835,7 +1838,9 @@ const styles = `
     color: #172018;
     font-size: 12px;
     font-weight: 950;
-    line-height: 1.2;
+    line-height: 1.18;
+    text-align: center;
+    max-width: 100%;
   }
 
   .tierCard small {
@@ -2032,15 +2037,35 @@ const styles = `
 
   @media (max-width: 720px) {
     .topbar {
-      padding: 9px 12px;
+      padding: 8px 12px;
     }
 
-    .brand img { height: 40px; }
-    .brand strong { font-size: 17px; }
-    .brand span { font-size: 10px; }
+    .topbarInner {
+      gap: 8px;
+    }
+
+    .brand {
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .brand img { height: 38px; }
+    .brand strong {
+      font-size: clamp(28px, 9vw, 42px);
+      line-height: 0.88;
+      letter-spacing: -0.065em;
+      white-space: nowrap;
+    }
+    .brand span {
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      margin-top: 5px;
+      white-space: nowrap;
+    }
 
     .topActions {
       gap: 6px;
+      flex: 0 0 auto;
     }
 
     .topActions .pillButton {
@@ -2048,47 +2073,141 @@ const styles = `
     }
 
     .shell {
-      padding: 16px 12px 42px;
+      padding: 12px 10px 38px;
     }
 
     .passportHero,
     .card {
-      border-radius: 28px;
+      border-radius: 26px;
     }
 
     .passportHero {
-      padding: 20px;
+      grid-template-columns: 76px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .avatarColumn {
+      justify-items: center;
+      gap: 0;
     }
 
     .avatarButton {
-      width: 128px;
-      height: 128px;
+      width: 72px;
+      height: 72px;
+      border-width: 3px;
+    }
+
+    .avatarButton span {
+      font-size: 30px;
+    }
+
+    .heroTextBlock .kicker {
+      display: none;
+    }
+
+    .nameRow {
+      gap: 6px;
     }
 
     .nameRow h1 {
-      font-size: 38px;
+      font-size: clamp(25px, 8.4vw, 38px);
+      letter-spacing: -0.065em;
+    }
+
+    .nameRow button {
+      width: 30px;
+      height: 30px;
+      font-size: 12px;
+    }
+
+    .heroTextBlock p {
+      margin-top: 7px;
+      font-size: 12px;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
 
     .heroStats {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      display: none;
+    }
+
+    .rankCard {
+      grid-column: 1 / -1;
+      display: none;
+    }
+
+    .rightStack .compactCard:first-child {
+      display: none;
+    }
+
+    .rightStack {
+      display: none;
+    }
+
+    .grid {
+      gap: 12px;
+    }
+
+    .bioCard {
+      display: none;
+    }
+
+    .cardHeader {
+      padding: 15px 16px;
+    }
+
+    .cardBody {
+      padding: 14px;
     }
 
     .tierGrid,
     .specialGrid,
     .unifiedMedalGrid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .tierCard {
+      min-height: 166px;
+      padding: 10px 7px 12px;
+      border-radius: 20px;
     }
 
     .svgMedalWrap {
-      width: 76px;
-      height: 76px;
+      width: 96px;
+      height: 96px;
+      margin-bottom: 4px;
+    }
+
+    .betaSvgMedalWrap {
+      width: 104px;
+      height: 104px;
+      margin-top: -3px;
     }
 
     .nextSvgMedal,
     .rankSvgMedal {
-      width: 96px;
-      height: 96px;
+      width: 92px;
+      height: 92px;
+    }
+
+    .tierCard strong {
+      font-size: 12px;
+      line-height: 1.14;
+    }
+
+    .tierCard small {
+      font-size: 9px;
+    }
+
+    .photoMilestones {
+      display: none;
     }
 
     .photoRow {
