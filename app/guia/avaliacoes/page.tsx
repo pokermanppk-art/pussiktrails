@@ -2,13 +2,29 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
 
 type UsuarioLocal = {
-  id: string
+  id?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  guia_id?: string | null
+  uid?: string | null
+  sub?: string | null
+  auth_user_id?: string | null
+  supabase_user_id?: string | null
   nome?: string | null
   name?: string | null
   email?: string | null
   tipo?: string | null
+  tipo_usuario?: string | null
+  role?: string | null
+  perfil?: string | null
+  user?: any
+  usuario?: any
+  profile?: any
+  data?: any
+  session?: any
 }
 
 type ResumoAvaliacoes = {
@@ -53,6 +69,7 @@ type AvaliacaoEnriquecida = {
   guia_nome?: string | null
   cliente_id?: string | null
   cliente_nome?: string | null
+  cliente_avatar?: string | null
   nota: number
   orientacoes?: string | null
   orientacoes_label?: string | null
@@ -61,6 +78,8 @@ type AvaliacaoEnriquecida = {
   experiencia?: string | null
   experiencia_label?: string | null
   comentario?: string | null
+  observacao?: string | null
+  descricao?: string | null
   recomenda?: boolean | null
   status?: string | null
   created_at?: string | null
@@ -102,7 +121,7 @@ const resumoInicial: ResumoAvaliacoes = {
   percentualComComentario: 0,
   orientacoesClarasPercentual: 0,
   segurancaAltaPercentual: 0,
-  experienciaSuperouPercentual: 0
+  experienciaSuperouPercentual: 0,
 }
 
 const dadosIniciais: EstatisticasResponse = {
@@ -112,11 +131,180 @@ const dadosIniciais: EstatisticasResponse = {
     notas: [],
     orientacoes: [],
     seguranca: [],
-    experiencia: []
+    experiencia: [],
   },
   comentariosRecentes: [],
   avaliacoes: [],
-  porRoteiro: []
+  porRoteiro: [],
+}
+
+function extrairGuiaId(usuario: any) {
+  return String(
+    usuario?.id ||
+      usuario?.user_id ||
+      usuario?.usuario_id ||
+      usuario?.guia_id ||
+      usuario?.uid ||
+      usuario?.sub ||
+      usuario?.auth_user_id ||
+      usuario?.supabase_user_id ||
+      ''
+  ).trim()
+}
+
+function extrairEmail(usuario: any) {
+  return String(
+    usuario?.email ||
+      usuario?.user?.email ||
+      usuario?.usuario?.email ||
+      usuario?.profile?.email ||
+      usuario?.data?.user?.email ||
+      usuario?.session?.user?.email ||
+      ''
+  ).trim()
+}
+
+function extrairTipoUsuario(usuario: any) {
+  return normalizar(
+    usuario?.tipo ||
+      usuario?.tipo_usuario ||
+      usuario?.role ||
+      usuario?.perfil ||
+      usuario?.user?.tipo ||
+      usuario?.usuario?.tipo ||
+      usuario?.profile?.tipo ||
+      ''
+  )
+}
+
+function montarCandidatosUsuario(parsed: any) {
+  return [
+    parsed,
+    parsed?.user,
+    parsed?.usuario,
+    parsed?.profile,
+    parsed?.data?.user,
+    parsed?.session?.user,
+    parsed?.auth?.user,
+  ].filter(Boolean)
+}
+
+async function resolverGuiaLocalStorage() {
+  const chaves = ['user', 'usuario', 'prussik_user', 'auth_user', 'session']
+  const candidatos: any[] = []
+
+  for (const chave of chaves) {
+    const raw = localStorage.getItem(chave)
+    if (!raw) continue
+
+    try {
+      const parsed = JSON.parse(raw)
+      candidatos.push(...montarCandidatosUsuario(parsed))
+    } catch {
+      // ignora valores antigos que não sejam JSON
+    }
+  }
+
+  const guiaSalvo =
+    candidatos.find((item) => extrairTipoUsuario(item) === 'guia') ||
+    candidatos.find((item) => extrairGuiaId(item) || extrairEmail(item)) ||
+    null
+
+  if (!guiaSalvo) return null
+
+  let idGuia = extrairGuiaId(guiaSalvo)
+  const emailGuia = extrairEmail(guiaSalvo)
+
+  if (!idGuia && emailGuia) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', emailGuia)
+      .eq('tipo', 'guia')
+      .maybeSingle()
+
+    if (!error && data?.id) {
+      idGuia = String(data.id)
+      return {
+        ...guiaSalvo,
+        ...data,
+        id: idGuia,
+        tipo: 'guia',
+      } as UsuarioLocal
+    }
+  }
+
+  if (!idGuia) return null
+
+  return {
+    ...guiaSalvo,
+    id: idGuia,
+    tipo: 'guia',
+  } as UsuarioLocal
+}
+
+function numero(valor: unknown) {
+  const n = Number(valor || 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function primeiroNome(valor?: string | null) {
+  const nome = String(valor || 'Guia').trim()
+  return nome.split(' ')[0] || 'Guia'
+}
+
+function nomeUsuario(usuario?: UsuarioLocal | null) {
+  return usuario?.nome || usuario?.name || usuario?.email || 'Guia'
+}
+
+function formatarData(valor?: string | null) {
+  if (!valor) return '-'
+
+  const data = new Date(valor)
+
+  if (Number.isNaN(data.getTime())) return String(valor)
+
+  return data.toLocaleDateString('pt-BR')
+}
+
+function formatarPercentual(valor: unknown) {
+  return `${numero(valor).toFixed(1).replace('.', ',')}%`
+}
+
+function formatarNota(valor: unknown) {
+  return numero(valor).toFixed(2).replace('.', ',')
+}
+
+function estrelas(nota: number) {
+  const inteira = Math.round(numero(nota))
+
+  return '★★★★★'
+    .split('')
+    .map((_, index) => (index < inteira ? '★' : '☆'))
+    .join('')
+}
+
+function textoMedia(nota: number) {
+  if (nota >= 4.7) return 'excelência percebida'
+  if (nota >= 4.3) return 'muito bem avaliado'
+  if (nota >= 3.8) return 'boa avaliação geral'
+  if (nota > 0) return 'pontos a melhorar'
+  return 'sem avaliações ainda'
+}
+
+function comentarioDaAvaliacao(avaliacao: AvaliacaoEnriquecida) {
+  return (
+    avaliacao.comentario ||
+    avaliacao.observacao ||
+    avaliacao.descricao ||
+    ''
+  )
+}
+
+function labelFiltro(filtro: 'todos' | 'comentarios' | 'baixas') {
+  if (filtro === 'comentarios') return 'Com comentário'
+  if (filtro === 'baixas') return 'Notas de atenção'
+  return 'Todas'
 }
 
 export default function GuiaAvaliacoesPage() {
@@ -124,6 +312,7 @@ export default function GuiaAvaliacoesPage() {
   const iniciouRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
+  const [guiaId, setGuiaId] = useState('')
   const [dados, setDados] = useState<EstatisticasResponse>(dadosIniciais)
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
@@ -137,30 +326,52 @@ export default function GuiaAvaliacoesPage() {
 
     iniciouRef.current = true
     iniciar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const iniciar = async () => {
+  async function iniciar() {
     setCarregando(true)
     setErro('')
     setMensagem('')
 
     try {
-      const userData = localStorage.getItem('user')
+      const usuarioSeguro = await resolverGuiaLocalStorage()
 
-      if (!userData) {
+      if (!usuarioSeguro) {
+        setErro('Não foi possível identificar o guia logado. Faça login novamente.')
+        localStorage.removeItem('user')
+        localStorage.removeItem('usuario')
         router.replace('/login')
         return
       }
 
-      const parsedUser = JSON.parse(userData) as UsuarioLocal
+      const idGuia = extrairGuiaId(usuarioSeguro)
 
-      if (parsedUser.tipo !== 'guia') {
+      if (!idGuia) {
+        setErro('Não foi possível identificar o guia logado. Faça login novamente.')
+        localStorage.removeItem('user')
+        localStorage.removeItem('usuario')
         router.replace('/login')
         return
       }
 
-      setUser(parsedUser)
-      await carregarAvaliacoes(parsedUser.id, true)
+      localStorage.setItem(
+        'user',
+        JSON.stringify({
+          ...usuarioSeguro,
+          id: idGuia,
+          tipo: 'guia',
+        })
+      )
+
+      setUser({
+        ...usuarioSeguro,
+        id: idGuia,
+        tipo: 'guia',
+      })
+      setGuiaId(idGuia)
+
+      await carregarAvaliacoes(idGuia, true)
     } catch (error) {
       console.error('Erro ao iniciar avaliações do guia:', error)
       setErro('Não foi possível carregar suas avaliações agora.')
@@ -169,52 +380,13 @@ export default function GuiaAvaliacoesPage() {
     }
   }
 
-  const nomeUsuario = (usuario?: UsuarioLocal | null) => {
-    return usuario?.nome || usuario?.name || usuario?.email || 'Guia'
-  }
+  async function carregarAvaliacoes(idGuiaRecebido?: string, silencioso = false) {
+    const idGuia = String(idGuiaRecebido || guiaId || '').trim()
 
-  const primeiroNome = (valor?: string | null) => {
-    const nome = String(valor || 'Guia').trim()
-    return nome.split(' ')[0] || 'Guia'
-  }
-
-  const formatarData = (valor?: string | null) => {
-    if (!valor) return '-'
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return valor
-
-    return data.toLocaleDateString('pt-BR')
-  }
-
-  const formatarPercentual = (valor: any) => {
-    return `${Number(valor || 0).toFixed(1).replace('.', ',')}%`
-  }
-
-  const formatarNota = (valor: any) => {
-    return Number(valor || 0).toFixed(2).replace('.', ',')
-  }
-
-  const estrelas = (nota: number) => {
-    const inteira = Math.round(Number(nota || 0))
-
-    return '★★★★★'
-      .split('')
-      .map((estrela, index) => (index < inteira ? '★' : '☆'))
-      .join('')
-  }
-
-  const textoMedia = (nota: number) => {
-    if (nota >= 4.7) return 'excelência percebida'
-    if (nota >= 4.3) return 'muito bem avaliado'
-    if (nota >= 3.8) return 'boa avaliação geral'
-    if (nota > 0) return 'pontos a melhorar'
-    return 'sem avaliações ainda'
-  }
-
-  const carregarAvaliacoes = async (guiaId: string, silencioso = false) => {
-    if (!guiaId) return
+    if (!idGuia) {
+      setErro('Guia não identificado para carregar avaliações. Faça login novamente.')
+      return
+    }
 
     if (!silencioso) {
       setAtualizando(true)
@@ -226,14 +398,16 @@ export default function GuiaAvaliacoesPage() {
       const response = await fetch('/api/avaliacoes/estatisticas', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          guiaId,
+          guiaId: idGuia,
+          guia_id: idGuia,
+          id_guia: idGuia,
           status: 'publicada',
           limite: 500,
-          limiteComentarios: 20
-        })
+          limiteComentarios: 20,
+        }),
       })
 
       const data = await response.json().catch(() => null)
@@ -248,115 +422,85 @@ export default function GuiaAvaliacoesPage() {
         distribuicao: data?.distribuicao || dadosIniciais.distribuicao,
         comentariosRecentes: data?.comentariosRecentes || [],
         avaliacoes: data?.avaliacoes || [],
-        porRoteiro: data?.porRoteiro || []
+        porRoteiro: data?.porRoteiro || [],
       })
 
       setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
 
       if (!silencioso) {
         setMensagem('Avaliações atualizadas.')
+        window.setTimeout(() => setMensagem(''), 2400)
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Erro ao carregar avaliações:', error)
-      setErro(error?.message || 'Erro ao buscar avaliações.')
+      setErro(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao carregar avaliações.'
+      )
     } finally {
       setAtualizando(false)
     }
   }
 
-  const atualizar = async () => {
-    if (!user?.id) return
-    await carregarAvaliacoes(user.id, false)
-  }
-
-  const comentariosFiltrados = useMemo(() => {
+  const avaliacoesFiltradas = useMemo(() => {
     const lista = dados.avaliacoes || []
 
     if (filtroComentarios === 'comentarios') {
-      return lista.filter((avaliacao) => String(avaliacao.comentario || '').trim())
+      return lista.filter((avaliacao) => comentarioDaAvaliacao(avaliacao).trim())
     }
 
     if (filtroComentarios === 'baixas') {
-      return lista.filter((avaliacao) => Number(avaliacao.nota || 0) <= 3)
+      return lista.filter((avaliacao) => numero(avaliacao.nota) > 0 && numero(avaliacao.nota) < 4)
     }
 
     return lista
   }, [dados.avaliacoes, filtroComentarios])
 
-  const topRoteiros = useMemo(() => {
-    return (dados.porRoteiro || []).slice(0, 5)
-  }, [dados.porRoteiro])
+  const comentariosRecentes = useMemo(() => {
+    const base = dados.comentariosRecentes?.length
+      ? dados.comentariosRecentes
+      : dados.avaliacoes.filter((avaliacao) => comentarioDaAvaliacao(avaliacao).trim())
 
-  const renderBarra = (item: DistribuicaoItem, index: number) => {
-    const label = item.label || (item.nota ? `${item.nota} estrela(s)` : item.chave || 'Item')
+    return base.slice(0, 8)
+  }, [dados.comentariosRecentes, dados.avaliacoes])
 
+  const nome = nomeUsuario(user)
+  const resumo = dados.resumo || resumoInicial
+
+  if (carregando) {
     return (
-      <div className="barItem" key={`${label}-${index}`}>
-        <div className="barTop">
-          <span>{label}</span>
-          <strong>{item.quantidade} · {formatarPercentual(item.percentual)}</strong>
-        </div>
-
-        <div className="barTrack">
-          <div
-            className="barFill"
-            style={{ width: `${Math.max(0, Math.min(100, Number(item.percentual || 0)))}%` }}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  const renderEmpty = (texto: string) => {
-    return (
-      <div className="empty">
-        {texto}
-      </div>
-    )
-  }
-
-  if (carregando || !user) {
-    return (
-      <main className="loading">
+      <main className="loadingPage">
         <style>{`
           * { box-sizing: border-box; }
-
           body {
             margin: 0;
             background: #f6f7f1;
-            font-family:
-              Inter,
-              ui-sans-serif,
-              system-ui,
-              -apple-system,
-              BlinkMacSystemFont,
-              "Segoe UI",
-              sans-serif;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           }
-
-          .loading {
+          .loadingPage {
             min-height: 100vh;
             min-height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
             background:
-              radial-gradient(circle at top left, rgba(132, 204, 22, 0.18), transparent 30%),
-              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
-            color: #374151;
+              radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
+              radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
+              linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
+            color: #172018;
           }
-
           .loadingCard {
-            background: #ffffff;
-            border: 1px solid rgba(15, 23, 42, 0.06);
+            background: rgba(255,255,255,0.92);
+            border: 1px solid rgba(15,23,42,0.06);
             border-radius: 30px;
             padding: 28px;
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
             text-align: center;
+            box-shadow: 0 20px 50px rgba(15,23,42,0.08);
+            font-weight: 850;
           }
-
           .loadingCard img {
-            height: 68px;
+            height: 64px;
             width: auto;
             margin-bottom: 12px;
           }
@@ -370,14 +514,10 @@ export default function GuiaAvaliacoesPage() {
     )
   }
 
-  const resumo = dados.resumo || resumoInicial
-
   return (
     <main className="page">
       <style>{`
-        * {
-          box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         body {
           margin: 0;
@@ -396,18 +536,18 @@ export default function GuiaAvaliacoesPage() {
           min-height: 100vh;
           min-height: 100dvh;
           background:
-            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
-            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
+            radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
+            linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
           color: #172018;
         }
 
         .header {
           position: sticky;
           top: 0;
-          z-index: 40;
-          background: rgba(255, 253, 247, 0.86);
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+          z-index: 50;
+          background: rgba(255,253,247,0.88);
+          border-bottom: 1px solid rgba(15,23,42,0.06);
           backdrop-filter: blur(18px);
           padding: 10px 16px;
         }
@@ -424,184 +564,170 @@ export default function GuiaAvaliacoesPage() {
         .brand {
           display: flex;
           align-items: center;
-          gap: 10px;
+          justify-content: flex-start;
+          gap: 12px;
           cursor: pointer;
           min-width: 0;
         }
 
         .brand img {
+          width: 42px;
           height: 42px;
-          width: auto;
-          object-fit: contain;
           display: block;
+          object-fit: contain;
+          flex: 0 0 auto;
+        }
+
+        .brandText {
+          min-width: 0;
+          line-height: 1;
         }
 
         .brandTitle {
-          font-size: 18px;
-          font-weight: 950;
-          color: #dc2626;
-          line-height: 1;
-          letter-spacing: -0.05em;
+          color: #1f3d2d;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: clamp(30px, 4.2vw, 52px);
+          font-weight: 800;
+          line-height: 0.9;
+          letter-spacing: -0.06em;
+          white-space: nowrap;
         }
 
         .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 700;
-          margin-top: 3px;
+          color: #7b8372;
+          font-size: clamp(10px, 1.4vw, 14px);
+          font-weight: 850;
+          margin-top: 6px;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+          white-space: nowrap;
         }
 
         .headerActions {
           display: flex;
-          gap: 6px;
           align-items: center;
-        }
-
-        .iconBtn {
-          height: 38px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          background: rgba(255,255,255,0.78);
-          border-radius: 999px;
-          padding: 0 13px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 900;
-          transition: 0.2s ease;
-          color: #172018;
-          white-space: nowrap;
-        }
-
-        .iconBtn.primary {
-          background: #172018;
-          color: #ffffff;
-          border-color: #172018;
-        }
-
-        .iconBtn:disabled {
-          opacity: 0.65;
-          cursor: not-allowed;
+          gap: 8px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
         }
 
         .container {
           max-width: 1180px;
           margin: 0 auto;
-          padding: 22px 16px 48px;
+          padding: 22px 16px 54px;
+        }
+
+        .btn {
+          border: none;
+          border-radius: 999px;
+          padding: 11px 14px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 22px rgba(15,23,42,0.10);
+        }
+
+        .btn:disabled {
+          opacity: 0.62;
+          cursor: not-allowed;
+        }
+
+        .btn.dark {
+          background: #172018;
+          color: #ffffff;
+        }
+
+        .btn.light {
+          background: rgba(255,255,255,0.84);
+          color: #172018;
+          border: 1px solid rgba(15,23,42,0.08);
         }
 
         .hero {
-          position: relative;
-          overflow: hidden;
           border-radius: 38px;
-          padding: 30px;
-          min-height: 330px;
+          padding: 28px;
           background:
-            linear-gradient(135deg, rgba(23, 32, 24, 0.78), rgba(23, 32, 24, 0.36)),
-            radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 34%),
+            linear-gradient(135deg, rgba(23,32,24,0.78), rgba(23,32,24,0.34)),
+            radial-gradient(circle at top right, rgba(190,242,100,0.30), transparent 34%),
             linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
           color: #ffffff;
-          box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
+          box-shadow: 0 24px 60px rgba(23,32,24,0.18);
           margin-bottom: 16px;
+          overflow: hidden;
         }
 
-        .hero::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background:
-            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-          background-size: 46px 46px;
-          mask-image: linear-gradient(to bottom, black, transparent);
-          pointer-events: none;
-        }
-
-        .heroContent {
-          position: relative;
-          z-index: 2;
+        .heroGrid {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 300px;
-          gap: 24px;
+          grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.8fr);
+          gap: 18px;
           align-items: end;
-          min-height: 265px;
         }
 
         .eyebrow {
           display: inline-flex;
           width: fit-content;
           border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.26);
-          background: rgba(255, 255, 255, 0.12);
+          border: 1px solid rgba(255,255,255,0.24);
+          background: rgba(255,255,255,0.12);
           color: #f7fee7;
           padding: 8px 12px;
           font-size: 11px;
           font-weight: 950;
           letter-spacing: 0.12em;
           text-transform: uppercase;
-          margin-bottom: 14px;
+          margin-bottom: 12px;
         }
 
         .heroTitle {
           margin: 0;
-          max-width: 760px;
-          font-size: clamp(42px, 6vw, 72px);
+          font-size: clamp(36px, 5vw, 66px);
           line-height: 0.92;
           font-weight: 950;
           letter-spacing: -0.085em;
         }
 
-        .heroTitle span {
-          color: #bef264;
-          text-shadow: 0 0 28px rgba(190, 242, 100, 0.32);
-        }
-
         .heroText {
-          max-width: 650px;
+          max-width: 720px;
           color: rgba(255,255,255,0.82);
-          line-height: 1.62;
-          margin: 16px 0 0;
+          line-height: 1.6;
+          margin: 14px 0 0;
           font-size: 14px;
+          font-weight: 650;
         }
 
-        .heroCard {
-          background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.18);
+        .heroScore {
+          background: rgba(255,255,255,0.14);
+          border: 1px solid rgba(255,255,255,0.18);
           border-radius: 30px;
-          padding: 20px;
-          backdrop-filter: blur(16px);
+          padding: 18px;
+          backdrop-filter: blur(14px);
         }
 
-        .heroCardLabel {
-          color: rgba(255,255,255,0.76);
-          font-size: 11px;
+        .scoreValue {
+          font-size: 54px;
+          line-height: 0.9;
           font-weight: 950;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
+          letter-spacing: -0.07em;
         }
 
-        .heroCardValue {
-          margin-top: 9px;
-          color: #ffffff;
-          font-size: 44px;
-          line-height: 1;
-          font-weight: 950;
-          letter-spacing: -0.08em;
-        }
-
-        .heroStars {
-          color: #bef264;
-          font-size: 20px;
-          letter-spacing: 2px;
+        .scoreStars {
+          color: #facc15;
           margin-top: 8px;
+          font-size: 18px;
+          letter-spacing: 0.04em;
         }
 
-        .heroCardText {
+        .scoreLabel {
           margin-top: 8px;
-          color: rgba(255,255,255,0.78);
+          color: rgba(255,255,255,0.80);
           font-size: 12px;
-          line-height: 1.45;
+          line-height: 1.4;
           font-weight: 750;
         }
 
@@ -610,338 +736,328 @@ export default function GuiaAvaliacoesPage() {
           padding: 13px 15px;
           margin-bottom: 16px;
           font-size: 13px;
-          font-weight: 800;
+          font-weight: 850;
           line-height: 1.45;
         }
 
         .alert.success {
           background: #ecfdf5;
-          color: #166534;
           border: 1px solid #bbf7d0;
+          color: #166534;
         }
 
         .alert.error {
           background: #fee2e2;
-          color: #991b1b;
           border: 1px solid #fecaca;
+          color: #991b1b;
         }
 
-        .statsGrid {
+        .summaryGrid {
           display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 12px;
           margin-bottom: 16px;
         }
 
-        .statCard {
-          background: rgba(255,255,255,0.88);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 28px;
+        .summaryCard,
+        .card {
+          background: rgba(255,255,255,0.90);
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 30px;
+          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+          overflow: hidden;
+        }
+
+        .summaryCard {
           padding: 16px;
-          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
         }
 
-        .statValue {
+        .summaryIcon {
+          font-size: 22px;
+          margin-bottom: 10px;
+        }
+
+        .summaryValue {
           color: #172018;
-          font-size: 30px;
-          line-height: 1;
+          font-size: 26px;
           font-weight: 950;
-          letter-spacing: -0.07em;
+          line-height: 1;
+          letter-spacing: -0.05em;
         }
 
-        .statLabel {
+        .summaryLabel {
+          margin-top: 6px;
           color: #64748b;
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 850;
           line-height: 1.35;
-          margin-top: 7px;
         }
 
-        .mainGrid {
+        .grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+          grid-template-columns: minmax(0, 1fr) 370px;
           gap: 16px;
           align-items: start;
         }
 
-        .panel {
-          background: rgba(255,255,255,0.90);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 32px;
-          box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
-          overflow: hidden;
+        .stack {
+          display: grid;
+          gap: 16px;
         }
 
-        .panelHeader {
+        .cardHeader {
           padding: 18px 20px;
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+          border-bottom: 1px solid rgba(15,23,42,0.06);
           display: flex;
-          align-items: center;
           justify-content: space-between;
+          align-items: center;
           gap: 12px;
           flex-wrap: wrap;
         }
 
-        .panelTitle {
+        .cardTitle {
           margin: 0;
           color: #172018;
-          font-size: 20px;
-          line-height: 1.15;
+          font-size: 18px;
           font-weight: 950;
-          letter-spacing: -0.045em;
+          letter-spacing: -0.04em;
         }
 
-        .panelSub {
+        .cardSub {
+          margin-top: 3px;
           color: #64748b;
           font-size: 12px;
-          font-weight: 700;
           line-height: 1.45;
-          margin-top: 4px;
+          font-weight: 750;
         }
 
-        .panelBody {
+        .cardBody {
           padding: 18px;
         }
 
-        .bars {
-          display: grid;
-          gap: 14px;
-        }
-
-        .barItem {
-          background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 20px;
-          padding: 12px;
-        }
-
-        .barTop {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          color: #475569;
-          font-size: 12px;
-          font-weight: 850;
-          margin-bottom: 8px;
-        }
-
-        .barTop strong {
-          color: #172018;
-          white-space: nowrap;
-        }
-
-        .barTrack {
-          height: 10px;
-          border-radius: 999px;
-          background: #e8eadf;
-          overflow: hidden;
-        }
-
-        .barFill {
-          height: 100%;
-          border-radius: 999px;
-          background: linear-gradient(90deg, #16a34a, #84cc16);
-        }
-
-        .tabs {
+        .filterRow {
           display: flex;
           gap: 8px;
           flex-wrap: wrap;
         }
 
-        .tab {
-          border: 1px solid rgba(15, 23, 42, 0.08);
+        .filterBtn {
+          border: 1px solid rgba(15,23,42,0.08);
+          border-radius: 999px;
           background: #fffdf7;
           color: #475569;
-          border-radius: 999px;
-          padding: 9px 12px;
-          font-size: 12px;
+          padding: 8px 11px;
+          font-size: 11px;
           font-weight: 950;
           cursor: pointer;
         }
 
-        .tab.active {
+        .filterBtn.active {
           background: #172018;
           color: #ffffff;
           border-color: #172018;
         }
 
-        .reviewsList {
+        .reviewList,
+        .routeList,
+        .distributionList {
           display: grid;
-          gap: 12px;
+          gap: 10px;
         }
 
-        .reviewCard {
+        .review {
           background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 24px;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 22px;
           padding: 14px;
+          transition: 0.2s ease;
+        }
+
+        .review.clickable {
+          cursor: pointer;
+        }
+
+        .review.clickable:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 14px 30px rgba(15,23,42,0.08);
+          border-color: rgba(22,163,74,0.20);
         }
 
         .reviewTop {
           display: flex;
           justify-content: space-between;
-          gap: 12px;
-          align-items: flex-start;
+          gap: 10px;
+          align-items: center;
         }
 
-        .reviewTitle {
+        .reviewClient {
           color: #172018;
-          font-size: 15px;
+          font-size: 13px;
           font-weight: 950;
-          line-height: 1.3;
         }
 
-        .reviewMeta {
+        .reviewRoute {
+          margin-top: 2px;
           color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
+          font-size: 11px;
           font-weight: 750;
-          margin-top: 4px;
         }
 
         .reviewStars {
-          color: #16a34a;
-          font-size: 14px;
+          color: #f59e0b;
+          font-size: 12px;
+          font-weight: 950;
           white-space: nowrap;
-          letter-spacing: 1px;
         }
 
-        .reviewComment {
+        .reviewText {
+          margin-top: 9px;
           color: #475569;
           font-size: 13px;
-          line-height: 1.55;
-          font-weight: 700;
-          background: #f6f7f1;
-          border-radius: 18px;
-          padding: 12px;
-          margin-top: 12px;
+          line-height: 1.52;
+          font-weight: 650;
+          white-space: pre-wrap;
         }
 
-        .pillGrid {
+        .reviewMeta {
           display: flex;
-          gap: 7px;
           flex-wrap: wrap;
-          margin-top: 12px;
+          gap: 7px;
+          margin-top: 10px;
         }
 
         .pill {
-          display: inline-flex;
-          align-items: center;
           border-radius: 999px;
-          padding: 6px 9px;
+          padding: 6px 8px;
           background: #eef2e5;
           color: #475569;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 900;
         }
 
-        .routeList {
-          display: grid;
-          gap: 12px;
+        .pill.green {
+          background: #dcfce7;
+          color: #166534;
         }
 
-        .routeCard {
-          display: grid;
-          grid-template-columns: 74px minmax(0, 1fr);
-          gap: 12px;
-          align-items: center;
+        .pill.yellow {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .pill.red {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+
+        .routeItem {
           background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 24px;
-          padding: 12px;
-        }
-
-        .routeThumb {
-          width: 74px;
-          height: 74px;
+          border: 1px solid rgba(15,23,42,0.06);
           border-radius: 22px;
-          background:
-            radial-gradient(circle at top right, rgba(251, 146, 60, 0.20), transparent 38%),
-            linear-gradient(135deg, #dbe7c8, #aebf8d);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 950;
-          overflow: hidden;
-        }
-
-        .routeThumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
+          padding: 14px;
         }
 
         .routeTitle {
           color: #172018;
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 950;
-          line-height: 1.28;
+          line-height: 1.3;
         }
 
         .routeMeta {
+          margin-top: 6px;
           color: #64748b;
           font-size: 11px;
-          font-weight: 750;
           line-height: 1.4;
-          margin-top: 4px;
+          font-weight: 750;
         }
 
-        .routeStats {
-          display: flex;
-          gap: 7px;
-          flex-wrap: wrap;
-          margin-top: 8px;
-        }
-
-        .smallBadge {
+        .metricBar {
+          margin-top: 10px;
+          height: 8px;
           border-radius: 999px;
-          padding: 5px 8px;
-          background: #f0fdf4;
-          color: #166534;
-          font-size: 10px;
+          background: #eef2e5;
+          overflow: hidden;
+        }
+
+        .metricFill {
+          height: 100%;
+          border-radius: 999px;
+          background: #84cc16;
+        }
+
+        .distributionItem {
+          display: grid;
+          grid-template-columns: minmax(90px, 1fr) 1.4fr 56px;
+          gap: 10px;
+          align-items: center;
+          background: #fffdf7;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 18px;
+          padding: 10px;
+        }
+
+        .distributionName {
+          color: #172018;
+          font-size: 12px;
           font-weight: 950;
+          line-height: 1.25;
+        }
+
+        .distributionNumber {
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 850;
+          text-align: right;
         }
 
         .empty {
-          padding: 26px;
-          text-align: center;
-          color: #64748b;
-          font-size: 13px;
           background: #fffdf7;
-          border-radius: 24px;
-          border: 1px dashed #cbd5e1;
-          font-weight: 700;
+          border: 1px dashed rgba(15,23,42,0.14);
+          border-radius: 22px;
+          padding: 22px;
+          color: #64748b;
+          text-align: center;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 750;
         }
 
-        @media (max-width: 1120px) {
-          .statsGrid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 1040px) {
-          .heroContent,
-          .mainGrid {
+        @media (max-width: 980px) {
+          .heroGrid,
+          .grid {
             grid-template-columns: 1fr;
           }
+
+          .summaryGrid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
         }
 
-        @media (max-width: 720px) {
+        @media (max-width: 640px) {
           .header {
             padding: 9px 12px;
           }
 
-          .brandTitle,
-          .brandSub {
-            display: none;
+          .brand img {
+            width: 34px;
+            height: 34px;
           }
 
-          .headerActions .hideMobile {
+          .brandTitle {
+            display: block;
+            font-size: 30px;
+            line-height: 0.88;
+          }
+
+          .brandSub {
+            display: block;
+            font-size: 9px;
+            letter-spacing: 0.12em;
+            margin-top: 4px;
+          }
+
+          .headerActions .btn.light {
             display: none;
           }
 
@@ -950,61 +1066,53 @@ export default function GuiaAvaliacoesPage() {
           }
 
           .hero,
-          .panel {
+          .card,
+          .summaryCard {
             border-radius: 28px;
           }
 
           .hero {
-            padding: 22px;
-            min-height: auto;
+            padding: 20px;
           }
 
-          .heroContent {
-            min-height: auto;
+          .summaryGrid {
+            grid-template-columns: 1fr 1fr;
           }
 
-          .statsGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+          .distributionItem {
+            grid-template-columns: 1fr;
           }
 
-          .reviewTop {
-            display: grid;
+          .distributionNumber {
+            text-align: left;
           }
         }
 
-        @media (max-width: 480px) {
+        @media (max-width: 420px) {
+          .summaryGrid {
+            grid-template-columns: 1fr;
+          }
+
           .heroTitle {
-            font-size: 40px;
+            font-size: 38px;
           }
 
-          .brand img {
-            height: 38px;
-          }
-
-          .statsGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .routeCard {
-            grid-template-columns: 1fr;
-          }
-
-          .routeThumb {
+          .btn {
             width: 100%;
-            height: 150px;
+          }
+
+          .headerActions {
+            justify-content: flex-end;
           }
         }
       `}</style>
 
       <header className="header">
         <div className="headerInner">
-          <div
-            className="brand"
-            onClick={() => router.push('/guia/dashboard')}
-          >
+          <div className="brand" onClick={() => router.push('/guia/dashboard')}>
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
 
-            <div>
+            <div className="brandText">
               <div className="brandTitle">PrussikTrails</div>
               <div className="brandSub">Avaliações do guia</div>
             </div>
@@ -1013,35 +1121,19 @@ export default function GuiaAvaliacoesPage() {
           <div className="headerActions">
             <button
               type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/guia/dashboard')}
-            >
-              Dashboard
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/guia/roteiros')}
-            >
-              Roteiros
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn"
-              onClick={atualizar}
-              disabled={atualizando}
-            >
-              {atualizando ? '…' : '↻'}
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn primary"
+              className="btn light"
               onClick={() => router.push('/guia/perfil')}
             >
               Perfil
+            </button>
+
+            <button
+              type="button"
+              className="btn dark"
+              disabled={atualizando}
+              onClick={() => carregarAvaliacoes(guiaId)}
+            >
+              {atualizando ? 'Atualizando...' : 'Atualizar'}
             </button>
           </div>
         </div>
@@ -1049,145 +1141,116 @@ export default function GuiaAvaliacoesPage() {
 
       <div className="container">
         <section className="hero">
-          <div className="heroContent">
+          <div className="heroGrid">
             <div>
-              <div className="eyebrow">Reputação do guia</div>
-
+              <div className="eyebrow">Painel de reputação</div>
               <h1 className="heroTitle">
-                {primeiroNome(nomeUsuario(user))}, suas avaliações mostram a <span>confiança construída.</span>
+                Avaliações de {primeiroNome(nome)}
               </h1>
-
               <p className="heroText">
-                Acompanhe nota média, segurança percebida, clareza das orientações, experiência geral e comentários dos clientes.
-                {ultimaAtualizacao && (
-                  <>
-                    <br />
-                    Atualizado às {ultimaAtualizacao}.
-                  </>
-                )}
+                Acompanhe como os aventureiros percebem suas orientações, segurança, experiência e condução. Use este painel para melhorar comunicação, preparo e confiança nas próximas jornadas.
               </p>
             </div>
 
-            <aside className="heroCard">
-              <div className="heroCardLabel">Nota média</div>
-              <div className="heroCardValue">{formatarNota(resumo.mediaNota)}</div>
-              <div className="heroStars">{estrelas(resumo.mediaNota)}</div>
-              <div className="heroCardText">
+            <aside className="heroScore">
+              <div className="scoreValue">{formatarNota(resumo.mediaNota)}</div>
+              <div className="scoreStars">{estrelas(resumo.mediaNota)}</div>
+              <div className="scoreLabel">
                 {textoMedia(resumo.mediaNota)} · {resumo.total} avaliação(ões)
+                {ultimaAtualizacao ? ` · atualizado às ${ultimaAtualizacao}` : ''}
               </div>
             </aside>
           </div>
         </section>
 
-        {mensagem && (
-          <div className="alert success">{mensagem}</div>
-        )}
+        {mensagem && <div className="alert success">{mensagem}</div>}
+        {erro && <div className="alert error">{erro}</div>}
 
-        {erro && (
-          <div className="alert error">{erro}</div>
-        )}
+        <section className="summaryGrid">
+          <div className="summaryCard">
+            <div className="summaryIcon">⭐</div>
+            <div className="summaryValue">{formatarNota(resumo.mediaNota)}</div>
+            <div className="summaryLabel">média geral</div>
+          </div>
 
-        <section className="statsGrid">
-          <article className="statCard">
-            <div className="statValue">{resumo.total}</div>
-            <div className="statLabel">avaliações recebidas</div>
-          </article>
+          <div className="summaryCard">
+            <div className="summaryIcon">👍</div>
+            <div className="summaryValue">{formatarPercentual(resumo.percentualRecomendacao)}</div>
+            <div className="summaryLabel">recomendariam a experiência</div>
+          </div>
 
-          <article className="statCard">
-            <div className="statValue">{formatarPercentual(resumo.percentualRecomendacao)}</div>
-            <div className="statLabel">recomendariam você</div>
-          </article>
+          <div className="summaryCard">
+            <div className="summaryIcon">🧭</div>
+            <div className="summaryValue">{formatarPercentual(resumo.orientacoesClarasPercentual)}</div>
+            <div className="summaryLabel">orientações claras</div>
+          </div>
 
-          <article className="statCard">
-            <div className="statValue">{formatarPercentual(resumo.segurancaAltaPercentual)}</div>
-            <div className="statLabel">sentiram muita segurança</div>
-          </article>
-
-          <article className="statCard">
-            <div className="statValue">{formatarPercentual(resumo.orientacoesClarasPercentual)}</div>
-            <div className="statLabel">viram orientações claras</div>
-          </article>
-
-          <article className="statCard">
-            <div className="statValue">{formatarPercentual(resumo.experienciaSuperouPercentual)}</div>
-            <div className="statLabel">experiência superou expectativas</div>
-          </article>
+          <div className="summaryCard">
+            <div className="summaryIcon">🛡️</div>
+            <div className="summaryValue">{formatarPercentual(resumo.segurancaAltaPercentual)}</div>
+            <div className="summaryLabel">sentiram segurança alta</div>
+          </div>
         </section>
 
-        <section className="mainGrid">
-          <div>
-            <section className="panel">
-              <div className="panelHeader">
+        <section className="grid">
+          <div className="stack">
+            <section className="card">
+              <div className="cardHeader">
                 <div>
-                  <h2 className="panelTitle">Distribuição das notas</h2>
-                  <div className="panelSub">
-                    Entenda como os clientes estão classificando sua condução.
-                  </div>
-                </div>
-              </div>
-
-              <div className="panelBody">
-                {dados.distribuicao.notas.length === 0
-                  ? renderEmpty('Ainda não há notas para exibir.')
-                  : (
-                    <div className="bars">
-                      {dados.distribuicao.notas.map(renderBarra)}
-                    </div>
-                  )}
-              </div>
-            </section>
-
-            <section className="panel" style={{ marginTop: 16 }}>
-              <div className="panelHeader">
-                <div>
-                  <h2 className="panelTitle">Comentários e avaliações</h2>
-                  <div className="panelSub">
-                    Veja o que os clientes registraram após as experiências.
+                  <h2 className="cardTitle">Avaliações recebidas</h2>
+                  <div className="cardSub">
+                    Filtro atual: {labelFiltro(filtroComentarios)} · {avaliacoesFiltradas.length} registro(s).
                   </div>
                 </div>
 
-                <div className="tabs">
-                  <button
-                    type="button"
-                    className={`tab ${filtroComentarios === 'todos' ? 'active' : ''}`}
-                    onClick={() => setFiltroComentarios('todos')}
-                  >
-                    Todas
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`tab ${filtroComentarios === 'comentarios' ? 'active' : ''}`}
-                    onClick={() => setFiltroComentarios('comentarios')}
-                  >
-                    Com comentário
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`tab ${filtroComentarios === 'baixas' ? 'active' : ''}`}
-                    onClick={() => setFiltroComentarios('baixas')}
-                  >
-                    Atenção
-                  </button>
+                <div className="filterRow">
+                  {(['todos', 'comentarios', 'baixas'] as const).map((filtro) => (
+                    <button
+                      key={filtro}
+                      type="button"
+                      className={`filterBtn ${filtroComentarios === filtro ? 'active' : ''}`}
+                      onClick={() => setFiltroComentarios(filtro)}
+                    >
+                      {labelFiltro(filtro)}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div className="panelBody">
-                {comentariosFiltrados.length === 0
-                  ? renderEmpty('Nenhuma avaliação encontrada neste filtro.')
-                  : (
-                    <div className="reviewsList">
-                      {comentariosFiltrados.slice(0, 18).map((avaliacao) => (
-                        <article className="reviewCard" key={avaliacao.id}>
+              <div className="cardBody">
+                {avaliacoesFiltradas.length === 0 ? (
+                  <div className="empty">
+                    Ainda não há avaliações nesse filtro.
+                  </div>
+                ) : (
+                  <div className="reviewList">
+                    {avaliacoesFiltradas.slice(0, 20).map((avaliacao) => {
+                      const comentario = comentarioDaAvaliacao(avaliacao)
+                      const baixa = numero(avaliacao.nota) > 0 && numero(avaliacao.nota) < 4
+
+                      return (
+                        <article
+                          key={avaliacao.id}
+                          className={`review ${avaliacao.cliente_id ? 'clickable' : ''}`}
+                          role={avaliacao.cliente_id ? 'button' : undefined}
+                          tabIndex={avaliacao.cliente_id ? 0 : undefined}
+                          onClick={() => {
+                            if (avaliacao.cliente_id) {
+                              router.push(`/cliente/publico/${avaliacao.cliente_id}`)
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (avaliacao.cliente_id && (event.key === 'Enter' || event.key === ' ')) {
+                              event.preventDefault()
+                              router.push(`/cliente/publico/${avaliacao.cliente_id}`)
+                            }
+                          }}
+                        >
                           <div className="reviewTop">
                             <div>
-                              <div className="reviewTitle">
-                                {avaliacao.roteiro_titulo || 'Roteiro'}
-                              </div>
-
-                              <div className="reviewMeta">
-                                Cliente: {avaliacao.cliente_nome || 'Cliente'} · {formatarData(avaliacao.created_at)}
+                              <div className="reviewClient">{avaliacao.cliente_nome || 'Cliente PrussikTrails'}</div>
+                              <div className="reviewRoute">
+                                {avaliacao.roteiro_titulo || 'Roteiro'} · {formatarData(avaliacao.created_at)}
                               </div>
                             </div>
 
@@ -1196,132 +1259,201 @@ export default function GuiaAvaliacoesPage() {
                             </div>
                           </div>
 
-                          {avaliacao.comentario && (
-                            <div className="reviewComment">
-                              “{avaliacao.comentario}”
-                            </div>
+                          {comentario ? (
+                            <div className="reviewText">{comentario}</div>
+                          ) : (
+                            <div className="reviewText">Avaliação sem comentário escrito.</div>
                           )}
 
-                          <div className="pillGrid">
+                          <div className="reviewMeta">
                             {avaliacao.orientacoes_label && (
                               <span className="pill">{avaliacao.orientacoes_label}</span>
                             )}
-
                             {avaliacao.seguranca_label && (
-                              <span className="pill">{avaliacao.seguranca_label}</span>
+                              <span className="pill green">{avaliacao.seguranca_label}</span>
                             )}
-
                             {avaliacao.experiencia_label && (
-                              <span className="pill">{avaliacao.experiencia_label}</span>
+                              <span className="pill yellow">{avaliacao.experiencia_label}</span>
+                            )}
+                            {avaliacao.recomenda === true && (
+                              <span className="pill green">Recomenda</span>
+                            )}
+                            {baixa && (
+                              <span className="pill red">Ponto de atenção</span>
                             )}
                           </div>
                         </article>
-                      ))}
-                    </div>
-                  )}
-              </div>
-            </section>
-          </div>
-
-          <div>
-            <section className="panel">
-              <div className="panelHeader">
-                <div>
-                  <h2 className="panelTitle">Indicadores de condução</h2>
-                  <div className="panelSub">
-                    Segurança, orientação e experiência geral.
+                      )
+                    })}
                   </div>
-                </div>
-              </div>
-
-              <div className="panelBody">
-                <div className="bars">
-                  <div>
-                    <h3 className="panelTitle" style={{ fontSize: 15, marginBottom: 10 }}>
-                      Orientações
-                    </h3>
-                    {dados.distribuicao.orientacoes.length === 0
-                      ? renderEmpty('Sem dados de orientação.')
-                      : dados.distribuicao.orientacoes.map(renderBarra)}
-                  </div>
-
-                  <div style={{ marginTop: 18 }}>
-                    <h3 className="panelTitle" style={{ fontSize: 15, marginBottom: 10 }}>
-                      Segurança
-                    </h3>
-                    {dados.distribuicao.seguranca.length === 0
-                      ? renderEmpty('Sem dados de segurança.')
-                      : dados.distribuicao.seguranca.map(renderBarra)}
-                  </div>
-
-                  <div style={{ marginTop: 18 }}>
-                    <h3 className="panelTitle" style={{ fontSize: 15, marginBottom: 10 }}>
-                      Experiência geral
-                    </h3>
-                    {dados.distribuicao.experiencia.length === 0
-                      ? renderEmpty('Sem dados de experiência.')
-                      : dados.distribuicao.experiencia.map(renderBarra)}
-                  </div>
-                </div>
+                )}
               </div>
             </section>
 
-            <section className="panel" style={{ marginTop: 16 }}>
-              <div className="panelHeader">
+            <section className="card">
+              <div className="cardHeader">
                 <div>
-                  <h2 className="panelTitle">Roteiros mais avaliados</h2>
-                  <div className="panelSub">
-                    Média e percepção por experiência.
+                  <h2 className="cardTitle">Comentários recentes</h2>
+                  <div className="cardSub">
+                    Principais retornos textuais dos aventureiros.
                   </div>
                 </div>
               </div>
 
-              <div className="panelBody">
-                {topRoteiros.length === 0
-                  ? renderEmpty('Ainda não há roteiros avaliados.')
-                  : (
-                    <div className="routeList">
-                      {topRoteiros.map((roteiro) => (
-                        <article className="routeCard" key={roteiro.roteiro_id}>
-                          <div className="routeThumb">
-                            {roteiro.roteiro_imagem ? (
-                              <img
-                                src={roteiro.roteiro_imagem}
-                                alt={roteiro.roteiro_titulo}
-                              />
-                            ) : (
-                              'RT'
-                            )}
-                          </div>
-
+              <div className="cardBody">
+                {comentariosRecentes.length === 0 ? (
+                  <div className="empty">
+                    Ainda não há comentários escritos.
+                  </div>
+                ) : (
+                  <div className="reviewList">
+                    {comentariosRecentes.map((avaliacao) => (
+                      <article className="review" key={`comentario-${avaliacao.id}`}>
+                        <div className="reviewTop">
                           <div>
-                            <div className="routeTitle">
-                              {roteiro.roteiro_titulo}
-                            </div>
-
-                            <div className="routeMeta">
-                              {roteiro.roteiro_local || 'Local a confirmar'}
-                              <br />
-                              {roteiro.total} avaliação(ões) · média {formatarNota(roteiro.mediaNota)}
-                            </div>
-
-                            <div className="routeStats">
-                              <span className="smallBadge">
-                                {formatarPercentual(roteiro.segurancaAltaPercentual)} segurança
-                              </span>
-
-                              <span className="smallBadge">
-                                {formatarPercentual(roteiro.percentualRecomendacao)} recomendação
-                              </span>
+                            <div className="reviewClient">{avaliacao.cliente_nome || 'Cliente PrussikTrails'}</div>
+                            <div className="reviewRoute">
+                              {avaliacao.roteiro_titulo || 'Roteiro'} · {formatarData(avaliacao.created_at)}
                             </div>
                           </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
+
+                          <div className="reviewStars">
+                            {estrelas(avaliacao.nota)} {formatarNota(avaliacao.nota)}
+                          </div>
+                        </div>
+
+                        <div className="reviewText">
+                          {comentarioDaAvaliacao(avaliacao) || 'Sem comentário escrito.'}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </div>
             </section>
           </div>
+
+          <aside className="stack">
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Distribuição das notas</h2>
+                  <div className="cardSub">
+                    Leitura rápida do volume por nota.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                {dados.distribuicao.notas.length === 0 ? (
+                  <div className="empty">Sem distribuição de notas ainda.</div>
+                ) : (
+                  <div className="distributionList">
+                    {dados.distribuicao.notas.map((item) => (
+                      <div className="distributionItem" key={`nota-${item.nota || item.chave}`}>
+                        <div className="distributionName">
+                          Nota {item.nota || item.chave}
+                        </div>
+
+                        <div className="metricBar">
+                          <div
+                            className="metricFill"
+                            style={{ width: `${Math.max(0, Math.min(100, numero(item.percentual)))}%` }}
+                          />
+                        </div>
+
+                        <div className="distributionNumber">
+                          {item.quantidade} · {formatarPercentual(item.percentual)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Por roteiro</h2>
+                  <div className="cardSub">
+                    Avaliação consolidada por experiência.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                {dados.porRoteiro.length === 0 ? (
+                  <div className="empty">Ainda não há dados por roteiro.</div>
+                ) : (
+                  <div className="routeList">
+                    {dados.porRoteiro.slice(0, 8).map((roteiro) => (
+                      <article className="routeItem" key={roteiro.roteiro_id}>
+                        <div className="routeTitle">{roteiro.roteiro_titulo || 'Roteiro'}</div>
+                        <div className="routeMeta">
+                          {roteiro.total} avaliação(ões) · média {formatarNota(roteiro.mediaNota)} · recomendação {formatarPercentual(roteiro.percentualRecomendacao)}
+                        </div>
+                        <div className="metricBar">
+                          <div
+                            className="metricFill"
+                            style={{ width: `${Math.max(0, Math.min(100, numero(roteiro.percentualRecomendacao)))}%` }}
+                          />
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Indicadores de experiência</h2>
+                  <div className="cardSub">
+                    Pontos-chave do formulário padrão.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                <div className="distributionList">
+                  <div className="distributionItem">
+                    <div className="distributionName">Orientações claras</div>
+                    <div className="metricBar">
+                      <div
+                        className="metricFill"
+                        style={{ width: `${Math.max(0, Math.min(100, numero(resumo.orientacoesClarasPercentual)))}%` }}
+                      />
+                    </div>
+                    <div className="distributionNumber">{formatarPercentual(resumo.orientacoesClarasPercentual)}</div>
+                  </div>
+
+                  <div className="distributionItem">
+                    <div className="distributionName">Segurança alta</div>
+                    <div className="metricBar">
+                      <div
+                        className="metricFill"
+                        style={{ width: `${Math.max(0, Math.min(100, numero(resumo.segurancaAltaPercentual)))}%` }}
+                      />
+                    </div>
+                    <div className="distributionNumber">{formatarPercentual(resumo.segurancaAltaPercentual)}</div>
+                  </div>
+
+                  <div className="distributionItem">
+                    <div className="distributionName">Superou expectativa</div>
+                    <div className="metricBar">
+                      <div
+                        className="metricFill"
+                        style={{ width: `${Math.max(0, Math.min(100, numero(resumo.experienciaSuperouPercentual)))}%` }}
+                      />
+                    </div>
+                    <div className="distributionNumber">{formatarPercentual(resumo.experienciaSuperouPercentual)}</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </aside>
         </section>
       </div>
     </main>

@@ -702,75 +702,86 @@ export default function PerfilGuiaPage() {
   }
 
   const uploadAvatar = async (file: File) => {
-    if (!user?.id) return
+    const guiaId = String(
+      user?.id ||
+        (user as any)?.user_id ||
+        (user as any)?.usuario_id ||
+        (user as any)?.guia_id ||
+        guia?.id ||
+        guia?.user_id ||
+        guia?.usuario_id ||
+        guia?.guia_id ||
+        ''
+    ).trim()
+
+    if (!guiaId) {
+      setErro('Não foi possível identificar o guia para salvar a foto.')
+      return
+    }
 
     setEnviandoAvatar(true)
     setErro('')
     setMensagem('')
 
     try {
-      const extensao =
-        file.type === 'image/webp'
-          ? 'webp'
-          : file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('userId', guiaId)
+      formData.append('pasta', 'guias')
 
-      const caminho = `guias/${user.id}/avatar-${Date.now()}.${extensao}`
+      const response = await fetch('/api/usuario/avatar', {
+        method: 'POST',
+        body: formData,
+      })
 
-      const { error: uploadError } = await supabase.storage
-        .from('fotos-aventuras')
-        .upload(caminho, file, {
-          upsert: true,
-          contentType: file.type || 'image/webp'
-        })
+      const data = await response.json().catch(() => null)
 
-      if (uploadError) throw uploadError
-
-      const { data } = supabase.storage
-        .from('fotos-aventuras')
-        .getPublicUrl(caminho)
-
-      const publicUrl = data?.publicUrl || ''
-
-      if (!publicUrl) {
-        throw new Error('Não foi possível gerar a URL pública da foto.')
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        throw new Error(
+          data?.erro ||
+            data?.error ||
+            data?.message ||
+            'Não foi possível salvar a foto do guia.'
+        )
       }
 
-      const atualizado = await atualizarUsuarioComFallback(user.id, {
+      const publicUrl = data.publicUrl || data.url || ''
+
+      if (!publicUrl) {
+        throw new Error('A rota não retornou a URL pública da foto.')
+      }
+
+      const usuarioAtualizado: UsuarioLocal = {
+        ...(user || {}),
+        ...(data.usuario || data.data || {}),
+        id: guiaId,
+        tipo: 'guia',
         avatar_url: publicUrl,
         foto_url: publicUrl,
         imagem_url: publicUrl,
-        updated_at: new Date().toISOString()
-      })
-
-      const usuarioAtualizado: UsuarioLocal = {
-        ...user,
-        ...(atualizado || {}),
-        avatar_url: publicUrl,
-        foto_url: publicUrl,
-        imagem_url: publicUrl
       }
 
       localStorage.setItem('user', JSON.stringify(usuarioAtualizado))
+
       setUser(usuarioAtualizado)
       setAvatarPreview(publicUrl)
 
       setGuia((prev: any) => ({
         ...prev,
-        ...(atualizado || {}),
+        ...(data.usuario || data.data || {}),
+        id: guiaId,
         avatar_url: publicUrl,
         foto_url: publicUrl,
-        imagem_url: publicUrl
+        imagem_url: publicUrl,
       }))
 
       setMensagem('Foto de perfil atualizada com sucesso.')
     } catch (error: any) {
-      console.error('Erro ao enviar avatar:', error)
+      console.error('Erro ao enviar avatar do guia:', error)
+
       setErro(
-        error?.message?.includes('Bucket not found')
-          ? 'O bucket fotos-aventuras ainda não existe no Supabase Storage.'
-          : error?.message?.includes('maximum allowed size')
-            ? 'A imagem ficou maior que o limite permitido. Tente aproximar menos ou usar uma foto menor.'
-            : error?.message || 'Não foi possível atualizar a foto.'
+        error?.message ||
+          'Não foi possível atualizar a foto do guia.'
       )
     } finally {
       setEnviandoAvatar(false)

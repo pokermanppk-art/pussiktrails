@@ -148,6 +148,22 @@ const avaliacaoInicial: AvaliacaoResumo = {
   notasBaixas: 0
 }
 
+type CadasturResumo = {
+  total: number
+  sem_cadastur: number
+  informado: number
+  verificado: number
+  ativo: number
+}
+
+const cadasturInicial: CadasturResumo = {
+  total: 0,
+  sem_cadastur: 0,
+  informado: 0,
+  verificado: 0,
+  ativo: 0
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
@@ -159,6 +175,7 @@ export default function AdminDashboardPage() {
   const [grupos, setGrupos] = useState<GrupoRoteiro[]>([])
   const [stats, setStats] = useState<Stats>(statsInicial)
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoResumo>(avaliacaoInicial)
+  const [cadasturResumo, setCadasturResumo] = useState<CadasturResumo>(cadasturInicial)
 
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
@@ -364,10 +381,39 @@ export default function AdminDashboardPage() {
     }
   }
 
+  const carregarCadastur = async () => {
+    try {
+      const response = await fetch('/api/admin/cadastur?status=todos&limite=500')
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Aviso ao carregar CADASTUR:', data)
+        setCadasturResumo(cadasturInicial)
+        return cadasturInicial
+      }
+
+      const resumo: CadasturResumo = {
+        total: Number(data?.resumo?.total || 0),
+        sem_cadastur: Number(data?.resumo?.sem_cadastur || 0),
+        informado: Number(data?.resumo?.informado || 0),
+        verificado: Number(data?.resumo?.verificado || 0),
+        ativo: Number(data?.resumo?.ativo || 0)
+      }
+
+      setCadasturResumo(resumo)
+      return resumo
+    } catch (error) {
+      console.warn('Erro ao carregar CADASTUR:', error)
+      setCadasturResumo(cadasturInicial)
+      return cadasturInicial
+    }
+  }
+
   const carregarTudo = async () => {
     setErro('')
 
     const avaliacoesResumo = await carregarAvaliacoes()
+    const cadasturResumoAtual = await carregarCadastur()
 
     const [
       usuariosResult,
@@ -494,6 +540,7 @@ export default function AdminDashboardPage() {
 
     setStats(statsCalculados)
     setAvaliacoes(avaliacoesResumo)
+    setCadasturResumo(cadasturResumoAtual)
     setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
   }
 
@@ -1597,7 +1644,7 @@ export default function AdminDashboardPage() {
               </h1>
 
               <p className="heroText">
-                Receita, repasses, roteiros, reservas, usuários, grupos e avaliações em uma central administrativa objetiva.
+                Receita, repasses, roteiros, reservas, usuários, grupos, avaliações, suporte, saldos e CADASTUR em uma central administrativa objetiva.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -1673,6 +1720,18 @@ export default function AdminDashboardPage() {
               usuários · {stats.clientesTotal} clientes · {stats.guiasTotal} guias · {stats.usuariosNovosMes} novos no mês
             </div>
             <div className="statHint">Gerenciar usuários</div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => router.push('/admin/cadastur')}
+          >
+            <div className="statIcon">🪪</div>
+            <div className="statValue">{cadasturResumo.ativo}</div>
+            <div className="statLabel">
+              CADASTUR · {cadasturResumo.informado} informado(s) · {cadasturResumo.verificado} verificado(s) · {cadasturResumo.sem_cadastur} sem cadastro
+            </div>
+            <div className="statHint">Conferir CADASTUR</div>
           </article>
 
           <article
@@ -1825,6 +1884,16 @@ export default function AdminDashboardPage() {
                     <div className="quickIcon">💬</div>
                     <div className="quickTitle">Grupos</div>
                     <div className="quickText">Comunidades internas por roteiro e acesso pós-pagamento.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/cadastur')}
+                  >
+                    <div className="quickIcon">🪪</div>
+                    <div className="quickTitle">CADASTUR</div>
+                    <div className="quickText">Conferir guias, validar credenciais e liberar medalhas de verificação.</div>
                   </button>
 
                   <button
