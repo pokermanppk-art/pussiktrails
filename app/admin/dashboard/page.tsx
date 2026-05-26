@@ -606,15 +606,15 @@ export default function AdminDashboardPage() {
   }
 
   const roteirosRecentes = useMemo(() => {
-    return roteiros.slice(0, 4)
+    return roteiros.slice(0, 2)
   }, [roteiros])
 
   const reservasRecentes = useMemo(() => {
-    return reservas.slice(0, 5)
+    return reservas.slice(0, 2)
   }, [reservas])
 
   const usuariosRecentes = useMemo(() => {
-    return usuarios.slice(0, 4)
+    return usuarios.slice(0, 2)
   }, [usuarios])
 
   const badgeRoteiro = (roteiro: Roteiro) => {
@@ -1731,7 +1731,7 @@ export default function AdminDashboardPage() {
                 <div>
                   <h2 className="panelTitle">Central operacional</h2>
                   <div className="panelSub">
-                    Atalhos administrativos com função real.
+                    Atalhos administrativos com função real e monitoramento rápido.
                   </div>
                 </div>
 
@@ -1780,6 +1780,26 @@ export default function AdminDashboardPage() {
                   <button
                     type="button"
                     className="quickBtn"
+                    onClick={() => router.push('/admin/saldos')}
+                  >
+                    <div className="quickIcon">💳</div>
+                    <div className="quickTitle">Saldos</div>
+                    <div className="quickText">Carteira dos clientes, créditos, débitos e extrato.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/cancelamentos')}
+                  >
+                    <div className="quickIcon">↩️</div>
+                    <div className="quickTitle">Cancelamentos</div>
+                    <div className="quickText">Motivos, créditos gerados e retenções da plataforma.</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
                     onClick={() => router.push('/admin/avaliacoes')}
                   >
                     <div className="quickIcon">⭐</div>
@@ -1815,7 +1835,7 @@ export default function AdminDashboardPage() {
                 <div>
                   <h2 className="panelTitle">Roteiros recentes</h2>
                   <div className="panelSub">
-                    Lista compacta para não ocupar o painel.
+                    Lista reduzida com os 2 últimos cadastros.
                   </div>
                 </div>
 
@@ -1975,7 +1995,7 @@ export default function AdminDashboardPage() {
                 <div>
                   <h2 className="panelTitle">Reservas recentes</h2>
                   <div className="panelSub">
-                    Compacto e clicável.
+                    Lista reduzida com as 2 últimas reservas.
                   </div>
                 </div>
 
@@ -2032,7 +2052,7 @@ export default function AdminDashboardPage() {
                 <div>
                   <h2 className="panelTitle">Usuários recentes</h2>
                   <div className="panelSub">
-                    Últimos cadastros encontrados.
+                    Lista reduzida com os 2 últimos cadastros.
                   </div>
                 </div>
 
