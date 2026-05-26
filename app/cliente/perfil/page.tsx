@@ -4,7 +4,6 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import AvatarCropModal from '@/components/AvatarCropModal'
-import SettingsButton from '@/components/SettingsButton'
 import { v4 as uuidv4 } from 'uuid'
 
 type UsuarioLocal = {
@@ -357,6 +356,13 @@ export default function PerfilCliente() {
 
   const [lightboxAberto, setLightboxAberto] = useState(false)
   const [fotoAtual, setFotoAtual] = useState(0)
+  const [menuConfiguracoesAberto, setMenuConfiguracoesAberto] = useState(false)
+  const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
+  const [senhaAtual, setSenhaAtual] = useState('')
+  const [novaSenha, setNovaSenha] = useState('')
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('')
+  const [salvandoSenha, setSalvandoSenha] = useState(false)
+  const [erroSenha, setErroSenha] = useState('')
 
   const [linhas, setLinhas] = useState<FotoComDimensao[][]>([])
   const [carregandoFotos, setCarregandoFotos] = useState(true)
@@ -790,6 +796,63 @@ export default function PerfilCliente() {
     router.push('/login')
   }
 
+  function abrirModalSenha() {
+    setMenuConfiguracoesAberto(false)
+    setErroSenha('')
+    setSenhaAtual('')
+    setNovaSenha('')
+    setConfirmarNovaSenha('')
+    setModalSenhaAberto(true)
+  }
+
+  async function alterarSenha() {
+    if (!user?.id) return
+
+    if (!novaSenha || novaSenha.length < 6) {
+      setErroSenha('A nova senha precisa ter no mínimo 6 caracteres.')
+      return
+    }
+
+    if (novaSenha !== confirmarNovaSenha) {
+      setErroSenha('A confirmação da nova senha não confere.')
+      return
+    }
+
+    try {
+      setSalvandoSenha(true)
+      setErroSenha('')
+
+      const response = await fetch('/api/alterar-senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          email: user.email || '',
+          senhaAtual,
+          novaSenha
+        })
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || 'Não foi possível alterar a senha.')
+      }
+
+      setModalSenhaAberto(false)
+      setSenhaAtual('')
+      setNovaSenha('')
+      setConfirmarNovaSenha('')
+      setMensagem('✅ Senha alterada com sucesso!')
+      setTimeout(() => setMensagem(''), 3000)
+    } catch (error: unknown) {
+      const mensagemErro = error instanceof Error ? error.message : 'Erro ao alterar senha.'
+      setErroSenha(mensagemErro)
+    } finally {
+      setSalvandoSenha(false)
+    }
+  }
+
   if (!user) {
     return (
       <div className="loadingSimple">
@@ -826,13 +889,30 @@ export default function PerfilCliente() {
           </button>
 
           <div className="topActions">
-            <SettingsButton userId={user.id} userEmail={user.email || ''} />
-            <button className="pillButton muted" type="button" onClick={() => router.push('/cliente/dashboard')}>
-              Dashboard
-            </button>
-            <button className="pillButton danger" type="button" onClick={handleLogout}>
-              Sair
-            </button>
+            <div className="settingsWrap">
+              <button
+                className="gearButton"
+                type="button"
+                aria-label="Abrir configurações"
+                onClick={() => setMenuConfiguracoesAberto((aberto) => !aberto)}
+              >
+                ⚙
+              </button>
+
+              {menuConfiguracoesAberto && (
+                <div className="settingsMenu">
+                  <button type="button" onClick={() => router.push('/cliente/dashboard')}>
+                    Dashboard
+                  </button>
+                  <button type="button" onClick={abrirModalSenha}>
+                    Alterar senha
+                  </button>
+                  <button type="button" className="dangerItem" onClick={handleLogout}>
+                    Sair
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -1172,6 +1252,66 @@ export default function PerfilCliente() {
         </section>
       </div>
 
+      {modalSenhaAberto && (
+        <div className="passwordOverlay" onClick={() => !salvandoSenha && setModalSenhaAberto(false)}>
+          <section className="passwordSheet" onClick={(event) => event.stopPropagation()}>
+            <div className="passwordHeader">
+              <div>
+                <span>Configurações</span>
+                <h2>Alterar senha</h2>
+              </div>
+              <button type="button" onClick={() => setModalSenhaAberto(false)} disabled={salvandoSenha}>
+                ×
+              </button>
+            </div>
+
+            <label>
+              Senha atual
+              <input
+                type="password"
+                value={senhaAtual}
+                onChange={(event) => setSenhaAtual(event.target.value)}
+                placeholder="Digite sua senha atual"
+                autoComplete="current-password"
+              />
+            </label>
+
+            <label>
+              Nova senha
+              <input
+                type="password"
+                value={novaSenha}
+                onChange={(event) => setNovaSenha(event.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                autoComplete="new-password"
+              />
+            </label>
+
+            <label>
+              Confirmar nova senha
+              <input
+                type="password"
+                value={confirmarNovaSenha}
+                onChange={(event) => setConfirmarNovaSenha(event.target.value)}
+                placeholder="Digite a nova senha novamente"
+                autoComplete="new-password"
+              />
+            </label>
+
+            {erroSenha && <p className="passwordError">{erroSenha}</p>}
+
+            <div className="passwordActions">
+              <button type="button" className="secondary" onClick={() => setModalSenhaAberto(false)} disabled={salvandoSenha}>
+                Cancelar
+              </button>
+              <button type="button" className="primary" onClick={alterarSenha} disabled={salvandoSenha}>
+                {salvandoSenha ? 'Salvando...' : 'Alterar senha'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {lightboxAberto && fotos.length > 0 && (
         <div className="lightbox" onClick={() => setLightboxAberto(false)}>
           <button className="lightboxClose" type="button" onClick={() => setLightboxAberto(false)}>✕</button>
@@ -1245,10 +1385,10 @@ const styles = `
     position: sticky;
     top: 0;
     z-index: 50;
-    background: rgba(255,253,247,0.88);
+    background: rgba(255,253,247,0.92);
     border-bottom: 1px solid rgba(15,23,42,0.06);
     backdrop-filter: blur(18px);
-    padding: 10px 16px;
+    padding: 9px 14px;
   }
 
   .topbarInner {
@@ -1257,13 +1397,14 @@ const styles = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 10px;
   }
 
   .brand {
     display: inline-flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    min-width: 0;
     border: 0;
     background: transparent;
     padding: 0;
@@ -1273,10 +1414,16 @@ const styles = `
   }
 
   .brand img {
-    width: auto;
-    height: 54px;
+    width: 46px;
+    height: 46px;
+    max-width: 46px;
     object-fit: contain;
-    flex: 0 0 auto;
+    flex: 0 0 46px;
+    display: block;
+  }
+
+  .brand div {
+    min-width: 0;
   }
 
   .brand strong {
@@ -1287,23 +1434,79 @@ const styles = `
     font-weight: 800;
     line-height: 0.9;
     letter-spacing: -0.055em;
+    white-space: nowrap;
   }
 
   .brand span {
     display: block;
-    margin-top: 7px;
+    margin-top: 6px;
     color: #7b8375;
     font-size: clamp(10px, 1.15vw, 15px);
     font-weight: 850;
-    letter-spacing: 0.24em;
+    letter-spacing: 0.22em;
+    white-space: nowrap;
   }
 
   .topActions {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex: 0 0 auto;
     justify-content: flex-end;
+  }
+
+  .settingsWrap {
+    position: relative;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .gearButton {
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: rgba(255,255,255,0.86);
+    color: #1f3f2d;
+    box-shadow: 0 10px 22px rgba(15,23,42,0.08);
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .settingsMenu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    z-index: 80;
+    width: 220px;
+    border-radius: 22px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: rgba(255,253,247,0.98);
+    box-shadow: 0 24px 60px rgba(15,23,42,0.16);
+    padding: 8px;
+    backdrop-filter: blur(18px);
+  }
+
+  .settingsMenu button {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    border-radius: 16px;
+    padding: 12px 13px;
+    text-align: left;
+    color: #172018;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .settingsMenu button:hover {
+    background: #eef2e5;
+  }
+
+  .settingsMenu .dangerItem {
+    color: #b91c1c;
   }
 
   .pillButton {
@@ -1317,6 +1520,7 @@ const styles = `
 
   .pillButton.muted { background: #f3f4f6; color: #172018; }
   .pillButton.danger { background: #dc2626; color: #fff; }
+
 
   .shell {
     max-width: 1180px;
@@ -1961,6 +2165,124 @@ const styles = `
     font-weight: 700;
   }
 
+
+  .passwordOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8, 13, 7, 0.50);
+    backdrop-filter: blur(10px);
+  }
+
+  .passwordSheet {
+    width: min(480px, 100%);
+    border-radius: 30px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.08);
+    box-shadow: 0 34px 90px rgba(15,23,42,0.24);
+    padding: 20px;
+  }
+
+  .passwordHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .passwordHeader span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+
+  .passwordHeader h2 {
+    margin: 0;
+    color: #172018;
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.055em;
+  }
+
+  .passwordHeader button {
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: #f8fafc;
+    color: #172018;
+    font-size: 24px;
+    cursor: pointer;
+  }
+
+  .passwordSheet label {
+    display: grid;
+    gap: 7px;
+    color: #172018;
+    font-size: 13px;
+    font-weight: 900;
+    margin-bottom: 12px;
+  }
+
+  .passwordSheet input {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,0.10);
+    background: #fff;
+    border-radius: 18px;
+    padding: 13px 14px;
+    color: #172018;
+    outline: none;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .passwordError {
+    margin: 8px 0 0;
+    border-radius: 16px;
+    background: rgba(220,38,38,0.08);
+    border: 1px solid rgba(220,38,38,0.16);
+    color: #991b1b;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 850;
+  }
+
+  .passwordActions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 16px;
+  }
+
+  .passwordActions button {
+    border: 0;
+    border-radius: 999px;
+    padding: 12px 15px;
+    font-size: 13px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .passwordActions .primary {
+    background: #16a34a;
+    color: #fff;
+  }
+
+  .passwordActions .secondary {
+    background: #eef2e5;
+    color: #334155;
+  }
+
   .lightbox {
     position: fixed;
     inset: 0;
@@ -2037,56 +2359,76 @@ const styles = `
 
   @media (max-width: 720px) {
     .topbar {
-      padding: 8px 12px;
+      padding: 7px 10px;
     }
 
     .topbarInner {
       gap: 8px;
+      align-items: center;
     }
 
     .brand {
-      gap: 9px;
+      gap: 8px;
       min-width: 0;
+      overflow: hidden;
     }
 
-    .brand img { height: 38px; }
+    .brand img {
+      width: 32px;
+      height: 32px;
+      max-width: 32px;
+      flex-basis: 32px;
+    }
+
     .brand strong {
-      font-size: clamp(28px, 9vw, 42px);
+      font-size: clamp(25px, 8vw, 33px);
       line-height: 0.88;
       letter-spacing: -0.065em;
-      white-space: nowrap;
+      max-width: calc(100vw - 96px);
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+
     .brand span {
-      font-size: 9px;
-      letter-spacing: 0.16em;
-      margin-top: 5px;
-      white-space: nowrap;
+      font-size: 8px;
+      letter-spacing: 0.12em;
+      margin-top: 4px;
+      max-width: calc(100vw - 96px);
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .topActions {
-      gap: 6px;
-      flex: 0 0 auto;
+    .gearButton {
+      width: 36px;
+      height: 36px;
+      font-size: 18px;
+      box-shadow: none;
     }
 
-    .topActions .pillButton {
-      display: none;
+    .settingsMenu {
+      position: fixed;
+      top: 58px;
+      right: 10px;
+      width: min(230px, calc(100vw - 20px));
+      border-radius: 20px;
     }
 
     .shell {
-      padding: 12px 10px 38px;
+      padding: 10px 9px 36px;
     }
 
     .passportHero,
     .card {
-      border-radius: 26px;
+      border-radius: 24px;
     }
 
     .passportHero {
-      grid-template-columns: 76px minmax(0, 1fr);
-      gap: 12px;
+      grid-template-columns: 66px minmax(0, 1fr);
+      gap: 11px;
       align-items: center;
-      padding: 14px;
-      margin-bottom: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+      box-shadow: 0 14px 34px rgba(23,32,24,0.14);
     }
 
     .avatarColumn {
@@ -2095,13 +2437,13 @@ const styles = `
     }
 
     .avatarButton {
-      width: 72px;
-      height: 72px;
+      width: 64px;
+      height: 64px;
       border-width: 3px;
     }
 
     .avatarButton span {
-      font-size: 30px;
+      font-size: 28px;
     }
 
     .heroTextBlock .kicker {
@@ -2110,23 +2452,37 @@ const styles = `
 
     .nameRow {
       gap: 6px;
+      flex-wrap: nowrap;
+      min-width: 0;
     }
 
     .nameRow h1 {
-      font-size: clamp(25px, 8.4vw, 38px);
+      font-size: clamp(24px, 8vw, 34px);
       letter-spacing: -0.065em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
     }
 
     .nameRow button {
       width: 30px;
       height: 30px;
       font-size: 12px;
+      flex: 0 0 auto;
+    }
+
+    .nameEditRow input {
+      min-width: 0;
+      width: 100%;
+      font-size: 16px;
+      padding: 10px 12px;
     }
 
     .heroTextBlock p {
-      margin-top: 7px;
-      font-size: 12px;
-      line-height: 1.4;
+      margin-top: 6px;
+      font-size: 11.5px;
+      line-height: 1.35;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
@@ -2137,21 +2493,13 @@ const styles = `
       display: none;
     }
 
-    .rankCard {
-      grid-column: 1 / -1;
-      display: none;
-    }
-
-    .rightStack .compactCard:first-child {
-      display: none;
-    }
-
+    .rankCard,
     .rightStack {
       display: none;
     }
 
     .grid {
-      gap: 12px;
+      gap: 10px;
     }
 
     .bioCard {
@@ -2159,11 +2507,20 @@ const styles = `
     }
 
     .cardHeader {
-      padding: 15px 16px;
+      padding: 15px 16px 12px;
+    }
+
+    .cardHeader h2 {
+      font-size: 24px;
+      letter-spacing: -0.055em;
+    }
+
+    .cardHeader span {
+      font-size: 11px;
     }
 
     .cardBody {
-      padding: 14px;
+      padding: 12px;
     }
 
     .tierGrid,
@@ -2174,21 +2531,23 @@ const styles = `
     }
 
     .tierCard {
-      min-height: 166px;
+      min-height: 176px;
       padding: 10px 7px 12px;
-      border-radius: 20px;
+      border-radius: 22px;
+      justify-content: start;
     }
 
     .svgMedalWrap {
-      width: 96px;
-      height: 96px;
-      margin-bottom: 4px;
+      width: 104px;
+      height: 104px;
+      margin-bottom: 5px;
     }
 
     .betaSvgMedalWrap {
-      width: 104px;
-      height: 104px;
-      margin-top: -3px;
+      width: 108px;
+      height: 108px;
+      margin-top: -2px;
+      margin-bottom: 4px;
     }
 
     .nextSvgMedal,
@@ -2198,12 +2557,14 @@ const styles = `
     }
 
     .tierCard strong {
-      font-size: 12px;
-      line-height: 1.14;
+      font-size: 13px;
+      line-height: 1.12;
+      max-width: 126px;
     }
 
     .tierCard small {
-      font-size: 9px;
+      font-size: 10px;
+      margin-top: 5px;
     }
 
     .photoMilestones {
@@ -2222,5 +2583,27 @@ const styles = `
     .photoCell img {
       height: 220px;
     }
+
+    .passwordOverlay {
+      align-items: flex-end;
+      padding: 10px;
+    }
+
+    .passwordSheet {
+      border-radius: 26px;
+      padding: 18px;
+      max-height: calc(100dvh - 22px);
+      overflow: auto;
+    }
+
+    .passwordActions {
+      flex-direction: column-reverse;
+    }
+
+    .passwordActions button {
+      width: 100%;
+    }
+  }
+
   }
 `

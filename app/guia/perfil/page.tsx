@@ -68,6 +68,15 @@ type Stats = {
   totalAvaliacoes: number
 }
 
+type MedalhaGuiaVisual = {
+  nome: string
+  subtitulo?: string
+  svg: string
+  desbloqueado: boolean
+  destaque?: boolean
+  categoria: 'progressao' | 'beta' | 'atuacao'
+}
+
 const statsInicial: Stats = {
   totalRoteiros: 0,
   totalReservas: 0,
@@ -87,15 +96,70 @@ const PIX_TIPOS = [
   { value: 'aleatoria', label: 'Chave aleatória' }
 ]
 
+const MEDALHA_PROGRESSAO_BASE = '/medalhas/progressao'
+const MEDALHA_BETA_BASE = '/medalhas/iniciais_jornada'
+
 const METAS_KM_GUIA = [
-  { km: 32, nome: 'Bronze', icone: '🥉' },
-  { km: 96, nome: 'Prata', icone: '🥈' },
-  { km: 192, nome: 'Ouro', icone: '🥇' },
-  { km: 384, nome: 'Platina', icone: '💎' },
-  { km: 768, nome: 'Elite', icone: '⚡' },
-  { km: 1152, nome: 'Master', icone: '👑' },
-  { km: 1920, nome: 'Lenda', icone: '🌟' },
-  { km: 3840, nome: 'Lenda Absoluta', icone: '🔥' }
+  {
+    km: 0,
+    nome: 'Mochila de Partida',
+    icone: '🎒',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/01_mochila_de_partida.svg`
+  },
+  {
+    km: 32,
+    nome: 'Barraca Base',
+    icone: '⛺',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/02_barraca_base.svg`
+  },
+  {
+    km: 96,
+    nome: 'Fogueira da Jornada',
+    icone: '🔥',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/03_fogueira_da_jornada.svg`
+  },
+  {
+    km: 192,
+    nome: 'Lanterna da Serra',
+    icone: '🏮',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/04_lanterna_da_serra.svg`
+  },
+  {
+    km: 384,
+    nome: 'Rumo Certo',
+    icone: '🪧',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/05_rumo_certo.svg`
+  },
+  {
+    km: 768,
+    nome: 'Prussik',
+    icone: '🧗',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/06_prussik.svg`
+  },
+  {
+    km: 1152,
+    nome: 'Cachoeira Viva',
+    icone: '💧',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/07_cachoeira_viva.svg`
+  },
+  {
+    km: 1920,
+    nome: 'Amanhecer no Cume',
+    icone: '🌄',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/08_amanhecer_no_cume.svg`
+  },
+  {
+    km: 3840,
+    nome: 'Mirante do Explorador',
+    icone: '🔭',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/09_mirante_do_explorador.svg`
+  },
+  {
+    km: 7680,
+    nome: 'Mapa Lendário',
+    icone: '🗺️',
+    svg: `${MEDALHA_PROGRESSAO_BASE}/10_mapa_lendario.svg`
+  }
 ]
 
 export default function PerfilGuiaPage() {
@@ -379,7 +443,7 @@ export default function PerfilGuiaPage() {
 
     const { data: clientes } = await supabase
       .from('users')
-      .select('id, nome, email, avatar_url')
+      .select('id, nome, email, avatar_url, foto_url, imagem_url')
       .in('id', clienteIds)
 
     return lista.map((avaliacao) => {
@@ -388,7 +452,7 @@ export default function PerfilGuiaPage() {
       return {
         ...avaliacao,
         cliente_nome: cliente?.nome || cliente?.email || 'Cliente',
-        cliente_avatar: cliente?.avatar_url || ''
+        cliente_avatar: cliente?.avatar_url || cliente?.foto_url || cliente?.imagem_url || ''
       }
     })
   }
@@ -743,55 +807,53 @@ export default function PerfilGuiaPage() {
   const proximoMarco = calcularProximoMarcoKm(stats.totalKm)
   const progressoKm = calcularProgressoKm(stats.totalKm)
 
-  const conquistasKm = [
-    { nome: 'Primeira trilha', icone: '🥾', km: 0, desbloqueado: stats.totalKm >= 0 },
-    { nome: 'Explorador', icone: '🌱', km: 32, desbloqueado: stats.totalKm >= 32 },
-    { nome: 'Caminhante', icone: '🚶', km: 96, desbloqueado: stats.totalKm >= 96 },
-    { nome: 'Aventureiro', icone: '🧭', km: 384, desbloqueado: stats.totalKm >= 384 },
-    { nome: 'Mestre', icone: '👑', km: 1152, desbloqueado: stats.totalKm >= 1152 },
-    { nome: 'Lenda', icone: '🌟', km: 1920, desbloqueado: stats.totalKm >= 1920 },
-    { nome: 'Lenda Absoluta', icone: '🔥', km: 3840, desbloqueado: stats.totalKm >= 3840 }
-  ]
+  const guiaBetaAtivo = Boolean(
+    guia?.medalha_guia_pioneiro_beta ||
+      guia?.guia_pioneiro_beta ||
+      guia?.guia_beta ||
+      guia?.beneficio_taxa_beta_ativo ||
+      Number(guia?.taxa_plataforma_percentual || 0) === 5
+  )
 
-  const medalhas = [
-    {
-      nome: 'KM Guiados',
-      icone: '👣',
-      progresso: stats.totalKm,
-      meta: 32,
-      desbloqueado: stats.totalKm >= 32
-    },
-    {
-      nome: 'Guias Avaliados',
-      icone: '⭐',
-      progresso: stats.totalAvaliacoes,
-      meta: 5,
-      desbloqueado: stats.totalAvaliacoes >= 5
-    },
-    {
-      nome: 'Trilhas Guiadas',
-      icone: '🥾',
-      progresso: stats.totalRoteiros,
-      meta: 1,
-      desbloqueado: stats.totalRoteiros >= 1
-    },
-    {
-      nome: 'Clientes Atendidos',
-      icone: '👥',
-      progresso: stats.totalClientes,
-      meta: 5,
-      desbloqueado: stats.totalClientes >= 5
-    },
+  const medalhasUnificadas: MedalhaGuiaVisual[] = [
+    ...METAS_KM_GUIA.map((meta) => ({
+      nome: meta.nome,
+      subtitulo: stats.totalKm >= meta.km ? 'Conquistada' : 'Bloqueada',
+      svg: meta.svg,
+      desbloqueado: stats.totalKm >= meta.km,
+      destaque: nivelAtual.nome === meta.nome,
+      categoria: 'progressao' as const
+    })),
     {
       nome: 'Guia Pioneiro Beta',
-      icone: '🏕️',
-      progresso: guia?.medalha_guia_pioneiro_beta || guia?.guia_pioneiro_beta ? 1 : 0,
-      meta: 1,
-      desbloqueado: Boolean(guia?.medalha_guia_pioneiro_beta || guia?.guia_pioneiro_beta)
+      subtitulo: guiaBetaAtivo ? 'Medalha exclusiva do período Beta' : 'Exclusiva para guias do Beta',
+      svg: `${MEDALHA_BETA_BASE}/04_guia_pioneiro_beta.svg`,
+      desbloqueado: guiaBetaAtivo,
+      destaque: guiaBetaAtivo,
+      categoria: 'beta'
+    },
+    {
+      nome: 'Roteiro Publicado',
+      subtitulo: stats.totalRoteiros >= 1 ? 'Conquistada' : 'Bloqueada',
+      svg: `${MEDALHA_PROGRESSAO_BASE}/05_rumo_certo.svg`,
+      desbloqueado: stats.totalRoteiros >= 1,
+      categoria: 'atuacao'
+    },
+    {
+      nome: 'Avaliação Recebida',
+      subtitulo: stats.totalAvaliacoes >= 1 ? 'Conquistada' : 'Bloqueada',
+      svg: `${MEDALHA_PROGRESSAO_BASE}/09_mirante_do_explorador.svg`,
+      desbloqueado: stats.totalAvaliacoes >= 1,
+      categoria: 'atuacao'
+    },
+    {
+      nome: 'Clientes na Trilha',
+      subtitulo: stats.totalClientes >= 1 ? 'Conquistada' : 'Bloqueada',
+      svg: `${MEDALHA_PROGRESSAO_BASE}/01_mochila_de_partida.svg`,
+      desbloqueado: stats.totalClientes >= 1,
+      categoria: 'atuacao'
     }
   ]
-
-  const principaisRoteiros = roteiros.slice(0, 3)
 
   if (carregando) {
     return (
@@ -888,35 +950,43 @@ export default function PerfilGuiaPage() {
         .brand {
           display: flex;
           align-items: center;
-          gap: 10px;
+          justify-content: flex-start;
+          gap: 12px;
           cursor: pointer;
           min-width: 0;
         }
 
         .brand img {
+          width: 42px;
           height: 42px;
-          width: auto;
           display: block;
           object-fit: contain;
+          flex: 0 0 auto;
         }
 
         .brandText {
           min-width: 0;
+          line-height: 1;
         }
 
         .brandTitle {
-          color: #dc2626;
-          font-size: 17px;
-          font-weight: 950;
-          line-height: 1;
-          letter-spacing: -0.05em;
+          color: #1f3d2d;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: clamp(30px, 4.2vw, 52px);
+          font-weight: 800;
+          line-height: 0.9;
+          letter-spacing: -0.06em;
+          white-space: nowrap;
         }
 
         .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 800;
-          margin-top: 3px;
+          color: #7b8372;
+          font-size: clamp(10px, 1.4vw, 14px);
+          font-weight: 850;
+          margin-top: 6px;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+          white-space: nowrap;
         }
 
         .headerActions {
@@ -1401,26 +1471,41 @@ export default function PerfilGuiaPage() {
         }
 
         .achievementGrid,
-        .medalGrid {
+        .medalGrid,
+        .unifiedMedalGrid {
           display: grid;
           grid-template-columns: repeat(4, minmax(0,1fr));
-          gap: 10px;
+          gap: 12px;
         }
 
         .achievement,
-        .medal {
-          background: #fffdf7;
+        .medal,
+        .unifiedMedal {
+          background:
+            radial-gradient(circle at 50% 0%, rgba(255,255,255,0.86), transparent 35%),
+            #fffdf7;
           border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 22px;
-          padding: 14px;
+          border-radius: 24px;
+          padding: 12px 10px 14px;
           text-align: center;
           transition: 0.2s ease;
+          min-height: 154px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-start;
+        }
+
+        .unifiedMedal.current {
+          border-color: rgba(153,27,27,0.24);
+          box-shadow: 0 18px 42px rgba(153,27,27,0.10);
         }
 
         .achievement.locked,
-        .medal.locked {
-          opacity: 0.42;
-          filter: grayscale(0.8);
+        .medal.locked,
+        .unifiedMedal.locked {
+          opacity: 0.38;
+          filter: grayscale(0.85);
         }
 
         .achievementIcon,
@@ -1429,20 +1514,32 @@ export default function PerfilGuiaPage() {
           margin-bottom: 8px;
         }
 
+        .unifiedMedalArt {
+          width: 86px;
+          height: 86px;
+          object-fit: contain;
+          display: block;
+          margin-bottom: 8px;
+          filter: drop-shadow(0 12px 18px rgba(17,24,39,0.14));
+        }
+
         .achievementName,
-        .medalName {
+        .medalName,
+        .unifiedMedalName {
           color: #172018;
           font-size: 12px;
           font-weight: 950;
-          line-height: 1.25;
+          line-height: 1.22;
         }
 
         .achievementMeta,
-        .medalMeta {
-          margin-top: 4px;
+        .medalMeta,
+        .unifiedMedalMeta {
+          margin-top: 5px;
           color: #64748b;
           font-size: 10px;
-          font-weight: 800;
+          font-weight: 850;
+          line-height: 1.25;
         }
 
         .timeline {
@@ -1497,6 +1594,17 @@ export default function PerfilGuiaPage() {
           border: 1px solid rgba(15,23,42,0.06);
           border-radius: 22px;
           padding: 14px;
+          transition: 0.2s ease;
+        }
+
+        .review.clickable {
+          cursor: pointer;
+        }
+
+        .review.clickable:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 14px 30px rgba(15,23,42,0.08);
+          border-color: rgba(22,163,74,0.20);
         }
 
         .reviewTop {
@@ -1504,6 +1612,35 @@ export default function PerfilGuiaPage() {
           justify-content: space-between;
           gap: 10px;
           align-items: center;
+        }
+
+        .reviewClient {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          min-width: 0;
+        }
+
+        .reviewAvatar {
+          width: 34px;
+          height: 34px;
+          border-radius: 999px;
+          background: #eef2e5;
+          color: #64748b;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          flex: 0 0 auto;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .reviewAvatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
         }
 
         .reviewName {
@@ -1683,9 +1820,22 @@ export default function PerfilGuiaPage() {
             padding: 9px 12px;
           }
 
-          .brandTitle,
+          .brand img {
+            width: 34px;
+            height: 34px;
+          }
+
+          .brandTitle {
+            display: block;
+            font-size: 30px;
+            line-height: 0.88;
+          }
+
           .brandSub {
-            display: none;
+            display: block;
+            font-size: 9px;
+            letter-spacing: 0.12em;
+            margin-top: 4px;
           }
 
           .container {
@@ -1708,7 +1858,8 @@ export default function PerfilGuiaPage() {
           .formGrid,
           .statsGrid,
           .achievementGrid,
-          .medalGrid {
+          .medalGrid,
+          .unifiedMedalGrid {
             grid-template-columns: 1fr 1fr;
           }
 
@@ -1722,11 +1873,25 @@ export default function PerfilGuiaPage() {
             font-size: 38px;
           }
 
+          .unifiedMedal {
+            min-height: 138px;
+            padding: 10px 8px 12px;
+          }
+
+          .unifiedMedalArt {
+            width: 74px;
+            height: 74px;
+          }
+
           .formGrid,
           .statsGrid,
           .achievementGrid,
           .medalGrid {
             grid-template-columns: 1fr;
+          }
+
+          .unifiedMedalGrid {
+            grid-template-columns: 1fr 1fr;
           }
 
           .routeCard {
@@ -1755,7 +1920,7 @@ export default function PerfilGuiaPage() {
 
             <div className="brandText">
               <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Perfil do guia</div>
+              <div className="brandSub">Passaporte do guia</div>
             </div>
           </div>
 
@@ -2053,63 +2218,36 @@ export default function PerfilGuiaPage() {
             <section className="card">
               <div className="cardHeader">
                 <div>
-                  <h2 className="cardTitle">Conquistas por km</h2>
+                  <h2 className="cardTitle">Medalhas do guia</h2>
                   <div className="cardSub">
-                    As conquistas acompanham sua evolução real em quilômetros guiados.
+                    Uma coleção única com progressão, atuação na plataforma e conquistas do período Beta.
                   </div>
                 </div>
               </div>
 
               <div className="cardBody">
-                <div className="achievementGrid">
-                  {conquistasKm.map((item) => (
+                <div className="unifiedMedalGrid">
+                  {medalhasUnificadas.map((medalha) => (
                     <div
-                      key={item.nome}
-                      className={`achievement ${item.desbloqueado ? '' : 'locked'}`}
+                      key={`${medalha.categoria}-${medalha.nome}`}
+                      className={`unifiedMedal ${medalha.desbloqueado ? '' : 'locked'} ${medalha.destaque ? 'current' : ''}`}
+                      title={medalha.nome}
                     >
-                      <div className="achievementIcon">{item.icone}</div>
-                      <div className="achievementName">{item.nome}</div>
-                      <div className="achievementMeta">
-                        {item.km === 0 ? 'Início da jornada' : `${item.km} km`}
+                      <img
+                        className="unifiedMedalArt"
+                        src={medalha.svg}
+                        alt={medalha.nome}
+                      />
+                      <div className="unifiedMedalName">{medalha.nome}</div>
+                      <div className="unifiedMedalMeta">
+                        {medalha.desbloqueado ? medalha.subtitulo || 'Conquistada' : 'Bloqueada'}
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
             </section>
-
-            <section className="card">
-              <div className="cardHeader">
-                <div>
-                  <h2 className="cardTitle">Evolução da jornada</h2>
-                  <div className="cardSub">
-                    Marcos de progressão do guia dentro da comunidade PrussikTrails.
-                  </div>
-                </div>
-              </div>
-
-              <div className="cardBody">
-                <div className="timeline">
-                  {METAS_KM_GUIA.map((meta) => {
-                    const conquistado = stats.totalKm >= meta.km
-
-                    return (
-                      <div className="timelineItem" key={meta.nome}>
-                        <div className="timelineKm">{meta.km} km</div>
-                        <div className="timelineName">
-                          {meta.icone} {meta.nome}
-                        </div>
-                        <div className={`timelineStatus ${conquistado ? 'ok' : ''}`}>
-                          {conquistado ? 'Conquistado' : 'Em progresso'}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </section>
           </div>
-
           <aside className="stack">
             <section className="benefitCard">
               <div className="benefitPill">
@@ -2136,110 +2274,9 @@ export default function PerfilGuiaPage() {
             <section className="card">
               <div className="cardHeader">
                 <div>
-                  <h2 className="cardTitle">Medalhas</h2>
-                  <div className="cardSub">
-                    Reconhecimentos da sua atuação como guia.
-                  </div>
-                </div>
-              </div>
-
-              <div className="cardBody">
-                <div className="medalGrid">
-                  {medalhas.map((medalha) => (
-                    <div
-                      key={medalha.nome}
-                      className={`medal ${medalha.desbloqueado ? '' : 'locked'}`}
-                    >
-                      <div className="medalIcon">{medalha.icone}</div>
-                      <div className="medalName">{medalha.nome}</div>
-                      <div className="medalMeta">
-                        {medalha.desbloqueado
-                          ? 'Liberada'
-                          : `${medalha.progresso}/${medalha.meta}`}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="cardHeader">
-                <div>
-                  <h2 className="cardTitle">Principais roteiros</h2>
-                  <div className="cardSub">
-                    Prévia dos roteiros que também aparecerão no seu perfil público.
-                  </div>
-                </div>
-              </div>
-
-              <div className="cardBody">
-                {principaisRoteiros.length === 0 ? (
-                  <div className="empty">
-                    Nenhum roteiro cadastrado ainda.
-                  </div>
-                ) : (
-                  <div className="routeGrid">
-                    {principaisRoteiros.map((roteiro) => (
-                      <div
-                        className="routeCard"
-                        key={roteiro.id}
-                        onClick={() => router.push(`/roteiros/${roteiro.id}`)}
-                      >
-                        <div className="routePhoto">
-                          {fotoRoteiro(roteiro) ? (
-                            <img src={fotoRoteiro(roteiro)} alt={roteiro.titulo || roteiro.nome || 'Roteiro'} />
-                          ) : (
-                            <span>🥾</span>
-                          )}
-                        </div>
-
-                        <div>
-                          <div className="routeTitle">
-                            {roteiro.titulo || roteiro.nome || 'Roteiro'}
-                          </div>
-
-                          <div className="routeMeta">
-                            {roteiro.local || roteiro.localizacao || 'Local a confirmar'}
-                            <br />
-                            {kmRoteiro(roteiro).toFixed(1)} km
-                          </div>
-
-                          <div className="routePrice">
-                            {formatarMoeda(valorRoteiro(roteiro))}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="actionRow">
-                  <button
-                    type="button"
-                    className="btn dark"
-                    onClick={() => router.push('/guia/roteiros')}
-                  >
-                    Meus roteiros
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn light"
-                    onClick={() => router.push('/guia/roteiros/novo')}
-                  >
-                    Novo roteiro
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="cardHeader">
-                <div>
                   <h2 className="cardTitle">Avaliações</h2>
                   <div className="cardSub">
-                    Comentários e notas recebidas dos aventureiros.
+                    Clique no nome do aventureiro para abrir o perfil público do cliente.
                   </div>
                 </div>
 
@@ -2259,11 +2296,37 @@ export default function PerfilGuiaPage() {
                   </div>
                 ) : (
                   <div className="reviewList">
-                    {avaliacoes.slice(0, 5).map((avaliacao) => (
-                      <div className="review" key={avaliacao.id}>
+                    {avaliacoes.slice(0, 6).map((avaliacao) => (
+                      <div
+                        className={`review ${avaliacao.cliente_id ? 'clickable' : ''}`}
+                        key={avaliacao.id}
+                        role={avaliacao.cliente_id ? 'button' : undefined}
+                        tabIndex={avaliacao.cliente_id ? 0 : undefined}
+                        onClick={() => {
+                          if (avaliacao.cliente_id) {
+                            router.push(`/cliente/publico/${avaliacao.cliente_id}`)
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (avaliacao.cliente_id && (event.key === 'Enter' || event.key === ' ')) {
+                            event.preventDefault()
+                            router.push(`/cliente/publico/${avaliacao.cliente_id}`)
+                          }
+                        }}
+                      >
                         <div className="reviewTop">
-                          <div className="reviewName">
-                            {avaliacao.cliente_nome || 'Cliente'}
+                          <div className="reviewClient">
+                            <div className="reviewAvatar">
+                              {avaliacao.cliente_avatar ? (
+                                <img src={avaliacao.cliente_avatar} alt={avaliacao.cliente_nome || 'Cliente'} />
+                              ) : (
+                                <span>{(avaliacao.cliente_nome || 'C').slice(0, 1).toUpperCase()}</span>
+                              )}
+                            </div>
+
+                            <div className="reviewName">
+                              {avaliacao.cliente_nome || 'Cliente'}
+                            </div>
                           </div>
 
                           <div className="stars">
@@ -2292,7 +2355,7 @@ export default function PerfilGuiaPage() {
         <AvatarCropModal
           open={Boolean(avatarCropSrc)}
           imageSrc={avatarCropSrc}
-          title="Ajustar foto do guia"
+          title="Foto do guia"
           onCancel={limparCropAvatar}
           onConfirm={confirmarCropAvatar}
         />
