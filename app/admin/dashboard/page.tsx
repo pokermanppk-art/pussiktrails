@@ -164,6 +164,54 @@ const cadasturInicial: CadasturResumo = {
   ativo: 0
 }
 
+type SuporteResumo = {
+  total: number
+  novos: number
+  emAnalise: number
+  urgentes: number
+  bugs: number
+}
+
+const suporteInicial: SuporteResumo = {
+  total: 0,
+  novos: 0,
+  emAnalise: 0,
+  urgentes: 0,
+  bugs: 0
+}
+
+type CancelamentosResumo = {
+  total: number
+  totalOriginal: number
+  totalCreditado: number
+  totalRetidoPlataforma: number
+  porTipo: Record<string, number>
+  porStatus: Record<string, number>
+}
+
+const cancelamentosInicial: CancelamentosResumo = {
+  total: 0,
+  totalOriginal: 0,
+  totalCreditado: 0,
+  totalRetidoPlataforma: 0,
+  porTipo: {},
+  porStatus: {}
+}
+
+type SaldosResumo = {
+  clientesComSaldo: number
+  saldoTotal: number
+  creditosTotal: number
+  debitosTotal: number
+}
+
+const saldosInicial: SaldosResumo = {
+  clientesComSaldo: 0,
+  saldoTotal: 0,
+  creditosTotal: 0,
+  debitosTotal: 0
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
@@ -176,6 +224,9 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<Stats>(statsInicial)
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoResumo>(avaliacaoInicial)
   const [cadasturResumo, setCadasturResumo] = useState<CadasturResumo>(cadasturInicial)
+  const [suporteResumo, setSuporteResumo] = useState<SuporteResumo>(suporteInicial)
+  const [cancelamentosResumo, setCancelamentosResumo] = useState<CancelamentosResumo>(cancelamentosInicial)
+  const [saldosResumo, setSaldosResumo] = useState<SaldosResumo>(saldosInicial)
 
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
@@ -409,11 +460,132 @@ export default function AdminDashboardPage() {
     }
   }
 
+  const carregarSuporte = async () => {
+    try {
+      const response = await fetch('/api/suporte/chamados?status=todos&limite=200')
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        console.warn('Aviso ao carregar suporte:', data)
+        setSuporteResumo(suporteInicial)
+        return suporteInicial
+      }
+
+      const chamados = (data?.chamados || data?.suporte_chamados || data?.items || []) as any[]
+      const resumoApi = data?.resumo || {}
+
+      const resumo: SuporteResumo = {
+        total: Number(resumoApi.total || chamados.length || 0),
+        novos: Number(
+          resumoApi.novos ||
+            resumoApi.novo ||
+            chamados.filter((item) => normalizar(item.status) === 'novo').length ||
+            0
+        ),
+        emAnalise: Number(
+          resumoApi.em_analise ||
+            resumoApi.emAnalise ||
+            chamados.filter((item) => normalizar(item.status) === 'em_analise').length ||
+            0
+        ),
+        urgentes: Number(
+          resumoApi.urgentes ||
+            chamados.filter((item) => normalizar(item.prioridade) === 'urgente').length ||
+            0
+        ),
+        bugs: Number(
+          resumoApi.bugs ||
+            chamados.filter((item) => normalizar(item.tipo_chamado || item.tipo) === 'bug').length ||
+            0
+        )
+      }
+
+      setSuporteResumo(resumo)
+      return resumo
+    } catch (error) {
+      console.warn('Erro ao carregar suporte:', error)
+      setSuporteResumo(suporteInicial)
+      return suporteInicial
+    }
+  }
+
+  const carregarCancelamentos = async () => {
+    try {
+      const response = await fetch('/api/admin/cancelamentos?status=todos&tipo=todos&limite=200')
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Aviso ao carregar cancelamentos:', data)
+        setCancelamentosResumo(cancelamentosInicial)
+        return cancelamentosInicial
+      }
+
+      const resumo: CancelamentosResumo = {
+        total: Number(data?.resumo?.total || 0),
+        totalOriginal: Number(data?.resumo?.totalOriginal || data?.resumo?.total_original || 0),
+        totalCreditado: Number(data?.resumo?.totalCreditado || data?.resumo?.total_creditado || 0),
+        totalRetidoPlataforma: Number(data?.resumo?.totalRetidoPlataforma || data?.resumo?.total_retido_plataforma || 0),
+        porTipo: data?.resumo?.porTipo || {},
+        porStatus: data?.resumo?.porStatus || {}
+      }
+
+      setCancelamentosResumo(resumo)
+      return resumo
+    } catch (error) {
+      console.warn('Erro ao carregar cancelamentos:', error)
+      setCancelamentosResumo(cancelamentosInicial)
+      return cancelamentosInicial
+    }
+  }
+
+  const carregarSaldos = async () => {
+    try {
+      const response = await fetch('/api/admin/saldos/clientes?limite=200')
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        console.warn('Aviso ao carregar saldos:', data)
+        setSaldosResumo(saldosInicial)
+        return saldosInicial
+      }
+
+      const lista = (data?.clientes || data?.saldos || data?.items || []) as any[]
+      const resumoApi = data?.resumo || {}
+
+      const saldoTotalCalculado = lista.reduce(
+        (total, item) => total + Number(item.saldo_atual || item.saldo || item.valor_saldo || 0),
+        0
+      )
+
+      const resumo: SaldosResumo = {
+        clientesComSaldo: Number(
+          resumoApi.clientesComSaldo ||
+            resumoApi.clientes_com_saldo ||
+            lista.filter((item) => Number(item.saldo_atual || item.saldo || item.valor_saldo || 0) > 0).length ||
+            0
+        ),
+        saldoTotal: Number(resumoApi.saldoTotal || resumoApi.saldo_total || saldoTotalCalculado || 0),
+        creditosTotal: Number(resumoApi.creditosTotal || resumoApi.creditos_total || 0),
+        debitosTotal: Number(resumoApi.debitosTotal || resumoApi.debitos_total || 0)
+      }
+
+      setSaldosResumo(resumo)
+      return resumo
+    } catch (error) {
+      console.warn('Erro ao carregar saldos:', error)
+      setSaldosResumo(saldosInicial)
+      return saldosInicial
+    }
+  }
+
   const carregarTudo = async () => {
     setErro('')
 
     const avaliacoesResumo = await carregarAvaliacoes()
     const cadasturResumoAtual = await carregarCadastur()
+    const suporteResumoAtual = await carregarSuporte()
+    const cancelamentosResumoAtual = await carregarCancelamentos()
+    const saldosResumoAtual = await carregarSaldos()
 
     const [
       usuariosResult,
@@ -541,6 +713,9 @@ export default function AdminDashboardPage() {
     setStats(statsCalculados)
     setAvaliacoes(avaliacoesResumo)
     setCadasturResumo(cadasturResumoAtual)
+    setSuporteResumo(suporteResumoAtual)
+    setCancelamentosResumo(cancelamentosResumoAtual)
+    setSaldosResumo(saldosResumoAtual)
     setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
   }
 
@@ -680,6 +855,66 @@ export default function AdminDashboardPage() {
 
     return <span className="badge yellow">Pendente</span>
   }
+
+  const pendenciasOperacionais = useMemo(() => {
+    return [
+      {
+        titulo: 'CADASTUR aguardando conferência',
+        valor: cadasturResumo.informado,
+        texto: 'Guias que preencheram o número e precisam de validação administrativa.',
+        rota: '/admin/cadastur',
+        icone: '🪪',
+        destaque: cadasturResumo.informado > 0,
+      },
+      {
+        titulo: 'Chamados novos',
+        valor: suporteResumo.novos,
+        texto: `${suporteResumo.bugs} bug(s) e ${suporteResumo.urgentes} urgente(s) no suporte.`,
+        rota: '/admin/suporte',
+        icone: '🛟',
+        destaque: suporteResumo.novos > 0 || suporteResumo.urgentes > 0,
+      },
+      {
+        titulo: 'Reservas pendentes',
+        valor: stats.reservasPendentes,
+        texto: 'Reservas que ainda precisam de pagamento, confirmação ou revisão.',
+        rota: '/admin/reservas',
+        icone: '🎒',
+        destaque: stats.reservasPendentes > 0,
+      },
+      {
+        titulo: 'Roteiros em análise',
+        valor: stats.roteirosPendentes,
+        texto: 'Experiências recentes aguardando revisão operacional.',
+        rota: '/admin/roteiros',
+        icone: '🧭',
+        destaque: stats.roteirosPendentes > 0,
+      },
+      {
+        titulo: 'Clientes com Saldo de Jornada',
+        valor: saldosResumo.clientesComSaldo,
+        texto: `${formatarMoeda(saldosResumo.saldoTotal)} em saldo disponível para uso na plataforma.`,
+        rota: '/admin/saldos',
+        icone: '💳',
+        destaque: saldosResumo.clientesComSaldo > 0,
+      },
+      {
+        titulo: 'Cancelamentos registrados',
+        valor: cancelamentosResumo.total,
+        texto: `${formatarMoeda(cancelamentosResumo.totalCreditado)} creditado aos clientes.`,
+        rota: '/admin/cancelamentos',
+        icone: '↩️',
+        destaque: cancelamentosResumo.total > 0,
+      },
+    ]
+  }, [
+    cadasturResumo,
+    suporteResumo,
+    stats.reservasPendentes,
+    stats.roteirosPendentes,
+    saldosResumo,
+    cancelamentosResumo,
+  ])
 
   if (carregando || !user) {
     return (
@@ -1396,6 +1631,106 @@ export default function AdminDashboardPage() {
           font-weight: 750;
         }
 
+        .commandPanel {
+          background: rgba(255,255,255,0.94);
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 28px;
+          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07);
+          overflow: hidden;
+          margin-bottom: 18px;
+        }
+
+        .commandHeader {
+          padding: 16px 18px;
+          border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .commandTitle {
+          margin: 0;
+          color: #0f172a;
+          font-size: 19px;
+          font-weight: 950;
+          letter-spacing: -0.045em;
+        }
+
+        .commandSub {
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+        }
+
+        .commandGrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+          padding: 14px;
+        }
+
+        .commandItem {
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: #ffffff;
+          border-radius: 22px;
+          padding: 13px;
+          display: grid;
+          grid-template-columns: 42px minmax(0,1fr);
+          gap: 10px;
+          cursor: pointer;
+          transition: 0.2s ease;
+          text-align: left;
+        }
+
+        .commandItem:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+        }
+
+        .commandItem.active {
+          border-color: rgba(234, 88, 12, 0.18);
+          background: linear-gradient(135deg, #fff7ed, #ffffff);
+        }
+
+        .commandIcon {
+          width: 42px;
+          height: 42px;
+          border-radius: 16px;
+          background: #f1f5f9;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+        }
+
+        .commandValue {
+          color: #0f172a;
+          font-size: 24px;
+          line-height: 1;
+          font-weight: 950;
+          letter-spacing: -0.06em;
+        }
+
+        .commandName {
+          color: #0f172a;
+          font-size: 12px;
+          line-height: 1.25;
+          font-weight: 950;
+          margin-top: 4px;
+        }
+
+        .commandText {
+          color: #64748b;
+          font-size: 11px;
+          line-height: 1.35;
+          font-weight: 750;
+          margin-top: 4px;
+        }
+
         .modalOverlay {
           position: fixed;
           inset: 0;
@@ -1551,6 +1886,10 @@ export default function AdminDashboardPage() {
             grid-template-columns: 1fr;
           }
 
+          .commandGrid {
+            grid-template-columns: 1fr 1fr;
+          }
+
           .settingsMenu {
             right: 0;
           }
@@ -1562,6 +1901,10 @@ export default function AdminDashboardPage() {
           }
 
           .statsGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .commandGrid {
             grid-template-columns: 1fr;
           }
 
@@ -1697,6 +2040,44 @@ export default function AdminDashboardPage() {
           <div className="alert error">{erro}</div>
         )}
 
+        <section className="commandPanel">
+          <div className="commandHeader">
+            <div>
+              <h2 className="commandTitle">Pendências do dia</h2>
+              <div className="commandSub">
+                Ações que merecem atenção do Admin antes de novas melhorias ou deploy.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="textLink"
+              onClick={atualizar}
+              disabled={atualizando}
+            >
+              {atualizando ? 'Atualizando...' : 'Recarregar pendências'}
+            </button>
+          </div>
+
+          <div className="commandGrid">
+            {pendenciasOperacionais.map((item) => (
+              <button
+                type="button"
+                key={item.titulo}
+                className={`commandItem ${item.destaque ? 'active' : ''}`}
+                onClick={() => router.push(item.rota)}
+              >
+                <div className="commandIcon">{item.icone}</div>
+                <div>
+                  <div className="commandValue">{item.valor}</div>
+                  <div className="commandName">{item.titulo}</div>
+                  <div className="commandText">{item.texto}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="statsGrid">
           <article
             className="statCard"
@@ -1781,6 +2162,42 @@ export default function AdminDashboardPage() {
             </div>
             <div className="statHint">Administrar grupos</div>
           </article>
+
+          <article
+            className="statCard"
+            onClick={() => router.push('/admin/suporte')}
+          >
+            <div className="statIcon">🛟</div>
+            <div className="statValue">{suporteResumo.novos}</div>
+            <div className="statLabel">
+              suporte · {suporteResumo.total} chamado(s) · {suporteResumo.bugs} bug(s) · {suporteResumo.urgentes} urgente(s)
+            </div>
+            <div className="statHint">Abrir suporte</div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => router.push('/admin/saldos')}
+          >
+            <div className="statIcon">💳</div>
+            <div className="statValue">{saldosResumo.clientesComSaldo}</div>
+            <div className="statLabel">
+              Saldo de Jornada · {formatarMoeda(saldosResumo.saldoTotal)} disponível para clientes
+            </div>
+            <div className="statHint">Gerenciar saldos</div>
+          </article>
+
+          <article
+            className="statCard"
+            onClick={() => router.push('/admin/cancelamentos')}
+          >
+            <div className="statIcon">↩️</div>
+            <div className="statValue">{cancelamentosResumo.total}</div>
+            <div className="statLabel">
+              cancelamentos · {formatarMoeda(cancelamentosResumo.totalCreditado)} creditado · {formatarMoeda(cancelamentosResumo.totalRetidoPlataforma)} retido
+            </div>
+            <div className="statHint">Auditar créditos</div>
+          </article>
         </section>
 
         <section className="mainGrid">
@@ -1843,7 +2260,7 @@ export default function AdminDashboardPage() {
                   >
                     <div className="quickIcon">💳</div>
                     <div className="quickTitle">Saldos</div>
-                    <div className="quickText">Carteira dos clientes, créditos, débitos e extrato.</div>
+                    <div className="quickText">Saldo de Jornada, créditos, débitos e extrato.</div>
                   </button>
 
                   <button

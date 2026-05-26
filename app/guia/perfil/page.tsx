@@ -734,14 +734,24 @@ export default function PerfilGuiaPage() {
         body: formData,
       })
 
-      const data = await response.json().catch(() => null)
+      const rawText = await response.text()
+
+      let data: any = null
+
+      try {
+        data = rawText ? JSON.parse(rawText) : null
+      } catch {
+        throw new Error(
+          `A rota /api/usuario/avatar não retornou JSON válido. Status: ${response.status}. Resposta: ${rawText.slice(0, 180)}`
+        )
+      }
 
       if (!response.ok || data?.sucesso === false || data?.success === false) {
         throw new Error(
           data?.erro ||
             data?.error ||
             data?.message ||
-            'Não foi possível salvar a foto do guia.'
+            `Erro HTTP ${response.status} ao salvar foto.`
         )
       }
 
@@ -778,11 +788,7 @@ export default function PerfilGuiaPage() {
       setMensagem('Foto de perfil atualizada com sucesso.')
     } catch (error: any) {
       console.error('Erro ao enviar avatar do guia:', error)
-
-      setErro(
-        error?.message ||
-          'Não foi possível atualizar a foto do guia.'
-      )
+      setErro(error?.message || 'Não foi possível atualizar a foto do guia.')
     } finally {
       setEnviandoAvatar(false)
       setTimeout(() => setMensagem(''), 2800)

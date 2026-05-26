@@ -152,6 +152,14 @@ function extrairGuiaId(usuario: any) {
   ).trim()
 }
 
+function normalizar(valor: unknown) {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
 function extrairEmail(usuario: any) {
   return String(
     usuario?.email ||
