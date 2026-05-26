@@ -363,6 +363,12 @@ export default function RoteirosPage() {
     }
   }
 
+  const abrirDetalhesRoteiro = (roteiro: Roteiro) => {
+    if (!roteiro?.id) return
+
+    router.push(`/roteiros/${roteiro.id}`)
+  }
+
   const abrirReserva = (roteiro: Roteiro) => {
     if (!user?.id) {
       router.push('/login')
@@ -887,6 +893,15 @@ export default function RoteirosPage() {
           display: flex;
           flex-direction: column;
           min-height: 100%;
+          cursor: pointer;
+          outline: none;
+        }
+
+        .card:focus-visible {
+          box-shadow:
+            0 0 0 4px rgba(132, 204, 22, 0.22),
+            0 22px 46px rgba(15, 23, 42, 0.12);
+          transform: translateY(-3px);
         }
 
         .card:hover {
@@ -1464,7 +1479,20 @@ export default function RoteirosPage() {
               const km = kmRoteiro(roteiro)
 
               return (
-                <article className="card" key={roteiro.id}>
+                <article
+                  className="card"
+                  key={roteiro.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Ver detalhes do roteiro ${tituloRoteiro(roteiro)}`}
+                  onClick={() => abrirDetalhesRoteiro(roteiro)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      abrirDetalhesRoteiro(roteiro)
+                    }
+                  }}
+                >
                   <div className="imageBox">
                     {imagem && (
                       <img src={imagem} alt={tituloRoteiro(roteiro)} />
@@ -1537,7 +1565,10 @@ export default function RoteirosPage() {
                       <button
                         type="button"
                         className="reserveBtn"
-                        onClick={() => abrirReserva(roteiro)}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          abrirReserva(roteiro)
+                        }}
                         disabled={reservandoId === roteiro.id}
                       >
                         {reservandoId === roteiro.id ? 'Reservando...' : 'Reservar'}
