@@ -221,6 +221,10 @@ export default function PerfilPublicoCliente() {
   const [usuarioCurtiuPerfil, setUsuarioCurtiuPerfil] = useState(false)
   const [usuarioLogado, setUsuarioLogado] = useState<{ id: string; tipo?: string; nome?: string } | null>(null)
   const [medalhasEspeciais, setMedalhasEspeciais] = useState<MedalhaEspecial[]>([])
+  const [seguindoPerfil, setSeguindoPerfil] = useState(false)
+  const [seguidoresTotal, setSeguidoresTotal] = useState(0)
+  const [seguindoSalvando, setSeguindoSalvando] = useState(false)
+  const [seguindoErro, setSeguindoErro] = useState('')
 
   useEffect(() => {
     try {
@@ -331,6 +335,27 @@ export default function PerfilPublicoCliente() {
           setUsuarioCurtiuPerfil(false)
         }
 
+        const { count: seguidoresCount } = await supabase
+          .from('seguidores')
+          .select('id', { count: 'exact', head: true })
+          .eq('seguido_id', id)
+          .eq('status', 'ativo')
+
+        setSeguidoresTotal(seguidoresCount || 0)
+
+        if (usuarioLogado?.id && usuarioLogado.id !== id) {
+          const { data: segueRegistro } = await supabase
+            .from('seguidores')
+            .select('id, status')
+            .eq('seguidor_id', usuarioLogado.id)
+            .eq('seguido_id', id)
+            .maybeSingle()
+
+          setSeguindoPerfil(segueRegistro?.status === 'ativo')
+        } else {
+          setSeguindoPerfil(false)
+        }
+
         const { data: progresso } = await supabase
           .from('usuarios_medalhas')
           .select('progresso_atual, medalha:medalha_id(nome)')
@@ -365,6 +390,44 @@ export default function PerfilPublicoCliente() {
 
     carregarDados()
   }, [id, usuarioLogado?.id])
+
+  const alternarSeguir = async () => {
+    if (!usuarioLogado?.id) {
+      router.push('/login')
+      return
+    }
+
+    if (!cliente?.id || usuarioLogado.id === cliente.id) return
+
+    try {
+      setSeguindoErro('')
+      setSeguindoSalvando(true)
+
+      const resposta = await fetch('/api/social/seguir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seguidorId: usuarioLogado.id,
+          seguidoId: cliente.id,
+          origem: 'perfil_publico_cliente'
+        })
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível atualizar agora.')
+      }
+
+      const novoStatus = Boolean(json.seguindo)
+      setSeguindoPerfil(novoStatus)
+      setSeguidoresTotal((prev) => Math.max(prev + (novoStatus ? 1 : -1), 0))
+    } catch (error: unknown) {
+      setSeguindoErro(error instanceof Error ? error.message : 'Erro ao seguir este perfil.')
+    } finally {
+      setSeguindoSalvando(false)
+    }
+  }
 
   const curtirFoto = async (fotoUrl: string) => {
     if (!usuarioLogado?.id) {
@@ -543,6 +606,55 @@ export default function PerfilPublicoCliente() {
             font-weight: 950;
             cursor: pointer;
           }
+
+          .followArea {
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+          }
+
+          .followButton {
+            min-height: 42px;
+            border: 0;
+            border-radius: 999px;
+            padding: 0 18px;
+            background: #203c2e;
+            color: #fffdf7;
+            font-size: 13px;
+            font-weight: 950;
+            cursor: pointer;
+            box-shadow: 0 14px 28px rgba(32, 60, 46, 0.18);
+            transition: 0.18s ease;
+          }
+
+          .followButton:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 18px 34px rgba(32, 60, 46, 0.22);
+          }
+
+          .followButton.following {
+            background: rgba(255, 253, 247, 0.88);
+            color: #203c2e;
+            border: 1px solid rgba(32, 60, 46, 0.20);
+            box-shadow: none;
+          }
+
+          .followButton:disabled {
+            opacity: 0.62;
+            cursor: not-allowed;
+            transform: none;
+          }
+
+          .followError {
+            max-width: 280px;
+            color: #991b1b;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.35;
+          }
+
         `}</style>
       </main>
     )
@@ -606,7 +718,22 @@ export default function PerfilPublicoCliente() {
               <span>Desde {anoEntrada}</span>
               <span>{nivelAtual.nome}</span>
               <span>{avaliacaoMedia > 0 ? `${avaliacaoMedia.toFixed(1)} ★` : 'Sem avaliações ainda'}</span>
+              <span>{seguidoresTotal} {seguidoresTotal === 1 ? 'seguidor' : 'seguidores'}</span>
             </div>
+
+            {usuarioLogado?.id !== cliente.id && (
+              <div className="followArea">
+                <button
+                  type="button"
+                  className={`followButton ${seguindoPerfil ? 'following' : ''}`}
+                  onClick={alternarSeguir}
+                  disabled={seguindoSalvando}
+                >
+                  {seguindoSalvando ? 'Aguarde...' : seguindoPerfil ? 'Seguindo' : 'Seguir'}
+                </button>
+                {seguindoErro && <span className="followError">{seguindoErro}</span>}
+              </div>
+            )}
 
             {bio && <p className="bioText">{bio}</p>}
           </div>
@@ -970,6 +1097,55 @@ export default function PerfilPublicoCliente() {
           color: #334155;
           font-size: 12px;
           font-weight: 900;
+        }
+
+
+        .followArea {
+          margin-top: 14px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .followButton {
+          min-height: 42px;
+          border: 0;
+          border-radius: 999px;
+          padding: 0 18px;
+          background: #203c2e;
+          color: #fffdf7;
+          font-size: 13px;
+          font-weight: 950;
+          cursor: pointer;
+          box-shadow: 0 14px 28px rgba(32, 60, 46, 0.18);
+          transition: 0.18s ease;
+        }
+
+        .followButton:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 18px 34px rgba(32, 60, 46, 0.22);
+        }
+
+        .followButton.following {
+          background: rgba(255, 253, 247, 0.88);
+          color: #203c2e;
+          border: 1px solid rgba(32, 60, 46, 0.20);
+          box-shadow: none;
+        }
+
+        .followButton:disabled {
+          opacity: 0.62;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .followError {
+          max-width: 280px;
+          color: #991b1b;
+          font-size: 12px;
+          font-weight: 800;
+          line-height: 1.35;
         }
 
         .bioText {
@@ -1401,6 +1577,18 @@ export default function PerfilPublicoCliente() {
 
           .profileMain h1 {
             font-size: 40px;
+          }
+
+          .followArea {
+            justify-content: center;
+            margin-top: 12px;
+            gap: 7px;
+          }
+
+          .followButton {
+            min-height: 38px;
+            padding: 0 15px;
+            font-size: 12px;
           }
 
           .subtitle {

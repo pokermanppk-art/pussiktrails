@@ -125,6 +125,18 @@ function normalizar(valor: unknown): string {
     .trim()
 }
 
+
+function extrairUsuarioLocalId(usuario: any): string {
+  return String(
+    usuario?.id ||
+      usuario?.user_id ||
+      usuario?.usuario_id ||
+      usuario?.guia_id ||
+      usuario?.cliente_id ||
+      ''
+  ).trim()
+}
+
 function formatarMoeda(valor: unknown): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -262,10 +274,16 @@ export default function PerfilPublicoGuiaPage() {
   const [reportMotivo, setReportMotivo] = useState<ReportReason>('seguranca')
   const [reportTexto, setReportTexto] = useState('')
   const [reportEnviado, setReportEnviado] = useState(false)
+  const [usuarioLogadoId, setUsuarioLogadoId] = useState('')
+  const [seguindoPerfil, setSeguindoPerfil] = useState(false)
+  const [seguidoresTotal, setSeguidoresTotal] = useState(0)
+  const [seguindoSalvando, setSeguindoSalvando] = useState(false)
+  const [seguindoErro, setSeguindoErro] = useState('')
 
   useEffect(() => {
     if (!guiaId) return
     carregarPerfil()
+    carregarStatusSocial()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guiaId])
 
@@ -281,6 +299,80 @@ export default function PerfilPublicoGuiaPage() {
         guia?.beneficio_taxa_beta_ativo ||
         Number(guia?.taxa_plataforma_percentual || 0) === 5
     )
+  }
+
+
+  const carregarStatusSocial = async () => {
+    try {
+      setSeguindoErro('')
+
+      const salvo = localStorage.getItem('user')
+      const usuario = salvo ? JSON.parse(salvo) : null
+      const idLogado = extrairUsuarioLocalId(usuario)
+      setUsuarioLogadoId(idLogado)
+
+      const { count } = await supabase
+        .from('seguidores')
+        .select('id', { count: 'exact', head: true })
+        .eq('seguido_id', guiaId)
+        .eq('status', 'ativo')
+
+      setSeguidoresTotal(count || 0)
+
+      if (!idLogado || idLogado === guiaId) {
+        setSeguindoPerfil(false)
+        return
+      }
+
+      const { data } = await supabase
+        .from('seguidores')
+        .select('id, status')
+        .eq('seguidor_id', idLogado)
+        .eq('seguido_id', guiaId)
+        .maybeSingle()
+
+      setSeguindoPerfil(data?.status === 'ativo')
+    } catch (error) {
+      console.warn('Não foi possível carregar status social do guia:', error)
+    }
+  }
+
+  const alternarSeguir = async () => {
+    if (!usuarioLogadoId) {
+      router.push('/login')
+      return
+    }
+
+    if (!guiaId || usuarioLogadoId === guiaId) return
+
+    try {
+      setSeguindoErro('')
+      setSeguindoSalvando(true)
+
+      const resposta = await fetch('/api/social/seguir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seguidorId: usuarioLogadoId,
+          seguidoId: guiaId,
+          origem: 'perfil_publico_guia'
+        })
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível atualizar agora.')
+      }
+
+      const novoStatus = Boolean(json.seguindo)
+      setSeguindoPerfil(novoStatus)
+      setSeguidoresTotal((prev) => Math.max(prev + (novoStatus ? 1 : -1), 0))
+    } catch (error: unknown) {
+      setSeguindoErro(error instanceof Error ? error.message : 'Erro ao seguir este guia.')
+    } finally {
+      setSeguindoSalvando(false)
+    }
   }
 
   const buscarRoteirosDoGuia = async (id: string) => {
@@ -585,7 +677,22 @@ export default function PerfilPublicoGuiaPage() {
                 {guia.cadastur && <span>CADASTUR {guia.cadastur}</span>}
                 <span>{stats.avaliacaoMedia > 0 ? `${stats.avaliacaoMedia.toFixed(1)} ★` : 'Sem avaliações ainda'}</span>
                 <span>{nivelAtual}</span>
+                <span>{seguidoresTotal} {seguidoresTotal === 1 ? 'seguidor' : 'seguidores'}</span>
               </div>
+
+              {usuarioLogadoId !== guia.id && (
+                <div className="followArea">
+                  <button
+                    type="button"
+                    className={`followButton ${seguindoPerfil ? 'following' : ''}`}
+                    onClick={alternarSeguir}
+                    disabled={seguindoSalvando}
+                  >
+                    {seguindoSalvando ? 'Aguarde...' : seguindoPerfil ? 'Seguindo' : 'Seguir'}
+                  </button>
+                  {seguindoErro && <span className="followError">{seguindoErro}</span>}
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -1618,6 +1725,55 @@ const estilos = `
     font-weight: 700;
   }
 
+
+  .followArea {
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .followButton {
+    min-height: 42px;
+    border: 0;
+    border-radius: 999px;
+    padding: 0 18px;
+    background: #203c2e;
+    color: #fffdf7;
+    font-size: 13px;
+    font-weight: 950;
+    cursor: pointer;
+    box-shadow: 0 14px 28px rgba(32, 60, 46, 0.18);
+    transition: 0.18s ease;
+  }
+
+  .followButton:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 18px 34px rgba(32, 60, 46, 0.22);
+  }
+
+  .followButton.following {
+    background: rgba(255, 253, 247, 0.88);
+    color: #203c2e;
+    border: 1px solid rgba(32, 60, 46, 0.20);
+    box-shadow: none;
+  }
+
+  .followButton:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .followError {
+    max-width: 280px;
+    color: #991b1b;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.35;
+  }
+
   @media (max-width: 980px) {
     .mainGrid {
       grid-template-columns: 1fr;
@@ -1723,6 +1879,17 @@ const estilos = `
       font-size: 10px;
     }
 
+    .followArea {
+      margin-top: 12px;
+      gap: 7px;
+    }
+
+    .followButton {
+      min-height: 38px;
+      padding: 0 15px;
+      font-size: 12px;
+    }
+
     .quickStats {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1804,4 +1971,5 @@ const estilos = `
       width: 100%;
     }
   }
+
 `
