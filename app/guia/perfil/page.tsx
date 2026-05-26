@@ -194,6 +194,13 @@ export default function PerfilGuiaPage() {
   const [novaSenha, setNovaSenha] = useState('')
   const [confirmarSenha, setConfirmarSenha] = useState('')
   const [alterandoSenha, setAlterandoSenha] = useState(false)
+  const [modalSuporteAberto, setModalSuporteAberto] = useState(false)
+  const [tipoSuporte, setTipoSuporte] = useState<'bug' | 'suporte' | 'sugestao'>('suporte')
+  const [assuntoSuporte, setAssuntoSuporte] = useState('')
+  const [descricaoSuporte, setDescricaoSuporte] = useState('')
+  const [prioridadeSuporte, setPrioridadeSuporte] = useState<'baixa' | 'normal' | 'alta' | 'urgente'>('normal')
+  const [enviandoSuporte, setEnviandoSuporte] = useState(false)
+  const [erroSuporte, setErroSuporte] = useState('')
 
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
@@ -721,6 +728,75 @@ export default function PerfilGuiaPage() {
     setNovaSenha('')
     setConfirmarSenha('')
     setModalSenhaAberto(true)
+  }
+
+  const abrirSuporte = (tipo: 'bug' | 'suporte' | 'sugestao') => {
+    setMenuAberto(false)
+    setTipoSuporte(tipo)
+    setPrioridadeSuporte(tipo === 'bug' ? 'alta' : 'normal')
+    setAssuntoSuporte(tipo === 'bug' ? 'Erro no painel do guia' : tipo === 'sugestao' ? 'Sugestão para o PrussikTrails' : 'Mensagem ao suporte')
+    setDescricaoSuporte('')
+    setErroSuporte('')
+    setModalSuporteAberto(true)
+  }
+
+  const enviarSuporte = async (event: FormEvent) => {
+    event.preventDefault()
+
+    if (!user?.id) {
+      router.replace('/login')
+      return
+    }
+
+    if (!assuntoSuporte.trim()) {
+      setErroSuporte('Informe o assunto da solicitação.')
+      return
+    }
+
+    if (!descricaoSuporte.trim() || descricaoSuporte.trim().length < 8) {
+      setErroSuporte('Descreva melhor o que aconteceu.')
+      return
+    }
+
+    setEnviandoSuporte(true)
+    setErroSuporte('')
+
+    try {
+      const response = await fetch('/api/suporte/chamados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuarioId: user.id,
+          tipoUsuario: 'guia',
+          tipoChamado: tipoSuporte,
+          assunto: assuntoSuporte,
+          descricao: descricaoSuporte,
+          prioridade: prioridadeSuporte,
+          paginaOrigem: typeof window !== 'undefined' ? window.location.pathname : '/guia/perfil',
+          metadata: {
+            email: user.email || '',
+            nome: user.nome || '',
+          },
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        setErroSuporte(data?.erro || data?.message || 'Não foi possível enviar a solicitação.')
+        return
+      }
+
+      setMensagem('Solicitação enviada com sucesso.')
+      setModalSuporteAberto(false)
+      setAssuntoSuporte('')
+      setDescricaoSuporte('')
+    } catch (error) {
+      console.error('Erro ao enviar suporte:', error)
+      setErroSuporte('Erro ao enviar solicitação.')
+    } finally {
+      setEnviandoSuporte(false)
+    }
   }
 
   const alterarSenha = async (event: FormEvent) => {
@@ -1382,6 +1458,12 @@ export default function PerfilGuiaPage() {
           grid-column: 1 / -1;
         }
 
+        .suporteTextarea {
+          min-height: 116px;
+          resize: vertical;
+          line-height: 1.45;
+        }
+
         .label {
           color: #475569;
           font-size: 11px;
@@ -1395,6 +1477,17 @@ export default function PerfilGuiaPage() {
           font-size: 12px;
           line-height: 1.45;
           font-weight: 700;
+        }
+
+        .errorBox {
+          border-radius: 16px;
+          padding: 12px 13px;
+          background: rgba(153, 27, 27, 0.08);
+          color: #991b1b;
+          border: 1px solid rgba(153, 27, 27, 0.14);
+          font-size: 13px;
+          font-weight: 850;
+          line-height: 1.45;
         }
 
         .benefitCard {
@@ -1957,6 +2050,30 @@ export default function PerfilGuiaPage() {
 
                 <button
                   type="button"
+                  className="menuButton"
+                  onClick={() => abrirSuporte('bug')}
+                >
+                  🐞 Reportar bug
+                </button>
+
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={() => abrirSuporte('suporte')}
+                >
+                  💬 Mensagem ao suporte
+                </button>
+
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={() => abrirSuporte('sugestao')}
+                >
+                  ✨ Sugerir melhoria
+                </button>
+
+                <button
+                  type="button"
                   className="menuButton danger"
                   onClick={sair}
                 >
@@ -2310,6 +2427,88 @@ export default function PerfilGuiaPage() {
           onCancel={limparCropAvatar}
           onConfirm={confirmarCropAvatar}
         />
+      )}
+
+      {modalSuporteAberto && (
+        <div className="modalOverlay">
+          <form className="modal" onSubmit={enviarSuporte}>
+            <div className="modalHeader">
+              <h2 className="modalTitle">
+                {tipoSuporte === 'bug' ? 'Reportar bug' : tipoSuporte === 'sugestao' ? 'Sugerir melhoria' : 'Mensagem ao suporte'}
+              </h2>
+              <div className="modalSub">
+                Conte para nós o que aconteceu. Sua mensagem ajuda a melhorar o PrussikTrails durante a fase Beta.
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <div className="field">
+                <label className="label">Tipo</label>
+                <select
+                  className="input"
+                  value={tipoSuporte}
+                  onChange={(event) => setTipoSuporte(event.target.value as 'bug' | 'suporte' | 'sugestao')}
+                >
+                  <option value="bug">Bug / erro no app</option>
+                  <option value="suporte">Mensagem ao suporte</option>
+                  <option value="sugestao">Sugestão de melhoria</option>
+                </select>
+              </div>
+
+              <div className="field">
+                <label className="label">Assunto</label>
+                <input
+                  className="input"
+                  type="text"
+                  value={assuntoSuporte}
+                  onChange={(event) => setAssuntoSuporte(event.target.value)}
+                  placeholder="Ex.: erro ao abrir grupos"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Descrição</label>
+                <textarea
+                  className="input suporteTextarea"
+                  value={descricaoSuporte}
+                  onChange={(event) => setDescricaoSuporte(event.target.value)}
+                  placeholder="Descreva a situação com detalhes."
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Prioridade</label>
+                <select
+                  className="input"
+                  value={prioridadeSuporte}
+                  onChange={(event) => setPrioridadeSuporte(event.target.value as 'baixa' | 'normal' | 'alta' | 'urgente')}
+                >
+                  <option value="baixa">Baixa</option>
+                  <option value="normal">Normal</option>
+                  <option value="alta">Alta</option>
+                  <option value="urgente">Urgente</option>
+                </select>
+              </div>
+
+              {erroSuporte && <div className="errorBox">{erroSuporte}</div>}
+
+              <div className="modalActions">
+                <button type="submit" className="btn dark" disabled={enviandoSuporte}>
+                  {enviandoSuporte ? 'Enviando...' : 'Enviar solicitação'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn light"
+                  disabled={enviandoSuporte}
+                  onClick={() => setModalSuporteAberto(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
       )}
 
       {modalSenhaAberto && (

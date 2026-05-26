@@ -1826,6 +1826,16 @@ export default function AdminDashboardPage() {
                     <div className="quickTitle">Grupos</div>
                     <div className="quickText">Comunidades internas por roteiro e acesso pós-pagamento.</div>
                   </button>
+
+                  <button
+                    type="button"
+                    className="quickBtn"
+                    onClick={() => router.push('/admin/suporte')}
+                  >
+                    <div className="quickIcon">🛟</div>
+                    <div className="quickTitle">Suporte</div>
+                    <div className="quickText">Bugs, mensagens de suporte e sugestões da fase Beta.</div>
+                  </button>
                 </div>
               </div>
             </section>

@@ -363,6 +363,13 @@ export default function PerfilCliente() {
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('')
   const [salvandoSenha, setSalvandoSenha] = useState(false)
   const [erroSenha, setErroSenha] = useState('')
+  const [modalSuporteAberto, setModalSuporteAberto] = useState(false)
+  const [tipoSuporte, setTipoSuporte] = useState<'bug' | 'suporte' | 'sugestao'>('suporte')
+  const [assuntoSuporte, setAssuntoSuporte] = useState('')
+  const [descricaoSuporte, setDescricaoSuporte] = useState('')
+  const [prioridadeSuporte, setPrioridadeSuporte] = useState<'baixa' | 'normal' | 'alta' | 'urgente'>('normal')
+  const [enviandoSuporte, setEnviandoSuporte] = useState(false)
+  const [erroSuporte, setErroSuporte] = useState('')
 
   const [linhas, setLinhas] = useState<FotoComDimensao[][]>([])
   const [carregandoFotos, setCarregandoFotos] = useState(true)
@@ -805,6 +812,69 @@ export default function PerfilCliente() {
     setModalSenhaAberto(true)
   }
 
+  function abrirModalSuporte(tipo: 'bug' | 'suporte' | 'sugestao') {
+    setMenuConfiguracoesAberto(false)
+    setTipoSuporte(tipo)
+    setPrioridadeSuporte(tipo === 'bug' ? 'alta' : 'normal')
+    setAssuntoSuporte(tipo === 'bug' ? 'Erro no app' : tipo === 'sugestao' ? 'Sugestão para o PrussikTrails' : 'Mensagem ao suporte')
+    setDescricaoSuporte('')
+    setErroSuporte('')
+    setModalSuporteAberto(true)
+  }
+
+  async function enviarSuporte() {
+    if (!user?.id) return
+
+    if (!assuntoSuporte.trim()) {
+      setErroSuporte('Informe o assunto da solicitação.')
+      return
+    }
+
+    if (!descricaoSuporte.trim() || descricaoSuporte.trim().length < 8) {
+      setErroSuporte('Descreva melhor o que aconteceu.')
+      return
+    }
+
+    try {
+      setEnviandoSuporte(true)
+      setErroSuporte('')
+
+      const response = await fetch('/api/suporte/chamados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuarioId: user.id,
+          tipoUsuario: 'cliente',
+          tipoChamado: tipoSuporte,
+          assunto: assuntoSuporte,
+          descricao: descricaoSuporte,
+          prioridade: prioridadeSuporte,
+          paginaOrigem: typeof window !== 'undefined' ? window.location.pathname : '/cliente/perfil',
+          metadata: {
+            email: user.email || '',
+            nome: user.nome || '',
+          },
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || data?.message || 'Não foi possível enviar a solicitação.')
+      }
+
+      setModalSuporteAberto(false)
+      setAssuntoSuporte('')
+      setDescricaoSuporte('')
+      setMensagem('✅ Solicitação enviada com sucesso!')
+      setTimeout(() => setMensagem(''), 3000)
+    } catch (error: unknown) {
+      setErroSuporte(error instanceof Error ? error.message : 'Erro ao enviar solicitação.')
+    } finally {
+      setEnviandoSuporte(false)
+    }
+  }
+
   async function alterarSenha() {
     if (!user?.id) return
 
@@ -907,6 +977,17 @@ export default function PerfilCliente() {
                   <button type="button" onClick={abrirModalSenha}>
                     Alterar senha
                   </button>
+                  <div className="settingsDivider" />
+                  <button type="button" onClick={() => abrirModalSuporte('bug')}>
+                    Reportar bug
+                  </button>
+                  <button type="button" onClick={() => abrirModalSuporte('suporte')}>
+                    Mensagem ao suporte
+                  </button>
+                  <button type="button" onClick={() => abrirModalSuporte('sugestao')}>
+                    Sugerir melhoria
+                  </button>
+                  <div className="settingsDivider" />
                   <button type="button" className="dangerItem" onClick={handleLogout}>
                     Sair
                   </button>
@@ -1312,6 +1393,75 @@ export default function PerfilCliente() {
         </div>
       )}
 
+      {modalSuporteAberto && (
+        <div className="passwordOverlay" onClick={() => !enviandoSuporte && setModalSuporteAberto(false)}>
+          <section className="passwordSheet supportSheet" onClick={(event) => event.stopPropagation()}>
+            <div className="passwordHeader">
+              <div>
+                <span>Ajuda e suporte</span>
+                <h2>{tipoSuporte === 'bug' ? 'Reportar bug' : tipoSuporte === 'sugestao' ? 'Sugerir melhoria' : 'Mensagem ao suporte'}</h2>
+              </div>
+              <button type="button" onClick={() => setModalSuporteAberto(false)} disabled={enviandoSuporte}>
+                ×
+              </button>
+            </div>
+
+            <p className="supportIntro">
+              Conte para nós o que aconteceu. Sua mensagem ajuda a melhorar a experiência do PrussikTrails durante a fase Beta.
+            </p>
+
+            <label>
+              Tipo
+              <select value={tipoSuporte} onChange={(event) => setTipoSuporte(event.target.value as 'bug' | 'suporte' | 'sugestao')}>
+                <option value="bug">Bug / erro no app</option>
+                <option value="suporte">Mensagem ao suporte</option>
+                <option value="sugestao">Sugestão de melhoria</option>
+              </select>
+            </label>
+
+            <label>
+              Assunto
+              <input
+                type="text"
+                value={assuntoSuporte}
+                onChange={(event) => setAssuntoSuporte(event.target.value)}
+                placeholder="Ex.: erro ao carregar medalhas"
+              />
+            </label>
+
+            <label>
+              Descrição
+              <textarea
+                value={descricaoSuporte}
+                onChange={(event) => setDescricaoSuporte(event.target.value)}
+                placeholder="Descreva o que aconteceu, em qual tela, e o que você esperava que acontecesse."
+              />
+            </label>
+
+            <label>
+              Prioridade
+              <select value={prioridadeSuporte} onChange={(event) => setPrioridadeSuporte(event.target.value as 'baixa' | 'normal' | 'alta' | 'urgente')}>
+                <option value="baixa">Baixa</option>
+                <option value="normal">Normal</option>
+                <option value="alta">Alta</option>
+                <option value="urgente">Urgente</option>
+              </select>
+            </label>
+
+            {erroSuporte && <p className="passwordError">{erroSuporte}</p>}
+
+            <div className="passwordActions">
+              <button type="button" className="secondary" onClick={() => setModalSuporteAberto(false)} disabled={enviandoSuporte}>
+                Cancelar
+              </button>
+              <button type="button" className="primary" onClick={enviarSuporte} disabled={enviandoSuporte}>
+                {enviandoSuporte ? 'Enviando...' : 'Enviar solicitação'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {lightboxAberto && fotos.length > 0 && (
         <div className="lightbox" onClick={() => setLightboxAberto(false)}>
           <button className="lightboxClose" type="button" onClick={() => setLightboxAberto(false)}>✕</button>
@@ -1507,6 +1657,38 @@ const styles = `
 
   .settingsMenu .dangerItem {
     color: #b91c1c;
+  }
+
+  .settingsDivider {
+    height: 1px;
+    margin: 6px 8px;
+    background: rgba(15,23,42,0.08);
+  }
+
+  .supportSheet textarea,
+  .supportSheet select {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,0.12);
+    border-radius: 16px;
+    padding: 12px 13px;
+    font: inherit;
+    color: #172018;
+    background: rgba(255,255,255,0.9);
+    outline: none;
+  }
+
+  .supportSheet textarea {
+    min-height: 116px;
+    resize: vertical;
+    line-height: 1.45;
+  }
+
+  .supportIntro {
+    margin: -4px 0 14px;
+    color: rgba(23,32,24,0.66);
+    font-size: 13px;
+    font-weight: 750;
+    line-height: 1.45;
   }
 
   .pillButton {
