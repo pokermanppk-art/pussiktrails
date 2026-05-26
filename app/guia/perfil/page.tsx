@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import AvatarCropModal from '@/components/AvatarCropModal'
@@ -74,7 +74,7 @@ type MedalhaGuiaVisual = {
   svg: string
   desbloqueado: boolean
   destaque?: boolean
-  categoria: 'progressao' | 'beta' | 'atuacao'
+  categoria: 'progressao' | 'cadastur' | 'beta' | 'atuacao'
 }
 
 const statsInicial: Stats = {
@@ -98,6 +98,7 @@ const PIX_TIPOS = [
 
 const MEDALHA_PROGRESSAO_BASE = '/medalhas/progressao'
 const MEDALHA_BETA_BASE = '/medalhas/iniciais_jornada'
+const MEDALHA_CADASTUR_BASE = '/medalhas/cadastur'
 
 const METAS_KM_GUIA = [
   {
@@ -162,6 +163,81 @@ const METAS_KM_GUIA = [
   }
 ]
 
+const CADASTUR_TIERS = [
+  {
+    anos: 1,
+    nome: 'CADASTUR Bronze',
+    subtitulo: '1 ano com CADASTUR ativo',
+    svg: `${MEDALHA_CADASTUR_BASE}/cadastur_bronze.svg`
+  },
+  {
+    anos: 2,
+    nome: 'CADASTUR Prata',
+    subtitulo: '2 anos com CADASTUR ativo',
+    svg: `${MEDALHA_CADASTUR_BASE}/cadastur_prata.svg`
+  },
+  {
+    anos: 3,
+    nome: 'CADASTUR Ouro',
+    subtitulo: '3 anos com CADASTUR ativo',
+    svg: `${MEDALHA_CADASTUR_BASE}/cadastur_ouro.svg`
+  },
+  {
+    anos: 5,
+    nome: 'CADASTUR Platina',
+    subtitulo: '5 anos com CADASTUR ativo',
+    svg: `${MEDALHA_CADASTUR_BASE}/cadastur_platina.svg`
+  },
+  {
+    anos: 10,
+    nome: 'CADASTUR Onyx',
+    subtitulo: '10 anos com CADASTUR ativo',
+    svg: `${MEDALHA_CADASTUR_BASE}/cadastur_onyx.svg`
+  }
+]
+
+function normalizar(valor: any) {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function numero(valor: any) {
+  const n = Number(valor || 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function dataValidaFutura(valor?: string | null) {
+  if (!valor) return false
+  const data = new Date(valor)
+  if (Number.isNaN(data.getTime())) return false
+
+  const fimDoDia = new Date(data)
+  fimDoDia.setHours(23, 59, 59, 999)
+
+  return fimDoDia.getTime() >= Date.now()
+}
+
+function anosDesde(valor?: string | null) {
+  if (!valor) return 0
+
+  const inicio = new Date(valor)
+  if (Number.isNaN(inicio.getTime())) return 0
+
+  const agora = new Date()
+  let anos = agora.getFullYear() - inicio.getFullYear()
+
+  const aindaNaoFezAniversario =
+    agora.getMonth() < inicio.getMonth() ||
+    (agora.getMonth() === inicio.getMonth() && agora.getDate() < inicio.getDate())
+
+  if (aindaNaoFezAniversario) anos -= 1
+
+  return Math.max(0, anos)
+}
+
 export default function PerfilGuiaPage() {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -194,6 +270,7 @@ export default function PerfilGuiaPage() {
   const [novaSenha, setNovaSenha] = useState('')
   const [confirmarSenha, setConfirmarSenha] = useState('')
   const [alterandoSenha, setAlterandoSenha] = useState(false)
+
   const [modalSuporteAberto, setModalSuporteAberto] = useState(false)
   const [tipoSuporte, setTipoSuporte] = useState<'bug' | 'suporte' | 'sugestao'>('suporte')
   const [assuntoSuporte, setAssuntoSuporte] = useState('')
@@ -207,45 +284,8 @@ export default function PerfilGuiaPage() {
 
   useEffect(() => {
     iniciar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const iniciar = async () => {
-    setCarregando(true)
-    setErro('')
-    setMensagem('')
-
-    try {
-      const userData = localStorage.getItem('user')
-
-      if (!userData) {
-        router.replace('/login')
-        return
-      }
-
-      const parsedUser = JSON.parse(userData) as UsuarioLocal
-
-      if (parsedUser.tipo !== 'guia') {
-        router.replace('/login')
-        return
-      }
-
-      setUser(parsedUser)
-      await carregarDados(parsedUser.id)
-    } catch (error) {
-      console.error('Erro ao iniciar perfil do guia:', error)
-      setErro('Não foi possível carregar seu perfil agora.')
-    } finally {
-      setCarregando(false)
-    }
-  }
-
-  const normalizar = (valor: any) => {
-    return String(valor || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-  }
 
   const pagamentoConfirmado = (reserva: Reserva) => {
     const pagamento = normalizar(reserva.pagamento_status)
@@ -379,7 +419,7 @@ export default function PerfilGuiaPage() {
   ) => {
     let payloadAtual = { ...payloadOriginal }
 
-    for (let tentativa = 0; tentativa < 12; tentativa++) {
+    for (let tentativa = 0; tentativa < 18; tentativa++) {
       const { data, error } = await supabase
         .from('users')
         .update(payloadAtual)
@@ -481,7 +521,7 @@ export default function PerfilGuiaPage() {
         setBio(guiaData.bio_guia || guiaData.bio || '')
         setPixTipo(guiaData.pix_tipo || '')
         setPixChave(guiaData.pix_chave || '')
-        setCadastur(guiaData.cadastur || '')
+        setCadastur(guiaData.cadastur || guiaData.cadastur_numero || '')
         setAvatarPreview(guiaData.avatar_url || guiaData.foto_url || guiaData.imagem_url || '')
       }
 
@@ -541,6 +581,36 @@ export default function PerfilGuiaPage() {
     }
   }
 
+  const iniciar = async () => {
+    setCarregando(true)
+    setErro('')
+    setMensagem('')
+
+    try {
+      const userData = localStorage.getItem('user')
+
+      if (!userData) {
+        router.replace('/login')
+        return
+      }
+
+      const parsedUser = JSON.parse(userData) as UsuarioLocal
+
+      if (parsedUser.tipo !== 'guia') {
+        router.replace('/login')
+        return
+      }
+
+      setUser(parsedUser)
+      await carregarDados(parsedUser.id)
+    } catch (error) {
+      console.error('Erro ao iniciar perfil do guia:', error)
+      setErro('Não foi possível carregar seu perfil agora.')
+    } finally {
+      setCarregando(false)
+    }
+  }
+
   const salvarBio = async () => {
     if (!user?.id) return
 
@@ -581,10 +651,30 @@ export default function PerfilGuiaPage() {
     setMensagem('')
 
     try {
+      const cadasturLimpo = cadastur.trim()
+      const statusAtual = normalizar(guia?.cadastur_status)
+      const jaVerificado = Boolean(
+        guia?.cadastur_verificado ||
+          guia?.guia_verificado_cadastur ||
+          statusAtual === 'verificado' ||
+          statusAtual === 'ativo'
+      )
+
       const atualizado = await atualizarUsuarioComFallback(user.id, {
         pix_tipo: pixTipo || null,
         pix_chave: pixChave || null,
-        cadastur: cadastur || null,
+
+        cadastur: cadasturLimpo || null,
+        cadastur_numero: cadasturLimpo || null,
+        cadastur_status: cadasturLimpo
+          ? jaVerificado
+            ? guia?.cadastur_status || 'verificado'
+            : 'informado'
+          : null,
+        cadastur_informado_em: cadasturLimpo
+          ? guia?.cadastur_informado_em || new Date().toISOString()
+          : null,
+
         updated_at: new Date().toISOString()
       })
 
@@ -593,16 +683,21 @@ export default function PerfilGuiaPage() {
         ...(atualizado || {}),
         pix_tipo: pixTipo,
         pix_chave: pixChave,
-        cadastur
+        cadastur: cadasturLimpo,
+        cadastur_numero: cadasturLimpo
       }))
 
-      setMensagem('Dados do guia atualizados com sucesso.')
+      setMensagem(
+        cadasturLimpo
+          ? 'Dados do guia atualizados. O CADASTUR informado ficará aguardando conferência do Admin.'
+          : 'Dados do guia atualizados com sucesso.'
+      )
     } catch (error: any) {
       console.error('Erro ao salvar dados privados:', error)
       setErro(error?.message || 'Não foi possível salvar os dados do guia.')
     } finally {
       setSalvandoDados(false)
-      setTimeout(() => setMensagem(''), 2800)
+      setTimeout(() => setMensagem(''), 3200)
     }
   }
 
@@ -883,6 +978,112 @@ export default function PerfilGuiaPage() {
   const proximoMarco = calcularProximoMarcoKm(stats.totalKm)
   const progressoKm = calcularProgressoKm(stats.totalKm)
 
+  const cadasturNumero = String(
+    cadastur ||
+      guia?.cadastur ||
+      guia?.cadastur_numero ||
+      ''
+  ).trim()
+
+  const cadasturStatus = normalizar(guia?.cadastur_status)
+  const cadasturInformado = Boolean(cadasturNumero)
+  const cadasturVerificado = Boolean(
+    guia?.cadastur_verificado ||
+      guia?.guia_verificado_cadastur ||
+      cadasturStatus === 'verificado' ||
+      cadasturStatus === 'ativo'
+  )
+
+  const cadasturValidade = String(
+    guia?.cadastur_validade ||
+      guia?.cadastur_data_validade ||
+      guia?.cadastur_validade_ate ||
+      guia?.cadastur_vencimento ||
+      ''
+  ).trim()
+
+  const cadasturAtivo = Boolean(cadasturVerificado && dataValidaFutura(cadasturValidade))
+
+  const cadasturAtivoDesde = String(
+    guia?.cadastur_ativo_desde ||
+      guia?.cadastur_verificado_em ||
+      guia?.cadastur_data_verificacao ||
+      guia?.cadastur_informado_em ||
+      guia?.created_at ||
+      ''
+  ).trim()
+
+  const anosCadasturAtivo = cadasturAtivo ? anosDesde(cadasturAtivoDesde) : 0
+
+  const cadasturResumo = (() => {
+    if (!cadasturInformado) {
+      return {
+        titulo: 'CADASTUR não informado',
+        descricao: 'Informe seu número CADASTUR para iniciar a conferência administrativa.',
+        classe: 'pendente'
+      }
+    }
+
+    if (cadasturAtivo) {
+      return {
+        titulo: 'CADASTUR ativo',
+        descricao: `Verificado pelo Admin e válido${cadasturValidade ? ` até ${formatarData(cadasturValidade)}` : ''}.`,
+        classe: 'ativo'
+      }
+    }
+
+    if (cadasturVerificado) {
+      return {
+        titulo: 'Guia verificado',
+        descricao: 'CADASTUR conferido pelo Admin. Falta registrar ou renovar a data de validade.',
+        classe: 'verificado'
+      }
+    }
+
+    return {
+      titulo: 'CADASTUR informado',
+      descricao: 'Número preenchido e aguardando conferência do Admin.',
+      classe: 'informado'
+    }
+  })()
+
+  const medalhasCadastur: MedalhaGuiaVisual[] = [
+    {
+      nome: 'CADASTUR informado',
+      subtitulo: cadasturInformado ? 'Número preenchido' : 'Informe seu número',
+      svg: `${MEDALHA_CADASTUR_BASE}/01_cadastur_preenchido.svg`,
+      desbloqueado: cadasturInformado,
+      destaque: cadasturInformado && !cadasturVerificado,
+      categoria: 'cadastur'
+    },
+    {
+      nome: 'Guia verificado',
+      subtitulo: cadasturVerificado ? 'Confirmado pelo Admin' : 'Aguardando verificação',
+      svg: `${MEDALHA_CADASTUR_BASE}/02_guia_verificado.svg`,
+      desbloqueado: cadasturVerificado,
+      destaque: cadasturVerificado && !cadasturAtivo,
+      categoria: 'cadastur'
+    },
+    {
+      nome: 'CADASTUR ativo',
+      subtitulo: cadasturAtivo
+        ? `Válido${cadasturValidade ? ` até ${formatarData(cadasturValidade)}` : ''}`
+        : 'Validade pendente ou vencida',
+      svg: `${MEDALHA_CADASTUR_BASE}/03_cadastur_ativo.svg`,
+      desbloqueado: cadasturAtivo,
+      destaque: cadasturAtivo,
+      categoria: 'cadastur'
+    },
+    ...CADASTUR_TIERS.map((tier) => ({
+      nome: tier.nome,
+      subtitulo: anosCadasturAtivo >= tier.anos ? tier.subtitulo : 'Bloqueada por tempo ativo',
+      svg: tier.svg,
+      desbloqueado: anosCadasturAtivo >= tier.anos,
+      destaque: cadasturAtivo && anosCadasturAtivo >= tier.anos,
+      categoria: 'cadastur' as const
+    }))
+  ]
+
   const guiaBetaAtivo = Boolean(
     guia?.medalha_guia_pioneiro_beta ||
       guia?.guia_pioneiro_beta ||
@@ -900,6 +1101,7 @@ export default function PerfilGuiaPage() {
       destaque: nivelAtual.nome === meta.nome,
       categoria: 'progressao' as const
     })),
+    ...medalhasCadastur,
     {
       nome: 'Guia Pioneiro Beta',
       subtitulo: guiaBetaAtivo ? 'Medalha exclusiva do período Beta' : 'Exclusiva para guias do Beta',
@@ -1490,6 +1692,70 @@ export default function PerfilGuiaPage() {
           line-height: 1.45;
         }
 
+        .cadasturStatusCard {
+          display: grid;
+          grid-template-columns: 94px minmax(0,1fr);
+          gap: 14px;
+          align-items: center;
+          background:
+            radial-gradient(circle at top right, rgba(37,99,235,0.10), transparent 38%),
+            #fffdf7;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 24px;
+          padding: 14px;
+          margin-top: 14px;
+        }
+
+        .cadasturStatusIcon {
+          width: 94px;
+          height: 94px;
+          object-fit: contain;
+          filter: drop-shadow(0 14px 18px rgba(17,24,39,0.14));
+        }
+
+        .cadasturStatusTitle {
+          color: #172018;
+          font-size: 17px;
+          font-weight: 950;
+          letter-spacing: -0.035em;
+        }
+
+        .cadasturStatusText {
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+          margin-top: 5px;
+        }
+
+        .cadasturStatusTag {
+          display: inline-flex;
+          margin-top: 9px;
+          border-radius: 999px;
+          padding: 6px 9px;
+          font-size: 10px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .cadasturStatusTag.ativo {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .cadasturStatusTag.verificado {
+          background: #dbeafe;
+          color: #1d4ed8;
+        }
+
+        .cadasturStatusTag.informado {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
         .benefitCard {
           background:
             radial-gradient(circle at top right, rgba(190,242,100,0.24), transparent 38%),
@@ -1563,16 +1829,12 @@ export default function PerfilGuiaPage() {
           line-height: 1.35;
         }
 
-        .achievementGrid,
-        .medalGrid,
         .unifiedMedalGrid {
           display: grid;
           grid-template-columns: repeat(4, minmax(0,1fr));
           gap: 12px;
         }
 
-        .achievement,
-        .medal,
         .unifiedMedal {
           background:
             radial-gradient(circle at 50% 0%, rgba(255,255,255,0.86), transparent 35%),
@@ -1594,17 +1856,16 @@ export default function PerfilGuiaPage() {
           box-shadow: 0 18px 42px rgba(153,27,27,0.10);
         }
 
-        .achievement.locked,
-        .medal.locked,
+        .unifiedMedal.cadastur {
+          border-color: rgba(30,64,175,0.12);
+          background:
+            radial-gradient(circle at 50% 0%, rgba(219,234,254,0.72), transparent 38%),
+            #fffdf7;
+        }
+
         .unifiedMedal.locked {
           opacity: 0.38;
           filter: grayscale(0.85);
-        }
-
-        .achievementIcon,
-        .medalIcon {
-          font-size: 28px;
-          margin-bottom: 8px;
         }
 
         .unifiedMedalArt {
@@ -1616,8 +1877,6 @@ export default function PerfilGuiaPage() {
           filter: drop-shadow(0 12px 18px rgba(17,24,39,0.14));
         }
 
-        .achievementName,
-        .medalName,
         .unifiedMedalName {
           color: #172018;
           font-size: 12px;
@@ -1625,56 +1884,12 @@ export default function PerfilGuiaPage() {
           line-height: 1.22;
         }
 
-        .achievementMeta,
-        .medalMeta,
         .unifiedMedalMeta {
           margin-top: 5px;
           color: #64748b;
           font-size: 10px;
           font-weight: 850;
           line-height: 1.25;
-        }
-
-        .timeline {
-          display: grid;
-          gap: 8px;
-        }
-
-        .timelineItem {
-          display: grid;
-          grid-template-columns: 64px minmax(0,1fr) auto;
-          gap: 10px;
-          align-items: center;
-          background: #fffdf7;
-          border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 18px;
-          padding: 10px;
-        }
-
-        .timelineKm {
-          color: #172018;
-          font-size: 13px;
-          font-weight: 950;
-        }
-
-        .timelineName {
-          color: #475569;
-          font-size: 12px;
-          font-weight: 850;
-        }
-
-        .timelineStatus {
-          border-radius: 999px;
-          padding: 5px 8px;
-          font-size: 10px;
-          font-weight: 950;
-          background: #eef2e5;
-          color: #64748b;
-        }
-
-        .timelineStatus.ok {
-          background: #dcfce7;
-          color: #166534;
         }
 
         .reviewList {
@@ -1950,14 +2165,17 @@ export default function PerfilGuiaPage() {
 
           .formGrid,
           .statsGrid,
-          .achievementGrid,
-          .medalGrid,
           .unifiedMedalGrid {
             grid-template-columns: 1fr 1fr;
           }
 
-          .timelineItem {
-            grid-template-columns: 1fr;
+          .cadasturStatusCard {
+            grid-template-columns: 74px minmax(0,1fr);
+          }
+
+          .cadasturStatusIcon {
+            width: 74px;
+            height: 74px;
           }
         }
 
@@ -1977,9 +2195,7 @@ export default function PerfilGuiaPage() {
           }
 
           .formGrid,
-          .statsGrid,
-          .achievementGrid,
-          .medalGrid {
+          .statsGrid {
             grid-template-columns: 1fr;
           }
 
@@ -2126,15 +2342,9 @@ export default function PerfilGuiaPage() {
                 Organize sua presença como guia, acompanhe sua evolução, mantenha seus dados profissionais atualizados e fortaleça sua reputação dentro da comunidade PrussikTrails.
               </p>
 
-              {cadastur ? (
-                <div className="cadasturBadge">
-                  CADASTUR: {cadastur}
-                </div>
-              ) : (
-                <div className="cadasturBadge">
-                  CADASTUR ainda não informado
-                </div>
-              )}
+              <div className="cadasturBadge">
+                {cadasturInformado ? `CADASTUR: ${cadasturNumero}` : 'CADASTUR ainda não informado'}
+              </div>
             </div>
 
             <aside className="progressHeroCard">
@@ -2222,7 +2432,7 @@ export default function PerfilGuiaPage() {
                 <div>
                   <h2 className="cardTitle">Recebimentos e credencial</h2>
                   <div className="cardSub">
-                    A chave PIX fica privada para repasses. O CADASTUR poderá aparecer no seu perfil público quando preenchido.
+                    A chave PIX fica privada para repasses. O CADASTUR inicia como informado e depende de confirmação do Admin para liberar as medalhas de verificação.
                   </div>
                 </div>
               </div>
@@ -2260,11 +2470,33 @@ export default function PerfilGuiaPage() {
                       className="input"
                       value={cadastur}
                       onChange={(event) => setCadastur(event.target.value)}
-                      placeholder="Informe seu número CADASTUR, se possuir"
+                      placeholder="Informe seu número CADASTUR"
                     />
                     <div className="helper">
-                      O CADASTUR será exibido no perfil público do guia quando estiver preenchido. A chave PIX não aparece publicamente.
+                      Ao salvar, a primeira medalha de CADASTUR informado poderá aparecer. A validação oficial depende de conferência administrativa.
                     </div>
+                  </div>
+                </div>
+
+                <div className="cadasturStatusCard">
+                  <img
+                    className="cadasturStatusIcon"
+                    src={
+                      cadasturAtivo
+                        ? `${MEDALHA_CADASTUR_BASE}/03_cadastur_ativo.svg`
+                        : cadasturVerificado
+                          ? `${MEDALHA_CADASTUR_BASE}/02_guia_verificado.svg`
+                          : `${MEDALHA_CADASTUR_BASE}/01_cadastur_preenchido.svg`
+                    }
+                    alt={cadasturResumo.titulo}
+                  />
+
+                  <div>
+                    <div className="cadasturStatusTitle">{cadasturResumo.titulo}</div>
+                    <div className="cadasturStatusText">{cadasturResumo.descricao}</div>
+                    <span className={`cadasturStatusTag ${cadasturResumo.classe}`}>
+                      {cadasturResumo.classe}
+                    </span>
                   </div>
                 </div>
 
@@ -2281,14 +2513,12 @@ export default function PerfilGuiaPage() {
               </div>
             </section>
 
-
-
             <section className="card">
               <div className="cardHeader">
                 <div>
                   <h2 className="cardTitle">Medalhas do guia</h2>
                   <div className="cardSub">
-                    Uma coleção única com progressão, atuação na plataforma e conquistas do período Beta.
+                    Progressão, atuação na plataforma, conquistas Beta e credenciais CADASTUR em uma única coleção.
                   </div>
                 </div>
               </div>
@@ -2298,7 +2528,7 @@ export default function PerfilGuiaPage() {
                   {medalhasUnificadas.map((medalha) => (
                     <div
                       key={`${medalha.categoria}-${medalha.nome}`}
-                      className={`unifiedMedal ${medalha.desbloqueado ? '' : 'locked'} ${medalha.destaque ? 'current' : ''}`}
+                      className={`unifiedMedal ${medalha.categoria} ${medalha.desbloqueado ? '' : 'locked'} ${medalha.destaque ? 'current' : ''}`}
                       title={medalha.nome}
                     >
                       <img
@@ -2308,7 +2538,7 @@ export default function PerfilGuiaPage() {
                       />
                       <div className="unifiedMedalName">{medalha.nome}</div>
                       <div className="unifiedMedalMeta">
-                        {medalha.desbloqueado ? medalha.subtitulo || 'Conquistada' : 'Bloqueada'}
+                        {medalha.desbloqueado ? medalha.subtitulo || 'Conquistada' : medalha.subtitulo || 'Bloqueada'}
                       </div>
                     </div>
                   ))}
@@ -2316,6 +2546,7 @@ export default function PerfilGuiaPage() {
               </div>
             </section>
           </div>
+
           <aside className="stack">
             <section className="benefitCard">
               <div className="benefitPill">
@@ -2336,6 +2567,37 @@ export default function PerfilGuiaPage() {
 
               <div className="benefitText">
                 Taxa atual cadastrada: <strong>{Number(guia?.taxa_plataforma_percentual || 5).toFixed(2)}%</strong>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="cardHeader">
+                <div>
+                  <h2 className="cardTitle">Leitura CADASTUR</h2>
+                  <div className="cardSub">
+                    A validação será concluída pelo Admin.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                <div className="statsGrid">
+                  <div className="statBox">
+                    <div className="statIcon">📋</div>
+                    <div className="statValue">{cadasturInformado ? 'Sim' : 'Não'}</div>
+                    <div className="statLabel">Número informado</div>
+                  </div>
+                  <div className="statBox">
+                    <div className="statIcon">✅</div>
+                    <div className="statValue">{cadasturVerificado ? 'Sim' : 'Não'}</div>
+                    <div className="statLabel">Verificado</div>
+                  </div>
+                  <div className="statBox">
+                    <div className="statIcon">🧭</div>
+                    <div className="statValue">{cadasturAtivo ? `${anosCadasturAtivo}a` : '—'}</div>
+                    <div className="statLabel">Tempo ativo</div>
+                  </div>
+                </div>
               </div>
             </section>
 

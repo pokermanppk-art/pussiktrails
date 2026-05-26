@@ -15,6 +15,19 @@ type Guia = {
   foto_url?: string | null
   imagem_url?: string | null
   cadastur?: string | null
+  cadastur_numero?: string | null
+  cadastur_status?: string | null
+  cadastur_informado_em?: string | null
+  cadastur_verificado?: boolean | null
+  guia_verificado_cadastur?: boolean | null
+  cadastur_validade?: string | null
+  cadastur_data_validade?: string | null
+  cadastur_validade_ate?: string | null
+  cadastur_vencimento?: string | null
+  cadastur_ativo_desde?: string | null
+  cadastur_verificado_em?: string | null
+  cadastur_data_verificacao?: string | null
+  created_at?: string | null
   nivel_guia?: number | null
   xp_guia?: number | null
   guia_beta?: boolean | null
@@ -86,6 +99,7 @@ type MedalhaGuia = {
   fallbackSvg?: string
   desbloqueada: boolean
   destaque?: boolean
+  categoria?: 'progressao' | 'cadastur' | 'beta' | 'atuacao'
 }
 
 type ReportReason = 'seguranca' | 'conduta' | 'informacao' | 'pagamento' | 'outro'
@@ -103,6 +117,45 @@ const statsInicial: Stats = {
 const PROGRESSAO_BASE = '/medalhas/progressao'
 const BETA_BASE = '/medalhas/iniciais_jornada'
 const BETA_FALLBACK_BASE = '/medalhas/prussik_svg_pack/iniciais_jornada'
+const CADASTUR_BASE = '/medalhas/cadastur'
+
+const CADASTUR_TIERS = [
+  {
+    anos: 1,
+    codigo: 'cadastur_bronze',
+    nome: 'CADASTUR Bronze',
+    descricao: 'Reconhecimento por 1 ano com CADASTUR ativo.',
+    svg: `${CADASTUR_BASE}/cadastur_bronze.svg`
+  },
+  {
+    anos: 2,
+    codigo: 'cadastur_prata',
+    nome: 'CADASTUR Prata',
+    descricao: 'Reconhecimento por 2 anos com CADASTUR ativo.',
+    svg: `${CADASTUR_BASE}/cadastur_prata.svg`
+  },
+  {
+    anos: 3,
+    codigo: 'cadastur_ouro',
+    nome: 'CADASTUR Ouro',
+    descricao: 'Reconhecimento por 3 anos com CADASTUR ativo.',
+    svg: `${CADASTUR_BASE}/cadastur_ouro.svg`
+  },
+  {
+    anos: 5,
+    codigo: 'cadastur_platina',
+    nome: 'CADASTUR Platina',
+    descricao: 'Reconhecimento por 5 anos com CADASTUR ativo.',
+    svg: `${CADASTUR_BASE}/cadastur_platina.svg`
+  },
+  {
+    anos: 10,
+    codigo: 'cadastur_onyx',
+    nome: 'CADASTUR Onyx',
+    descricao: 'Reconhecimento por 10 anos com CADASTUR ativo.',
+    svg: `${CADASTUR_BASE}/cadastur_onyx.svg`
+  }
+]
 
 const marcosKmGuia = [
   { km: 0, nome: 'Início' },
@@ -149,6 +202,36 @@ function formatarData(valor?: string | null): string {
   const data = new Date(valor)
   if (Number.isNaN(data.getTime())) return ''
   return data.toLocaleDateString('pt-BR')
+}
+
+function dataValidaFutura(valor?: string | null): boolean {
+  if (!valor) return false
+
+  const data = new Date(valor)
+  if (Number.isNaN(data.getTime())) return false
+
+  const fimDoDia = new Date(data)
+  fimDoDia.setHours(23, 59, 59, 999)
+
+  return fimDoDia.getTime() >= Date.now()
+}
+
+function anosDesde(valor?: string | null): number {
+  if (!valor) return 0
+
+  const inicio = new Date(valor)
+  if (Number.isNaN(inicio.getTime())) return 0
+
+  const agora = new Date()
+  let anos = agora.getFullYear() - inicio.getFullYear()
+
+  const aindaNaoFezAniversario =
+    agora.getMonth() < inicio.getMonth() ||
+    (agora.getMonth() === inicio.getMonth() && agora.getDate() < inicio.getDate())
+
+  if (aindaNaoFezAniversario) anos -= 1
+
+  return Math.max(0, anos)
 }
 
 function pagamentoConfirmado(reserva: Reserva): boolean {
@@ -521,6 +604,100 @@ export default function PerfilPublicoGuiaPage() {
   const nivelAtual = useMemo(() => nivelPorKm(stats.totalKm), [stats.totalKm])
   const principaisRoteiros = useMemo(() => roteiros.slice(0, 3), [roteiros])
 
+  const cadasturNumero = String(
+    guia?.cadastur_numero ||
+      guia?.cadastur ||
+      ''
+  ).trim()
+
+  const cadasturStatus = normalizar(guia?.cadastur_status)
+
+  const cadasturInformado = Boolean(cadasturNumero)
+
+  const cadasturVerificado = Boolean(
+    guia?.cadastur_verificado ||
+      guia?.guia_verificado_cadastur ||
+      cadasturStatus === 'verificado' ||
+      cadasturStatus === 'ativo'
+  )
+
+  const cadasturValidade = String(
+    guia?.cadastur_validade ||
+      guia?.cadastur_data_validade ||
+      guia?.cadastur_validade_ate ||
+      guia?.cadastur_vencimento ||
+      ''
+  ).trim()
+
+  const cadasturAtivo = Boolean(cadasturVerificado && dataValidaFutura(cadasturValidade))
+
+  const cadasturAtivoDesde = String(
+    guia?.cadastur_ativo_desde ||
+      guia?.cadastur_verificado_em ||
+      guia?.cadastur_data_verificacao ||
+      guia?.cadastur_informado_em ||
+      guia?.created_at ||
+      ''
+  ).trim()
+
+  const anosCadasturAtivo = cadasturAtivo ? anosDesde(cadasturAtivoDesde) : 0
+
+  const cadasturLabelPublico = (() => {
+    if (cadasturAtivo) {
+      return cadasturValidade
+        ? `CADASTUR ativo até ${formatarData(cadasturValidade)}`
+        : 'CADASTUR ativo'
+    }
+
+    if (cadasturVerificado) return 'Guia verificado CADASTUR'
+    if (cadasturInformado) return 'CADASTUR informado'
+    return 'CADASTUR não informado'
+  })()
+
+  const medalhasCadastur: MedalhaGuia[] = useMemo(
+    () => [
+      {
+        codigo: 'cadastur_preenchido',
+        nome: 'CADASTUR informado',
+        descricao: 'Número CADASTUR informado pelo guia e aguardando conferência administrativa.',
+        svg: `${CADASTUR_BASE}/01_cadastur_preenchido.svg`,
+        desbloqueada: cadasturInformado,
+        destaque: cadasturInformado && !cadasturVerificado,
+        categoria: 'cadastur'
+      },
+      {
+        codigo: 'guia_verificado_cadastur',
+        nome: 'Guia verificado',
+        descricao: 'CADASTUR conferido e validado pelo Admin PrussikTrails.',
+        svg: `${CADASTUR_BASE}/02_guia_verificado.svg`,
+        desbloqueada: cadasturVerificado,
+        destaque: cadasturVerificado && !cadasturAtivo,
+        categoria: 'cadastur'
+      },
+      {
+        codigo: 'cadastur_ativo',
+        nome: 'CADASTUR ativo',
+        descricao: cadasturValidade
+          ? `CADASTUR com validade registrada até ${formatarData(cadasturValidade)}.`
+          : 'CADASTUR com validade vigente registrada pelo Admin.',
+        svg: `${CADASTUR_BASE}/03_cadastur_ativo.svg`,
+        desbloqueada: cadasturAtivo,
+        destaque: cadasturAtivo,
+        categoria: 'cadastur'
+      },
+      ...CADASTUR_TIERS.map((tier) => ({
+        codigo: tier.codigo,
+        nome: tier.nome,
+        descricao: tier.descricao,
+        svg: tier.svg,
+        desbloqueada: cadasturAtivo && anosCadasturAtivo >= tier.anos,
+        destaque: cadasturAtivo && anosCadasturAtivo >= tier.anos,
+        categoria: 'cadastur' as const
+      }))
+    ],
+    [cadasturInformado, cadasturVerificado, cadasturAtivo, cadasturValidade, anosCadasturAtivo]
+  )
+
   const medalhas: MedalhaGuia[] = useMemo(
     () => [
       {
@@ -530,73 +707,84 @@ export default function PerfilPublicoGuiaPage() {
         svg: `${BETA_BASE}/04_guia_pioneiro_beta.svg`,
         fallbackSvg: `${BETA_FALLBACK_BASE}/04_guia_pioneiro_beta.svg`,
         desbloqueada: guiaPioneiroBeta(),
-        destaque: true
+        destaque: true,
+        categoria: 'beta'
       },
       {
         codigo: 'guia_em_jornada',
         nome: 'Guia em Jornada',
         descricao: 'Perfil público ativo na comunidade.',
         svg: `${PROGRESSAO_BASE}/01_mochila_de_partida.svg`,
-        desbloqueada: true
+        desbloqueada: true,
+        categoria: 'progressao'
       },
+      ...medalhasCadastur,
       {
         codigo: 'condutor_de_base',
         nome: 'Condutor de Base',
         descricao: 'Primeiros roteiros estruturados no app.',
         svg: `${PROGRESSAO_BASE}/02_barraca_base.svg`,
-        desbloqueada: stats.totalRoteiros >= 1
+        desbloqueada: stats.totalRoteiros >= 1,
+        categoria: 'atuacao'
       },
       {
         codigo: 'comunidade_aquecida',
         nome: 'Comunidade Aquecida',
         descricao: 'Reservas e experiências começam a formar histórico.',
         svg: `${PROGRESSAO_BASE}/03_fogueira_da_jornada.svg`,
-        desbloqueada: stats.reservasConfirmadas >= 1
+        desbloqueada: stats.reservasConfirmadas >= 1,
+        categoria: 'atuacao'
       },
       {
         codigo: 'lanterna_da_serra',
         nome: 'Lanterna da Serra',
         descricao: 'Presença ativa em orientação e condução.',
         svg: `${PROGRESSAO_BASE}/04_lanterna_da_serra.svg`,
-        desbloqueada: stats.totalKm >= 96
+        desbloqueada: stats.totalKm >= 96,
+        categoria: 'progressao'
       },
       {
         codigo: 'rumo_certo',
         nome: 'Rumo Certo',
         descricao: 'Roteiros com leitura clara de jornada e segurança.',
         svg: `${PROGRESSAO_BASE}/05_rumo_certo.svg`,
-        desbloqueada: stats.totalKm >= 192
+        desbloqueada: stats.totalKm >= 192,
+        categoria: 'progressao'
       },
       {
         codigo: 'prussik',
         nome: 'Técnica Prussik',
         descricao: 'Símbolo de preparo, cuidado e progressão.',
         svg: `${PROGRESSAO_BASE}/06_prussik.svg`,
-        desbloqueada: stats.totalKm >= 384
+        desbloqueada: stats.totalKm >= 384,
+        categoria: 'progressao'
       },
       {
         codigo: 'cachoeira_viva',
         nome: 'Cachoeira Viva',
         descricao: 'Experiências que criam memória e retorno.',
         svg: `${PROGRESSAO_BASE}/07_cachoeira_viva.svg`,
-        desbloqueada: stats.totalClientes >= 5
+        desbloqueada: stats.totalClientes >= 5,
+        categoria: 'atuacao'
       },
       {
         codigo: 'amanhecer_no_cume',
         nome: 'Amanhecer no Cume',
         descricao: 'Boa reputação registrada pela comunidade.',
         svg: `${PROGRESSAO_BASE}/08_amanhecer_no_cume.svg`,
-        desbloqueada: stats.avaliacaoMedia >= 4.5 && stats.totalAvaliacoes >= 3
+        desbloqueada: stats.avaliacaoMedia >= 4.5 && stats.totalAvaliacoes >= 3,
+        categoria: 'atuacao'
       },
       {
         codigo: 'mapa_lendario',
         nome: 'Mapa Lendário',
         descricao: 'Histórico consolidado de condução e presença outdoor.',
         svg: `${PROGRESSAO_BASE}/10_mapa_lendario.svg`,
-        desbloqueada: stats.totalKm >= 768
+        desbloqueada: stats.totalKm >= 768,
+        categoria: 'progressao'
       }
     ],
-    [guia, stats]
+    [guia, stats, medalhasCadastur]
   )
 
   function enviarReporte() {
@@ -674,7 +862,7 @@ export default function PerfilPublicoGuiaPage() {
               </p>
 
               <div className="heroBadges">
-                {guia.cadastur && <span>CADASTUR {guia.cadastur}</span>}
+                {cadasturInformado && <span>{cadasturLabelPublico}</span>}
                 <span>{stats.avaliacaoMedia > 0 ? `${stats.avaliacaoMedia.toFixed(1)} ★` : 'Sem avaliações ainda'}</span>
                 <span>{nivelAtual}</span>
                 <span>{seguidoresTotal} {seguidoresTotal === 1 ? 'seguidor' : 'seguidores'}</span>
@@ -730,7 +918,7 @@ export default function PerfilPublicoGuiaPage() {
                 {medalhas.map((medalha: MedalhaGuia) => (
                   <article
                     key={medalha.codigo}
-                    className={`medalCard ${medalha.desbloqueada ? 'unlocked' : 'locked'} ${medalha.destaque ? 'featured' : ''}`}
+                    className={`medalCard ${medalha.categoria || ''} ${medalha.desbloqueada ? 'unlocked' : 'locked'} ${medalha.destaque ? 'featured' : ''}`}
                   >
                     <div className="medalImageWrap">
                       <MedalhaImagem src={medalha.svg} fallback={medalha.fallbackSvg} alt={medalha.nome} />
@@ -758,7 +946,7 @@ export default function PerfilPublicoGuiaPage() {
                     const foto = fotoRoteiro(roteiro)
 
                     return (
-                      <article className="routeCard" key={roteiro.id} onClick={() => router.push('/roteiros')}>
+                      <article className="routeCard" key={roteiro.id} onClick={() => router.push(`/roteiros/${roteiro.id}`)}>
                         <div className="routeImage">
                           {foto ? <img src={foto} alt={tituloRoteiro(roteiro)} /> : <span>RT</span>}
                         </div>
@@ -784,7 +972,11 @@ export default function PerfilPublicoGuiaPage() {
               <div className="trustList">
                 <div>
                   <span>CADASTUR</span>
-                  <strong>{guia.cadastur || 'Não informado'}</strong>
+                  <strong>{cadasturInformado ? cadasturNumero : 'Não informado'}</strong>
+                </div>
+                <div>
+                  <span>Status CADASTUR</span>
+                  <strong>{cadasturLabelPublico}</strong>
                 </div>
                 <div>
                   <span>Fase Beta</span>
@@ -1008,8 +1200,8 @@ const estilos = `
   }
 
   .brand img {
-    width: 46px;
-    height: 46px;
+    width: 42px;
+    height: 42px;
     object-fit: contain;
     flex: 0 0 auto;
   }
@@ -1023,7 +1215,7 @@ const estilos = `
 
   .brandText strong {
     font-family: Georgia, 'Times New Roman', serif;
-    font-size: clamp(30px, 4.4vw, 54px);
+    font-size: clamp(30px, 4.2vw, 52px);
     font-weight: 800;
     color: #1f3d2d;
     line-height: 0.88;
@@ -1034,7 +1226,7 @@ const estilos = `
   .brandText span {
     margin-top: 7px;
     color: #7b8372;
-    font-size: clamp(11px, 1.6vw, 16px);
+    font-size: clamp(10px, 1.4vw, 14px);
     font-weight: 850;
     letter-spacing: 0.18em;
     text-transform: uppercase;
@@ -1303,7 +1495,14 @@ const estilos = `
       #fffdf7;
   }
 
-  .medalCard.locked {
+  .medalCard.cadastur {
+    border-color: rgba(37,99,235,0.16);
+    background:
+      radial-gradient(circle at top right, rgba(219,234,254,0.80), transparent 34%),
+      #fffdf7;
+  }
+
+    .medalCard.locked {
     opacity: 0.48;
     filter: grayscale(0.74);
   }
