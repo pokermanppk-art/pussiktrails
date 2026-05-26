@@ -27,6 +27,9 @@ type Reserva = {
   transaction_id?: string | null
   pix_code?: string | null
   pix_qr_code?: string | null
+  saldo_utilizado?: number | null
+  pago_em?: string | null
+  forma_pagamento?: string | null
   created_at?: string | null
 }
 
@@ -63,6 +66,24 @@ type PixData = {
   [key: string]: any
 }
 
+type SaldoCliente = {
+  cliente_id?: string | null
+  saldo_disponivel?: number | null
+  saldo_reservado?: number | null
+  saldo_utilizado?: number | null
+  saldo_expirado?: number | null
+  moeda?: string | null
+}
+
+type MovimentacaoSaldo = {
+  id: string
+  tipo?: string | null
+  valor?: number | null
+  descricao?: string | null
+  motivo?: string | null
+  created_at?: string | null
+}
+
 export default function ClientePagamentoPage() {
   const router = useRouter()
   const params = useParams()
@@ -75,9 +96,12 @@ export default function ClientePagamentoPage() {
   const [reserva, setReserva] = useState<Reserva | null>(null)
   const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
   const [pix, setPix] = useState<PixData | null>(null)
+  const [saldoCliente, setSaldoCliente] = useState<SaldoCliente | null>(null)
+  const [movimentacoesSaldo, setMovimentacoesSaldo] = useState<MovimentacaoSaldo[]>([])
 
   const [carregando, setCarregando] = useState(true)
   const [gerandoPix, setGerandoPix] = useState(false)
+  const [aplicandoSaldo, setAplicandoSaldo] = useState(false)
   const [verificando, setVerificando] = useState(false)
   const [pagamentoConfirmado, setPagamentoConfirmado] = useState(false)
   const [redirecionandoGrupo, setRedirecionandoGrupo] = useState(false)
@@ -125,6 +149,7 @@ export default function ClientePagamentoPage() {
 
       setUser(parsedUser)
 
+      const saldoAtual = await carregarSaldoCliente(parsedUser.id)
       const reservaAtual = await carregarReserva(parsedUser.id)
 
       if (reservaAtual) {
@@ -133,6 +158,23 @@ export default function ClientePagamentoPage() {
         if (jaPago) {
           setPagamentoConfirmado(true)
           await direcionarParaGrupo(reservaAtual.id)
+          return
+        }
+
+        const valorPendente = valorAPagarReserva(reservaAtual)
+
+        if (valorPendente <= 0) {
+          setPagamentoConfirmado(true)
+          await direcionarParaGrupo(reservaAtual.id)
+          return
+        }
+
+        const temSaldoParaEscolher =
+          Number(saldoAtual?.saldo_disponivel || 0) > 0 &&
+          Number(reservaAtual.saldo_utilizado || 0) <= 0
+
+        if (temSaldoParaEscolher) {
+          setMensagem('Você possui Saldo de Jornada disponível. Aplique antes de gerar o PIX, se desejar.')
           return
         }
 
@@ -190,6 +232,44 @@ export default function ClientePagamentoPage() {
     }).format(Number(valor || 0))
   }
 
+  const numero = (valor: any) => {
+    const n = Number(valor || 0)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  const valorTotalReserva = (item?: Reserva | null) => {
+    const quantidade = Math.max(1, numero(item?.quantidade_pessoas) || 1)
+
+    return Number((
+      numero(item?.valor_total) ||
+      numero(roteiro?.preco) * quantidade ||
+      numero(roteiro?.valor) * quantidade ||
+      0
+    ).toFixed(2))
+  }
+
+  const saldoUtilizadoReserva = (item?: Reserva | null) => {
+    return Number((numero(item?.saldo_utilizado)).toFixed(2))
+  }
+
+  const valorAPagarReserva = (item?: Reserva | null) => {
+    return Math.max(0, Number((valorTotalReserva(item) - saldoUtilizadoReserva(item)).toFixed(2)))
+  }
+
+  const saldoDisponivel = () => {
+    return Number((numero(saldoCliente?.saldo_disponivel)).toFixed(2))
+  }
+
+  const podeAplicarSaldo = () => {
+    return Boolean(
+      reserva?.id &&
+      user?.id &&
+      saldoDisponivel() > 0 &&
+      saldoUtilizadoReserva(reserva) <= 0 &&
+      !pagamentoEstaConfirmado(reserva)
+    )
+  }
+
   const formatarData = (valor?: string | null) => {
     if (!valor) return '-'
 
@@ -215,6 +295,28 @@ export default function ClientePagamentoPage() {
       status === 'pago' ||
       status === 'paga'
     )
+  }
+
+  const carregarSaldoCliente = async (clienteId: string) => {
+    if (!clienteId) return null
+
+    try {
+      const response = await fetch(`/api/cliente/saldo?clienteId=${encodeURIComponent(clienteId)}`)
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.sucesso) {
+        console.warn('Não foi possível carregar Saldo de Jornada:', data)
+        return null
+      }
+
+      setSaldoCliente(data.saldo || null)
+      setMovimentacoesSaldo(Array.isArray(data.movimentacoes) ? data.movimentacoes : [])
+
+      return data.saldo as SaldoCliente
+    } catch (error) {
+      console.warn('Erro ao carregar Saldo de Jornada:', error)
+      return null
+    }
   }
 
   const carregarReserva = async (clienteId: string) => {
@@ -380,19 +482,22 @@ export default function ClientePagamentoPage() {
 
   const gerarPixSeNecessario = async (
     reservaAtual: Reserva,
-    usuarioAtual: UsuarioLocal
+    usuarioAtual: UsuarioLocal,
+    ignorarPixExistente = false
   ) => {
     if (pagamentoEstaConfirmado(reservaAtual)) return
 
-    if (pix?.pix_code || pix?.qr_code || pix?.pix_qr_code) return
+    if (!ignorarPixExistente && (pix?.pix_code || pix?.qr_code || pix?.pix_qr_code)) return
 
     setGerandoPix(true)
 
     try {
-      const valor = Number(reservaAtual.valor_total || 0)
+      const valor = valorAPagarReserva(reservaAtual)
 
       if (valor <= 0) {
-        setErro('Valor da reserva inválido para gerar PIX.')
+        setPagamentoConfirmado(true)
+        setMensagem('Reserva confirmada integralmente com Saldo de Jornada.')
+        await direcionarParaGrupo(reservaAtual.id)
         return
       }
 
@@ -404,7 +509,7 @@ export default function ClientePagamentoPage() {
         body: JSON.stringify({
           reservaId: reservaAtual.id,
           reserva_id: reservaAtual.id,
-          order_id: `RESERVA-${reservaAtual.id}`,
+          order_id: `RESERVA-${reservaAtual.id}-${Date.now()}`,
           valor,
           nome: nomeUsuario(usuarioAtual),
           email: usuarioAtual.email || '',
@@ -434,6 +539,66 @@ export default function ClientePagamentoPage() {
     } finally {
       setGerandoPix(false)
     }
+  }
+
+  const aplicarSaldoNaReserva = async () => {
+    if (!reserva?.id || !user?.id) return
+
+    setAplicandoSaldo(true)
+    setErro('')
+    setMensagem('')
+
+    try {
+      const response = await fetch('/api/reservas/aplicar-saldo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          reservaId: reserva.id,
+          clienteId: user.id
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.sucesso) {
+        throw new Error(data?.erro || 'Não foi possível aplicar o saldo agora.')
+      }
+
+      const reservaAtualizada = data.reserva || await recarregarReserva()
+
+      setReserva(reservaAtualizada as Reserva)
+      setPix(null)
+
+      if (data.saldo) {
+        setSaldoCliente(data.saldo)
+      } else {
+        await carregarSaldoCliente(user.id)
+      }
+
+      if (data.pagoIntegralComSaldo || valorAPagarReserva(reservaAtualizada) <= 0) {
+        setPagamentoConfirmado(true)
+        setMensagem('Reserva confirmada integralmente com Saldo de Jornada. Preparando o grupo da sua aventura...')
+        await direcionarParaGrupo(reserva.id)
+        return
+      }
+
+      setMensagem(`Saldo aplicado: ${formatarMoeda(data.saldoAplicado)}. Gere o PIX apenas do valor restante.`)
+      await gerarPixSeNecessario(reservaAtualizada as Reserva, user, true)
+    } catch (error) {
+      console.error('Erro ao aplicar saldo:', error)
+      setErro(error instanceof Error ? error.message : 'Erro ao aplicar saldo.')
+    } finally {
+      setAplicandoSaldo(false)
+    }
+  }
+
+  const gerarPixSemSaldo = async () => {
+    if (!reserva || !user) return
+
+    setMensagem('Gerando PIX sem usar Saldo de Jornada.')
+    await gerarPixSeNecessario(reserva, user, true)
   }
 
   const verificarPagamento = async (silencioso = false) => {
@@ -744,25 +909,29 @@ export default function ClientePagamentoPage() {
         }
 
         .brand img {
-          height: 42px;
+          height: 34px;
           width: auto;
           object-fit: contain;
           display: block;
+          flex: 0 0 auto;
         }
 
         .brandTitle {
-          font-size: 18px;
-          font-weight: 950;
-          color: #dc2626;
-          line-height: 1;
-          letter-spacing: -0.05em;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: clamp(25px, 3.4vw, 38px);
+          font-weight: 700;
+          color: #203c2e;
+          line-height: 0.9;
+          letter-spacing: -0.055em;
         }
 
         .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 700;
-          margin-top: 3px;
+          color: #7b8372;
+          font-size: 9px;
+          font-weight: 850;
+          margin-top: 5px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
         }
 
         .headerActions {
@@ -1053,6 +1222,113 @@ export default function ClientePagamentoPage() {
           font-weight: 700;
         }
 
+        .saldoBox {
+          background: rgba(255, 253, 247, 0.92);
+          border: 1px solid rgba(32, 60, 46, 0.10);
+          border-radius: 28px;
+          padding: 18px;
+          margin-bottom: 16px;
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+        }
+
+        .saldoTop {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 14px;
+          margin-bottom: 12px;
+        }
+
+        .saldoLabel {
+          color: #7b8372;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+        }
+
+        .saldoValue {
+          margin-top: 6px;
+          color: #203c2e;
+          font-size: 28px;
+          line-height: 1;
+          font-weight: 950;
+          letter-spacing: -0.07em;
+        }
+
+        .saldoBadge {
+          border-radius: 999px;
+          background: rgba(132, 204, 22, 0.14);
+          color: #365314;
+          padding: 8px 10px;
+          font-size: 11px;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .saldoText {
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.5;
+          font-weight: 700;
+          margin: 0 0 12px;
+        }
+
+        .saldoResumo {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+          margin: 12px 0;
+        }
+
+        .saldoMini {
+          border-radius: 18px;
+          background: #f6f7f1;
+          border: 1px solid rgba(15, 23, 42, 0.05);
+          padding: 10px;
+          min-width: 0;
+        }
+
+        .saldoMini span {
+          display: block;
+          color: #7b8372;
+          font-size: 10px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .saldoMini strong {
+          display: block;
+          margin-top: 4px;
+          color: #172018;
+          font-size: 13px;
+          font-weight: 950;
+          overflow-wrap: anywhere;
+        }
+
+        .saldoMovs {
+          margin-top: 12px;
+          border-top: 1px solid rgba(15, 23, 42, 0.06);
+          padding-top: 10px;
+          display: grid;
+          gap: 7px;
+        }
+
+        .saldoMov {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 750;
+        }
+
+        .saldoMov strong {
+          color: #203c2e;
+          white-space: nowrap;
+        }
+
         .qrBox {
           background: #fffdf7;
           border: 1px solid rgba(15, 23, 42, 0.06);
@@ -1129,6 +1405,17 @@ export default function ClientePagamentoPage() {
           color: #475569;
         }
 
+        .btn.gold {
+          background: linear-gradient(135deg, #d4b35a, #8b5e34);
+          color: #fffdf7;
+        }
+
+        .btn.outline {
+          background: transparent;
+          border: 1px solid rgba(32, 60, 46, 0.20);
+          color: #203c2e;
+        }
+
         .statusPill {
           display: inline-flex;
           width: fit-content;
@@ -1200,6 +1487,10 @@ export default function ClientePagamentoPage() {
 
           .paymentValue {
             font-size: 32px;
+          }
+
+          .saldoResumo {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
@@ -1368,15 +1659,17 @@ export default function ClientePagamentoPage() {
 
           <aside>
             <section className="paymentBox">
-              <div className="paymentLabel">Valor total</div>
+              <div className="paymentLabel">Valor a pagar agora</div>
 
               <div className="paymentValue">
-                {formatarMoeda(reserva?.valor_total || 0)}
+                {formatarMoeda(valorAPagarReserva(reserva))}
               </div>
 
               <div className="paymentText">
-                Após a confirmação do pagamento, o acesso ao grupo do roteiro será
-                liberado automaticamente.
+                Valor total da reserva: {formatarMoeda(valorTotalReserva(reserva))}.
+                {saldoUtilizadoReserva(reserva) > 0
+                  ? ` Saldo aplicado: ${formatarMoeda(saldoUtilizadoReserva(reserva))}.`
+                  : ' Você pode usar Saldo de Jornada antes de gerar o PIX, se tiver saldo disponível.'}
               </div>
 
               <div
@@ -1384,7 +1677,79 @@ export default function ClientePagamentoPage() {
               >
                 {pagamentoConfirmado
                   ? 'Pagamento confirmado'
-                  : 'Aguardando pagamento'}
+                  : valorAPagarReserva(reserva) <= 0
+                    ? 'Coberto por saldo'
+                    : 'Aguardando pagamento'}
+              </div>
+            </section>
+
+            <section className="saldoBox">
+              <div className="saldoTop">
+                <div>
+                  <div className="saldoLabel">Saldo de Jornada</div>
+                  <div className="saldoValue">{formatarMoeda(saldoDisponivel())}</div>
+                </div>
+
+                <div className="saldoBadge">Carteira Prussik</div>
+              </div>
+
+              <p className="saldoText">
+                Use créditos de cancelamentos ou ajustes administrativos para abater
+                o valor desta nova aventura.
+              </p>
+
+              <div className="saldoResumo">
+                <div className="saldoMini">
+                  <span>Total</span>
+                  <strong>{formatarMoeda(valorTotalReserva(reserva))}</strong>
+                </div>
+
+                <div className="saldoMini">
+                  <span>Saldo usado</span>
+                  <strong>{formatarMoeda(saldoUtilizadoReserva(reserva))}</strong>
+                </div>
+
+                <div className="saldoMini">
+                  <span>Restante</span>
+                  <strong>{formatarMoeda(valorAPagarReserva(reserva))}</strong>
+                </div>
+              </div>
+
+              {movimentacoesSaldo.length > 0 && (
+                <div className="saldoMovs">
+                  {movimentacoesSaldo.slice(0, 3).map((mov) => (
+                    <div key={mov.id} className="saldoMov">
+                      <span>{mov.descricao || mov.motivo || mov.tipo || 'Movimentação'}</span>
+                      <strong>{formatarMoeda(mov.valor || 0)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn gold"
+                  onClick={aplicarSaldoNaReserva}
+                  disabled={!podeAplicarSaldo() || aplicandoSaldo || pagamentoConfirmado}
+                >
+                  {aplicandoSaldo
+                    ? 'Aplicando saldo...'
+                    : saldoUtilizadoReserva(reserva) > 0
+                      ? 'Saldo já aplicado'
+                      : 'Usar saldo nesta jornada'}
+                </button>
+
+                {podeAplicarSaldo() && !pix && (
+                  <button
+                    type="button"
+                    className="btn outline"
+                    onClick={gerarPixSemSaldo}
+                    disabled={gerandoPix}
+                  >
+                    Gerar PIX sem usar saldo
+                  </button>
+                )}
               </div>
             </section>
 
@@ -1392,7 +1757,7 @@ export default function ClientePagamentoPage() {
               <div className="panelHeader">
                 <h2 className="panelTitle">PIX</h2>
                 <div className="panelSub">
-                  Copie o código ou use o QR Code.
+                  Copie o código ou use o QR Code. O PIX será gerado apenas do valor restante.
                 </div>
               </div>
 
@@ -1443,7 +1808,7 @@ export default function ClientePagamentoPage() {
                             lineHeight: 1.5
                           }}
                         >
-                          QR Code ainda não disponível. Use o botão para verificar ou gerar novamente.
+                          {podeAplicarSaldo() ? 'Aplique seu Saldo de Jornada ou gere o PIX sem saldo.' : 'QR Code ainda não disponível. Use o botão para verificar ou gerar novamente.'}
                         </div>
                       )}
 
