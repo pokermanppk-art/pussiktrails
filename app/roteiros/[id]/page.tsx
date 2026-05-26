@@ -63,6 +63,16 @@ type Roteiro = {
   max_pessoas?: number | string | null
   recorrencia?: string | null
   created_at?: string | null
+  guia_nome?: string | null
+  nome_guia?: string | null
+  guia_name?: string | null
+  guia_email?: string | null
+  guia_avatar_url?: string | null
+  guia_foto_url?: string | null
+  id_user?: string | null
+  usuario_id?: string | null
+  criador_id?: string | null
+  created_by?: string | null
 }
 
 type Guia = {
@@ -200,7 +210,34 @@ export default function DetalhesRoteiroPage() {
   }
 
   const guiaIdRoteiro = (item?: Roteiro | null) => {
-    return String(item?.id_guia || item?.guia_id || item?.user_id || '').trim()
+    return String(
+      item?.id_guia ||
+        item?.guia_id ||
+        item?.id_user ||
+        item?.usuario_id ||
+        item?.criador_id ||
+        item?.created_by ||
+        item?.user_id ||
+        ''
+    ).trim()
+  }
+
+  const guiaFallbackDoRoteiro = (item?: Roteiro | null): Guia | null => {
+    const guiaId = guiaIdRoteiro(item)
+
+    if (!item || !guiaId) return null
+
+    return {
+      id: guiaId,
+      nome:
+        item.guia_nome ||
+        item.nome_guia ||
+        item.guia_name ||
+        item.guia_email ||
+        'Guia PrussikTrails',
+      email: item.guia_email || null,
+      avatar_url: item.guia_avatar_url || item.guia_foto_url || null
+    }
   }
 
   const nomeGuia = (item?: Guia | null) => {
@@ -316,8 +353,11 @@ export default function DetalhesRoteiroPage() {
   )
 
   function abrirPerfilGuia() {
-    if (!guia?.id) return
-    router.push(`/guia/publico/${guia.id}`)
+    const guiaId = guia?.id || guiaIdRoteiro(roteiro)
+
+    if (!guiaId) return
+
+    router.push(`/guia/publico/${guiaId}`)
   }
 
   async function carregarOcupacao(roteiroId: string, roteiroData: Roteiro) {
@@ -401,18 +441,21 @@ export default function DetalhesRoteiroPage() {
       setRoteiro(roteiroData)
       setFotoSelecionada(0)
 
+      const guiaFallback = guiaFallbackDoRoteiro(roteiroData)
+      setGuia(guiaFallback)
+
       await carregarOcupacao(roteiroData.id, roteiroData)
 
       const guiaId = guiaIdRoteiro(roteiroData)
 
       if (guiaId) {
-        const { data: guiaData } = await supabase
+        const { data: guiaData, error: guiaError } = await supabase
           .from('users')
-          .select('id, nome, name, email, avatar_url, foto_url, imagem_url, bio, instagram, cadastur, cadastro_turismo')
+          .select('*')
           .eq('id', guiaId)
           .maybeSingle()
 
-        if (guiaData) {
+        if (!guiaError && guiaData) {
           setGuia(guiaData as Guia)
         }
       }
@@ -701,6 +744,7 @@ export default function DetalhesRoteiroPage() {
   const inclui = quebrarTexto(roteiro.inclui)
   const naoInclui = quebrarTexto(roteiro.nao_inclui)
   const orientacoes = quebrarTexto(roteiro.orientacoes)
+  const guiaAtual = guia || guiaFallbackDoRoteiro(roteiro)
 
   return (
     <main className="page">
@@ -749,21 +793,21 @@ export default function DetalhesRoteiroPage() {
               'Uma experiência outdoor conduzida por guia, com reserva segura e acompanhamento dentro do app.'}
           </p>
 
-          {guia && (
+          {guiaAtual && (
             <button type="button" className="guideHeroCard" onClick={abrirPerfilGuia}>
               <div className="guideMiniAvatar">
-                {avatarGuia(guia) ? (
-                  <img src={avatarGuia(guia)} alt={nomeGuia(guia)} />
+                {avatarGuia(guiaAtual) ? (
+                  <img src={avatarGuia(guiaAtual)} alt={nomeGuia(guiaAtual)} />
                 ) : (
-                  <span>{nomeGuia(guia).charAt(0).toUpperCase()}</span>
+                  <span>{nomeGuia(guiaAtual).charAt(0).toUpperCase()}</span>
                 )}
               </div>
 
               <div>
                 <small>Experiência conduzida por</small>
-                <strong>{nomeGuia(guia)}</strong>
-                {(guia.cadastur || guia.cadastro_turismo) && (
-                  <em>CADASTUR {guia.cadastur || guia.cadastro_turismo}</em>
+                <strong>{nomeGuia(guiaAtual)}</strong>
+                {(guiaAtual.cadastur || guiaAtual.cadastro_turismo) && (
+                  <em>CADASTUR {guiaAtual.cadastur || guiaAtual.cadastro_turismo}</em>
                 )}
               </div>
 
@@ -1073,7 +1117,7 @@ export default function DetalhesRoteiroPage() {
             </p>
           </section>
 
-          {guia && (
+          {guiaAtual && (
             <section
               className="guideCard guideCardClickable"
               role="button"
@@ -1088,23 +1132,23 @@ export default function DetalhesRoteiroPage() {
             >
               <div className="guideTop">
                 <div className="guideAvatar">
-                  {avatarGuia(guia) ? (
-                    <img src={avatarGuia(guia)} alt={nomeGuia(guia)} />
+                  {avatarGuia(guiaAtual) ? (
+                    <img src={avatarGuia(guiaAtual)} alt={nomeGuia(guiaAtual)} />
                   ) : (
-                    <span>{nomeGuia(guia).charAt(0).toUpperCase()}</span>
+                    <span>{nomeGuia(guiaAtual).charAt(0).toUpperCase()}</span>
                   )}
                 </div>
 
                 <div>
                   <span>Guia responsável</span>
-                  <strong>{nomeGuia(guia)}</strong>
-                  {(guia.cadastur || guia.cadastro_turismo) && (
-                    <small>CADASTUR {guia.cadastur || guia.cadastro_turismo}</small>
+                  <strong>{nomeGuia(guiaAtual)}</strong>
+                  {(guiaAtual.cadastur || guiaAtual.cadastro_turismo) && (
+                    <small>CADASTUR {guiaAtual.cadastur || guiaAtual.cadastro_turismo}</small>
                   )}
                 </div>
               </div>
 
-              {guia.bio && <p>{guia.bio}</p>}
+              {guiaAtual.bio && <p>{guiaAtual.bio}</p>}
 
               <div className="guideBtn fakeGuideBtn">Ver perfil do guia</div>
             </section>
