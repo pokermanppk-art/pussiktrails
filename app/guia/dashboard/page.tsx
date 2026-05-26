@@ -1,190 +1,279 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
 type UsuarioLocal = {
-  id: string
+  id?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  guia_id?: string | null
   nome?: string | null
   email?: string | null
   tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
 type Roteiro = {
   id: string
-  titulo?: string | null
-  nome?: string | null
-  descricao?: string | null
-  preco?: number | null
-  valor?: number | null
-  status?: string | null
-  ativo?: boolean | null
   id_guia?: string | null
   guia_id?: string | null
   user_id?: string | null
   usuario_id?: string | null
+  titulo?: string | null
+  nome?: string | null
+  descricao?: string | null
   local?: string | null
   localizacao?: string | null
-  local_encontro?: string | null
-  ponto_encontro?: string | null
-  data_roteiro?: string | null
-  data_saida?: string | null
+  dificuldade?: string | null
+  status?: string | null
+  ativo?: boolean | null
+  preco?: number | string | null
+  valor?: number | string | null
+  vagas?: number | string | null
+  vagas_total?: number | string | null
+  limite_participantes?: number | string | null
+  duracao?: string | null
+  duracao_horas?: number | string | null
+  km?: number | string | null
+  distancia_km?: number | string | null
   data?: string | null
-  hora_roteiro?: string | null
-  hora_saida?: string | null
-  hora?: string | null
-  foto_capa?: string | null
+  data_trilha?: string | null
+  data_roteiro?: string | null
+  data_inicio?: string | null
+  embarque_data_hora?: string | null
   foto_url?: string | null
+  foto_capa?: string | null
   imagem_url?: string | null
-  imagem?: string | null
   created_at?: string | null
   updated_at?: string | null
+  [key: string]: unknown
 }
 
 type Reserva = {
   id: string
   cliente_id?: string | null
   roteiro_id?: string | null
-  quantidade_pessoas?: number | null
-  valor_total?: number | null
   status?: string | null
   pagamento_status?: string | null
+  quantidade_pessoas?: number | string | null
+  valor_total?: number | string | null
   created_at?: string | null
-  cliente_nome?: string
-  roteiro_titulo?: string
+  data_trilha?: string | null
+  data_roteiro?: string | null
+  cliente_nome?: string | null
+  roteiro_titulo?: string | null
   roteiro?: Roteiro | null
+  [key: string]: unknown
 }
 
 type Cliente = {
   id: string
   nome?: string | null
   email?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
-type GrupoRoteiro = {
+type Avaliacao = {
   id: string
-  roteiro_id?: string | null
+  cliente_id?: string | null
   guia_id?: string | null
-  titulo?: string | null
-  status?: string | null
+  id_guia?: string | null
+  roteiro_id?: string | null
+  nota?: number | string | null
+  nota_geral?: number | string | null
+  comentario?: string | null
+  observacao?: string | null
   created_at?: string | null
-  updated_at?: string | null
-  roteiro?: Roteiro | null
-  membros_count?: number
-  clientes_count?: number
-  notificacoes_nao_lidas?: number
-  mensagens_count?: number
+  cliente_nome?: string | null
+  cliente_avatar?: string | null
+  [key: string]: unknown
 }
 
-type GrupoMembro = {
-  id: string
-  grupo_id: string
-  user_id: string
-  papel?: string | null
-  status?: string | null
-}
-
-type GrupoMensagem = {
-  id: string
-  grupo_id: string
-  mensagem?: string | null
-  status?: string | null
-  created_at?: string | null
-}
-
-type GrupoNotificacao = {
-  id: string
-  grupo_id: string
-  user_id_destino: string
-  lida?: boolean | null
-  tipo?: string | null
-  created_at?: string | null
-}
-
-type AvaliacaoResumo = {
-  total: number
-  mediaNota: number
-  percentualRecomendacao: number
-  orientacoesClarasPercentual: number
-  segurancaAltaPercentual: number
-  experienciaSuperouPercentual: number
-}
-
-type FinanceiroResumoGuia = {
-  receita_bruta: number
-  taxa_percentual: number
-  taxa_plataforma: number
-  taxa_paghiper: number
-  valor_liquido_guia: number
-  valor_pago: number
-  saldo_pendente: number
-  reservas_confirmadas: number
-  roteiros_total: number
-  repasses_total: number
-  ultimo_pagamento_em?: string | null
-}
-
-type Stats = {
-  roteirosTotal: number
-  roteirosAtivos: number
-  roteirosPendentes: number
-  reservasTotal: number
-  reservasConfirmadas: number
-  reservasPendentes: number
-  pessoasReservadas: number
-  receitaBruta: number
-  taxaPlataforma: number
-  taxaPercentual: number
-  valorLiquidoGuia: number
-  valorPagoGuia: number
-  saldoLiquidoGuia: number
-  gruposTotal: number
-  gruposAtivos: number
-  clientesNosGrupos: number
-  notificacoesGrupos: number
-  repassesRegistrados: number
-}
-
-type NotificacaoGuia = {
+type Notificacao = {
   id: string
   titulo: string
   texto: string
   emoji: string
+  tipo: 'geral' | 'com'
   destino?: string
   created_at?: string | null
+  lida?: boolean
 }
 
-type RoteiroStatus = 'ativo' | 'pendente' | 'reprovado' | 'pausado'
+type Stats = {
+  roteirosAtivos: number
+  roteirosPendentes: number
+  reservasConfirmadas: number
+  reservasPendentes: number
+  clientes: number
+  receitaConfirmada: number
+  receitaPendente: number
+  mediaAvaliacoes: number
+}
 
 const statsInicial: Stats = {
-  roteirosTotal: 0,
   roteirosAtivos: 0,
   roteirosPendentes: 0,
-  reservasTotal: 0,
   reservasConfirmadas: 0,
   reservasPendentes: 0,
-  pessoasReservadas: 0,
-  receitaBruta: 0,
-  taxaPlataforma: 0,
-  taxaPercentual: 5,
-  valorLiquidoGuia: 0,
-  valorPagoGuia: 0,
-  saldoLiquidoGuia: 0,
-  gruposTotal: 0,
-  gruposAtivos: 0,
-  clientesNosGrupos: 0,
-  notificacoesGrupos: 0,
-  repassesRegistrados: 0
+  clientes: 0,
+  receitaConfirmada: 0,
+  receitaPendente: 0,
+  mediaAvaliacoes: 0,
 }
 
-const avaliacaoResumoInicial: AvaliacaoResumo = {
-  total: 0,
-  mediaNota: 0,
-  percentualRecomendacao: 0,
-  orientacoesClarasPercentual: 0,
-  segurancaAltaPercentual: 0,
-  experienciaSuperouPercentual: 0
+function extrairUsuarioId(usuario: UsuarioLocal | null): string {
+  return String(
+    usuario?.id ||
+      usuario?.user_id ||
+      usuario?.usuario_id ||
+      usuario?.guia_id ||
+      ''
+  ).trim()
+}
+
+function textoSeguro(valor: unknown): string {
+  if (typeof valor === 'string') return valor
+  if (typeof valor === 'number' || typeof valor === 'boolean') return String(valor)
+  return ''
+}
+
+function numeroSeguro(valor: unknown, fallback = 0): number {
+  const numero = Number(valor)
+  return Number.isFinite(numero) ? numero : fallback
+}
+
+function normalizar(valor?: unknown): string {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function primeiroNome(nome?: string | null): string {
+  const texto = String(nome || 'guia').trim()
+  return texto ? texto.split(' ')[0] || 'guia' : 'guia'
+}
+
+function formatarMoeda(valor: unknown): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(numeroSeguro(valor))
+}
+
+function formatarData(valor?: string | null): string {
+  if (!valor) return 'Sem data'
+  const data = new Date(valor)
+  if (Number.isNaN(data.getTime())) return valor
+  return data.toLocaleDateString('pt-BR')
+}
+
+function tempoRelativo(valor?: string | null): string {
+  if (!valor) return ''
+  const data = new Date(valor).getTime()
+  if (Number.isNaN(data)) return ''
+
+  const diff = Date.now() - data
+  const minutos = Math.floor(diff / 60000)
+  const horas = Math.floor(minutos / 60)
+  const dias = Math.floor(horas / 24)
+
+  if (minutos < 1) return 'agora'
+  if (minutos < 60) return `${minutos}min atrás`
+  if (horas < 24) return `${horas}h atrás`
+  if (dias === 1) return 'ontem'
+  if (dias < 7) return `${dias} dias atrás`
+  return formatarData(valor)
+}
+
+function tituloRoteiro(roteiro?: Roteiro | null): string {
+  return roteiro?.titulo || roteiro?.nome || 'Roteiro'
+}
+
+function fotoRoteiro(roteiro?: Roteiro | null): string {
+  return roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || ''
+}
+
+function localRoteiro(roteiro?: Roteiro | null): string {
+  return roteiro?.localizacao || roteiro?.local || 'Local a confirmar'
+}
+
+function precoRoteiro(roteiro?: Roteiro | null): number {
+  return numeroSeguro(roteiro?.preco ?? roteiro?.valor ?? 0)
+}
+
+function dataRoteiro(roteiro?: Roteiro | null): string | null {
+  return (
+    roteiro?.data_trilha ||
+    roteiro?.data_roteiro ||
+    roteiro?.data_inicio ||
+    roteiro?.embarque_data_hora ||
+    roteiro?.data ||
+    roteiro?.created_at ||
+    null
+  )
+}
+
+function guiaDoRoteiro(roteiro: Roteiro): string {
+  return String(
+    roteiro.id_guia || roteiro.guia_id || roteiro.user_id || roteiro.usuario_id || ''
+  ).trim()
+}
+
+function roteiroAtivo(roteiro: Roteiro): boolean {
+  if (roteiro.ativo === false) return false
+  const status = normalizar(roteiro.status)
+  return !['excluido', 'excluida', 'cancelado', 'cancelada', 'recusado', 'recusada'].includes(status)
+}
+
+function pagamentoConfirmado(reserva: Reserva): boolean {
+  const pagamento = normalizar(reserva.pagamento_status)
+  const status = normalizar(reserva.status)
+
+  return (
+    pagamento === 'pago' ||
+    pagamento === 'confirmado' ||
+    pagamento === 'aprovado' ||
+    pagamento === 'paid' ||
+    pagamento === 'approved' ||
+    status === 'confirmada' ||
+    status === 'realizada'
+  )
+}
+
+function reservaPendente(reserva: Reserva): boolean {
+  const pagamento = normalizar(reserva.pagamento_status)
+  const status = normalizar(reserva.status)
+
+  return (
+    status === 'pendente' ||
+    status === 'aguardando' ||
+    pagamento === 'pendente' ||
+    pagamento === 'aguardando' ||
+    pagamento === ''
+  )
+}
+
+function notaAvaliacao(avaliacao: Avaliacao): number {
+  return numeroSeguro(avaliacao.nota_geral ?? avaliacao.nota ?? 0)
+}
+
+function avatarCliente(cliente?: Cliente | null): string {
+  return cliente?.avatar_url || cliente?.foto_url || cliente?.imagem_url || ''
+}
+
+function extrairMensagemErro(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  return fallback
 }
 
 export default function GuiaDashboardPage() {
@@ -192,26 +281,20 @@ export default function GuiaDashboardPage() {
   const iniciouRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [roteiros, setRoteiros] = useState<Roteiro[]>([])
-  const [reservas, setReservas] = useState<Reserva[]>([])
-  const [grupos, setGrupos] = useState<GrupoRoteiro[]>([])
-  const [stats, setStats] = useState<Stats>(statsInicial)
-  const [avaliacaoResumo, setAvaliacaoResumo] = useState<AvaliacaoResumo>(avaliacaoResumoInicial)
-  const [notificacoes, setNotificacoes] = useState<NotificacaoGuia[]>([])
-
+  const [guiaId, setGuiaId] = useState('')
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
+  const [stats, setStats] = useState<Stats>(statsInicial)
+  const [roteiros, setRoteiros] = useState<Roteiro[]>([])
+  const [reservas, setReservas] = useState<Reserva[]>([])
+  const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([])
+  const [notificacoesGerais, setNotificacoesGerais] = useState<Notificacao[]>([])
+  const [notificacoesCom, setNotificacoesCom] = useState<Notificacao[]>([])
+  const [abaNotificacao, setAbaNotificacao] = useState<'geral' | 'com'>('geral')
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
-
-  const [menuAberto, setMenuAberto] = useState(false)
-  const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
-  const [modalAvisosAberto, setModalAvisosAberto] = useState(false)
-  const [senhaAtual, setSenhaAtual] = useState('')
-  const [novaSenha, setNovaSenha] = useState('')
-  const [confirmarSenha, setConfirmarSenha] = useState('')
-  const [alterandoSenha, setAlterandoSenha] = useState(false)
+  const [encerrandoGrupos, setEncerrandoGrupos] = useState(false)
 
   useEffect(() => {
     if (iniciouRef.current) return
@@ -219,10 +302,10 @@ export default function GuiaDashboardPage() {
     iniciar()
   }, [])
 
-  const iniciar = async () => {
+  async function iniciar() {
     setCarregando(true)
-    setMensagem('')
     setErro('')
+    setMensagem('')
 
     try {
       const userData = localStorage.getItem('user')
@@ -239,364 +322,99 @@ export default function GuiaDashboardPage() {
         return
       }
 
-      setUser(parsedUser)
-      await carregarTudo(parsedUser.id)
+      const id = extrairUsuarioId(parsedUser)
+
+      if (!id) {
+        console.error('guiaId inválido no localStorage:', parsedUser)
+        localStorage.removeItem('user')
+        router.replace('/login')
+        return
+      }
+
+      const usuarioNormalizado: UsuarioLocal = {
+        ...parsedUser,
+        id,
+      }
+
+      setUser(usuarioNormalizado)
+      setGuiaId(id)
+      await carregarDados(id)
     } catch (error) {
       console.error('Erro ao iniciar dashboard do guia:', error)
-      setErro('Não foi possível carregar seu painel agora.')
+      setErro('Não foi possível carregar sua dashboard agora.')
     } finally {
       setCarregando(false)
     }
   }
 
-  const normalizar = (valor?: string | null) => {
-    return String(valor || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-  }
+  async function carregarDados(id: string) {
+    const idLimpo = String(id || '').trim()
 
-  const primeiroNome = (valor?: string | null) => {
-    const nome = String(valor || 'Guia').trim()
-    return nome.split(' ')[0] || 'Guia'
-  }
-
-  const nomeUsuario = (usuario?: UsuarioLocal | null) => {
-    return usuario?.nome || usuario?.email || 'Guia'
-  }
-
-  const tituloRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.titulo || roteiro?.nome || 'Roteiro'
-  }
-
-  const precoRoteiro = (roteiro?: Roteiro | null) => {
-    return Number(roteiro?.preco || roteiro?.valor || 0)
-  }
-
-  const imagemRoteiro = (roteiro?: Roteiro | null) => {
-    return roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || roteiro?.imagem || ''
-  }
-
-  const localRoteiro = (roteiro?: Roteiro | null) => {
-    return (
-      roteiro?.local ||
-      roteiro?.localizacao ||
-      roteiro?.local_encontro ||
-      roteiro?.ponto_encontro ||
-      'Local a confirmar'
-    )
-  }
-
-  const formatarData = (valor?: string | null) => {
-    if (!valor) return '-'
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return valor
-
-    return data.toLocaleDateString('pt-BR')
-  }
-
-  const formatarMoeda = (valor: any) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(Number(valor || 0))
-  }
-
-  const formatarNota = (valor: any) => {
-    return Number(valor || 0).toFixed(2).replace('.', ',')
-  }
-
-  const formatarPercentual = (valor: any) => {
-    return `${Number(valor || 0).toFixed(1).replace('.', ',')}%`
-  }
-
-  const percentualSeguro = (valor: any) => {
-    return Math.max(0, Math.min(Number(valor || 0), 100))
-  }
-
-  const estrelas = (nota: number) => {
-    const inteira = Math.round(Number(nota || 0))
-
-    return '★★★★★'
-      .split('')
-      .map((_, index) => (index < inteira ? '★' : '☆'))
-      .join('')
-  }
-
-  const tempoRelativo = (valor?: string | null) => {
-    if (!valor) return ''
-
-    const data = new Date(valor).getTime()
-
-    if (Number.isNaN(data)) return ''
-
-    const diff = Date.now() - data
-    const minutos = Math.floor(diff / 60000)
-    const horas = Math.floor(minutos / 60)
-    const dias = Math.floor(horas / 24)
-
-    if (minutos < 1) return 'agora'
-    if (minutos < 60) return `${minutos}min atrás`
-    if (horas < 24) return `${horas}h atrás`
-    if (dias === 1) return 'ontem'
-    if (dias < 7) return `${dias} dias atrás`
-
-    return formatarData(valor)
-  }
-
-  const statusRoteiro = (roteiro: Roteiro): RoteiroStatus => {
-    const status = normalizar(roteiro.status)
-
-    if (
-      status === 'ativo' ||
-      status === 'aprovado' ||
-      status === 'aprovada' ||
-      status === 'publicado' ||
-      status === 'publicada'
-    ) {
-      return 'ativo'
+    if (!idLimpo) {
+      setErro('Não foi possível identificar o guia logado. Faça login novamente.')
+      return
     }
 
-    if (
-      status === 'pendente' ||
-      status === 'aguardando' ||
-      status === 'em_analise' ||
-      status === 'em análise'
-    ) {
-      return 'pendente'
-    }
+    const [roteirosDoGuia, avaliacoesDoGuia] = await Promise.all([
+      carregarRoteiros(idLimpo),
+      carregarAvaliacoes(idLimpo),
+    ])
 
-    if (
-      status === 'reprovado' ||
-      status === 'reprovada' ||
-      status === 'rejeitado' ||
-      status === 'rejeitada'
-    ) {
-      return 'reprovado'
-    }
+    const reservasDoGuia = await carregarReservas(roteirosDoGuia)
 
-    if (status === 'pausado' || status === 'pausada') {
-      return 'pausado'
-    }
+    setRoteiros(roteirosDoGuia)
+    setReservas(reservasDoGuia)
+    setAvaliacoes(avaliacoesDoGuia)
+    setStats(calcularStats(roteirosDoGuia, reservasDoGuia, avaliacoesDoGuia))
 
-    if (roteiro.ativo === true) return 'ativo'
-    if (roteiro.ativo === false) return 'pausado'
+    await Promise.all([
+      carregarNotificacoesGerais(idLimpo, roteirosDoGuia, reservasDoGuia),
+      carregarNotificacoesCom(idLimpo),
+    ])
 
-    return 'pendente'
+    setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
   }
 
-  const statusReserva = (reserva: Reserva) => {
-    return normalizar(reserva.status)
-  }
-
-  const pagamentoConfirmado = (reserva: Reserva) => {
-    const pagamento = normalizar(reserva.pagamento_status)
-    const status = normalizar(reserva.status)
-
-    return (
-      pagamento === 'pago' ||
-      pagamento === 'confirmado' ||
-      pagamento === 'aprovado' ||
-      pagamento === 'paid' ||
-      pagamento === 'approved' ||
-      status === 'confirmada' ||
-      status === 'realizada' ||
-      status === 'pago' ||
-      status === 'paga'
-    )
-  }
-
-  const carregarFinanceiroDoGuia = async (guiaId: string) => {
+  async function carregarRoteiros(id: string): Promise<Roteiro[]> {
     try {
-      const response = await fetch(
-        `/api/guia/financeiro/resumo?guiaId=${encodeURIComponent(guiaId)}&_ts=${Date.now()}`,
-        {
-          method: 'GET',
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-store',
-            Pragma: 'no-cache'
-          }
-        }
-      )
-
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || data?.sucesso === false) {
-        console.warn('Aviso ao carregar financeiro do guia:', data)
-        return null as FinanceiroResumoGuia | null
-      }
-
-      return (data?.resumo || null) as FinanceiroResumoGuia | null
-    } catch (error) {
-      console.warn('Erro ao carregar financeiro do guia:', error)
-      return null as FinanceiroResumoGuia | null
-    }
-  }
-
-  const buscarRoteirosDoGuia = async (guiaId: string) => {
-    const campos = ['id_guia', 'guia_id', 'user_id', 'usuario_id']
-    const mapa = new Map<string, Roteiro>()
-
-    for (const campo of campos) {
       const { data, error } = await supabase
         .from('roteiros')
         .select('*')
-        .eq(campo, guiaId)
         .order('created_at', { ascending: false })
+        .limit(200)
 
-      if (!error && data) {
-        ;(data as Roteiro[]).forEach((roteiro) => {
-          if (roteiro?.id) mapa.set(roteiro.id, roteiro)
-        })
-      }
-    }
+      if (error) throw error
 
-    return Array.from(mapa.values())
-  }
-
-  const carregarAvaliacoesDoGuia = async (guiaId: string) => {
-    try {
-      const response = await fetch('/api/avaliacoes/estatisticas', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store'
-        },
-        body: JSON.stringify({
-          guiaId,
-          status: 'publicada',
-          limite: 500,
-          limiteComentarios: 8
-        }),
-        cache: 'no-store'
-      })
-
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || data?.sucesso === false) {
-        console.warn('Aviso ao buscar estatísticas de avaliações:', data)
-        setAvaliacaoResumo(avaliacaoResumoInicial)
-        return avaliacaoResumoInicial
-      }
-
-      const resumo: AvaliacaoResumo = {
-        total: Number(data?.resumo?.total || 0),
-        mediaNota: Number(data?.resumo?.mediaNota || 0),
-        percentualRecomendacao: Number(data?.resumo?.percentualRecomendacao || 0),
-        orientacoesClarasPercentual: Number(data?.resumo?.orientacoesClarasPercentual || 0),
-        segurancaAltaPercentual: Number(data?.resumo?.segurancaAltaPercentual || 0),
-        experienciaSuperouPercentual: Number(data?.resumo?.experienciaSuperouPercentual || 0)
-      }
-
-      setAvaliacaoResumo(resumo)
-      return resumo
+      return ((data || []) as Roteiro[])
+        .filter((roteiro: Roteiro) => guiaDoRoteiro(roteiro) === id)
+        .filter((roteiro: Roteiro) => roteiroAtivo(roteiro))
     } catch (error) {
-      console.warn('Erro ao carregar avaliações do guia:', error)
-      setAvaliacaoResumo(avaliacaoResumoInicial)
-      return avaliacaoResumoInicial
-    }
-  }
-
-  const carregarGruposDoGuia = async (guiaId: string, roteirosLista: Roteiro[]) => {
-    const { data: gruposData, error: gruposError } = await supabase
-      .from('grupos_roteiros')
-      .select('*')
-      .eq('guia_id', guiaId)
-      .order('created_at', { ascending: false })
-
-    if (gruposError) {
-      console.warn('Erro ao buscar grupos do guia:', gruposError)
+      console.warn('Erro ao carregar roteiros do guia:', error)
       return []
     }
-
-    const gruposBase = (gruposData || []) as GrupoRoteiro[]
-
-    if (gruposBase.length === 0) return []
-
-    const grupoIds = gruposBase.map((grupo) => grupo.id)
-
-    const { data: membrosData } = await supabase
-      .from('grupo_membros')
-      .select('*')
-      .in('grupo_id', grupoIds)
-      .eq('status', 'ativo')
-
-    const { data: mensagensData } = await supabase
-      .from('grupo_mensagens')
-      .select('*')
-      .in('grupo_id', grupoIds)
-      .eq('status', 'ativa')
-      .order('created_at', { ascending: false })
-      .limit(120)
-
-    const { data: notificacoesData } = await supabase
-      .from('grupo_notificacoes')
-      .select('*')
-      .in('grupo_id', grupoIds)
-      .eq('user_id_destino', guiaId)
-      .eq('lida', false)
-
-    const membros = (membrosData || []) as GrupoMembro[]
-    const mensagens = (mensagensData || []) as GrupoMensagem[]
-    const notificacoes = (notificacoesData || []) as GrupoNotificacao[]
-
-    return gruposBase.map((grupo) => {
-      const membrosGrupo = membros.filter((membro) => membro.grupo_id === grupo.id)
-      const clientesGrupo = membrosGrupo.filter((membro) => membro.papel === 'cliente')
-      const mensagensGrupo = mensagens.filter((mensagem) => mensagem.grupo_id === grupo.id)
-      const notificacoesGrupo = notificacoes.filter((notificacao) => notificacao.grupo_id === grupo.id)
-
-      const roteiro = roteirosLista.find((item) => item.id === grupo.roteiro_id) || null
-
-      return {
-        ...grupo,
-        roteiro,
-        membros_count: membrosGrupo.length,
-        clientes_count: clientesGrupo.length,
-        mensagens_count: mensagensGrupo.length,
-        notificacoes_nao_lidas: notificacoesGrupo.length
-      }
-    })
   }
 
-  const carregarTudo = async (guiaId: string) => {
+  async function carregarReservas(roteirosDoGuia: Roteiro[]): Promise<Reserva[]> {
+    const roteiroIds = roteirosDoGuia.map((roteiro: Roteiro) => roteiro.id).filter(Boolean)
+
+    if (roteiroIds.length === 0) return []
+
     try {
-      const resumoAvaliacoes = await carregarAvaliacoesDoGuia(guiaId)
-      const resumoFinanceiro = await carregarFinanceiroDoGuia(guiaId)
+      const { data, error } = await supabase
+        .from('reservas')
+        .select('*')
+        .in('roteiro_id', roteiroIds)
+        .order('created_at', { ascending: false })
+        .limit(200)
 
-      const roteirosData = await buscarRoteirosDoGuia(guiaId)
-      setRoteiros(roteirosData)
+      if (error) throw error
 
-      const gruposData = await carregarGruposDoGuia(guiaId, roteirosData)
-      setGrupos(gruposData)
-
-      const roteiroIds = roteirosData.map((roteiro) => roteiro.id)
-
-      let reservasBase: Reserva[] = []
-
-      if (roteiroIds.length > 0) {
-        const { data: reservasData, error: reservasError } = await supabase
-          .from('reservas')
-          .select('*')
-          .in('roteiro_id', roteiroIds)
-          .order('created_at', { ascending: false })
-
-        if (reservasError) {
-          console.warn('Erro ao buscar reservas do guia:', reservasError)
-        } else {
-          reservasBase = (reservasData || []) as Reserva[]
-        }
-      }
-
+      const reservasBase = (data || []) as Reserva[]
       const clienteIds = Array.from(
         new Set(
           reservasBase
-            .map((reserva) => reserva.cliente_id)
-            .filter(Boolean) as string[]
+            .map((reserva: Reserva) => reserva.cliente_id)
+            .filter((id): id is string => Boolean(id))
         )
       )
 
@@ -605,7 +423,7 @@ export default function GuiaDashboardPage() {
       if (clienteIds.length > 0) {
         const { data: clientesData, error: clientesError } = await supabase
           .from('users')
-          .select('id, nome, email')
+          .select('id, nome, email, avatar_url, foto_url, imagem_url')
           .in('id', clienteIds)
 
         if (!clientesError && clientesData) {
@@ -613,364 +431,380 @@ export default function GuiaDashboardPage() {
         }
       }
 
-      const reservasCompletas = reservasBase.map((reserva) => {
-        const roteiro = roteirosData.find((item) => item.id === reserva.roteiro_id) || null
-        const cliente = clientes.find((item) => item.id === reserva.cliente_id) || null
+      return reservasBase.map((reserva: Reserva) => {
+        const roteiro = roteirosDoGuia.find((item: Roteiro) => item.id === reserva.roteiro_id) || null
+        const cliente = clientes.find((item: Cliente) => item.id === reserva.cliente_id) || null
 
         return {
           ...reserva,
           roteiro,
           roteiro_titulo: tituloRoteiro(roteiro),
-          cliente_nome: cliente?.nome || cliente?.email || 'Cliente'
+          cliente_nome: cliente?.nome || cliente?.email || 'Cliente',
         }
       })
-
-      setReservas(reservasCompletas)
-
-      const statsCalculados = calcularStats(
-        roteirosData,
-        reservasCompletas,
-        gruposData,
-        resumoFinanceiro
-      )
-
-      setStats(statsCalculados)
-
-      montarNotificacoes(
-        roteirosData,
-        reservasCompletas,
-        gruposData,
-        statsCalculados,
-        resumoAvaliacoes
-      )
-
-      setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
     } catch (error) {
-      console.error('Erro ao carregar dados do guia:', error)
-      setErro('Não foi possível atualizar seu painel agora.')
+      console.warn('Erro ao carregar reservas do guia:', error)
+      return []
     }
   }
 
-  const calcularStats = (
-    roteirosLista: Roteiro[],
-    reservasLista: Reserva[],
-    gruposLista: GrupoRoteiro[],
-    financeiroResumo?: FinanceiroResumoGuia | null
-  ): Stats => {
-    const roteirosAtivos = roteirosLista.filter(
-      (roteiro) => statusRoteiro(roteiro) === 'ativo'
-    ).length
+  async function carregarAvaliacoes(id: string): Promise<Avaliacao[]> {
+    const idLimpo = String(id || '').trim()
 
-    const roteirosPendentes = roteirosLista.filter(
-      (roteiro) => statusRoteiro(roteiro) === 'pendente'
-    ).length
+    if (!idLimpo || idLimpo === 'undefined' || idLimpo === 'null') {
+      console.warn('carregarAvaliacoes ignorada: guiaId inválido.', id)
+      return []
+    }
 
-    const reservasConfirmadas = reservasLista.filter(pagamentoConfirmado)
+    const campos = ['guia_id', 'id_guia']
+    let lista: Avaliacao[] = []
 
-    const reservasPendentes = reservasLista.filter((reserva) => {
-      const status = statusReserva(reserva)
-      const pagamento = normalizar(reserva.pagamento_status)
+    for (const campo of campos) {
+      const { data, error } = await supabase
+        .from('avaliacoes')
+        .select('*')
+        .eq(campo, idLimpo)
+        .order('created_at', { ascending: false })
+        .limit(50)
 
-      return (
-        status === 'pendente' ||
-        status === 'aguardando' ||
-        pagamento === 'pendente' ||
-        pagamento === 'aguardando'
+      if (!error && data) {
+        lista = data as Avaliacao[]
+        break
+      }
+    }
+
+    const clienteIds = Array.from(
+      new Set(
+        lista
+          .map((avaliacao: Avaliacao) => avaliacao.cliente_id)
+          .filter((clienteId): clienteId is string => Boolean(clienteId))
       )
+    )
+
+    if (clienteIds.length === 0) return lista
+
+    const { data: clientes } = await supabase
+      .from('users')
+      .select('id, nome, email, avatar_url, foto_url, imagem_url')
+      .in('id', clienteIds)
+
+    const clientesLista = (clientes || []) as Cliente[]
+
+    return lista.map((avaliacao: Avaliacao) => {
+      const cliente = clientesLista.find((item: Cliente) => item.id === avaliacao.cliente_id) || null
+
+      return {
+        ...avaliacao,
+        cliente_nome: cliente?.nome || cliente?.email || 'Cliente',
+        cliente_avatar: avatarCliente(cliente),
+      }
     })
+  }
 
-    const pessoasReservadas = reservasLista.reduce(
-      (total, reserva) => total + Number(reserva.quantidade_pessoas || 0),
-      0
-    )
+  function calcularStats(
+    roteirosDoGuia: Roteiro[],
+    reservasDoGuia: Reserva[],
+    avaliacoesDoGuia: Avaliacao[]
+  ): Stats {
+    const roteirosAtivos = roteirosDoGuia.filter((roteiro: Roteiro) => {
+      const status = normalizar(roteiro.status)
+      return status === 'ativo' || status === 'aprovado' || status === 'publicado' || status === ''
+    }).length
 
-    const receitaBrutaLocal = reservasConfirmadas.reduce(
-      (total, reserva) => total + Number(reserva.valor_total || 0),
-      0
-    )
+    const roteirosPendentes = roteirosDoGuia.filter((roteiro: Roteiro) => {
+      const status = normalizar(roteiro.status)
+      return status === 'pendente' || status === 'analise' || status === 'em_analise'
+    }).length
 
-    const taxaPercentual = Number(financeiroResumo?.taxa_percentual ?? 5)
-    const receitaBruta = Number(financeiroResumo?.receita_bruta ?? receitaBrutaLocal)
-    const taxaPlataforma = Number(
-      financeiroResumo?.taxa_plataforma ?? receitaBruta * (taxaPercentual / 100)
-    )
-    const valorLiquidoGuia = Number(
-      financeiroResumo?.valor_liquido_guia ?? Math.max(0, receitaBruta - taxaPlataforma)
-    )
-    const valorPagoGuia = Number(financeiroResumo?.valor_pago ?? 0)
-    const saldoLiquidoGuia = Number(
-      financeiroResumo?.saldo_pendente ?? Math.max(0, valorLiquidoGuia - valorPagoGuia)
-    )
+    const reservasConfirmadas = reservasDoGuia.filter((reserva: Reserva) => pagamentoConfirmado(reserva)).length
+    const reservasPendentes = reservasDoGuia.filter((reserva: Reserva) => reservaPendente(reserva) && !pagamentoConfirmado(reserva)).length
 
-    const gruposAtivos = gruposLista.filter(
-      (grupo) => normalizar(grupo.status) === 'ativo'
-    ).length
+    const clientes = new Set(
+      reservasDoGuia
+        .map((reserva: Reserva) => reserva.cliente_id)
+        .filter(Boolean)
+    ).size
 
-    const clientesNosGrupos = gruposLista.reduce(
-      (total, grupo) => total + Number(grupo.clientes_count || 0),
-      0
-    )
+    const receitaConfirmada = reservasDoGuia
+      .filter((reserva: Reserva) => pagamentoConfirmado(reserva))
+      .reduce((soma: number, reserva: Reserva) => soma + numeroSeguro(reserva.valor_total), 0)
 
-    const notificacoesGrupos = gruposLista.reduce(
-      (total, grupo) => total + Number(grupo.notificacoes_nao_lidas || 0),
-      0
-    )
+    const receitaPendente = reservasDoGuia
+      .filter((reserva: Reserva) => !pagamentoConfirmado(reserva))
+      .reduce((soma: number, reserva: Reserva) => soma + numeroSeguro(reserva.valor_total), 0)
+
+    const notas = avaliacoesDoGuia
+      .map((avaliacao: Avaliacao) => notaAvaliacao(avaliacao))
+      .filter((nota: number) => nota > 0)
+
+    const mediaAvaliacoes = notas.length
+      ? notas.reduce((soma: number, nota: number) => soma + nota, 0) / notas.length
+      : 0
 
     return {
-      roteirosTotal: roteirosLista.length,
       roteirosAtivos,
       roteirosPendentes,
-      reservasTotal: reservasLista.length,
-      reservasConfirmadas: Number(financeiroResumo?.reservas_confirmadas ?? reservasConfirmadas.length),
-      reservasPendentes: reservasPendentes.length,
-      pessoasReservadas,
-      receitaBruta,
-      taxaPlataforma,
-      taxaPercentual,
-      valorLiquidoGuia,
-      valorPagoGuia,
-      saldoLiquidoGuia,
-      gruposTotal: gruposLista.length,
-      gruposAtivos,
-      clientesNosGrupos,
-      notificacoesGrupos,
-      repassesRegistrados: Number(financeiroResumo?.repasses_total ?? 0)
+      reservasConfirmadas,
+      reservasPendentes,
+      clientes,
+      receitaConfirmada,
+      receitaPendente,
+      mediaAvaliacoes,
     }
   }
 
-  const montarNotificacoes = (
-    roteirosLista: Roteiro[],
-    reservasLista: Reserva[],
-    gruposLista: GrupoRoteiro[],
-    statsAtuais: Stats,
-    resumoAvaliacoes: AvaliacaoResumo
-  ) => {
-    const lista: NotificacaoGuia[] = []
-
-    const gruposComAvisos = gruposLista.filter(
-      (grupo) => Number(grupo.notificacoes_nao_lidas || 0) > 0
-    )
-
-    gruposComAvisos.slice(0, 4).forEach((grupo) => {
-      lista.push({
-        id: `grupo-${grupo.id}`,
-        titulo: 'Grupo com nova atividade',
-        texto: `${grupo.titulo || tituloRoteiro(grupo.roteiro)} tem ${grupo.notificacoes_nao_lidas} aviso(s) novo(s).`,
-        emoji: '💬',
-        destino: `/guia/grupos/${grupo.id}`,
-        created_at: grupo.updated_at || grupo.created_at || new Date().toISOString()
+  async function carregarNotificacoesCom(id: string) {
+    try {
+      const resposta = await fetch(`/api/notificacoes/com?usuarioId=${encodeURIComponent(id)}`, {
+        cache: 'no-store',
       })
-    })
 
-    if (resumoAvaliacoes.total > 0) {
-      lista.push({
-        id: 'avaliacoes-guia',
-        titulo: 'Avaliações atualizadas',
-        texto: `Média ${formatarNota(resumoAvaliacoes.mediaNota)} · ${formatarPercentual(resumoAvaliacoes.segurancaAltaPercentual)} sentiram muita segurança.`,
-        emoji: '⭐',
-        destino: '/guia/avaliacoes',
-        created_at: new Date().toISOString()
-      })
+      const json = (await resposta.json().catch(() => null)) as {
+        sucesso?: boolean
+        notificacoes?: Array<Record<string, unknown>>
+      } | null
+
+      if (!resposta.ok || !json?.sucesso) {
+        setNotificacoesCom([])
+        return
+      }
+
+      const lista = (json.notificacoes || []).map((item: Record<string, unknown>) => ({
+        id: textoSeguro(item.id) || `com-${Math.random().toString(36).slice(2)}`,
+        titulo: textoSeguro(item.titulo) || 'Movimento na COM',
+        texto: textoSeguro(item.mensagem) || 'Uma pessoa que você segue movimentou a comunidade.',
+        emoji: emojiPorTipo(textoSeguro(item.tipo)),
+        tipo: 'com' as const,
+        destino: textoSeguro(item.destino_url) || '/guia/dashboard',
+        created_at: textoSeguro(item.created_at) || null,
+        lida: Boolean(item.lida),
+      }))
+
+      setNotificacoesCom(lista)
+    } catch (error) {
+      console.warn('Erro ao carregar COM do guia:', error)
+      setNotificacoesCom([])
+    }
+  }
+
+  function emojiPorTipo(tipo: string): string {
+    const normalizado = normalizar(tipo)
+    if (normalizado.includes('roteiro')) return '🧭'
+    if (normalizado.includes('foto')) return '📷'
+    if (normalizado.includes('curtida')) return '❤️'
+    if (normalizado.includes('avaliacao')) return '⭐'
+    if (normalizado.includes('grupo')) return '💬'
+    return '🌿'
+  }
+
+  async function carregarNotificacoesGerais(
+    id: string,
+    roteirosDoGuia: Roteiro[],
+    reservasDoGuia: Reserva[]
+  ) {
+    try {
+      const { data, error } = await supabase
+        .from('logs_atividades')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(40)
+
+      if (!error && data && data.length > 0) {
+        const lista = ((data || []) as Array<Record<string, unknown>>)
+          .filter((log: Record<string, unknown>) => !logEhAdmin(log))
+          .slice(0, 12)
+          .map((log: Record<string, unknown>) => montarNotificacaoGeral(log, id))
+
+        setNotificacoesGerais(lista)
+        return
+      }
+    } catch {
+      // fallback abaixo
     }
 
-    const roteirosPendentes = roteirosLista.filter(
-      (roteiro) => statusRoteiro(roteiro) === 'pendente'
-    )
+    const fallback: Notificacao[] = []
 
-    if (roteirosPendentes.length > 0) {
-      lista.push({
-        id: 'roteiros-pendentes',
-        titulo: 'Roteiro aguardando análise',
-        texto: `${roteirosPendentes.length} roteiro(s) ainda precisam de aprovação para aparecer ao público.`,
-        emoji: '⏳',
-        destino: '/guia/roteiros',
-        created_at: roteirosPendentes[0]?.created_at || new Date().toISOString()
-      })
-    }
-
-    reservasLista.slice(0, 4).forEach((reserva) => {
-      lista.push({
+    reservasDoGuia.slice(0, 4).forEach((reserva: Reserva) => {
+      fallback.push({
         id: `reserva-${reserva.id}`,
-        titulo: pagamentoConfirmado(reserva)
-          ? 'Reserva confirmada'
-          : 'Nova reserva aguardando pagamento',
-        texto: `${reserva.cliente_nome || 'Cliente'} em ${reserva.roteiro_titulo || 'roteiro'} · ${formatarMoeda(reserva.valor_total || 0)}`,
+        titulo: pagamentoConfirmado(reserva) ? 'Reserva confirmada' : 'Reserva aguardando pagamento',
+        texto: `${reserva.cliente_nome || 'Cliente'} · ${reserva.roteiro_titulo || 'Roteiro'}`,
         emoji: pagamentoConfirmado(reserva) ? '✅' : '🎒',
-        destino: pagamentoConfirmado(reserva) ? '/guia/grupos' : '/guia/reservas',
-        created_at: reserva.created_at
+        tipo: 'geral',
+        destino: '/guia/roteiros',
+        created_at: reserva.created_at,
       })
     })
 
-    if (statsAtuais.saldoLiquidoGuia > 0) {
-      lista.push({
-        id: 'saldo-guia',
-        titulo: 'Saldo pendente atualizado',
-        texto: `${formatarMoeda(statsAtuais.saldoLiquidoGuia)} pendente após ${statsAtuais.repassesRegistrados} repasse(s) registrado(s) pelo ADMIN.`,
-        emoji: '💰',
-        destino: '/guia/financeiro',
-        created_at: new Date().toISOString()
-      })
-    }
-
-    if (lista.length === 0) {
-      lista.push({
-        id: 'estrutura',
-        titulo: 'Tudo em ordem',
-        texto: 'Nenhum aviso importante por enquanto.',
-        emoji: '🌿',
+    roteirosDoGuia.slice(0, 3).forEach((roteiro: Roteiro) => {
+      fallback.push({
+        id: `roteiro-${roteiro.id}`,
+        titulo: 'Roteiro no ar',
+        texto: tituloRoteiro(roteiro),
+        emoji: '🧭',
+        tipo: 'geral',
         destino: '/guia/roteiros',
-        created_at: new Date().toISOString()
+        created_at: roteiro.created_at,
       })
-    }
+    })
 
-    setNotificacoes(lista.slice(0, 9))
+    setNotificacoesGerais(fallback.slice(0, 10))
   }
 
-  const atualizarDashboard = async () => {
-    if (!user?.id) return
+  function logEhAdmin(log: Record<string, unknown>): boolean {
+    const texto = normalizar(
+      [
+        log.tipo_usuario,
+        log.tipo,
+        log.acao,
+        log.descricao,
+        log.detalhes,
+        log.origem,
+        log.destino,
+        log.rota,
+      ].map((item: unknown) => textoSeguro(item)).join(' ')
+    )
+
+    return (
+      texto.includes('admin') ||
+      texto.includes('administrador') ||
+      texto.includes('/admin') ||
+      texto.includes('painel administrativo')
+    )
+  }
+
+  function montarNotificacaoGeral(log: Record<string, unknown>, id: string): Notificacao {
+    const acao = normalizar(textoSeguro(log.acao) || textoSeguro(log.tipo) || textoSeguro(log.descricao))
+    const nome = textoSeguro(log.nome) || textoSeguro(log.nome_usuario) || textoSeguro(log.guia_nome) || 'Alguém'
+    const isDoGuia = textoSeguro(log.usuario_id) === id || textoSeguro(log.user_id) === id || textoSeguro(log.guia_id) === id
+
+    if (acao.includes('roteiro')) {
+      return {
+        id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
+        titulo: isDoGuia ? 'Seu roteiro movimentou' : 'Novo roteiro publicado',
+        texto: isDoGuia ? 'Um roteiro seu teve atualização ou movimento.' : `${nome} publicou ou atualizou um roteiro.`,
+        emoji: '🧭',
+        tipo: 'geral',
+        destino: '/guia/roteiros',
+        created_at: textoSeguro(log.created_at) || null,
+      }
+    }
+
+    if (acao.includes('foto')) {
+      return {
+        id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
+        titulo: 'Foto na comunidade',
+        texto: `${nome} publicou uma foto de aventura.`,
+        emoji: '📷',
+        tipo: 'geral',
+        destino: '/guia/dashboard',
+        created_at: textoSeguro(log.created_at) || null,
+      }
+    }
+
+    if (acao.includes('curtiu') || acao.includes('like')) {
+      return {
+        id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
+        titulo: 'Foto curtida',
+        texto: `${nome} curtiu uma foto da comunidade.`,
+        emoji: '❤️',
+        tipo: 'geral',
+        destino: '/guia/dashboard',
+        created_at: textoSeguro(log.created_at) || null,
+      }
+    }
+
+    return {
+      id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
+      titulo: 'Movimento na comunidade',
+      texto: textoSeguro(log.detalhes) || textoSeguro(log.descricao) || `${nome} movimentou a PrussikTrails.`,
+      emoji: '🌿',
+      tipo: 'geral',
+      destino: '/guia/dashboard',
+      created_at: textoSeguro(log.created_at) || null,
+    }
+  }
+
+  async function atualizar() {
+    if (!guiaId) return
 
     setAtualizando(true)
-    setMensagem('')
     setErro('')
+    setMensagem('')
 
     try {
-      await carregarTudo(user.id)
-      setMensagem('Painel atualizado.')
-      setTimeout(() => setMensagem(''), 2600)
+      await carregarDados(guiaId)
+      setMensagem('Dashboard atualizada.')
+    } catch (error) {
+      setErro(extrairMensagemErro(error, 'Não foi possível atualizar agora.'))
     } finally {
       setAtualizando(false)
     }
   }
 
-  const abrirAlterarSenha = () => {
-    setMenuAberto(false)
+  async function encerrarGruposFinalizados() {
+    setEncerrandoGrupos(true)
     setErro('')
     setMensagem('')
-    setSenhaAtual('')
-    setNovaSenha('')
-    setConfirmarSenha('')
-    setModalSenhaAberto(true)
-  }
-
-  const alterarSenha = async (event: FormEvent) => {
-    event.preventDefault()
-
-    if (!user?.id) {
-      router.replace('/login')
-      return
-    }
-
-    setErro('')
-    setMensagem('')
-
-    if (!senhaAtual) {
-      setErro('Informe a senha atual.')
-      return
-    }
-
-    if (!novaSenha || novaSenha.length < 6) {
-      setErro('A nova senha deve ter pelo menos 6 caracteres.')
-      return
-    }
-
-    if (novaSenha !== confirmarSenha) {
-      setErro('As senhas não conferem.')
-      return
-    }
-
-    setAlterandoSenha(true)
 
     try {
-      const response = await fetch('/api/alterar-senha', {
+      const resposta = await fetch('/api/grupos/encerrar-finalizados', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          usuarioId: user.id,
-          usuario_id: user.id,
-          senhaAtual,
-          senha_atual: senhaAtual,
-          novaSenha,
-          nova_senha: novaSenha
-        })
+        body: JSON.stringify({ diasApos: 0 }),
       })
 
-      const data = await response.json().catch(() => null)
+      const json = (await resposta.json().catch(() => null)) as {
+        sucesso?: boolean
+        encerrados?: number
+        erro?: string
+      } | null
 
-      if (!response.ok || data?.sucesso === false) {
-        setErro(data?.erro || data?.message || 'Não foi possível alterar a senha.')
-        return
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível verificar os grupos.')
       }
 
-      setMensagem('Senha alterada com sucesso.')
-      setModalSenhaAberto(false)
-      setSenhaAtual('')
-      setNovaSenha('')
-      setConfirmarSenha('')
+      const encerrados = Number(json.encerrados || 0)
+      setMensagem(
+        encerrados > 0
+          ? `${encerrados} grupo(s) finalizado(s) foram encerrados.`
+          : 'Nenhum grupo precisava ser encerrado agora.'
+      )
     } catch (error) {
-      console.error('Erro ao alterar senha:', error)
-      setErro('Erro ao alterar senha.')
+      setErro(extrairMensagemErro(error, 'Não foi possível encerrar grupos agora.'))
     } finally {
-      setAlterandoSenha(false)
+      setEncerrandoGrupos(false)
     }
   }
 
-  const sair = async () => {
-    setMenuAberto(false)
-
-    try {
-      await supabase.auth.signOut()
-    } catch (error) {
-      console.warn('Aviso ao encerrar sessão:', error)
-    }
-
+  function sair() {
     localStorage.removeItem('user')
-    localStorage.removeItem('usuario')
-    localStorage.removeItem('token')
-    localStorage.removeItem('session')
-
     router.replace('/login')
   }
 
-  const badgeGrupo = (status?: string | null) => {
-    const atual = normalizar(status)
-    if (atual === 'ativo' || !atual) return <span className="badge badge-green">Ativo</span>
-    return <span className="badge badge-neutral">{status || 'Grupo'}</span>
-  }
+  const notificacoesAtivas = useMemo(() => {
+    return abaNotificacao === 'com' ? notificacoesCom : notificacoesGerais
+  }, [abaNotificacao, notificacoesCom, notificacoesGerais])
 
-  const gruposRecentes = useMemo(() => grupos.slice(0, 6), [grupos])
+  const roteirosRecentes = useMemo(() => {
+    return roteiros.slice(0, 4)
+  }, [roteiros])
+
+  const reservasRecentes = useMemo(() => {
+    return reservas.slice(0, 4)
+  }, [reservas])
+
+  const avaliacoesRecentes = useMemo(() => {
+    return avaliacoes.slice(0, 3)
+  }, [avaliacoes])
 
   if (carregando || !user) {
     return (
-      <main className="loading">
-        <style>{`
-          * { box-sizing: border-box; }
-          body { margin: 0; background: #f6f7f1; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-          .loading {
-            min-height: 100vh;
-            min-height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background:
-              radial-gradient(circle at top left, rgba(132, 204, 22, 0.18), transparent 30%),
-              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
-            color: #374151;
-          }
-          .loadingCard {
-            background: #ffffff;
-            border: 1px solid rgba(15, 23, 42, 0.06);
-            border-radius: 30px;
-            padding: 28px;
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-            text-align: center;
-          }
-          .loadingCard img { height: 68px; width: auto; margin-bottom: 12px; }
-        `}</style>
-
+      <main className="loadingPage">
+        <style>{estilos}</style>
         <div className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <div>Preparando seu painel de guia...</div>
+          <span>Preparando a área do guia...</span>
         </div>
       </main>
     )
@@ -978,1294 +812,1000 @@ export default function GuiaDashboardPage() {
 
   return (
     <main className="page">
-      <style>{`
-        * { box-sizing: border-box; }
-
-        body {
-          margin: 0;
-          background: #f6f7f1;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        .page {
-          min-height: 100vh;
-          min-height: 100dvh;
-          background:
-            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
-            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
-          color: #172018;
-        }
-
-        .header {
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          background: rgba(255, 253, 247, 0.86);
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-          backdrop-filter: blur(18px);
-          padding: 10px 16px;
-        }
-
-        .headerInner {
-          max-width: 1180px;
-          margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          cursor: pointer;
-          min-width: 0;
-        }
-
-        .brand img {
-          height: 42px;
-          width: auto;
-          object-fit: contain;
-          display: block;
-        }
-
-        .brandTitle {
-          font-size: 18px;
-          font-weight: 950;
-          color: #dc2626;
-          line-height: 1;
-          letter-spacing: -0.05em;
-        }
-
-        .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 700;
-          margin-top: 3px;
-        }
-
-        .settingsWrap {
-          position: relative;
-        }
-
-        .gearBtn {
-          width: 42px;
-          height: 42px;
-          border: 1px solid rgba(15,23,42,0.08);
-          background: rgba(255,255,255,0.84);
-          color: #172018;
-          border-radius: 999px;
-          cursor: pointer;
-          font-size: 18px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 8px 20px rgba(15,23,42,0.05);
-        }
-
-        .settingsMenu {
-          position: absolute;
-          top: 50px;
-          right: 0;
-          width: 230px;
-          background: #ffffff;
-          border: 1px solid rgba(15,23,42,0.10);
-          border-radius: 22px;
-          box-shadow: 0 22px 60px rgba(15,23,42,0.16);
-          padding: 8px;
-          z-index: 80;
-        }
-
-        .menuButton {
-          width: 100%;
-          border: none;
-          background: transparent;
-          color: #172018;
-          padding: 12px 13px;
-          border-radius: 16px;
-          text-align: left;
-          font-size: 13px;
-          font-weight: 900;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .menuButton:hover {
-          background: #f8fafc;
-        }
-
-        .menuButton.danger {
-          color: #991b1b;
-        }
-
-        .container {
-          max-width: 1180px;
-          margin: 0 auto;
-          padding: 22px 16px 48px;
-        }
-
-        .hero {
-          position: relative;
-          overflow: hidden;
-          border-radius: 38px;
-          padding: 30px;
-          min-height: 335px;
-          background:
-            linear-gradient(135deg, rgba(23, 32, 24, 0.76), rgba(23, 32, 24, 0.34)),
-            radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 34%),
-            linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
-          color: #ffffff;
-          box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
-          margin-bottom: 16px;
-        }
-
-        .hero::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background:
-            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-          background-size: 46px 46px;
-          mask-image: linear-gradient(to bottom, black, transparent);
-          pointer-events: none;
-        }
-
-        .heroContent {
-          position: relative;
-          z-index: 2;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 340px;
-          gap: 24px;
-          align-items: end;
-          min-height: 270px;
-        }
-
-        .eyebrow {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.26);
-          background: rgba(255, 255, 255, 0.12);
-          color: #f7fee7;
-          padding: 8px 12px;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin-bottom: 14px;
-        }
-
-        .heroTitle {
-          margin: 0;
-          max-width: 760px;
-          font-size: clamp(42px, 6vw, 72px);
-          line-height: 0.92;
-          font-weight: 950;
-          letter-spacing: -0.085em;
-        }
-
-        .heroTitle span {
-          color: #bef264;
-          text-shadow: 0 0 28px rgba(190, 242, 100, 0.32);
-        }
-
-        .heroText {
-          max-width: 650px;
-          color: rgba(255,255,255,0.82);
-          line-height: 1.62;
-          margin: 16px 0 0;
-          font-size: 14px;
-        }
-
-        .heroCard {
-          background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          border-radius: 30px;
-          padding: 20px;
-          backdrop-filter: blur(16px);
-        }
-
-        .heroCardLabel {
-          color: rgba(255,255,255,0.76);
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-        }
-
-        .heroCardValue {
-          margin-top: 9px;
-          color: #ffffff;
-          font-size: 34px;
-          line-height: 1.05;
-          font-weight: 950;
-          letter-spacing: -0.07em;
-        }
-
-        .heroStars {
-          color: #bef264;
-          font-size: 18px;
-          letter-spacing: 1px;
-          margin-top: 8px;
-        }
-
-        .heroCardText {
-          margin-top: 8px;
-          color: rgba(255,255,255,0.78);
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-        }
-
-        .reputationBars {
-          display: grid;
-          gap: 10px;
-          margin-top: 16px;
-        }
-
-        .repRowTop {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 10px;
-          color: rgba(255,255,255,0.84);
-          font-size: 11px;
-          font-weight: 900;
-          margin-bottom: 5px;
-        }
-
-        .repTrack {
-          height: 8px;
-          border-radius: 999px;
-          overflow: hidden;
-          background: rgba(255,255,255,0.18);
-        }
-
-        .repFill {
-          height: 100%;
-          border-radius: 999px;
-          background: #bef264;
-        }
-
-        .heroActions {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-          margin-top: 16px;
-        }
-
-        .heroMiniBtn {
-          border: 1px solid rgba(255,255,255,0.20);
-          background: rgba(255,255,255,0.14);
-          color: #ffffff;
-          border-radius: 999px;
-          padding: 10px 13px;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-        }
-
-        .heroMiniBtn.primary {
-          background: #bef264;
-          color: #172018;
-          border-color: #bef264;
-        }
-
-        .message {
-          background: #ecfdf5;
-          color: #166534;
-          border: 1px solid #bbf7d0;
-          border-radius: 18px;
-          padding: 13px 15px;
-          margin-bottom: 16px;
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .error {
-          background: #fee2e2;
-          color: #991b1b;
-          border: 1px solid #fecaca;
-          border-radius: 18px;
-          padding: 13px 15px;
-          margin-bottom: 16px;
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .utilityGrid {
-          display: grid;
-          grid-template-columns: repeat(6, minmax(0, 1fr));
-          gap: 12px;
-          margin-bottom: 16px;
-        }
-
-        .utilityCard {
-          background: rgba(255,255,255,0.86);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 28px;
-          padding: 16px;
-          min-height: 132px;
-          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .utilityCard:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
-        }
-
-        .utilityIcon {
-          width: 42px;
-          height: 42px;
-          border-radius: 18px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: #f0fdf4;
-          font-size: 19px;
-          margin-bottom: 12px;
-        }
-
-        .utilityTitle {
-          color: #172018;
-          font-size: 15px;
-          font-weight: 950;
-          line-height: 1.2;
-        }
-
-        .utilityValue {
-          color: #172018;
-          font-size: 24px;
-          font-weight: 950;
-          letter-spacing: -0.07em;
-          margin-top: 7px;
-        }
-
-        .utilityText {
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 700;
-        }
-
-        .mainGrid {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 360px;
-          gap: 16px;
-          align-items: start;
-        }
-
-        .panel {
-          background: rgba(255,255,255,0.88);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 32px;
-          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
-          overflow: hidden;
-        }
-
-        .panelHeader {
-          padding: 18px 20px;
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .panelTitle {
-          margin: 0;
-          font-size: 19px;
-          font-weight: 950;
-          color: #172018;
-          letter-spacing: -0.04em;
-        }
-
-        .panelSub {
-          margin-top: 3px;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 700;
-        }
-
-        .panelBody {
-          padding: 16px;
-        }
-
-        .textLink {
-          border: none;
-          background: transparent;
-          color: #16a34a;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          padding: 0;
-        }
-
-        .list {
-          display: grid;
-          gap: 12px;
-        }
-
-        .grupoCard {
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          background: #fffdf7;
-          border-radius: 26px;
-          padding: 13px;
-          display: grid;
-          grid-template-columns: 82px minmax(0, 1fr);
-          gap: 14px;
-          align-items: center;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .grupoCard:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
-        }
-
-        .thumb {
-          width: 82px;
-          height: 82px;
-          border-radius: 24px;
-          background: #e8eadf;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #64748b;
-          font-weight: 950;
-          overflow: hidden;
-          flex: none;
-        }
-
-        .thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .itemTitle {
-          color: #172018;
-          font-size: 15px;
-          font-weight: 950;
-          line-height: 1.3;
-        }
-
-        .itemMeta {
-          color: #64748b;
-          font-size: 12px;
-          margin-top: 5px;
-          line-height: 1.45;
-          font-weight: 700;
-        }
-
-        .itemFooter {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin-top: 10px;
-          flex-wrap: wrap;
-        }
-
-        .price {
-          color: #16a34a;
-          font-weight: 950;
-          font-size: 14px;
-        }
-
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 999px;
-          padding: 6px 10px;
-          font-size: 11px;
-          font-weight: 950;
-          white-space: nowrap;
-        }
-
-        .badge-green {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .badge-neutral {
-          background: #f1f5f9;
-          color: #475569;
-        }
-
-        .financeBox {
-          background:
-            radial-gradient(circle at top right, rgba(190, 242, 100, 0.24), transparent 38%),
-            #172018;
-          color: #ffffff;
-          border-radius: 30px;
-          padding: 22px;
-        }
-
-        .financeLabel {
-          color: rgba(255,255,255,0.70);
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.10em;
-        }
-
-        .financeValue {
-          color: #bef264;
-          font-size: 34px;
-          font-weight: 950;
-          letter-spacing: -0.07em;
-          margin-top: 8px;
-        }
-
-        .financeText {
-          margin-top: 8px;
-          color: rgba(255,255,255,0.72);
-          font-size: 13px;
-          line-height: 1.55;
-          font-weight: 700;
-        }
-
-        .financeRows {
-          display: grid;
-          gap: 8px;
-          margin-top: 15px;
-        }
-
-        .financeRow {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          color: rgba(255,255,255,0.82);
-          font-size: 12px;
-          font-weight: 800;
-        }
-
-        .financeButton {
-          width: 100%;
-          border: none;
-          background: #bef264;
-          color: #172018;
-          border-radius: 999px;
-          padding: 12px 14px;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          margin-top: 16px;
-        }
-
-        .empty {
-          padding: 24px;
-          text-align: center;
-          color: #64748b;
-          font-size: 13px;
-          background: #fffdf7;
-          border-radius: 22px;
-          border: 1px dashed #cbd5e1;
-          font-weight: 700;
-        }
-
-        .notificationList {
-          display: grid;
-          gap: 11px;
-        }
-
-        .notification {
-          display: grid;
-          grid-template-columns: 44px minmax(0, 1fr);
-          gap: 12px;
-          align-items: flex-start;
-          padding: 12px;
-          border-radius: 22px;
-          background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .notification:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
-        }
-
-        .notificationIcon {
-          width: 44px;
-          height: 44px;
-          border-radius: 18px;
-          background: #f0fdf4;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 20px;
-        }
-
-        .notificationTitle {
-          color: #172018;
-          font-size: 13px;
-          font-weight: 950;
-          line-height: 1.35;
-        }
-
-        .notificationText {
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
-          margin-top: 3px;
-          font-weight: 700;
-        }
-
-        .notificationTime {
-          color: #94a3b8;
-          font-size: 11px;
-          margin-top: 5px;
-          font-weight: 800;
-        }
-
-        .modalOverlay {
-          position: fixed;
-          inset: 0;
-          z-index: 100;
-          background: rgba(15,23,42,0.52);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 18px;
-        }
-
-        .modal {
-          width: 100%;
-          max-width: 540px;
-          background: #ffffff;
-          border-radius: 28px;
-          box-shadow: 0 28px 90px rgba(15,23,42,0.28);
-          overflow: hidden;
-          max-height: 88vh;
-          overflow-y: auto;
-        }
-
-        .modalHeader {
-          padding: 20px;
-          border-bottom: 1px solid rgba(15,23,42,0.08);
-        }
-
-        .modalTitle {
-          margin: 0;
-          color: #172018;
-          font-size: 20px;
-          font-weight: 950;
-          letter-spacing: -0.04em;
-        }
-
-        .modalSub {
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 750;
-          line-height: 1.45;
-        }
-
-        .modalBody {
-          padding: 20px;
-          display: grid;
-          gap: 12px;
-        }
-
-        .field {
-          display: grid;
-          gap: 7px;
-        }
-
-        .label {
-          color: #475569;
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.07em;
-        }
-
-        .input {
-          width: 100%;
-          border: 1px solid rgba(15,23,42,0.08);
-          background: #fffdf7;
-          border-radius: 18px;
-          padding: 13px 14px;
-          font-size: 14px;
-          color: #172018;
-          outline: none;
-          font-weight: 750;
-        }
-
-        .modalActions {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          margin-top: 8px;
-        }
-
-        .btn {
-          border: none;
-          border-radius: 999px;
-          padding: 11px 14px;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .btn.dark {
-          background: #172018;
-          color: #ffffff;
-        }
-
-        .btn.light {
-          background: #eef2e5;
-          color: #475569;
-        }
-
-        .btn:disabled {
-          opacity: 0.62;
-          cursor: not-allowed;
-        }
-
-        @media (max-width: 1180px) {
-          .utilityGrid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 1040px) {
-          .mainGrid,
-          .heroContent {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 720px) {
-          .header {
-            padding: 9px 12px;
-          }
-
-          .brandTitle,
-          .brandSub {
-            display: none;
-          }
-
-          .container {
-            padding: 16px 12px 42px;
-          }
-
-          .hero,
-          .panel {
-            border-radius: 28px;
-          }
-
-          .hero {
-            padding: 22px;
-            min-height: auto;
-          }
-
-          .heroContent {
-            min-height: auto;
-          }
-
-          .utilityGrid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .grupoCard {
-            grid-template-columns: 74px minmax(0, 1fr);
-          }
-
-          .thumb {
-            width: 74px;
-            height: 74px;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .utilityGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .heroTitle {
-            font-size: 40px;
-          }
-
-          .brand img {
-            height: 38px;
-          }
-
-          .modalActions {
-            display: grid;
-          }
-
-          .btn {
-            width: 100%;
-          }
-        }
-      `}</style>
-
-      <header className="header">
-        <div className="headerInner">
-          <div className="brand" onClick={() => router.push('/guia/dashboard')}>
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-
-            <div>
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Painel do guia</div>
-            </div>
-          </div>
-
-          <div className="settingsWrap">
-            <button
-              type="button"
-              className="gearBtn"
-              onClick={() => setMenuAberto((aberto) => !aberto)}
-              aria-label="Configurações"
-            >
-              ⚙️
-            </button>
-
-            {menuAberto && (
-              <div className="settingsMenu">
-                <button
-                  type="button"
-                  className="menuButton"
-                  onClick={() => {
-                    setMenuAberto(false)
-                    router.push('/guia/perfil')
-                  }}
-                >
-                  👤 Perfil
-                </button>
-
-                <button
-                  type="button"
-                  className="menuButton"
-                  onClick={() => {
-                    setMenuAberto(false)
-                    router.push('/guia/financeiro')
-                  }}
-                >
-                  💰 Financeiro
-                </button>
-
-                <button
-                  type="button"
-                  className="menuButton"
-                  onClick={abrirAlterarSenha}
-                >
-                  🔐 Alterar senha
-                </button>
-
-                <button
-                  type="button"
-                  className="menuButton danger"
-                  onClick={sair}
-                >
-                  🚪 Sair
-                </button>
-              </div>
-            )}
-          </div>
+      <style>{estilos}</style>
+
+      <header className="topbar">
+        <div className="topbarInner">
+          <button
+            type="button"
+            className="brandHeader"
+            onClick={() => router.push('/guia/dashboard')}
+            aria-label="PrussikTrails"
+          >
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
+            <span className="brandTextBlock">
+              <span className="brandName">PrussikTrails</span>
+              <span className="brandSubtitle">Dashboard do guia</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="profileButton"
+            onClick={() => router.push('/guia/perfil')}
+            aria-label="Abrir perfil do guia"
+            title="Perfil"
+          >
+            👤
+          </button>
         </div>
       </header>
 
-      <div className="container">
+      <section className="container">
         <section className="hero">
-          <div className="heroContent">
-            <div>
-              <div className="eyebrow">Centro do guia</div>
+          <div className="heroTextBlock">
+            <span className="eyebrow">Área do guia</span>
+            <h1>
+              Olá, {primeiroNome(user.nome)}.
+              <br />
+              Suas trilhas, clientes e grupos em um só lugar.
+            </h1>
+            <p>
+              Acompanhe reservas, pagamentos, avaliações e movimentos da comunidade.
+              {ultimaAtualizacao ? ` Atualizado às ${ultimaAtualizacao}.` : ''}
+            </p>
+          </div>
 
-              <h1 className="heroTitle">
-                Oi, {primeiroNome(nomeUsuario(user))}.
-                <br />
-                Sua operação agora também mede <span>confiança.</span>
-              </h1>
-
-              <p className="heroText">
-                Acompanhe roteiros, reservas, grupos internos, saldo atualizado e reputação dos clientes em uma visão mais limpa.
-                {ultimaAtualizacao && (
-                  <>
-                    <br />
-                    Atualizado às {ultimaAtualizacao}.
-                  </>
-                )}
-              </p>
-
-              <div className="heroActions">
-                <button
-                  type="button"
-                  className="heroMiniBtn primary"
-                  onClick={() => router.push('/guia/roteiros/novo')}
-                >
-                  Criar roteiro
-                </button>
-
-                <button
-                  type="button"
-                  className="heroMiniBtn"
-                  onClick={() => router.push('/guia/financeiro')}
-                >
-                  Ver financeiro
-                </button>
-
-                <button
-                  type="button"
-                  className="heroMiniBtn"
-                  onClick={atualizarDashboard}
-                  disabled={atualizando}
-                >
-                  {atualizando ? 'Atualizando...' : 'Atualizar painel'}
-                </button>
-              </div>
-            </div>
-
-            <aside className="heroCard">
-              <div className="heroCardLabel">Reputação</div>
-
-              <div className="heroCardValue">
-                {formatarNota(avaliacaoResumo.mediaNota)}
-              </div>
-
-              <div className="heroStars">
-                {estrelas(avaliacaoResumo.mediaNota)}
-              </div>
-
-              <div className="heroCardText">
-                {avaliacaoResumo.total} avaliação(ões) recebida(s).
-              </div>
-
-              <div className="reputationBars">
-                {[
-                  {
-                    label: 'Segurança percebida',
-                    value: avaliacaoResumo.segurancaAltaPercentual
-                  },
-                  {
-                    label: 'Recomendação',
-                    value: avaliacaoResumo.percentualRecomendacao
-                  },
-                  {
-                    label: 'Orientações claras',
-                    value: avaliacaoResumo.orientacoesClarasPercentual
-                  },
-                  {
-                    label: 'Experiência superou',
-                    value: avaliacaoResumo.experienciaSuperouPercentual
-                  }
-                ].map((item) => (
-                  <div key={item.label}>
-                    <div className="repRowTop">
-                      <span>{item.label}</span>
-                      <strong>{formatarPercentual(item.value)}</strong>
-                    </div>
-                    <div className="repTrack">
-                      <div
-                        className="repFill"
-                        style={{ width: `${percentualSeguro(item.value)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </aside>
+          <div className="heroCard">
+            <span>Receita confirmada</span>
+            <strong>{formatarMoeda(stats.receitaConfirmada)}</strong>
+            <small>{stats.reservasConfirmadas} reserva(s) confirmada(s)</small>
           </div>
         </section>
 
-        {mensagem && <div className="message">{mensagem}</div>}
-        {erro && <div className="error">{erro}</div>}
+        {(mensagem || erro) && (
+          <div className={erro ? 'notice error' : 'notice'}>{erro || mensagem}</div>
+        )}
 
-        <section className="utilityGrid">
-          <article className="utilityCard" onClick={() => router.push('/guia/roteiros')}>
-            <div className="utilityIcon">🧭</div>
-            <div className="utilityTitle">Roteiros</div>
-            <div className="utilityValue">{stats.roteirosTotal}</div>
-            <div className="utilityText">
-              {stats.roteirosAtivos} ativo(s), {stats.roteirosPendentes} em análise.
-            </div>
+        <section className="quickGrid">
+          <button className="quickCard" type="button" onClick={() => router.push('/guia/roteiros')}>
+            <span className="quickIcon">🧭</span>
+            <strong>Meus roteiros</strong>
+            <small>{stats.roteirosAtivos} ativo(s), {stats.roteirosPendentes} em análise.</small>
+          </button>
+
+          <button className="quickCard" type="button" onClick={() => router.push('/guia/roteiros/novo')}>
+            <span className="quickIcon">＋</span>
+            <strong>Novo roteiro</strong>
+            <small>Criar uma nova experiência para clientes.</small>
+          </button>
+
+          <button className="quickCard" type="button" onClick={() => router.push('/guia/financeiro')}>
+            <span className="quickIcon">💰</span>
+            <strong>Financeiro</strong>
+            <small>{formatarMoeda(stats.receitaPendente)} pendente.</small>
+          </button>
+
+          <button className="quickCard" type="button" onClick={() => router.push('/guia/grupos')}>
+            <span className="quickIcon">💬</span>
+            <strong>Grupos</strong>
+            <small>Administrar grupos dos roteiros.</small>
+          </button>
+        </section>
+
+        <section className="statsGrid">
+          <article>
+            <span>Clientes</span>
+            <strong>{stats.clientes}</strong>
           </article>
-
-          <article className="utilityCard" onClick={() => router.push('/guia/grupos')}>
-            <div className="utilityIcon">💬</div>
-            <div className="utilityTitle">Grupos</div>
-            <div className="utilityValue">{stats.gruposTotal}</div>
-            <div className="utilityText">
-              {stats.gruposAtivos} ativo(s), {stats.clientesNosGrupos} cliente(s).
-            </div>
+          <article>
+            <span>Reservas pendentes</span>
+            <strong>{stats.reservasPendentes}</strong>
           </article>
-
-          <article className="utilityCard" onClick={() => router.push('/guia/reservas')}>
-            <div className="utilityIcon">🎒</div>
-            <div className="utilityTitle">Reservas</div>
-            <div className="utilityValue">{stats.reservasTotal}</div>
-            <div className="utilityText">
-              {stats.reservasConfirmadas} confirmada(s), {stats.reservasPendentes} aguardando.
-            </div>
+          <article>
+            <span>Avaliação média</span>
+            <strong>{stats.mediaAvaliacoes > 0 ? stats.mediaAvaliacoes.toFixed(1) : '-'}</strong>
           </article>
-
-          <article className="utilityCard" onClick={() => router.push('/guia/avaliacoes')}>
-            <div className="utilityIcon">⭐</div>
-            <div className="utilityTitle">Avaliações</div>
-            <div className="utilityValue">{formatarNota(avaliacaoResumo.mediaNota)}</div>
-            <div className="utilityText">
-              Ver painel completo de avaliações.
-            </div>
-          </article>
-
-          <article className="utilityCard" onClick={() => setModalAvisosAberto(true)}>
-            <div className="utilityIcon">🔔</div>
-            <div className="utilityTitle">Avisos</div>
-            <div className="utilityValue">{notificacoes.length}</div>
-            <div className="utilityText">
-              Pendências, reservas, grupos e alertas em um só lugar.
-            </div>
-          </article>
-
-          <article className="utilityCard" onClick={() => router.push('/guia/financeiro')}>
-            <div className="utilityIcon">💰</div>
-            <div className="utilityTitle">Saldo pendente</div>
-            <div className="utilityValue">{formatarMoeda(stats.saldoLiquidoGuia)}</div>
-            <div className="utilityText">
-              {stats.repassesRegistrados} repasse(s) já registrado(s) pelo ADMIN.
-            </div>
+          <article>
+            <span>COM</span>
+            <strong>{notificacoesCom.length}</strong>
           </article>
         </section>
 
         <section className="mainGrid">
-          <section className="panel">
-            <div className="panelHeader">
-              <div>
-                <h2 className="panelTitle">Grupos dos roteiros</h2>
-                <div className="panelSub">
-                  Acompanhe os grupos criados automaticamente para suas experiências.
+          <div className="leftColumn">
+            <section className="panel">
+              <div className="panelHeader">
+                <div>
+                  <h2>Roteiros recentes</h2>
+                  <p>Os últimos roteiros cadastrados ou movimentados.</p>
                 </div>
+                <button type="button" onClick={() => router.push('/guia/roteiros')}>Ver todos</button>
               </div>
 
-              <button type="button" className="textLink" onClick={() => router.push('/guia/grupos')}>
-                Ver grupos
-              </button>
-            </div>
-
-            <div className="panelBody">
-              {gruposRecentes.length === 0 ? (
-                <div className="empty">
-                  Nenhum grupo criado ainda. Ao cadastrar um roteiro, o grupo interno será preparado automaticamente.
-                </div>
-              ) : (
-                <div className="list">
-                  {gruposRecentes.map((grupo) => {
-                    const imagem = imagemRoteiro(grupo.roteiro)
+              <div className="list">
+                {roteirosRecentes.length === 0 ? (
+                  <div className="empty">Você ainda não tem roteiros ativos.</div>
+                ) : (
+                  roteirosRecentes.map((roteiro: Roteiro) => {
+                    const foto = fotoRoteiro(roteiro)
+                    const status = normalizar(roteiro.status) || 'ativo'
 
                     return (
-                      <article
-                        className="grupoCard"
-                        key={grupo.id}
-                        onClick={() => router.push(`/guia/grupos/${grupo.id}`)}
+                      <button
+                        type="button"
+                        key={roteiro.id}
+                        className="routeItem"
+                        onClick={() => router.push('/guia/roteiros')}
                       >
-                        <div className="thumb">
-                          {imagem ? (
-                            <img src={imagem} alt={tituloRoteiro(grupo.roteiro)} />
-                          ) : (
-                            'GP'
-                          )}
-                        </div>
-
-                        <div>
-                          <div className="itemTitle">
-                            {grupo.titulo || tituloRoteiro(grupo.roteiro)}
-                          </div>
-
-                          <div className="itemMeta">
-                            {localRoteiro(grupo.roteiro)}
-                            <br />
-                            {grupo.clientes_count || 0} cliente(s) · {grupo.mensagens_count || 0} mensagem(ns)
-                          </div>
-
-                          <div className="itemFooter">
-                            <span className="price">{grupo.notificacoes_nao_lidas || 0} aviso(s)</span>
-                            {badgeGrupo(grupo.status)}
-                          </div>
-                        </div>
-                      </article>
+                        <span className="thumb">
+                          {foto ? <img src={foto} alt={tituloRoteiro(roteiro)} /> : 'RT'}
+                        </span>
+                        <span className="itemContent">
+                          <strong>{tituloRoteiro(roteiro)}</strong>
+                          <small>
+                            {localRoteiro(roteiro)} · {formatarData(dataRoteiro(roteiro))}
+                          </small>
+                          <span className="itemFooter">
+                            <em>{formatarMoeda(precoRoteiro(roteiro))}</em>
+                            <b>{status}</b>
+                          </span>
+                        </span>
+                      </button>
                     )
-                  })}
+                  })
+                )}
+              </div>
+            </section>
+
+            <section className="panel panelSpacing">
+              <div className="panelHeader">
+                <div>
+                  <h2>Reservas recentes</h2>
+                  <p>Clientes, pagamentos e próximos compromissos.</p>
                 </div>
-              )}
-            </div>
-          </section>
-
-          <section className="financeBox">
-            <div className="financeLabel">Financeiro do guia</div>
-
-            <div className="financeValue">{formatarMoeda(stats.saldoLiquidoGuia)}</div>
-
-            <div className="financeText">
-              Saldo pendente atualizado após os repasses registrados pelo ADMIN.
-            </div>
-
-            <div className="financeRows">
-              <div className="financeRow">
-                <span>Valor bruto confirmado</span>
-                <strong>{formatarMoeda(stats.receitaBruta)}</strong>
+                <button type="button" onClick={() => router.push('/guia/financeiro')}>Financeiro</button>
               </div>
 
-              <div className="financeRow">
-                <span>Taxa PrussikTrails {stats.taxaPercentual}%</span>
-                <strong>{formatarMoeda(stats.taxaPlataforma)}</strong>
+              <div className="list">
+                {reservasRecentes.length === 0 ? (
+                  <div className="empty">Nenhuma reserva recente por enquanto.</div>
+                ) : (
+                  reservasRecentes.map((reserva: Reserva) => (
+                    <article className="reservationItem" key={reserva.id}>
+                      <span className="avatarMini">{(reserva.cliente_nome || 'C').slice(0, 1).toUpperCase()}</span>
+                      <span className="itemContent">
+                        <strong>{reserva.cliente_nome || 'Cliente'}</strong>
+                        <small>{reserva.roteiro_titulo || 'Roteiro'} · {formatarData(reserva.created_at)}</small>
+                        <span className="itemFooter">
+                          <em>{formatarMoeda(reserva.valor_total)}</em>
+                          <b className={pagamentoConfirmado(reserva) ? 'ok' : 'warn'}>
+                            {pagamentoConfirmado(reserva) ? 'Confirmada' : 'Pendente'}
+                          </b>
+                        </span>
+                      </span>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+          </div>
+
+          <aside className="rightColumn">
+            <section className="panel">
+              <div className="panelHeader compact">
+                <div>
+                  <h2>Notificações</h2>
+                  <p>Geral e COM.</p>
+                </div>
+                <div className="tabs">
+                  <button
+                    type="button"
+                    className={abaNotificacao === 'geral' ? 'active' : ''}
+                    onClick={() => setAbaNotificacao('geral')}
+                  >
+                    Geral
+                  </button>
+                  <button
+                    type="button"
+                    className={abaNotificacao === 'com' ? 'active' : ''}
+                    onClick={() => setAbaNotificacao('com')}
+                  >
+                    COM
+                  </button>
+                </div>
               </div>
 
-              <div className="financeRow">
-                <span>Líquido antes dos repasses</span>
-                <strong>{formatarMoeda(stats.valorLiquidoGuia)}</strong>
-              </div>
-
-              <div className="financeRow">
-                <span>Já repassado pelo ADMIN</span>
-                <strong>{formatarMoeda(stats.valorPagoGuia)}</strong>
-              </div>
-
-              <div className="financeRow">
-                <span>Repasses registrados</span>
-                <strong>{stats.repassesRegistrados}</strong>
-              </div>
-
-              <div className="financeRow">
-                <span>Saldo pendente</span>
-                <strong>{formatarMoeda(stats.saldoLiquidoGuia)}</strong>
-              </div>
-            </div>
-
-            <button type="button" className="financeButton" onClick={() => router.push('/guia/financeiro')}>
-              Acompanhar financeiro
-            </button>
-          </section>
-        </section>
-      </div>
-
-      {modalAvisosAberto && (
-        <div className="modalOverlay">
-          <div className="modal">
-            <div className="modalHeader">
-              <h2 className="modalTitle">Avisos do guia</h2>
-              <div className="modalSub">
-                Pendências, reservas, grupos e informações importantes para sua operação.
-              </div>
-            </div>
-
-            <div className="modalBody">
-              {notificacoes.length === 0 ? (
-                <div className="empty">Nenhum aviso por enquanto.</div>
-              ) : (
-                <div className="notificationList">
-                  {notificacoes.map((notificacao) => (
-                    <article
-                      className="notification"
+              <div className="notificationList">
+                {notificacoesAtivas.length === 0 ? (
+                  <div className="empty">Nenhuma notificação por enquanto.</div>
+                ) : (
+                  notificacoesAtivas.map((notificacao: Notificacao) => (
+                    <button
+                      type="button"
                       key={notificacao.id}
+                      className="notificationItem"
+                      onClick={() => notificacao.destino && router.push(notificacao.destino)}
+                    >
+                      <span>{notificacao.emoji}</span>
+                      <span>
+                        <strong>{notificacao.titulo}</strong>
+                        <small>{notificacao.texto}</small>
+                        <em>{tempoRelativo(notificacao.created_at)}</em>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section className="panel panelSpacing">
+              <div className="panelHeader compact">
+                <div>
+                  <h2>Avaliações</h2>
+                  <p>Últimos retornos dos clientes.</p>
+                </div>
+              </div>
+
+              <div className="reviewList">
+                {avaliacoesRecentes.length === 0 ? (
+                  <div className="empty">Nenhuma avaliação por enquanto.</div>
+                ) : (
+                  avaliacoesRecentes.map((avaliacao: Avaliacao) => (
+                    <button
+                      type="button"
+                      key={avaliacao.id}
+                      className="reviewItem"
                       onClick={() => {
-                        setModalAvisosAberto(false)
-                        if (notificacao.destino) router.push(notificacao.destino)
+                        if (avaliacao.cliente_id) router.push(`/cliente/publico/${avaliacao.cliente_id}`)
                       }}
                     >
-                      <div className="notificationIcon">{notificacao.emoji}</div>
-
-                      <div>
-                        <div className="notificationTitle">{notificacao.titulo}</div>
-                        <div className="notificationText">{notificacao.texto}</div>
-                        <div className="notificationTime">{tempoRelativo(notificacao.created_at)}</div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-
-              <div className="modalActions">
-                <button type="button" className="btn dark" onClick={() => setModalAvisosAberto(false)}>
-                  Fechar
-                </button>
+                      <span className="reviewAvatar">
+                        {avaliacao.cliente_avatar ? (
+                          <img src={avaliacao.cliente_avatar} alt={avaliacao.cliente_nome || 'Cliente'} />
+                        ) : (
+                          (avaliacao.cliente_nome || 'C').slice(0, 1).toUpperCase()
+                        )}
+                      </span>
+                      <span>
+                        <strong>{avaliacao.cliente_nome || 'Cliente'}</strong>
+                        <small>{'★'.repeat(Math.max(1, Math.round(notaAvaliacao(avaliacao))))}</small>
+                        <em>{avaliacao.comentario || avaliacao.observacao || 'Cliente avaliou sua experiência.'}</em>
+                      </span>
+                    </button>
+                  ))
+                )}
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </section>
 
-      {modalSenhaAberto && (
-        <div className="modalOverlay">
-          <form className="modal" onSubmit={alterarSenha}>
-            <div className="modalHeader">
-              <h2 className="modalTitle">Alterar senha</h2>
-              <div className="modalSub">
-                Atualize sua senha de acesso ao painel do guia.
-              </div>
-            </div>
-
-            <div className="modalBody">
-              <div className="field">
-                <label className="label">Senha atual</label>
-                <input
-                  className="input"
-                  type="password"
-                  value={senhaAtual}
-                  onChange={(event) => setSenhaAtual(event.target.value)}
-                  placeholder="Digite sua senha atual"
-                />
-              </div>
-
-              <div className="field">
-                <label className="label">Nova senha</label>
-                <input
-                  className="input"
-                  type="password"
-                  value={novaSenha}
-                  onChange={(event) => setNovaSenha(event.target.value)}
-                  placeholder="Mínimo de 6 caracteres"
-                />
-              </div>
-
-              <div className="field">
-                <label className="label">Confirmar nova senha</label>
-                <input
-                  className="input"
-                  type="password"
-                  value={confirmarSenha}
-                  onChange={(event) => setConfirmarSenha(event.target.value)}
-                  placeholder="Repita a nova senha"
-                />
-              </div>
-
-              <div className="modalActions">
-                <button type="submit" className="btn dark" disabled={alterandoSenha}>
-                  {alterandoSenha ? 'Alterando...' : 'Salvar nova senha'}
-                </button>
-
-                <button type="button" className="btn light" disabled={alterandoSenha} onClick={() => setModalSenhaAberto(false)}>
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      )}
+            <section className="panel panelSpacing actionsPanel">
+              <button type="button" onClick={atualizar} disabled={atualizando}>
+                {atualizando ? 'Atualizando...' : 'Atualizar dados'}
+              </button>
+              <button type="button" onClick={encerrarGruposFinalizados} disabled={encerrandoGrupos}>
+                {encerrandoGrupos ? 'Verificando...' : 'Encerrar grupos finalizados'}
+              </button>
+              <button type="button" className="ghost" onClick={sair}>
+                Sair
+              </button>
+            </section>
+          </aside>
+        </section>
+      </section>
     </main>
   )
 }
+
+const estilos = `
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f6f7f1;
+  }
+
+  .page {
+    min-height: 100vh;
+    min-height: 100dvh;
+    color: #172018;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
+      radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
+      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
+  }
+
+  .loadingPage {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
+    color: #475569;
+  }
+
+  .loadingCard {
+    display: grid;
+    justify-items: center;
+    gap: 12px;
+    padding: 28px;
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    box-shadow: 0 20px 50px rgba(23, 32, 24, 0.12);
+    font-size: 14px;
+    font-weight: 900;
+  }
+
+  .loadingCard img {
+    width: 58px;
+    height: 58px;
+    object-fit: contain;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(255, 253, 247, 0.86);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(18px);
+    padding: 10px 16px;
+  }
+
+  .topbarInner {
+    width: min(1180px, 100%);
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .brandHeader {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    min-width: 0;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .brandLogo {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+    flex: 0 0 auto;
+  }
+
+  .brandTextBlock {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1;
+  }
+
+  .brandName {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(26px, 3.8vw, 44px);
+    font-weight: 700;
+    color: #203c2e;
+    line-height: 0.92;
+    letter-spacing: -0.055em;
+    white-space: nowrap;
+  }
+
+  .brandSubtitle {
+    margin-top: 5px;
+    color: #7b8372;
+    font-size: clamp(10px, 1.4vw, 14px);
+    font-weight: 850;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .profileButton {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.78);
+    color: #172018;
+    cursor: pointer;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  .container {
+    width: min(1180px, 100%);
+    margin: 0 auto;
+    padding: 20px 16px 52px;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 18px;
+    align-items: stretch;
+    border-radius: 34px;
+    overflow: hidden;
+    padding: 26px;
+    color: #fff;
+    background:
+      linear-gradient(135deg, rgba(23, 32, 24, 0.76), rgba(23, 32, 24, 0.35)),
+      radial-gradient(circle at top right, rgba(132, 204, 22, 0.28), transparent 34%),
+      linear-gradient(135deg, #203322 0%, #647a49 46%, #d7c6a1 100%);
+    box-shadow: 0 24px 60px rgba(23, 32, 24, 0.16);
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    width: fit-content;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    background: rgba(255, 255, 255, 0.12);
+    color: #f7fee7;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .hero h1 {
+    margin: 0;
+    max-width: 720px;
+    font-size: clamp(36px, 5vw, 62px);
+    line-height: 0.96;
+    font-weight: 950;
+    letter-spacing: -0.07em;
+  }
+
+  .hero p {
+    max-width: 660px;
+    color: rgba(255, 255, 255, 0.80);
+    line-height: 1.55;
+    margin: 14px 0 0;
+    font-size: 14px;
+  }
+
+  .heroCard {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    border-radius: 26px;
+    padding: 18px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    backdrop-filter: blur(16px);
+  }
+
+  .heroCard span {
+    color: rgba(255, 255, 255, 0.74);
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+
+  .heroCard strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 30px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.06em;
+  }
+
+  .heroCard small {
+    margin-top: 8px;
+    color: rgba(255, 255, 255, 0.76);
+    font-weight: 750;
+  }
+
+  .notice {
+    margin-top: 14px;
+    border-radius: 18px;
+    padding: 13px 15px;
+    background: #ecfdf5;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+    font-size: 13px;
+    font-weight: 850;
+  }
+
+  .notice.error {
+    background: #fef2f2;
+    color: #991b1b;
+    border-color: #fecaca;
+  }
+
+  .quickGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .quickCard,
+  .statsGrid article,
+  .panel {
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+  }
+
+  .quickCard {
+    min-height: 132px;
+    border-radius: 26px;
+    padding: 16px;
+    text-align: left;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+
+  .quickCard:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
+  }
+
+  .quickIcon {
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18px;
+    background: #f0fdf4;
+    font-size: 19px;
+    margin-bottom: 12px;
+  }
+
+  .quickCard strong {
+    display: block;
+    color: #172018;
+    font-size: 15px;
+    line-height: 1.2;
+    font-weight: 950;
+  }
+
+  .quickCard small {
+    display: block;
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .statsGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .statsGrid article {
+    border-radius: 22px;
+    padding: 15px;
+  }
+
+  .statsGrid span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .statsGrid strong {
+    display: block;
+    margin-top: 8px;
+    color: #172018;
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.06em;
+  }
+
+  .mainGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .panel {
+    border-radius: 30px;
+    overflow: hidden;
+  }
+
+  .panelSpacing {
+    margin-top: 16px;
+  }
+
+  .panelHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .panelHeader.compact {
+    align-items: flex-start;
+  }
+
+  .panelHeader h2 {
+    margin: 0;
+    color: #172018;
+    font-size: 18px;
+    line-height: 1.1;
+    font-weight: 950;
+    letter-spacing: -0.04em;
+  }
+
+  .panelHeader p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 750;
+  }
+
+  .panelHeader button,
+  .actionsPanel button {
+    border: 0;
+    border-radius: 999px;
+    background: #172018;
+    color: #fff;
+    padding: 10px 14px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .panelHeader button:hover,
+  .actionsPanel button:hover {
+    filter: brightness(1.06);
+  }
+
+  .panelHeader button:disabled,
+  .actionsPanel button:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+  }
+
+  .list,
+  .notificationList,
+  .reviewList {
+    display: grid;
+    gap: 11px;
+    padding: 16px;
+  }
+
+  .routeItem,
+  .reservationItem,
+  .notificationItem,
+  .reviewItem {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 13px;
+    align-items: center;
+    width: 100%;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    border-radius: 24px;
+    background: #fffdf7;
+    padding: 12px;
+    text-align: left;
+    color: inherit;
+  }
+
+  .routeItem,
+  .notificationItem,
+  .reviewItem {
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+
+  .routeItem:hover,
+  .notificationItem:hover,
+  .reviewItem:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  }
+
+  .thumb {
+    width: 76px;
+    height: 76px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 22px;
+    background: #e8eadf;
+    color: #64748b;
+    font-weight: 950;
+    overflow: hidden;
+  }
+
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .avatarMini,
+  .reviewAvatar {
+    width: 52px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #f0fdf4;
+    color: #166534;
+    font-weight: 950;
+    overflow: hidden;
+    justify-self: center;
+  }
+
+  .reviewAvatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .itemContent {
+    display: block;
+    min-width: 0;
+  }
+
+  .itemContent strong,
+  .notificationItem strong,
+  .reviewItem strong {
+    display: block;
+    color: #172018;
+    font-size: 14px;
+    font-weight: 950;
+    line-height: 1.3;
+  }
+
+  .itemContent small,
+  .notificationItem small,
+  .reviewItem small {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 750;
+  }
+
+  .itemFooter {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 9px;
+  }
+
+  .itemFooter em {
+    color: #16a34a;
+    font-style: normal;
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .itemFooter b {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 6px 9px;
+    background: #eef2e5;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .itemFooter b.ok {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .itemFooter b.warn {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: #eef2e5;
+  }
+
+  .tabs button {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 11px;
+    background: transparent;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .tabs button.active {
+    background: #172018;
+    color: #fff;
+  }
+
+  .notificationItem {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .notificationItem > span:first-child {
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 17px;
+    background: #f0fdf4;
+    font-size: 19px;
+  }
+
+  .notificationItem em,
+  .reviewItem em {
+    display: block;
+    margin-top: 5px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1.35;
+  }
+
+  .reviewItem {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .actionsPanel {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+  }
+
+  .actionsPanel button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .actionsPanel button.ghost {
+    background: rgba(255, 255, 255, 0.72);
+    color: #991b1b;
+    border: 1px solid rgba(153, 27, 27, 0.16);
+  }
+
+  .empty {
+    padding: 22px;
+    border-radius: 20px;
+    border: 1px dashed #cbd5e1;
+    background: #fffdf7;
+    color: #64748b;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 750;
+  }
+
+  @media (max-width: 1040px) {
+    .quickGrid,
+    .statsGrid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .mainGrid,
+    .hero {
+      grid-template-columns: 1fr;
+    }
+
+    .heroCard {
+      min-height: 130px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .topbar {
+      padding: 8px 12px;
+    }
+
+    .brandLogo {
+      width: 30px;
+      height: 30px;
+    }
+
+    .brandName {
+      font-size: 25px;
+      line-height: 0.9;
+    }
+
+    .brandSubtitle {
+      margin-top: 4px;
+      font-size: 9px;
+      letter-spacing: 0.11em;
+    }
+
+    .profileButton {
+      width: 36px;
+      height: 36px;
+    }
+
+    .container {
+      padding: 14px 12px 40px;
+    }
+
+    .hero {
+      border-radius: 26px;
+      padding: 20px;
+    }
+
+    .hero h1 {
+      font-size: 34px;
+      letter-spacing: -0.065em;
+    }
+
+    .hero p {
+      font-size: 13px;
+    }
+
+    .quickGrid,
+    .statsGrid {
+      grid-template-columns: 1fr;
+    }
+
+    .quickCard {
+      min-height: auto;
+    }
+
+    .panel {
+      border-radius: 24px;
+    }
+
+    .panelHeader {
+      padding: 16px;
+    }
+
+    .routeItem,
+    .reservationItem {
+      grid-template-columns: 64px minmax(0, 1fr);
+    }
+
+    .thumb {
+      width: 64px;
+      height: 64px;
+      border-radius: 20px;
+    }
+
+    .itemFooter {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .panelHeader.compact {
+      flex-direction: column;
+    }
+  }
+`

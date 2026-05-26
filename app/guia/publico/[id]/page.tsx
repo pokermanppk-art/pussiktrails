@@ -65,7 +65,7 @@ type Avaliacao = {
   cliente_avatar?: string | null
   created_at?: string | null
   status_moderacao?: string | null
-  [key: string]: any
+  [key: string]: unknown
 }
 
 type Stats = {
@@ -78,6 +78,18 @@ type Stats = {
   totalAvaliacoes: number
 }
 
+type MedalhaGuia = {
+  codigo: string
+  nome: string
+  descricao: string
+  svg: string
+  fallbackSvg?: string
+  desbloqueada: boolean
+  destaque?: boolean
+}
+
+type ReportReason = 'seguranca' | 'conduta' | 'informacao' | 'pagamento' | 'outro'
+
 const statsInicial: Stats = {
   totalKm: 0,
   totalRoteiros: 0,
@@ -88,123 +100,178 @@ const statsInicial: Stats = {
   totalAvaliacoes: 0
 }
 
-const METAS_KM_GUIA = [
-  { km: 32, nome: 'Bronze', icone: '🥉' },
-  { km: 96, nome: 'Prata', icone: '🥈' },
-  { km: 192, nome: 'Ouro', icone: '🥇' },
-  { km: 384, nome: 'Platina', icone: '💎' },
-  { km: 768, nome: 'Elite', icone: '⚡' },
-  { km: 1152, nome: 'Master', icone: '👑' },
-  { km: 1920, nome: 'Lenda', icone: '🌟' },
-  { km: 3840, nome: 'Lenda Absoluta', icone: '🔥' }
+const PROGRESSAO_BASE = '/medalhas/progressao'
+const BETA_BASE = '/medalhas/iniciais_jornada'
+const BETA_FALLBACK_BASE = '/medalhas/prussik_svg_pack/iniciais_jornada'
+
+const marcosKmGuia = [
+  { km: 0, nome: 'Início' },
+  { km: 32, nome: 'Bronze' },
+  { km: 96, nome: 'Prata' },
+  { km: 192, nome: 'Ouro' },
+  { km: 384, nome: 'Platina' },
+  { km: 768, nome: 'Onyx' },
+  { km: 1152, nome: 'Mestre' },
+  { km: 1920, nome: 'Lenda' },
+  { km: 3840, nome: 'Especial' },
+  { km: 7680, nome: 'Mapa Lendário' }
 ]
+
+function normalizar(valor: unknown): string {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function formatarMoeda(valor: unknown): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).format(Number(valor || 0))
+}
+
+function formatarData(valor?: string | null): string {
+  if (!valor) return ''
+  const data = new Date(valor)
+  if (Number.isNaN(data.getTime())) return ''
+  return data.toLocaleDateString('pt-BR')
+}
+
+function pagamentoConfirmado(reserva: Reserva): boolean {
+  const pagamento = normalizar(reserva.pagamento_status)
+  const status = normalizar(reserva.status)
+
+  return (
+    pagamento === 'pago' ||
+    pagamento === 'confirmado' ||
+    pagamento === 'aprovado' ||
+    pagamento === 'paid' ||
+    pagamento === 'approved' ||
+    status === 'confirmada' ||
+    status === 'realizada' ||
+    status === 'pago' ||
+    status === 'paga'
+  )
+}
+
+function roteiroAtivo(roteiro: Roteiro): boolean {
+  const status = normalizar(roteiro.status)
+
+  if (!status) return true
+
+  return (
+    status === 'ativo' ||
+    status === 'aprovado' ||
+    status === 'aprovada' ||
+    status === 'publicado' ||
+    status === 'publicada'
+  )
+}
+
+function fotoRoteiro(roteiro: Roteiro): string {
+  return roteiro.foto_capa || roteiro.foto_url || roteiro.imagem_url || ''
+}
+
+function tituloRoteiro(roteiro: Roteiro): string {
+  return roteiro.titulo || roteiro.nome || 'Roteiro'
+}
+
+function localRoteiro(roteiro: Roteiro): string {
+  return roteiro.local || roteiro.localizacao || 'Local a confirmar'
+}
+
+function kmRoteiro(roteiro: Roteiro): number {
+  return Number(roteiro.km || roteiro.distancia_km || 0)
+}
+
+function valorRoteiro(roteiro: Roteiro): number {
+  return Number(roteiro.preco || roteiro.valor || 0)
+}
+
+function primeiroNome(nome?: string | null): string {
+  const limpo = String(nome || '').trim()
+  if (!limpo) return 'Guia'
+  return limpo.split(' ')[0] || limpo
+}
+
+function estrelas(nota?: number | null): string {
+  const valor = Math.max(0, Math.min(5, Math.round(Number(nota || 0))))
+  return '★'.repeat(valor) + '☆'.repeat(5 - valor)
+}
+
+function calcularProgressoKm(km: number): number {
+  let anterior = 0
+  let proximo = marcosKmGuia[marcosKmGuia.length - 1].km
+
+  for (const marco of marcosKmGuia) {
+    if (km >= marco.km) anterior = marco.km
+    if (km < marco.km) {
+      proximo = marco.km
+      break
+    }
+  }
+
+  if (proximo <= anterior) return 100
+  return Math.max(0, Math.min(100, Math.round(((km - anterior) / (proximo - anterior)) * 100)))
+}
+
+function nivelPorKm(km: number): string {
+  let atual = marcosKmGuia[0].nome
+  for (const marco of marcosKmGuia) {
+    if (km >= marco.km) atual = marco.nome
+  }
+  return atual
+}
+
+function MedalhaImagem({ src, fallback, alt }: { src: string; fallback?: string; alt: string }) {
+  const [fallbackUsado, setFallbackUsado] = useState(false)
+  const [erro, setErro] = useState(false)
+
+  if (erro) return <span className="medalFallback">🏅</span>
+
+  return (
+    <img
+      src={fallbackUsado && fallback ? fallback : src}
+      alt={alt}
+      className="medalSvg"
+      onError={() => {
+        if (fallback && !fallbackUsado) {
+          setFallbackUsado(true)
+          return
+        }
+        setErro(true)
+      }}
+    />
+  )
+}
 
 export default function PerfilPublicoGuiaPage() {
   const params = useParams()
   const router = useRouter()
-
   const guiaId = String(params?.id || '')
 
   const [guia, setGuia] = useState<Guia | null>(null)
   const [roteiros, setRoteiros] = useState<Roteiro[]>([])
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([])
   const [stats, setStats] = useState<Stats>(statsInicial)
-
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
+  const [reportAberto, setReportAberto] = useState(false)
+  const [reportMotivo, setReportMotivo] = useState<ReportReason>('seguranca')
+  const [reportTexto, setReportTexto] = useState('')
+  const [reportEnviado, setReportEnviado] = useState(false)
 
   useEffect(() => {
     if (!guiaId) return
     carregarPerfil()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guiaId])
 
-  const normalizar = (valor: any) => {
-    return String(valor || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-  }
-
-  const formatarMoeda = (valor: any) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(Number(valor || 0))
-  }
-
-  const formatarData = (valor?: string | null) => {
-    if (!valor) return ''
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return ''
-
-    return data.toLocaleDateString('pt-BR')
-  }
-
-  const pagamentoConfirmado = (reserva: Reserva) => {
-    const pagamento = normalizar(reserva.pagamento_status)
-    const status = normalizar(reserva.status)
-
-    return (
-      pagamento === 'pago' ||
-      pagamento === 'confirmado' ||
-      pagamento === 'aprovado' ||
-      pagamento === 'paid' ||
-      pagamento === 'approved' ||
-      status === 'confirmada' ||
-      status === 'realizada' ||
-      status === 'pago' ||
-      status === 'paga'
-    )
-  }
-
-  const roteiroAtivo = (roteiro: Roteiro) => {
-    const status = normalizar(roteiro.status)
-
-    if (!status) return true
-
-    return (
-      status === 'ativo' ||
-      status === 'aprovado' ||
-      status === 'aprovada' ||
-      status === 'publicado' ||
-      status === 'publicada'
-    )
-  }
-
-  const fotoGuia = () => {
-    return guia?.avatar_url || guia?.foto_url || guia?.imagem_url || ''
-  }
-
-  const nomeGuia = () => {
-    return guia?.nome || guia?.email || 'Guia PrussikTrails'
-  }
-
-  const bioGuia = () => {
-    return guia?.bio_guia || guia?.bio || ''
-  }
-
-  const fotoRoteiro = (roteiro: Roteiro) => {
-    return roteiro.foto_capa || roteiro.foto_url || roteiro.imagem_url || ''
-  }
-
-  const tituloRoteiro = (roteiro: Roteiro) => {
-    return roteiro.titulo || roteiro.nome || 'Roteiro'
-  }
-
-  const localRoteiro = (roteiro: Roteiro) => {
-    return roteiro.local || roteiro.localizacao || 'Local a confirmar'
-  }
-
-  const kmRoteiro = (roteiro: Roteiro) => {
-    return Number(roteiro.km || roteiro.distancia_km || 0)
-  }
-
-  const valorRoteiro = (roteiro: Roteiro) => {
-    return Number(roteiro.preco || roteiro.valor || 0)
-  }
+  const fotoGuia = () => guia?.avatar_url || guia?.foto_url || guia?.imagem_url || ''
+  const nomeGuia = () => guia?.nome || guia?.email || 'Guia PrussikTrails'
+  const bioGuia = () => guia?.bio_guia || guia?.bio || ''
 
   const guiaPioneiroBeta = () => {
     return Boolean(
@@ -212,43 +279,8 @@ export default function PerfilPublicoGuiaPage() {
         guia?.guia_pioneiro_beta ||
         guia?.guia_beta ||
         guia?.beneficio_taxa_beta_ativo ||
-        guia?.tipo === 'guia'
+        Number(guia?.taxa_plataforma_percentual || 0) === 5
     )
-  }
-
-  const getNivelPorKm = (km: number) => {
-    for (let i = METAS_KM_GUIA.length - 1; i >= 0; i--) {
-      if (km >= METAS_KM_GUIA[i].km) return METAS_KM_GUIA[i]
-    }
-
-    return METAS_KM_GUIA[0]
-  }
-
-  const calcularProximoMarcoKm = (km: number) => {
-    for (const meta of METAS_KM_GUIA) {
-      if (km < meta.km) return meta.km
-    }
-
-    return METAS_KM_GUIA[METAS_KM_GUIA.length - 1].km
-  }
-
-  const calcularMarcoAnteriorKm = (km: number) => {
-    let anterior = 0
-
-    for (const meta of METAS_KM_GUIA) {
-      if (km >= meta.km) anterior = meta.km
-    }
-
-    return anterior
-  }
-
-  const calcularProgressoKm = (km: number) => {
-    const proximo = calcularProximoMarcoKm(km)
-    const anterior = calcularMarcoAnteriorKm(km)
-
-    if (proximo <= anterior) return 100
-
-    return Math.max(0, Math.min(((km - anterior) / (proximo - anterior)) * 100, 100))
   }
 
   const buscarRoteirosDoGuia = async (id: string) => {
@@ -263,7 +295,7 @@ export default function PerfilPublicoGuiaPage() {
         .limit(100)
 
       if (!error && data) {
-        ;(data as Roteiro[]).forEach((roteiro) => {
+        ;(data as Roteiro[]).forEach((roteiro: Roteiro) => {
           if (roteiro?.id) mapa.set(roteiro.id, roteiro)
         })
       }
@@ -282,7 +314,7 @@ export default function PerfilPublicoGuiaPage() {
         .select('*')
         .eq(campo, id)
         .order('created_at', { ascending: false })
-        .limit(20)
+        .limit(30)
 
       if (!error && data) {
         lista = data as Avaliacao[]
@@ -290,7 +322,7 @@ export default function PerfilPublicoGuiaPage() {
       }
     }
 
-    lista = lista.filter((avaliacao) => {
+    lista = lista.filter((avaliacao: Avaliacao) => {
       const status = normalizar(avaliacao.status_moderacao)
       if (!status) return true
       return status === 'aprovada' || status === 'aprovado'
@@ -299,7 +331,7 @@ export default function PerfilPublicoGuiaPage() {
     const clienteIds = Array.from(
       new Set(
         lista
-          .map((avaliacao) => avaliacao.cliente_id)
+          .map((avaliacao: Avaliacao) => avaliacao.cliente_id)
           .filter(Boolean) as string[]
       )
     )
@@ -308,16 +340,16 @@ export default function PerfilPublicoGuiaPage() {
 
     const { data: clientes } = await supabase
       .from('users')
-      .select('id, nome, email, avatar_url')
+      .select('id, nome, email, avatar_url, foto_url, imagem_url')
       .in('id', clienteIds)
 
-    return lista.map((avaliacao) => {
+    return lista.map((avaliacao: Avaliacao) => {
       const cliente = (clientes || []).find((item: any) => item.id === avaliacao.cliente_id)
 
       return {
         ...avaliacao,
-        cliente_nome: cliente?.nome || cliente?.email || 'Cliente',
-        cliente_avatar: cliente?.avatar_url || ''
+        cliente_nome: cliente?.nome || cliente?.email || 'Cliente PrussikTrails',
+        cliente_avatar: cliente?.avatar_url || cliente?.foto_url || cliente?.imagem_url || ''
       }
     })
   }
@@ -349,8 +381,7 @@ export default function PerfilPublicoGuiaPage() {
       const roteirosDoGuia = await buscarRoteirosDoGuia(guiaId)
       setRoteiros(roteirosDoGuia)
 
-      const roteiroIds = roteirosDoGuia.map((roteiro) => roteiro.id).filter(Boolean)
-
+      const roteiroIds = roteirosDoGuia.map((roteiro: Roteiro) => roteiro.id).filter(Boolean)
       let reservas: Reserva[] = []
 
       if (roteiroIds.length > 0) {
@@ -359,30 +390,22 @@ export default function PerfilPublicoGuiaPage() {
           .select('*')
           .in('roteiro_id', roteiroIds)
 
-        if (!reservasError && reservasData) {
-          reservas = reservasData as Reserva[]
-        }
+        if (!reservasError && reservasData) reservas = reservasData as Reserva[]
       }
 
       const avaliacoesDoGuia = await buscarAvaliacoesDoGuia(guiaId)
       setAvaliacoes(avaliacoesDoGuia)
 
       const totalKm = roteirosDoGuia.reduce(
-        (total, roteiro) => total + kmRoteiro(roteiro),
+        (total: number, roteiro: Roteiro) => total + kmRoteiro(roteiro),
         0
       )
-
-      const reservasConfirmadas = reservas.filter(pagamentoConfirmado)
-
-      const clientesUnicos = new Set(
-        reservas
-          .map((reserva) => reserva.cliente_id)
-          .filter(Boolean)
-      )
-
+      const reservasConfirmadas = reservas.filter((reserva: Reserva) => pagamentoConfirmado(reserva))
+      const clientesUnicos = new Set(reservas.map((reserva: Reserva) => reserva.cliente_id).filter(Boolean))
       const avaliacaoMedia =
         avaliacoesDoGuia.length > 0
-          ? avaliacoesDoGuia.reduce((total, avaliacao) => total + Number(avaliacao.nota || 0), 0) / avaliacoesDoGuia.length
+          ? avaliacoesDoGuia.reduce((total: number, avaliacao: Avaliacao) => total + Number(avaliacao.nota || 0), 0) /
+            avaliacoesDoGuia.length
           : 0
 
       setStats({
@@ -402,101 +425,96 @@ export default function PerfilPublicoGuiaPage() {
     }
   }
 
-  const nivelAtual = useMemo(() => {
-    return getNivelPorKm(stats.totalKm)
-  }, [stats.totalKm])
+  const progressoKm = useMemo(() => calcularProgressoKm(stats.totalKm), [stats.totalKm])
+  const nivelAtual = useMemo(() => nivelPorKm(stats.totalKm), [stats.totalKm])
+  const principaisRoteiros = useMemo(() => roteiros.slice(0, 3), [roteiros])
 
-  const proximoMarco = useMemo(() => {
-    return calcularProximoMarcoKm(stats.totalKm)
-  }, [stats.totalKm])
+  const medalhas: MedalhaGuia[] = useMemo(
+    () => [
+      {
+        codigo: 'guia_pioneiro_beta',
+        nome: 'Guia Pioneiro Beta',
+        descricao: 'Reconhecimento para guias que participaram da fase inicial da PrussikTrails.',
+        svg: `${BETA_BASE}/04_guia_pioneiro_beta.svg`,
+        fallbackSvg: `${BETA_FALLBACK_BASE}/04_guia_pioneiro_beta.svg`,
+        desbloqueada: guiaPioneiroBeta(),
+        destaque: true
+      },
+      {
+        codigo: 'guia_em_jornada',
+        nome: 'Guia em Jornada',
+        descricao: 'Perfil público ativo na comunidade.',
+        svg: `${PROGRESSAO_BASE}/01_mochila_de_partida.svg`,
+        desbloqueada: true
+      },
+      {
+        codigo: 'condutor_de_base',
+        nome: 'Condutor de Base',
+        descricao: 'Primeiros roteiros estruturados no app.',
+        svg: `${PROGRESSAO_BASE}/02_barraca_base.svg`,
+        desbloqueada: stats.totalRoteiros >= 1
+      },
+      {
+        codigo: 'comunidade_aquecida',
+        nome: 'Comunidade Aquecida',
+        descricao: 'Reservas e experiências começam a formar histórico.',
+        svg: `${PROGRESSAO_BASE}/03_fogueira_da_jornada.svg`,
+        desbloqueada: stats.reservasConfirmadas >= 1
+      },
+      {
+        codigo: 'lanterna_da_serra',
+        nome: 'Lanterna da Serra',
+        descricao: 'Presença ativa em orientação e condução.',
+        svg: `${PROGRESSAO_BASE}/04_lanterna_da_serra.svg`,
+        desbloqueada: stats.totalKm >= 96
+      },
+      {
+        codigo: 'rumo_certo',
+        nome: 'Rumo Certo',
+        descricao: 'Roteiros com leitura clara de jornada e segurança.',
+        svg: `${PROGRESSAO_BASE}/05_rumo_certo.svg`,
+        desbloqueada: stats.totalKm >= 192
+      },
+      {
+        codigo: 'prussik',
+        nome: 'Técnica Prussik',
+        descricao: 'Símbolo de preparo, cuidado e progressão.',
+        svg: `${PROGRESSAO_BASE}/06_prussik.svg`,
+        desbloqueada: stats.totalKm >= 384
+      },
+      {
+        codigo: 'cachoeira_viva',
+        nome: 'Cachoeira Viva',
+        descricao: 'Experiências que criam memória e retorno.',
+        svg: `${PROGRESSAO_BASE}/07_cachoeira_viva.svg`,
+        desbloqueada: stats.totalClientes >= 5
+      },
+      {
+        codigo: 'amanhecer_no_cume',
+        nome: 'Amanhecer no Cume',
+        descricao: 'Boa reputação registrada pela comunidade.',
+        svg: `${PROGRESSAO_BASE}/08_amanhecer_no_cume.svg`,
+        desbloqueada: stats.avaliacaoMedia >= 4.5 && stats.totalAvaliacoes >= 3
+      },
+      {
+        codigo: 'mapa_lendario',
+        nome: 'Mapa Lendário',
+        descricao: 'Histórico consolidado de condução e presença outdoor.',
+        svg: `${PROGRESSAO_BASE}/10_mapa_lendario.svg`,
+        desbloqueada: stats.totalKm >= 768
+      }
+    ],
+    [guia, stats]
+  )
 
-  const progressoKm = useMemo(() => {
-    return calcularProgressoKm(stats.totalKm)
-  }, [stats.totalKm])
-
-  const conquistasKm = [
-    { nome: 'Primeira trilha', icone: '🥾', km: 0, desbloqueado: stats.totalKm >= 0 },
-    { nome: 'Explorador', icone: '🌱', km: 32, desbloqueado: stats.totalKm >= 32 },
-    { nome: 'Caminhante', icone: '🚶', km: 96, desbloqueado: stats.totalKm >= 96 },
-    { nome: 'Aventureiro', icone: '🧭', km: 384, desbloqueado: stats.totalKm >= 384 },
-    { nome: 'Mestre', icone: '👑', km: 1152, desbloqueado: stats.totalKm >= 1152 },
-    { nome: 'Lenda', icone: '🌟', km: 1920, desbloqueado: stats.totalKm >= 1920 },
-    { nome: 'Lenda Absoluta', icone: '🔥', km: 3840, desbloqueado: stats.totalKm >= 3840 }
-  ]
-
-  const medalhas = [
-    {
-      nome: 'Guia Pioneiro Beta',
-      icone: '🏕️',
-      descricao: 'Reconhecimento para guias que participam da construção inicial da comunidade PrussikTrails.',
-      desbloqueado: guiaPioneiroBeta(),
-      especial: true
-    },
-    {
-      nome: 'KM Guiados',
-      icone: '👣',
-      descricao: `${stats.totalKm.toFixed(1)} km guiados`,
-      desbloqueado: stats.totalKm >= 32
-    },
-    {
-      nome: 'Guias Avaliados',
-      icone: '⭐',
-      descricao: `${stats.totalAvaliacoes} avaliação(ões) recebida(s)`,
-      desbloqueado: stats.totalAvaliacoes >= 1
-    },
-    {
-      nome: 'Trilhas Guiadas',
-      icone: '🥾',
-      descricao: `${stats.totalRoteiros} roteiro(s) publicado(s)`,
-      desbloqueado: stats.totalRoteiros >= 1
-    },
-    {
-      nome: 'Clientes Atendidos',
-      icone: '👥',
-      descricao: `${stats.totalClientes} cliente(s) atendido(s)`,
-      desbloqueado: stats.totalClientes >= 1
-    }
-  ]
-
-  const principaisRoteiros = roteiros.slice(0, 3)
+  function enviarReporte() {
+    setReportEnviado(true)
+  }
 
   if (carregando) {
     return (
       <main className="loading">
-        <style>{`
-          * { box-sizing: border-box; }
-          body {
-            margin: 0;
-            background: #f6f7f1;
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          }
-          .loading {
-            min-height: 100vh;
-            min-height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background:
-              radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
-              radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
-              linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
-            color: #172018;
-          }
-          .loadingCard {
-            background: rgba(255,255,255,0.92);
-            border: 1px solid rgba(15,23,42,0.06);
-            border-radius: 30px;
-            padding: 28px;
-            text-align: center;
-            box-shadow: 0 20px 50px rgba(15,23,42,0.08);
-          }
-          .loadingCard img {
-            height: 64px;
-            width: auto;
-            margin-bottom: 12px;
-          }
-        `}</style>
-
+        <style>{estilos}</style>
         <div className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
           <div>Carregando perfil público...</div>
@@ -508,67 +526,12 @@ export default function PerfilPublicoGuiaPage() {
   if (erro || !guia) {
     return (
       <main className="emptyPage">
-        <style>{`
-          * { box-sizing: border-box; }
-          body {
-            margin: 0;
-            background: #f6f7f1;
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          }
-          .emptyPage {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background:
-              radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
-              linear-gradient(180deg,#fffdf7 0%,#eef2e5 100%);
-            padding: 20px;
-          }
-          .emptyCard {
-            max-width: 420px;
-            width: 100%;
-            background: #ffffff;
-            border-radius: 30px;
-            padding: 28px;
-            text-align: center;
-            box-shadow: 0 20px 50px rgba(15,23,42,0.08);
-          }
-          .emptyCard img {
-            height: 64px;
-            margin-bottom: 14px;
-          }
-          .emptyTitle {
-            font-size: 24px;
-            font-weight: 950;
-            color: #172018;
-            letter-spacing: -0.05em;
-            margin: 0;
-          }
-          .emptyText {
-            color: #64748b;
-            font-size: 14px;
-            line-height: 1.55;
-            margin: 10px 0 18px;
-            font-weight: 700;
-          }
-          .btn {
-            border: none;
-            background: #172018;
-            color: #ffffff;
-            border-radius: 999px;
-            padding: 12px 16px;
-            font-size: 13px;
-            font-weight: 950;
-            cursor: pointer;
-          }
-        `}</style>
-
+        <style>{estilos}</style>
         <div className="emptyCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <h1 className="emptyTitle">Perfil não encontrado</h1>
-          <p className="emptyText">{erro || 'Não foi possível localizar este guia.'}</p>
-          <button type="button" className="btn" onClick={() => router.push('/roteiros')}>
+          <h1>Perfil não encontrado</h1>
+          <p>{erro || 'Não foi possível localizar este guia.'}</p>
+          <button type="button" onClick={() => router.push('/roteiros')}>
             Ver roteiros
           </button>
         </div>
@@ -578,727 +541,24 @@ export default function PerfilPublicoGuiaPage() {
 
   return (
     <main className="page">
-      <style>{`
-        * { box-sizing: border-box; }
-
-        body {
-          margin: 0;
-          background: #f6f7f1;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        .page {
-          min-height: 100vh;
-          min-height: 100dvh;
-          background:
-            radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
-            linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
-          color: #172018;
-        }
-
-        .header {
-          position: sticky;
-          top: 0;
-          z-index: 50;
-          background: rgba(255,253,247,0.88);
-          border-bottom: 1px solid rgba(15,23,42,0.06);
-          backdrop-filter: blur(18px);
-          padding: 10px 16px;
-        }
-
-        .headerInner {
-          max-width: 1180px;
-          margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          cursor: pointer;
-          min-width: 0;
-        }
-
-        .brand img {
-          height: 42px;
-          width: auto;
-          object-fit: contain;
-          display: block;
-        }
-
-        .brandTitle {
-          color: #dc2626;
-          font-size: 17px;
-          font-weight: 950;
-          line-height: 1;
-          letter-spacing: -0.05em;
-        }
-
-        .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 800;
-          margin-top: 3px;
-        }
-
-        .headerActions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .headerBtn {
-          border: 1px solid rgba(15,23,42,0.08);
-          background: rgba(255,255,255,0.84);
-          color: #172018;
-          border-radius: 999px;
-          padding: 10px 13px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 900;
-          white-space: nowrap;
-        }
-
-        .headerBtn.dark {
-          background: #172018;
-          color: #ffffff;
-          border-color: #172018;
-        }
-
-        .container {
-          max-width: 1180px;
-          margin: 0 auto;
-          padding: 22px 16px 54px;
-        }
-
-        .hero {
-          position: relative;
-          overflow: hidden;
-          border-radius: 38px;
-          padding: 28px;
-          background:
-            linear-gradient(135deg, rgba(23,32,24,0.78), rgba(23,32,24,0.34)),
-            radial-gradient(circle at top right, rgba(190,242,100,0.30), transparent 34%),
-            linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
-          color: #ffffff;
-          box-shadow: 0 24px 60px rgba(23,32,24,0.18);
-          margin-bottom: 16px;
-        }
-
-        .heroGrid {
-          display: grid;
-          grid-template-columns: 180px minmax(0,1fr) 280px;
-          gap: 22px;
-          align-items: end;
-        }
-
-        .avatar {
-          width: 180px;
-          height: 180px;
-          border-radius: 38px;
-          overflow: hidden;
-          background: rgba(255,255,255,0.14);
-          border: 1px solid rgba(255,255,255,0.22);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 18px 38px rgba(0,0,0,0.16);
-        }
-
-        .avatar img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .avatarFallback {
-          width: 94px;
-          height: 94px;
-          border-radius: 999px;
-          background: #bef264;
-          color: #172018;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 38px;
-          font-weight: 950;
-        }
-
-        .eyebrow {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.24);
-          background: rgba(255,255,255,0.12);
-          color: #f7fee7;
-          padding: 8px 12px;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin-bottom: 12px;
-        }
-
-        .heroTitle {
-          margin: 0;
-          font-size: clamp(40px, 5.4vw, 70px);
-          line-height: 0.92;
-          font-weight: 950;
-          letter-spacing: -0.085em;
-        }
-
-        .heroText {
-          max-width: 620px;
-          color: rgba(255,255,255,0.82);
-          line-height: 1.6;
-          margin: 14px 0 0;
-          font-size: 14px;
-          font-weight: 650;
-        }
-
-        .badgesRow {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-top: 14px;
-        }
-
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          border-radius: 999px;
-          padding: 8px 12px;
-          background: rgba(255,255,255,0.12);
-          border: 1px solid rgba(255,255,255,0.18);
-          color: #ffffff;
-          font-size: 12px;
-          font-weight: 950;
-        }
-
-        .badge.special {
-          background: rgba(190,242,100,0.18);
-          border-color: rgba(190,242,100,0.32);
-          color: #ecfccb;
-        }
-
-        .progressHeroCard {
-          background: rgba(255,255,255,0.14);
-          border: 1px solid rgba(255,255,255,0.18);
-          border-radius: 30px;
-          padding: 18px;
-          backdrop-filter: blur(14px);
-        }
-
-        .progressIcon {
-          width: 62px;
-          height: 62px;
-          border-radius: 24px;
-          background: rgba(190,242,100,0.22);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 32px;
-        }
-
-        .progressTitle {
-          margin-top: 12px;
-          font-size: 26px;
-          font-weight: 950;
-          letter-spacing: -0.05em;
-        }
-
-        .progressSmall {
-          color: rgba(255,255,255,0.76);
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-          margin-top: 6px;
-        }
-
-        .barOuter {
-          margin-top: 12px;
-          height: 10px;
-          border-radius: 999px;
-          background: rgba(255,255,255,0.18);
-          overflow: hidden;
-        }
-
-        .barInner {
-          height: 100%;
-          border-radius: 999px;
-          background: #bef264;
-          width: ${progressoKm}%;
-        }
-
-        .grid {
-          display: grid;
-          grid-template-columns: minmax(0,1fr) 360px;
-          gap: 16px;
-          align-items: start;
-        }
-
-        .stack {
-          display: grid;
-          gap: 16px;
-        }
-
-        .card {
-          background: rgba(255,255,255,0.90);
-          border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 30px;
-          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
-          overflow: hidden;
-        }
-
-        .cardHeader {
-          padding: 18px 20px;
-          border-bottom: 1px solid rgba(15,23,42,0.06);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .cardTitle {
-          margin: 0;
-          color: #172018;
-          font-size: 18px;
-          font-weight: 950;
-          letter-spacing: -0.04em;
-        }
-
-        .cardSub {
-          margin-top: 3px;
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-        }
-
-        .cardBody {
-          padding: 18px;
-        }
-
-        .bioText {
-          color: #475569;
-          font-size: 14px;
-          line-height: 1.75;
-          font-weight: 650;
-          white-space: pre-wrap;
-        }
-
-        .statsGrid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0,1fr));
-          gap: 10px;
-        }
-
-        .statBox {
-          background: #fffdf7;
-          border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 22px;
-          padding: 14px;
-        }
-
-        .statIcon {
-          font-size: 22px;
-          margin-bottom: 8px;
-        }
-
-        .statValue {
-          color: #172018;
-          font-size: 22px;
-          font-weight: 950;
-          line-height: 1;
-          letter-spacing: -0.05em;
-        }
-
-        .statLabel {
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 850;
-          line-height: 1.35;
-        }
-
-        .achievementGrid,
-        .medalGrid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0,1fr));
-          gap: 10px;
-        }
-
-        .achievement,
-        .medal {
-          background: #fffdf7;
-          border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 22px;
-          padding: 14px;
-          text-align: center;
-          transition: 0.2s ease;
-        }
-
-        .achievement.locked,
-        .medal.locked {
-          opacity: 0.42;
-          filter: grayscale(0.8);
-        }
-
-        .medal.specialMedal {
-          background:
-            radial-gradient(circle at top right, rgba(190,242,100,0.35), transparent 46%),
-            #172018;
-          color: #ffffff;
-          border-color: rgba(190,242,100,0.28);
-          box-shadow: 0 18px 42px rgba(23,32,24,0.16);
-        }
-
-        .achievementIcon,
-        .medalIcon {
-          font-size: 28px;
-          margin-bottom: 8px;
-        }
-
-        .achievementName,
-        .medalName {
-          color: #172018;
-          font-size: 12px;
-          font-weight: 950;
-          line-height: 1.25;
-        }
-
-        .specialMedal .medalName {
-          color: #ffffff;
-        }
-
-        .achievementMeta,
-        .medalMeta {
-          margin-top: 4px;
-          color: #64748b;
-          font-size: 10px;
-          font-weight: 800;
-          line-height: 1.35;
-        }
-
-        .specialMedal .medalMeta {
-          color: rgba(255,255,255,0.72);
-        }
-
-        .timeline {
-          display: grid;
-          gap: 8px;
-        }
-
-        .timelineItem {
-          display: grid;
-          grid-template-columns: 64px minmax(0,1fr) auto;
-          gap: 10px;
-          align-items: center;
-          background: #fffdf7;
-          border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 18px;
-          padding: 10px;
-        }
-
-        .timelineKm {
-          color: #172018;
-          font-size: 13px;
-          font-weight: 950;
-        }
-
-        .timelineName {
-          color: #475569;
-          font-size: 12px;
-          font-weight: 850;
-        }
-
-        .timelineStatus {
-          border-radius: 999px;
-          padding: 5px 8px;
-          font-size: 10px;
-          font-weight: 950;
-          background: #eef2e5;
-          color: #64748b;
-        }
-
-        .timelineStatus.ok {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .routeGrid {
-          display: grid;
-          gap: 10px;
-        }
-
-        .routeCard {
-          display: grid;
-          grid-template-columns: 92px minmax(0,1fr);
-          gap: 12px;
-          background: #fffdf7;
-          border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 22px;
-          padding: 10px;
-          cursor: pointer;
-        }
-
-        .routePhoto {
-          height: 84px;
-          border-radius: 18px;
-          background: #eef2e5;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #64748b;
-          font-size: 24px;
-        }
-
-        .routePhoto img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .routeTitle {
-          color: #172018;
-          font-size: 13px;
-          font-weight: 950;
-          line-height: 1.25;
-        }
-
-        .routeMeta {
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 750;
-          line-height: 1.35;
-        }
-
-        .routePrice {
-          margin-top: 8px;
-          color: #16a34a;
-          font-size: 13px;
-          font-weight: 950;
-        }
-
-        .reviewList {
-          display: grid;
-          gap: 10px;
-        }
-
-        .review {
-          background: #fffdf7;
-          border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 22px;
-          padding: 14px;
-        }
-
-        .reviewTop {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          align-items: center;
-        }
-
-        .reviewName {
-          color: #172018;
-          font-size: 13px;
-          font-weight: 950;
-        }
-
-        .stars {
-          color: #f59e0b;
-          font-size: 12px;
-          font-weight: 950;
-        }
-
-        .reviewText {
-          margin-top: 8px;
-          color: #475569;
-          font-size: 13px;
-          line-height: 1.5;
-          font-weight: 650;
-        }
-
-        .reviewDate {
-          margin-top: 8px;
-          color: #94a3b8;
-          font-size: 11px;
-          font-weight: 800;
-        }
-
-        .empty {
-          background: #fffdf7;
-          border: 1px dashed rgba(15,23,42,0.14);
-          border-radius: 22px;
-          padding: 22px;
-          color: #64748b;
-          text-align: center;
-          font-size: 13px;
-          line-height: 1.5;
-          font-weight: 750;
-        }
-
-        .btn {
-          border: none;
-          border-radius: 999px;
-          padding: 11px 14px;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .btn:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 22px rgba(15,23,42,0.10);
-        }
-
-        .btn.dark {
-          background: #172018;
-          color: #ffffff;
-        }
-
-        .btn.light {
-          background: #eef2e5;
-          color: #475569;
-        }
-
-        .actionRow {
-          display: flex;
-          gap: 9px;
-          flex-wrap: wrap;
-          margin-top: 12px;
-        }
-
-        @media (max-width: 1060px) {
-          .heroGrid,
-          .grid {
-            grid-template-columns: 1fr;
-          }
-
-          .heroGrid {
-            align-items: start;
-          }
-
-          .avatar {
-            width: 170px;
-            height: 170px;
-          }
-        }
-
-        @media (max-width: 760px) {
-          .header {
-            padding: 9px 12px;
-          }
-
-          .brandTitle,
-          .brandSub,
-          .hideMobile {
-            display: none;
-          }
-
-          .container {
-            padding: 16px 12px 42px;
-          }
-
-          .hero,
-          .card {
-            border-radius: 28px;
-          }
-
-          .hero {
-            padding: 20px;
-          }
-
-          .statsGrid,
-          .achievementGrid,
-          .medalGrid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .timelineItem {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .heroTitle {
-            font-size: 38px;
-          }
-
-          .statsGrid,
-          .achievementGrid,
-          .medalGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .routeCard {
-            grid-template-columns: 1fr;
-          }
-
-          .routePhoto {
-            height: 150px;
-          }
-
-          .actionRow {
-            display: grid;
-          }
-
-          .btn,
-          .headerBtn {
-            width: 100%;
-          }
-
-          .headerActions {
-            gap: 6px;
-          }
-        }
-      `}</style>
+      <style>{estilos}</style>
 
       <header className="header">
         <div className="headerInner">
-          <div className="brand" onClick={() => router.push('/')}>
+          <button className="brand" type="button" onClick={() => router.push('/roteiros')} aria-label="PrussikTrails">
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-
-            <div>
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Perfil público do guia</div>
+            <div className="brandText">
+              <strong>PrussikTrails</strong>
+              <span>Passaporte do guia</span>
             </div>
-          </div>
+          </button>
 
           <div className="headerActions">
-            <button
-              type="button"
-              className="headerBtn hideMobile"
-              onClick={() => router.push('/roteiros')}
-            >
-              Ver roteiros
+            <button type="button" className="headerBtn ghost" onClick={() => router.push('/roteiros')}>
+              Roteiros
             </button>
-
-            <button
-              type="button"
-              className="headerBtn dark"
-              onClick={() => router.back()}
-            >
-              Voltar
+            <button type="button" className="headerBtn" onClick={() => setReportAberto(true)}>
+              Reportar
             </button>
           </div>
         </div>
@@ -1306,328 +566,1242 @@ export default function PerfilPublicoGuiaPage() {
 
       <div className="container">
         <section className="hero">
-          <div className="heroGrid">
-            <div className="avatar">
-              {fotoGuia() ? (
-                <img src={fotoGuia()} alt={nomeGuia()} />
-              ) : (
-                <div className="avatarFallback">
-                  {nomeGuia().slice(0, 1).toUpperCase()}
-                </div>
-              )}
+          <div className="heroBg" />
+          <div className="heroContent">
+            <div className="avatarBox">
+              {fotoGuia() ? <img src={fotoGuia()} alt={nomeGuia()} /> : <span>{primeiroNome(nomeGuia()).slice(0, 1)}</span>}
+              {guiaPioneiroBeta() && <div className="betaSeal">Beta</div>}
             </div>
 
-            <div>
-              <div className="eyebrow">Guia PrussikTrails</div>
-
-              <h1 className="heroTitle">{nomeGuia()}</h1>
-
-              <p className="heroText">
-                Perfil público do guia, com informações de experiência, evolução, conquistas e principais roteiros disponíveis na comunidade.
+            <div className="heroTextBlock">
+              <div className="eyebrow">Perfil público do guia</div>
+              <h1>{nomeGuia()}</h1>
+              <p>
+                {bioGuia() ||
+                  'Guia PrussikTrails em construção de jornada, experiências outdoor e comunidade de aventura.'}
               </p>
 
-              <div className="badgesRow">
-                {guia.cadastur ? (
-                  <span className="badge">🪪 CADASTUR: {guia.cadastur}</span>
-                ) : (
-                  <span className="badge">🪪 CADASTUR não informado</span>
-                )}
-
-                {guiaPioneiroBeta() && (
-                  <span className="badge special">🏕️ Guia Pioneiro Beta</span>
-                )}
-
-                {stats.totalAvaliacoes > 0 && (
-                  <span className="badge">⭐ {stats.avaliacaoMedia.toFixed(1)} de média</span>
-                )}
+              <div className="heroBadges">
+                {guia.cadastur && <span>CADASTUR {guia.cadastur}</span>}
+                <span>{stats.avaliacaoMedia > 0 ? `${stats.avaliacaoMedia.toFixed(1)} ★` : 'Sem avaliações ainda'}</span>
+                <span>{nivelAtual}</span>
               </div>
             </div>
-
-            <aside className="progressHeroCard">
-              <div className="progressIcon">{nivelAtual.icone}</div>
-              <div className="progressTitle">{nivelAtual.nome}</div>
-
-              <div className="progressSmall">
-                {stats.totalKm.toFixed(1)} km guiados · próximo marco em {proximoMarco} km.
-              </div>
-
-              <div className="barOuter">
-                <div className="barInner" />
-              </div>
-            </aside>
           </div>
         </section>
 
-        <section className="grid">
-          <div className="stack">
-            <section className="card">
-              <div className="cardHeader">
+        <section className="quickStats">
+          <article>
+            <strong>{stats.totalRoteiros}</strong>
+            <span>roteiros</span>
+          </article>
+          <article>
+            <strong>{stats.totalKm.toFixed(0)}</strong>
+            <span>km publicados</span>
+          </article>
+          <article>
+            <strong>{stats.totalClientes}</strong>
+            <span>clientes</span>
+          </article>
+          <article>
+            <strong>{stats.totalAvaliacoes}</strong>
+            <span>avaliações</span>
+          </article>
+        </section>
+
+        <section className="mainGrid">
+          <div className="leftColumn">
+            <section className="panel medalsPanel">
+              <div className="panelHeader">
                 <div>
-                  <h2 className="cardTitle">Bio</h2>
-                  <div className="cardSub">
-                    Um pouco sobre o guia, sua condução e sua presença nas trilhas.
-                  </div>
+                  <h2>Medalhas do guia</h2>
+                  <p>Conquistas, presença Beta e reputação outdoor em uma única coleção.</p>
                 </div>
               </div>
 
-              <div className="cardBody">
-                <div className="bioText">
-                  {bioGuia() || 'Este guia ainda não adicionou uma bio pública.'}
-                </div>
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="cardHeader">
-                <div>
-                  <h2 className="cardTitle">Progressão</h2>
-                  <div className="cardSub">
-                    Evolução do guia dentro da jornada PrussikTrails.
-                  </div>
-                </div>
-              </div>
-
-              <div className="cardBody">
-                <div className="statsGrid">
-                  <div className="statBox">
-                    <div className="statIcon">🥾</div>
-                    <div className="statValue">{stats.totalRoteiros}</div>
-                    <div className="statLabel">roteiros publicados</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">✅</div>
-                    <div className="statValue">{stats.reservasConfirmadas}</div>
-                    <div className="statLabel">reservas confirmadas</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">👥</div>
-                    <div className="statValue">{stats.totalClientes}</div>
-                    <div className="statLabel">clientes atendidos</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">👣</div>
-                    <div className="statValue">{stats.totalKm.toFixed(1)}</div>
-                    <div className="statLabel">km guiados</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">⭐</div>
-                    <div className="statValue">{stats.avaliacaoMedia.toFixed(1)}</div>
-                    <div className="statLabel">média de avaliação</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">🏅</div>
-                    <div className="statValue">{nivelAtual.nome}</div>
-                    <div className="statLabel">nível atual</div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="cardHeader">
-                <div>
-                  <h2 className="cardTitle">Conquistas por km</h2>
-                  <div className="cardSub">
-                    Marcos desbloqueados conforme os quilômetros guiados.
-                  </div>
-                </div>
-              </div>
-
-              <div className="cardBody">
-                <div className="achievementGrid">
-                  {conquistasKm.map((item) => (
-                    <div
-                      key={item.nome}
-                      className={`achievement ${item.desbloqueado ? '' : 'locked'}`}
-                    >
-                      <div className="achievementIcon">{item.icone}</div>
-                      <div className="achievementName">{item.nome}</div>
-                      <div className="achievementMeta">
-                        {item.km === 0 ? 'Início da jornada' : `${item.km} km`}
-                      </div>
+              <div className="medalGrid">
+                {medalhas.map((medalha: MedalhaGuia) => (
+                  <article
+                    key={medalha.codigo}
+                    className={`medalCard ${medalha.desbloqueada ? 'unlocked' : 'locked'} ${medalha.destaque ? 'featured' : ''}`}
+                  >
+                    <div className="medalImageWrap">
+                      <MedalhaImagem src={medalha.svg} fallback={medalha.fallbackSvg} alt={medalha.nome} />
                     </div>
-                  ))}
-                </div>
+                    <div className="medalName">{medalha.nome}</div>
+                    <div className="medalDesc">
+                      {medalha.desbloqueada ? medalha.descricao : 'Conquista ainda não desbloqueada.'}
+                    </div>
+                  </article>
+                ))}
               </div>
             </section>
 
-            <section className="card">
-              <div className="cardHeader">
-                <div>
-                  <h2 className="cardTitle">Evolução</h2>
-                  <div className="cardSub">
-                    Trilha de progressão pública do guia.
+            {principaisRoteiros.length > 0 && (
+              <section className="panel routesPanel">
+                <div className="panelHeader">
+                  <div>
+                    <h2>Experiências disponíveis</h2>
+                    <p>Alguns roteiros publicados por este guia.</p>
                   </div>
                 </div>
-              </div>
 
-              <div className="cardBody">
-                <div className="timeline">
-                  {METAS_KM_GUIA.map((meta) => {
-                    const conquistado = stats.totalKm >= meta.km
+                <div className="routeGrid">
+                  {principaisRoteiros.map((roteiro: Roteiro) => {
+                    const foto = fotoRoteiro(roteiro)
 
                     return (
-                      <div className="timelineItem" key={meta.nome}>
-                        <div className="timelineKm">{meta.km} km</div>
-                        <div className="timelineName">
-                          {meta.icone} {meta.nome}
+                      <article className="routeCard" key={roteiro.id} onClick={() => router.push('/roteiros')}>
+                        <div className="routeImage">
+                          {foto ? <img src={foto} alt={tituloRoteiro(roteiro)} /> : <span>RT</span>}
                         </div>
-                        <div className={`timelineStatus ${conquistado ? 'ok' : ''}`}>
-                          {conquistado ? 'Conquistado' : 'Em progresso'}
+                        <div>
+                          <strong>{tituloRoteiro(roteiro)}</strong>
+                          <p>{localRoteiro(roteiro)}</p>
+                          <div className="routeMeta">
+                            <span>{kmRoteiro(roteiro).toFixed(1)} km</span>
+                            <span>{formatarMoeda(valorRoteiro(roteiro))}</span>
+                          </div>
                         </div>
-                      </div>
+                      </article>
                     )
                   })}
                 </div>
-              </div>
-            </section>
+              </section>
+            )}
           </div>
 
-          <aside className="stack">
-            <section className="card">
-              <div className="cardHeader">
+          <aside className="rightColumn">
+            <section className="panel trustPanel">
+              <h2>Credenciais</h2>
+              <div className="trustList">
                 <div>
-                  <h2 className="cardTitle">Medalhas</h2>
-                  <div className="cardSub">
-                    Reconhecimentos públicos do guia.
-                  </div>
+                  <span>CADASTUR</span>
+                  <strong>{guia.cadastur || 'Não informado'}</strong>
+                </div>
+                <div>
+                  <span>Fase Beta</span>
+                  <strong>{guiaPioneiroBeta() ? 'Guia pioneiro' : 'Guia cadastrado'}</strong>
+                </div>
+                <div>
+                  <span>Comunidade</span>
+                  <strong>{stats.totalClientes} cliente(s) atendido(s)</strong>
                 </div>
               </div>
-
-              <div className="cardBody">
-                <div className="medalGrid">
-                  {medalhas.map((medalha) => (
-                    <div
-                      key={medalha.nome}
-                      className={[
-                        'medal',
-                        medalha.especial ? 'specialMedal' : '',
-                        medalha.desbloqueado ? '' : 'locked'
-                      ].join(' ')}
-                    >
-                      <div className="medalIcon">{medalha.icone}</div>
-                      <div className="medalName">{medalha.nome}</div>
-                      <div className="medalMeta">
-                        {medalha.desbloqueado ? medalha.descricao : 'Ainda não desbloqueada'}
-                      </div>
-                    </div>
-                  ))}
+              <div className="progressBox">
+                <div className="progressHeader">
+                  <span>Progressão pública</span>
+                  <strong>{progressoKm}%</strong>
+                </div>
+                <div className="progressTrack">
+                  <div style={{ width: `${progressoKm}%` }} />
                 </div>
               </div>
             </section>
 
-            <section className="card">
-              <div className="cardHeader">
+            <section className="panel reviewsPanel">
+              <div className="panelHeader compact">
                 <div>
-                  <h2 className="cardTitle">Principais roteiros</h2>
-                  <div className="cardSub">
-                    Até 3 roteiros em destaque deste guia.
-                  </div>
+                  <h2>Avaliações</h2>
+                  <p>Toque em uma avaliação para ver o perfil público do cliente.</p>
                 </div>
               </div>
 
-              <div className="cardBody">
-                {principaisRoteiros.length === 0 ? (
-                  <div className="empty">
-                    Este guia ainda não possui roteiros públicos ativos.
-                  </div>
-                ) : (
-                  <div className="routeGrid">
-                    {principaisRoteiros.map((roteiro) => (
-                      <div
-                        className="routeCard"
-                        key={roteiro.id}
-                        onClick={() => router.push(`/roteiros/${roteiro.id}`)}
-                      >
-                        <div className="routePhoto">
-                          {fotoRoteiro(roteiro) ? (
-                            <img src={fotoRoteiro(roteiro)} alt={tituloRoteiro(roteiro)} />
+              {avaliacoes.length === 0 ? (
+                <div className="emptyState">Este guia ainda não recebeu avaliações públicas.</div>
+              ) : (
+                <div className="reviewList">
+                  {avaliacoes.slice(0, 8).map((avaliacao: Avaliacao) => (
+                    <article
+                      key={avaliacao.id}
+                      className={`reviewCard ${avaliacao.cliente_id ? 'clickable' : ''}`}
+                      onClick={() => {
+                        if (avaliacao.cliente_id) router.push(`/cliente/publico/${avaliacao.cliente_id}`)
+                      }}
+                    >
+                      <div className="reviewTop">
+                        <div className="reviewAvatar">
+                          {avaliacao.cliente_avatar ? (
+                            <img src={avaliacao.cliente_avatar} alt={avaliacao.cliente_nome || 'Cliente'} />
                           ) : (
-                            <span>🥾</span>
+                            <span>{String(avaliacao.cliente_nome || 'C').slice(0, 1)}</span>
                           )}
                         </div>
-
                         <div>
-                          <div className="routeTitle">{tituloRoteiro(roteiro)}</div>
-
-                          <div className="routeMeta">
-                            {localRoteiro(roteiro)}
-                            <br />
-                            {kmRoteiro(roteiro).toFixed(1)} km
-                            {roteiro.dificuldade ? ` · ${roteiro.dificuldade}` : ''}
-                          </div>
-
-                          <div className="routePrice">
-                            {formatarMoeda(valorRoteiro(roteiro))}
-                          </div>
+                          <strong>{avaliacao.cliente_nome || 'Cliente PrussikTrails'}</strong>
+                          <span>{formatarData(avaliacao.created_at)}</span>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="actionRow">
-                  <button
-                    type="button"
-                    className="btn dark"
-                    onClick={() => router.push('/roteiros')}
-                  >
-                    Ver todos os roteiros
-                  </button>
+                      <div className="stars">{estrelas(avaliacao.nota)}</div>
+                      <p>{avaliacao.comentario || avaliacao.observacao || avaliacao.descricao || 'Avaliação registrada.'}</p>
+                    </article>
+                  ))}
                 </div>
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="cardHeader">
-                <div>
-                  <h2 className="cardTitle">Avaliações</h2>
-                  <div className="cardSub">
-                    Comentários recentes dos aventureiros.
-                  </div>
-                </div>
-              </div>
-
-              <div className="cardBody">
-                {avaliacoes.length === 0 ? (
-                  <div className="empty">
-                    Este guia ainda não possui avaliações públicas.
-                  </div>
-                ) : (
-                  <div className="reviewList">
-                    {avaliacoes.slice(0, 4).map((avaliacao) => (
-                      <div className="review" key={avaliacao.id}>
-                        <div className="reviewTop">
-                          <div className="reviewName">
-                            {avaliacao.cliente_nome || 'Cliente'}
-                          </div>
-
-                          <div className="stars">
-                            ⭐ {Number(avaliacao.nota || 0).toFixed(1)}
-                          </div>
-                        </div>
-
-                        <div className="reviewText">
-                          {avaliacao.comentario || avaliacao.observacao || avaliacao.descricao || 'Avaliação sem comentário escrito.'}
-                        </div>
-
-                        <div className="reviewDate">
-                          {formatarData(avaliacao.created_at)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              )}
             </section>
           </aside>
         </section>
       </div>
+
+      {reportAberto && (
+        <div className="modalOverlay" role="dialog" aria-modal="true">
+          <div className="reportModal">
+            <div className="reportHeader">
+              <div>
+                <span>Segurança da comunidade</span>
+                <h2>Reportar guia</h2>
+                <p>Use este canal para sinalizar uma situação que precise de análise pela equipe.</p>
+              </div>
+              <button type="button" onClick={() => setReportAberto(false)} aria-label="Fechar">
+                ×
+              </button>
+            </div>
+
+            {reportEnviado ? (
+              <div className="reportSuccess">
+                <strong>Obrigado pelo cuidado.</strong>
+                <p>Seu relato foi registrado nesta sessão para análise. Na próxima etapa, conectaremos este fluxo a uma tabela própria de denúncias.</p>
+                <button type="button" onClick={() => setReportAberto(false)}>Fechar</button>
+              </div>
+            ) : (
+              <>
+                <label className="field">
+                  <span>Motivo</span>
+                  <select value={reportMotivo} onChange={(event) => setReportMotivo(event.target.value as ReportReason)}>
+                    <option value="seguranca">Segurança</option>
+                    <option value="conduta">Conduta</option>
+                    <option value="informacao">Informação incorreta</option>
+                    <option value="pagamento">Pagamento/serviço</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Observação</span>
+                  <textarea
+                    value={reportTexto}
+                    onChange={(event) => setReportTexto(event.target.value)}
+                    placeholder="Descreva brevemente o ocorrido."
+                    rows={5}
+                  />
+                </label>
+                <div className="modalActions">
+                  <button type="button" className="secondary" onClick={() => setReportAberto(false)}>Cancelar</button>
+                  <button type="button" className="primary" onClick={enviarReporte}>Enviar relato</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   )
 }
+
+const estilos = `
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #f6f7f1;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .page,
+  .loading,
+  .emptyPage {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
+      radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
+      linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
+    color: #172018;
+  }
+
+  .loading,
+  .emptyPage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .loadingCard,
+  .emptyCard {
+    width: min(430px, 100%);
+    background: rgba(255,255,255,0.92);
+    border: 1px solid rgba(15,23,42,0.06);
+    border-radius: 30px;
+    padding: 28px;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(15,23,42,0.08);
+  }
+
+  .loadingCard img,
+  .emptyCard img {
+    height: 64px;
+    width: auto;
+    margin-bottom: 12px;
+  }
+
+  .emptyCard h1 {
+    margin: 0;
+    font-size: 24px;
+    letter-spacing: -0.05em;
+  }
+
+  .emptyCard p {
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 10px 0 18px;
+    font-weight: 700;
+  }
+
+  .emptyCard button {
+    border: 0;
+    border-radius: 999px;
+    background: #172018;
+    color: #fff;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(255,253,247,0.88);
+    border-bottom: 1px solid rgba(15,23,42,0.06);
+    backdrop-filter: blur(18px);
+    padding: 10px 16px;
+  }
+
+  .headerInner {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .brand img {
+    width: 46px;
+    height: 46px;
+    object-fit: contain;
+    flex: 0 0 auto;
+  }
+
+  .brandText {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1;
+  }
+
+  .brandText strong {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(30px, 4.4vw, 54px);
+    font-weight: 800;
+    color: #1f3d2d;
+    line-height: 0.88;
+    letter-spacing: -0.06em;
+    white-space: nowrap;
+  }
+
+  .brandText span {
+    margin-top: 7px;
+    color: #7b8372;
+    font-size: clamp(11px, 1.6vw, 16px);
+    font-weight: 850;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .headerActions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+
+  .headerBtn {
+    border: 1px solid rgba(15,23,42,0.08);
+    background: #172018;
+    color: #fffdf7;
+    border-radius: 999px;
+    padding: 10px 13px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 950;
+    white-space: nowrap;
+  }
+
+  .headerBtn.ghost {
+    background: rgba(255,255,255,0.84);
+    color: #172018;
+  }
+
+  .container {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px 16px 56px;
+  }
+
+  .hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 36px;
+    background:
+      radial-gradient(circle at 14% 10%, rgba(190,242,100,0.26), transparent 28%),
+      linear-gradient(135deg, #1d2e20 0%, #526e3f 54%, #d9c49a 100%);
+    min-height: 318px;
+    box-shadow: 0 24px 60px rgba(23,32,24,0.18);
+  }
+
+  .heroBg {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+    background-size: 46px 46px;
+    opacity: 0.8;
+    mask-image: linear-gradient(to bottom, black, transparent 82%);
+  }
+
+  .heroContent {
+    position: relative;
+    z-index: 2;
+    min-height: 318px;
+    padding: 30px;
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr);
+    align-items: end;
+    gap: 24px;
+    color: #fffdf7;
+  }
+
+  .avatarBox {
+    position: relative;
+    width: 160px;
+    height: 160px;
+    border-radius: 42px;
+    overflow: visible;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.22);
+    box-shadow: 0 18px 40px rgba(0,0,0,0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(12px);
+  }
+
+  .avatarBox img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+  }
+
+  .avatarBox > span {
+    font-size: 58px;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-weight: 900;
+    color: #f7fee7;
+  }
+
+  .betaSeal {
+    position: absolute;
+    right: -8px;
+    bottom: -8px;
+    background: #991b1b;
+    border: 3px solid #fffdf7;
+    color: #fff;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    width: fit-content;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.24);
+    background: rgba(255,255,255,0.12);
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .heroTextBlock h1 {
+    margin: 0;
+    max-width: 760px;
+    font-size: clamp(38px, 6vw, 76px);
+    line-height: 0.9;
+    font-weight: 950;
+    letter-spacing: -0.085em;
+  }
+
+  .heroTextBlock p {
+    max-width: 720px;
+    margin: 16px 0 0;
+    color: rgba(255,255,255,0.84);
+    font-size: 15px;
+    line-height: 1.6;
+    font-weight: 650;
+  }
+
+  .heroBadges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .heroBadges span {
+    border-radius: 999px;
+    background: rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.18);
+    padding: 8px 11px;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .quickStats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+
+  .quickStats article,
+  .panel {
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(15,23,42,0.06);
+    border-radius: 30px;
+    box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+  }
+
+  .quickStats article {
+    padding: 16px;
+    text-align: center;
+  }
+
+  .quickStats strong {
+    display: block;
+    color: #172018;
+    font-size: 28px;
+    font-weight: 950;
+    letter-spacing: -0.06em;
+  }
+
+  .quickStats span {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 850;
+  }
+
+  .mainGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .leftColumn,
+  .rightColumn {
+    display: grid;
+    gap: 16px;
+  }
+
+  .panel {
+    overflow: hidden;
+  }
+
+  .panelHeader {
+    padding: 20px 22px;
+    border-bottom: 1px solid rgba(15,23,42,0.06);
+  }
+
+  .panelHeader.compact {
+    padding-bottom: 12px;
+  }
+
+  .panel h2,
+  .panelHeader h2 {
+    margin: 0;
+    color: #172018;
+    font-size: 22px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.055em;
+  }
+
+  .panelHeader p {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .medalGrid {
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .medalCard {
+    min-height: 232px;
+    border-radius: 26px;
+    border: 1px solid rgba(15,23,42,0.06);
+    background:
+      radial-gradient(circle at top right, rgba(251,146,60,0.08), transparent 30%),
+      #fffdf7;
+    padding: 12px;
+    text-align: center;
+    transition: 0.2s ease;
+  }
+
+  .medalCard.featured {
+    border-color: rgba(153,27,27,0.22);
+    background:
+      radial-gradient(circle at top right, rgba(153,27,27,0.12), transparent 32%),
+      #fffdf7;
+  }
+
+  .medalCard.locked {
+    opacity: 0.48;
+    filter: grayscale(0.74);
+  }
+
+  .medalImageWrap {
+    width: 118px;
+    height: 118px;
+    margin: 0 auto 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .medalSvg {
+    width: 118px;
+    height: 118px;
+    object-fit: contain;
+    display: block;
+  }
+
+  .medalFallback {
+    font-size: 48px;
+  }
+
+  .medalName {
+    color: #172018;
+    font-size: 13px;
+    font-weight: 950;
+    line-height: 1.22;
+    letter-spacing: -0.02em;
+  }
+
+  .medalDesc {
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
+    font-weight: 700;
+  }
+
+  .routesPanel,
+  .trustPanel,
+  .reviewsPanel {
+    padding-bottom: 16px;
+  }
+
+  .routeGrid {
+    padding: 16px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .routeCard {
+    display: grid;
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 13px;
+    align-items: center;
+    border-radius: 24px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 12px;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+
+  .routeCard:hover,
+  .reviewCard.clickable:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px rgba(15,23,42,0.08);
+  }
+
+  .routeImage {
+    width: 94px;
+    height: 84px;
+    border-radius: 22px;
+    background: #e8eadf;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    color: #64748b;
+    font-weight: 950;
+  }
+
+  .routeImage img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .routeCard strong {
+    display: block;
+    color: #172018;
+    font-size: 14px;
+    font-weight: 950;
+    line-height: 1.25;
+  }
+
+  .routeCard p {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 750;
+  }
+
+  .routeMeta {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .routeMeta span {
+    border-radius: 999px;
+    background: #f0fdf4;
+    color: #166534;
+    padding: 6px 9px;
+    font-size: 11px;
+    font-weight: 950;
+  }
+
+  .trustPanel {
+    padding: 20px;
+  }
+
+  .trustPanel h2 {
+    margin-bottom: 14px;
+  }
+
+  .trustList {
+    display: grid;
+    gap: 10px;
+  }
+
+  .trustList div {
+    border-radius: 20px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 12px;
+  }
+
+  .trustList span,
+  .progressHeader span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .trustList strong,
+  .progressHeader strong {
+    display: block;
+    margin-top: 4px;
+    color: #172018;
+    font-size: 14px;
+    font-weight: 950;
+  }
+
+  .progressBox {
+    margin-top: 14px;
+    border-radius: 20px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 12px;
+  }
+
+  .progressHeader {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .progressTrack {
+    margin-top: 10px;
+    height: 9px;
+    border-radius: 999px;
+    background: rgba(15,23,42,0.08);
+    overflow: hidden;
+  }
+
+  .progressTrack div {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #365314, #84cc16, #f97316);
+  }
+
+  .reviewList {
+    padding: 16px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .reviewCard {
+    border-radius: 24px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 13px;
+    transition: 0.2s ease;
+  }
+
+  .reviewCard.clickable {
+    cursor: pointer;
+  }
+
+  .reviewTop {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+  }
+
+  .reviewAvatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #e8eadf;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #172018;
+    font-weight: 950;
+  }
+
+  .reviewAvatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .reviewTop strong {
+    display: block;
+    color: #172018;
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .reviewTop span {
+    display: block;
+    margin-top: 3px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .stars {
+    margin-top: 9px;
+    color: #d97706;
+    letter-spacing: 0.06em;
+    font-size: 13px;
+  }
+
+  .reviewCard p {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 700;
+  }
+
+  .emptyState {
+    margin: 16px;
+    padding: 22px;
+    text-align: center;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 750;
+    border-radius: 22px;
+    background: #fffdf7;
+    border: 1px dashed #cbd5e1;
+  }
+
+  .modalOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8,13,7,0.58);
+    backdrop-filter: blur(10px);
+  }
+
+  .reportModal {
+    width: min(560px, 100%);
+    border-radius: 30px;
+    border: 1px solid rgba(255,255,255,0.56);
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 30%),
+      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 100%);
+    box-shadow: 0 32px 90px rgba(0,0,0,0.34);
+    padding: 20px;
+  }
+
+  .reportHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .reportHeader span {
+    color: #991b1b;
+    font-size: 11px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .reportHeader h2 {
+    margin: 5px 0 0;
+    color: #172018;
+    font-size: 28px;
+    font-weight: 950;
+    letter-spacing: -0.06em;
+  }
+
+  .reportHeader p {
+    margin: 8px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 700;
+  }
+
+  .reportHeader button {
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: rgba(255,255,255,0.78);
+    color: #172018;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .field {
+    display: block;
+    margin-top: 12px;
+  }
+
+  .field span {
+    display: block;
+    color: #25311f;
+    font-size: 13px;
+    font-weight: 900;
+    margin-bottom: 7px;
+  }
+
+  .field select,
+  .field textarea {
+    width: 100%;
+    border: 1px solid rgba(62,74,45,0.14);
+    border-radius: 18px;
+    background: rgba(255,255,255,0.78);
+    color: #172018;
+    padding: 13px 14px;
+    font-size: 14px;
+    outline: 0;
+  }
+
+  .field textarea {
+    resize: vertical;
+    min-height: 120px;
+  }
+
+  .modalActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .modalActions button,
+  .reportSuccess button {
+    border-radius: 999px;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .primary,
+  .reportSuccess button {
+    border: 0;
+    background: #991b1b;
+    color: #fffdf7;
+  }
+
+  .secondary {
+    background: rgba(255,255,255,0.75);
+    color: #27321f;
+    border: 1px solid rgba(62,74,45,0.12);
+  }
+
+  .reportSuccess {
+    border-radius: 22px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 16px;
+  }
+
+  .reportSuccess strong {
+    color: #172018;
+    font-size: 18px;
+    font-weight: 950;
+  }
+
+  .reportSuccess p {
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 700;
+  }
+
+  @media (max-width: 980px) {
+    .mainGrid {
+      grid-template-columns: 1fr;
+    }
+
+    .medalGrid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 720px) {
+    .header {
+      padding: 9px 12px;
+    }
+
+    .brand img {
+      width: 34px;
+      height: 34px;
+    }
+
+    .brandText strong {
+      font-size: 30px;
+      line-height: 0.88;
+    }
+
+    .brandText span {
+      font-size: 10px;
+      letter-spacing: 0.13em;
+      margin-top: 5px;
+    }
+
+    .headerActions .ghost {
+      display: none;
+    }
+
+    .headerBtn {
+      padding: 9px 11px;
+      font-size: 11px;
+    }
+
+    .container {
+      padding: 14px 12px 42px;
+    }
+
+    .hero {
+      border-radius: 28px;
+      min-height: auto;
+    }
+
+    .heroContent {
+      min-height: auto;
+      padding: 18px;
+      grid-template-columns: 88px minmax(0, 1fr);
+      align-items: center;
+      gap: 14px;
+    }
+
+    .avatarBox {
+      width: 84px;
+      height: 84px;
+      border-radius: 24px;
+    }
+
+    .avatarBox > span {
+      font-size: 34px;
+    }
+
+    .betaSeal {
+      right: -4px;
+      bottom: -5px;
+      padding: 5px 8px;
+      font-size: 9px;
+      border-width: 2px;
+    }
+
+    .eyebrow {
+      display: none;
+    }
+
+    .heroTextBlock h1 {
+      font-size: clamp(26px, 8vw, 36px);
+      letter-spacing: -0.075em;
+      line-height: 0.95;
+    }
+
+    .heroTextBlock p {
+      font-size: 12px;
+      line-height: 1.42;
+      margin-top: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .heroBadges {
+      margin-top: 10px;
+      gap: 6px;
+    }
+
+    .heroBadges span {
+      padding: 6px 8px;
+      font-size: 10px;
+    }
+
+    .quickStats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .quickStats article {
+      padding: 12px;
+      border-radius: 22px;
+    }
+
+    .quickStats strong {
+      font-size: 23px;
+    }
+
+    .panel {
+      border-radius: 26px;
+    }
+
+    .panelHeader {
+      padding: 16px;
+    }
+
+    .panel h2,
+    .panelHeader h2 {
+      font-size: 20px;
+    }
+
+    .panelHeader p {
+      font-size: 12px;
+    }
+
+    .medalGrid {
+      padding: 12px;
+      gap: 10px;
+    }
+
+    .medalCard {
+      min-height: 196px;
+      border-radius: 22px;
+      padding: 9px;
+    }
+
+    .medalImageWrap,
+    .medalSvg {
+      width: 108px;
+      height: 108px;
+    }
+
+    .medalDesc {
+      display: none;
+    }
+
+    .routeCard {
+      grid-template-columns: 76px minmax(0, 1fr);
+      border-radius: 22px;
+    }
+
+    .routeImage {
+      width: 76px;
+      height: 72px;
+      border-radius: 18px;
+    }
+
+    .modalOverlay {
+      align-items: flex-end;
+      padding: 10px;
+    }
+
+    .reportModal {
+      border-radius: 26px;
+      max-height: 88vh;
+      overflow: auto;
+    }
+
+    .modalActions {
+      flex-direction: column-reverse;
+    }
+
+    .modalActions button {
+      width: 100%;
+    }
+  }
+`

@@ -2164,56 +2164,7 @@ export default function PerfilGuiaPage() {
               </div>
             </section>
 
-            <section className="card">
-              <div className="cardHeader">
-                <div>
-                  <h2 className="cardTitle">Resumo de evolução</h2>
-                  <div className="cardSub">
-                    Indicadores principais da sua jornada como guia dentro da plataforma.
-                  </div>
-                </div>
-              </div>
 
-              <div className="cardBody">
-                <div className="statsGrid">
-                  <div className="statBox">
-                    <div className="statIcon">🥾</div>
-                    <div className="statValue">{stats.totalRoteiros}</div>
-                    <div className="statLabel">roteiros cadastrados</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">📅</div>
-                    <div className="statValue">{stats.totalReservas}</div>
-                    <div className="statLabel">reservas recebidas</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">✅</div>
-                    <div className="statValue">{stats.reservasConfirmadas}</div>
-                    <div className="statLabel">reservas confirmadas</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">👥</div>
-                    <div className="statValue">{stats.totalClientes}</div>
-                    <div className="statLabel">clientes atendidos</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">👣</div>
-                    <div className="statValue">{stats.totalKm.toFixed(1)}</div>
-                    <div className="statLabel">km guiados</div>
-                  </div>
-
-                  <div className="statBox">
-                    <div className="statIcon">⭐</div>
-                    <div className="statValue">{stats.avaliacaoMedia.toFixed(1)}</div>
-                    <div className="statLabel">média de avaliação</div>
-                  </div>
-                </div>
-              </div>
-            </section>
 
             <section className="card">
               <div className="cardHeader">
