@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 type AdminUser = {
@@ -48,6 +48,36 @@ type MovimentacaoSaldo = {
 type ClienteSaldoDetalhado = {
   saldo?: ClienteSaldo
   movimentacoes?: MovimentacaoSaldo[]
+}
+
+type ReembolsoCliente = {
+  id: string
+  cliente_id: string
+  cliente_nome?: string
+  cliente_email?: string
+  cliente_avatar?: string
+  valor_solicitado: number | string
+  valor_pago?: number | string | null
+  status?: string | null
+  pix_tipo?: string | null
+  chave_pix?: string | null
+  titular_nome?: string | null
+  titular_documento?: string | null
+  motivo?: string | null
+  observacao_admin?: string | null
+  referencia_pagamento?: string | null
+  comprovante_url?: string | null
+  comprovante_nome?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  pago_em?: string | null
+}
+
+type ModalPagamentoReembolso = {
+  reembolso: ReembolsoCliente
+  referencia: string
+  observacao: string
+  arquivo: File | null
 }
 
 type AjusteForm = {
@@ -150,6 +180,12 @@ export default function AdminSaldosPage() {
   const [mensagem, setMensagem] = useState('')
   const [form, setForm] = useState<AjusteForm>(EMPTY_AJUSTE)
 
+  const [reembolsos, setReembolsos] = useState<ReembolsoCliente[]>([])
+  const [filtroReembolso, setFiltroReembolso] = useState<'pendente' | 'em_analise' | 'aprovado' | 'pago' | 'recusado' | 'todos'>('pendente')
+  const [carregandoReembolsos, setCarregandoReembolsos] = useState(false)
+  const [processandoReembolsoId, setProcessandoReembolsoId] = useState('')
+  const [modalPagamentoReembolso, setModalPagamentoReembolso] = useState<ModalPagamentoReembolso | null>(null)
+
   useEffect(() => {
     iniciar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,6 +200,12 @@ export default function AdminSaldosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busca, somenteComSaldo])
 
+  useEffect(() => {
+    if (!admin) return
+    carregarReembolsos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroReembolso, admin])
+
   const estatisticas = useMemo(() => {
     const totalClientes = clientes.length
     const totalDisponivel = clientes.reduce(
@@ -175,12 +217,26 @@ export default function AdminSaldosPage() {
       0
     )
 
+    const reembolsosPendentes = reembolsos.filter((item) => {
+      const status = String(item.status || '').toLowerCase()
+      return status === 'pendente' || status === 'em_analise' || status === 'aprovado'
+    }).length
+
+    const valorReembolsosPendentes = reembolsos
+      .filter((item) => {
+        const status = String(item.status || '').toLowerCase()
+        return status === 'pendente' || status === 'em_analise' || status === 'aprovado'
+      })
+      .reduce((acc, item) => acc + Number(item.valor_solicitado || 0), 0)
+
     return {
       totalClientes,
       totalDisponivel,
       maiorSaldo,
+      reembolsosPendentes,
+      valorReembolsosPendentes,
     }
-  }, [clientes])
+  }, [clientes, reembolsos])
 
   async function iniciar() {
     try {
@@ -197,7 +253,7 @@ export default function AdminSaldosPage() {
       }
 
       setAdmin(usuario)
-      await carregarClientes()
+      await Promise.all([carregarClientes(), carregarReembolsos()])
     } catch (error) {
       console.error('Erro ao iniciar página de saldos:', error)
       setErro('Não foi possível carregar a área de saldos.')
@@ -238,6 +294,167 @@ export default function AdminSaldosPage() {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar saldos.')
     }
   }
+
+
+  async function carregarReembolsos() {
+    try {
+      setCarregandoReembolsos(true)
+      setErro('')
+
+      const params = new URLSearchParams()
+      params.set('status', filtroReembolso)
+      params.set('limite', '120')
+
+      const resposta = await fetch(`/api/admin/saldos/reembolsos?${params.toString()}`, {
+        cache: 'no-store',
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível carregar solicitações de reembolso.')
+      }
+
+      setReembolsos((json.reembolsos || []) as ReembolsoCliente[])
+    } catch (error) {
+      console.error('Erro ao carregar reembolsos:', error)
+      setErro(error instanceof Error ? error.message : 'Erro ao carregar reembolsos.')
+    } finally {
+      setCarregandoReembolsos(false)
+    }
+  }
+
+  async function atualizarTudo() {
+    await Promise.all([carregarClientes(), carregarReembolsos()])
+  }
+
+  async function processarReembolso(
+    reembolso: ReembolsoCliente,
+    acao: 'aprovar' | 'recusar'
+  ) {
+    const observacao =
+      acao === 'recusar'
+        ? window.prompt('Informe o motivo da recusa para registro administrativo:', 'Reembolso recusado após análise administrativa.') || ''
+        : 'Reembolso aprovado para pagamento pelo Admin.'
+
+    if (acao === 'recusar' && !observacao.trim()) return
+
+    try {
+      setProcessandoReembolsoId(reembolso.id)
+      setErro('')
+      setMensagem('')
+
+      const resposta = await fetch('/api/admin/saldos/reembolsos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reembolsoId: reembolso.id,
+          adminId: extrairUsuarioId(admin),
+          acao,
+          observacaoAdmin: observacao,
+        }),
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível processar o reembolso.')
+      }
+
+      setMensagem(acao === 'aprovar' ? 'Reembolso aprovado.' : 'Reembolso recusado.')
+      await atualizarTudo()
+      if (selecionado) await abrirCliente(selecionado)
+    } catch (error) {
+      console.error('Erro ao processar reembolso:', error)
+      setErro(error instanceof Error ? error.message : 'Erro ao processar reembolso.')
+    } finally {
+      setProcessandoReembolsoId('')
+    }
+  }
+
+  function abrirPagamentoReembolso(reembolso: ReembolsoCliente) {
+    setModalPagamentoReembolso({
+      reembolso,
+      referencia: reembolso.referencia_pagamento || '',
+      observacao: 'Pagamento do reembolso registrado pelo Admin.',
+      arquivo: null,
+    })
+  }
+
+  async function enviarComprovanteReembolso(reembolsoId: string, arquivo: File | null) {
+    if (!arquivo) return null
+
+    const formData = new FormData()
+    formData.append('file', arquivo)
+    formData.append('reembolsoId', reembolsoId)
+
+    const resposta = await fetch('/api/admin/saldos/reembolsos/comprovante', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const json = await resposta.json().catch(() => null)
+
+    if (!resposta.ok || !json?.sucesso) {
+      throw new Error(json?.erro || 'Não foi possível anexar o comprovante.')
+    }
+
+    return json
+  }
+
+  async function confirmarPagamentoReembolso() {
+    if (!modalPagamentoReembolso) return
+
+    const { reembolso, referencia, observacao, arquivo } = modalPagamentoReembolso
+
+    if (!referencia.trim() && !arquivo) {
+      setErro('Informe uma referência de pagamento ou anexe um comprovante.')
+      return
+    }
+
+    try {
+      setProcessandoReembolsoId(reembolso.id)
+      setErro('')
+      setMensagem('')
+
+      let comprovante: any = null
+
+      if (arquivo) {
+        comprovante = await enviarComprovanteReembolso(reembolso.id, arquivo)
+      }
+
+      const resposta = await fetch('/api/admin/saldos/reembolsos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reembolsoId: reembolso.id,
+          adminId: extrairUsuarioId(admin),
+          acao: 'registrar_pagamento',
+          referenciaPagamento: referencia,
+          observacaoAdmin: observacao,
+          comprovanteUrl: comprovante?.url || comprovante?.publicUrl || null,
+          comprovanteNome: comprovante?.filename || comprovante?.nome || arquivo?.name || null,
+        }),
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível registrar o pagamento.')
+      }
+
+      setMensagem('Pagamento do reembolso registrado e saldo debitado com sucesso.')
+      setModalPagamentoReembolso(null)
+      await atualizarTudo()
+      if (selecionado) await abrirCliente(selecionado)
+    } catch (error) {
+      console.error('Erro ao registrar pagamento do reembolso:', error)
+      setErro(error instanceof Error ? error.message : 'Erro ao registrar pagamento.')
+    } finally {
+      setProcessandoReembolsoId('')
+    }
+  }
+
 
   async function abrirCliente(cliente: ClienteSaldo) {
     try {
@@ -339,7 +556,98 @@ export default function AdminSaldosPage() {
     return (
       <main className="pageShell loadingShell">
         <div className="loadingCard">Carregando saldos...</div>
-        <style jsx>{styles}</style>
+  
+      {modalPagamentoReembolso && (
+        <div className="modalOverlay">
+          <section className="modalCard">
+            <div className="modalHeader">
+              <div>
+                <span>Reembolso do cliente</span>
+                <h3>Registrar pagamento</h3>
+                <p>
+                  {modalPagamentoReembolso.reembolso.cliente_nome || 'Cliente'} · valor solicitado: {formatarMoeda(modalPagamentoReembolso.reembolso.valor_solicitado)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalPagamentoReembolso(null)}
+                disabled={processandoReembolsoId === modalPagamentoReembolso.reembolso.id}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="pixBox">
+              <strong>PIX informado pelo cliente</strong>
+              <span>Tipo: {modalPagamentoReembolso.reembolso.pix_tipo || '—'}</span>
+              <span>Chave: {modalPagamentoReembolso.reembolso.chave_pix || '—'}</span>
+              <span>Titular: {modalPagamentoReembolso.reembolso.titular_nome || '—'}</span>
+              <small>Confira se a chave PIX está no nome do cliente antes de registrar o pagamento.</small>
+            </div>
+
+            <label className="modalField">
+              Referência do pagamento
+              <input
+                value={modalPagamentoReembolso.referencia}
+                onChange={(event) =>
+                  setModalPagamentoReembolso((prev) =>
+                    prev ? { ...prev, referencia: event.target.value } : prev
+                  )
+                }
+                placeholder="Link, ID da transação, comprovante ou observação curta"
+              />
+            </label>
+
+            <label className="modalField">
+              Anexar comprovante
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                  setModalPagamentoReembolso((prev) =>
+                    prev ? { ...prev, arquivo: event.target.files?.[0] || null } : prev
+                  )
+                }
+              />
+              <small>PDF, print ou imagem do comprovante. Máximo recomendado: 10 MB.</small>
+            </label>
+
+            <label className="modalField">
+              Observação administrativa
+              <textarea
+                value={modalPagamentoReembolso.observacao}
+                onChange={(event) =>
+                  setModalPagamentoReembolso((prev) =>
+                    prev ? { ...prev, observacao: event.target.value } : prev
+                  )
+                }
+                rows={4}
+              />
+            </label>
+
+            <div className="modalActions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setModalPagamentoReembolso(null)}
+                disabled={processandoReembolsoId === modalPagamentoReembolso.reembolso.id}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={confirmarPagamentoReembolso}
+                disabled={processandoReembolsoId === modalPagamentoReembolso.reembolso.id}
+              >
+                {processandoReembolsoId === modalPagamentoReembolso.reembolso.id ? 'Registrando...' : 'Confirmar pagamento'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <style jsx>{styles}</style>
       </main>
     )
   }
@@ -359,7 +667,7 @@ export default function AdminSaldosPage() {
           <button type="button" onClick={() => router.push('/admin/dashboard')}>
             Dashboard
           </button>
-          <button type="button" onClick={carregarClientes}>
+          <button type="button" onClick={atualizarTudo}>
             Atualizar
           </button>
         </div>
@@ -387,6 +695,10 @@ export default function AdminSaldosPage() {
           <article>
             <strong>{formatarMoeda(estatisticas.maiorSaldo)}</strong>
             <span>maior saldo</span>
+          </article>
+          <article>
+            <strong>{estatisticas.reembolsosPendentes}</strong>
+            <span>reembolso(s) em análise</span>
           </article>
         </div>
       </section>
@@ -420,6 +732,107 @@ export default function AdminSaldosPage() {
             Todos
           </button>
         </div>
+      </section>
+
+
+      <section className="reembolsoCard">
+        <div className="sectionHead">
+          <div>
+            <h3>Solicitações de reembolso</h3>
+            <p>Pedidos de clientes para reembolso do Saldo de Jornada. Registre pagamento apenas após conferir PIX e saldo disponível.</p>
+          </div>
+
+          <div className="toggleBox compactToggle">
+            {(['pendente', 'em_analise', 'aprovado', 'pago', 'recusado', 'todos'] as const).map((status) => (
+              <button
+                key={status}
+                type="button"
+                className={filtroReembolso === status ? 'active' : ''}
+                onClick={() => setFiltroReembolso(status)}
+              >
+                {status === 'em_analise' ? 'Em análise' : status === 'todos' ? 'Todos' : status}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {carregandoReembolsos ? (
+          <div className="emptyState small">Carregando solicitações...</div>
+        ) : reembolsos.length === 0 ? (
+          <div className="emptyState small">Nenhuma solicitação de reembolso neste filtro.</div>
+        ) : (
+          <div className="reembolsoList">
+            {reembolsos.slice(0, 8).map((reembolso) => {
+              const status = String(reembolso.status || 'pendente').toLowerCase()
+              const processando = processandoReembolsoId === reembolso.id
+
+              return (
+                <article key={reembolso.id} className="reembolsoItem">
+                  <div className="avatar">
+                    {reembolso.cliente_avatar ? (
+                      <img src={reembolso.cliente_avatar} alt="Cliente" />
+                    ) : (
+                      <span>{(reembolso.cliente_nome || reembolso.cliente_email || 'C').slice(0, 1).toUpperCase()}</span>
+                    )}
+                  </div>
+
+                  <div className="reembolsoInfo">
+                    <strong>{reembolso.cliente_nome || 'Cliente'}</strong>
+                    <span>{reembolso.cliente_email || reembolso.cliente_id}</span>
+                    <small>
+                      PIX {reembolso.pix_tipo || '—'}: {reembolso.chave_pix || 'não informado'} · titular {reembolso.titular_nome || '—'}
+                    </small>
+                    {reembolso.motivo && <small>Motivo: {reembolso.motivo}</small>}
+                  </div>
+
+                  <div className="reembolsoValor">
+                    <strong>{formatarMoeda(reembolso.valor_solicitado)}</strong>
+                    <span>{status}</span>
+                  </div>
+
+                  <div className="reembolsoActions">
+                    {(status === 'pendente' || status === 'em_analise') && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => processarReembolso(reembolso, 'aprovar')}
+                          disabled={processando}
+                        >
+                          Aprovar
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => processarReembolso(reembolso, 'recusar')}
+                          disabled={processando}
+                        >
+                          Recusar
+                        </button>
+                      </>
+                    )}
+
+                    {(status === 'aprovado' || status === 'pendente' || status === 'em_analise') && (
+                      <button
+                        type="button"
+                        className="pay"
+                        onClick={() => abrirPagamentoReembolso(reembolso)}
+                        disabled={processando}
+                      >
+                        Registrar pagamento
+                      </button>
+                    )}
+
+                    {reembolso.comprovante_url && (
+                      <a href={reembolso.comprovante_url} target="_blank" rel="noreferrer">
+                        Ver comprovante
+                      </a>
+                    )}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
       </section>
 
       <section className="contentGrid">
@@ -621,6 +1034,97 @@ export default function AdminSaldosPage() {
           )}
         </aside>
       </section>
+
+
+      {modalPagamentoReembolso && (
+        <div className="modalOverlay">
+          <section className="modalCard">
+            <div className="modalHeader">
+              <div>
+                <span>Reembolso do cliente</span>
+                <h3>Registrar pagamento</h3>
+                <p>
+                  {modalPagamentoReembolso.reembolso.cliente_nome || 'Cliente'} · valor solicitado: {formatarMoeda(modalPagamentoReembolso.reembolso.valor_solicitado)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalPagamentoReembolso(null)}
+                disabled={processandoReembolsoId === modalPagamentoReembolso.reembolso.id}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="pixBox">
+              <strong>PIX informado pelo cliente</strong>
+              <span>Tipo: {modalPagamentoReembolso.reembolso.pix_tipo || '—'}</span>
+              <span>Chave: {modalPagamentoReembolso.reembolso.chave_pix || '—'}</span>
+              <span>Titular: {modalPagamentoReembolso.reembolso.titular_nome || '—'}</span>
+              <small>Confira se a chave PIX está no nome do cliente antes de registrar o pagamento.</small>
+            </div>
+
+            <label className="modalField">
+              Referência do pagamento
+              <input
+                value={modalPagamentoReembolso.referencia}
+                onChange={(event) =>
+                  setModalPagamentoReembolso((prev) =>
+                    prev ? { ...prev, referencia: event.target.value } : prev
+                  )
+                }
+                placeholder="Link, ID da transação, comprovante ou observação curta"
+              />
+            </label>
+
+            <label className="modalField">
+              Anexar comprovante
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                  setModalPagamentoReembolso((prev) =>
+                    prev ? { ...prev, arquivo: event.target.files?.[0] || null } : prev
+                  )
+                }
+              />
+              <small>PDF, print ou imagem do comprovante. Máximo recomendado: 10 MB.</small>
+            </label>
+
+            <label className="modalField">
+              Observação administrativa
+              <textarea
+                value={modalPagamentoReembolso.observacao}
+                onChange={(event) =>
+                  setModalPagamentoReembolso((prev) =>
+                    prev ? { ...prev, observacao: event.target.value } : prev
+                  )
+                }
+                rows={4}
+              />
+            </label>
+
+            <div className="modalActions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setModalPagamentoReembolso(null)}
+                disabled={processandoReembolsoId === modalPagamentoReembolso.reembolso.id}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={confirmarPagamentoReembolso}
+                disabled={processandoReembolsoId === modalPagamentoReembolso.reembolso.id}
+              >
+                {processandoReembolsoId === modalPagamentoReembolso.reembolso.id ? 'Registrando...' : 'Confirmar pagamento'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <style jsx>{styles}</style>
     </main>
@@ -1195,6 +1699,17 @@ const styles = `
     .heroCard,
     .contentGrid {
       grid-template-columns: 1fr;
+    }
+
+    .reembolsoItem {
+      grid-template-columns: 46px minmax(0, 1fr);
+    }
+
+    .reembolsoValor,
+    .reembolsoActions {
+      grid-column: 2;
+      text-align: left;
+      justify-content: flex-start;
     }
 
     .detailCard {

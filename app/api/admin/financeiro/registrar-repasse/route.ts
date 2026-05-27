@@ -125,8 +125,8 @@ function repasseCancelado(repasse: any) {
 function valorDoRepasse(repasse: any) {
   return Number(
     repasse?.valor_pago ||
-      repasse?.valor_repasse ||
       repasse?.valor_repassado ||
+      repasse?.valor_repasse ||
       repasse?.valor ||
       0
   )
@@ -282,6 +282,7 @@ export async function POST(request: NextRequest) {
       body.valorPago ||
         body.valor_pago ||
         body.valorRepasse ||
+        body.valor_repassado ||
         body.valor_repasse ||
         body.valor ||
         0
@@ -362,7 +363,7 @@ export async function POST(request: NextRequest) {
       criado_por: adminId || null,
       valor: valorFinal,
       valor_pago: valorFinal,
-      valor_repasse: valorFinal,
+      valor_repassado: valorFinal,
       status: 'pago',
       tipo: 'repasse_guia',
       observacao: observacao || null,

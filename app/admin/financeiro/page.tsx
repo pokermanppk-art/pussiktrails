@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
@@ -87,6 +87,11 @@ type SaqueGuiaRow = {
   respondido_por?: string | null
   respondido_em?: string | null
   comprovante_url?: string | null
+  comprovante_referencia?: string | null
+  comprovante_nome?: string | null
+  comprovante_mime_type?: string | null
+  comprovante_tamanho_bytes?: number | null
+  comprovante_storage_path?: string | null
   repasse_id?: string | null
   metadata?: any
   created_at?: string | null
@@ -178,6 +183,7 @@ export default function AdminFinanceiroPage() {
   const [acaoSaque, setAcaoSaque] = useState<AcaoSaque>('aprovar')
   const [observacaoSaque, setObservacaoSaque] = useState('')
   const [comprovanteSaqueUrl, setComprovanteSaqueUrl] = useState('')
+  const [comprovanteSaqueArquivo, setComprovanteSaqueArquivo] = useState<File | null>(null)
   const [processandoSaque, setProcessandoSaque] = useState(false)
 
   useEffect(() => {
@@ -826,6 +832,7 @@ export default function AdminFinanceiroPage() {
           : ''
     )
     setComprovanteSaqueUrl('')
+    setComprovanteSaqueArquivo(null)
     setModalSaqueAberto(true)
   }
 
@@ -837,6 +844,75 @@ export default function AdminFinanceiroPage() {
     setAcaoSaque('aprovar')
     setObservacaoSaque('')
     setComprovanteSaqueUrl('')
+    setComprovanteSaqueArquivo(null)
+  }
+
+  const selecionarComprovanteSaque = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null
+    event.target.value = ''
+
+    if (!file) return
+
+    const tamanhoMaximo = 10 * 1024 * 1024
+    const tiposPermitidos = [
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/webp',
+      'image/heic',
+      'image/heif',
+    ]
+
+    if (file.size > tamanhoMaximo) {
+      setErro('O comprovante deve ter no máximo 10 MB.')
+      return
+    }
+
+    if (file.type && !tiposPermitidos.includes(file.type)) {
+      setErro('Envie um comprovante em PDF, PNG, JPG, WEBP ou HEIC.')
+      return
+    }
+
+    setErro('')
+    setComprovanteSaqueArquivo(file)
+
+    if (!limparTexto(comprovanteSaqueUrl)) {
+      setComprovanteSaqueUrl(file.name)
+    }
+  }
+
+  const removerComprovanteSaque = () => {
+    setComprovanteSaqueArquivo(null)
+  }
+
+  const enviarArquivoComprovanteSaque = async (saqueId: string) => {
+    if (!comprovanteSaqueArquivo) return null
+
+    const formData = new FormData()
+    formData.append('file', comprovanteSaqueArquivo)
+    formData.append('saqueId', saqueId)
+    formData.append('guiaId', saqueSelecionado?.guia_id || '')
+    formData.append('adminId', admin?.id || '')
+
+    const response = await fetch('/api/admin/financeiro/saques/comprovante', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok || data?.sucesso === false) {
+      throw new Error(data?.erro || data?.message || 'Não foi possível anexar o comprovante.')
+    }
+
+    return {
+      url: String(data?.publicUrl || data?.url || ''),
+      path: String(data?.path || ''),
+      nome: String(data?.filename || comprovanteSaqueArquivo.name || ''),
+      mimeType: String(data?.mimeType || comprovanteSaqueArquivo.type || ''),
+      tamanhoBytes: Number(data?.size || comprovanteSaqueArquivo.size || 0),
+    }
   }
 
   const atualizarStatusSaque = async (params: {
@@ -844,6 +920,11 @@ export default function AdminFinanceiroPage() {
     status: string
     observacaoAdmin?: string
     comprovanteUrl?: string
+    comprovanteReferencia?: string
+    comprovanteNome?: string
+    comprovanteMimeType?: string
+    comprovanteTamanhoBytes?: number
+    comprovanteStoragePath?: string
     repasseId?: string | null
   }) => {
     const response = await fetch('/api/admin/financeiro/saques', {
@@ -857,6 +938,11 @@ export default function AdminFinanceiroPage() {
         status: params.status,
         observacaoAdmin: params.observacaoAdmin || '',
         comprovanteUrl: params.comprovanteUrl || '',
+        comprovanteReferencia: params.comprovanteReferencia || '',
+        comprovanteNome: params.comprovanteNome || '',
+        comprovanteMimeType: params.comprovanteMimeType || '',
+        comprovanteTamanhoBytes: params.comprovanteTamanhoBytes || 0,
+        comprovanteStoragePath: params.comprovanteStoragePath || '',
         repasseId: params.repasseId || null,
         adminId: admin?.id || null
       })
@@ -929,6 +1015,10 @@ export default function AdminFinanceiroPage() {
           return
         }
 
+        const comprovanteUpload = await enviarArquivoComprovanteSaque(saqueSelecionado.id)
+        const comprovanteReferencia = limparTexto(comprovanteSaqueUrl)
+        const comprovanteFinalUrl = comprovanteUpload?.url || comprovanteReferencia
+
         const response = await fetch('/api/admin/financeiro/registrar-repasse', {
           method: 'POST',
           headers: {
@@ -945,7 +1035,7 @@ export default function AdminFinanceiroPage() {
             valorPago: valorSolicitado,
             valor_pago: valorSolicitado,
             valor: valorSolicitado,
-            observacao: limparTexto(observacaoSaque) || `Saque solicitado pelo guia. PIX: ${saqueSelecionado.pix_tipo || ''} ${saqueSelecionado.pix_chave || ''}. Titular: ${saqueSelecionado.titular_nome || ''}.`
+            observacao: limparTexto(observacaoSaque) || `Saque solicitado pelo guia. PIX: ${saqueSelecionado.pix_tipo || ''} ${saqueSelecionado.pix_chave || ''}. Titular: ${saqueSelecionado.titular_nome || ''}. ${comprovanteReferencia ? `Comprovante/referência: ${comprovanteReferencia}.` : ''}`
           })
         })
 
@@ -959,7 +1049,12 @@ export default function AdminFinanceiroPage() {
           saqueId: saqueSelecionado.id,
           status: 'pago',
           observacaoAdmin: observacaoSaque || 'Pagamento de saque registrado pelo Admin.',
-          comprovanteUrl: comprovanteSaqueUrl,
+          comprovanteUrl: comprovanteFinalUrl,
+          comprovanteReferencia,
+          comprovanteNome: comprovanteUpload?.nome || '',
+          comprovanteMimeType: comprovanteUpload?.mimeType || '',
+          comprovanteTamanhoBytes: comprovanteUpload?.tamanhoBytes || 0,
+          comprovanteStoragePath: comprovanteUpload?.path || '',
           repasseId: data?.repasse?.id || data?.data?.id || data?.registro?.id || null
         })
 
@@ -971,6 +1066,7 @@ export default function AdminFinanceiroPage() {
       setAcaoSaque('aprovar')
       setObservacaoSaque('')
       setComprovanteSaqueUrl('')
+      setComprovanteSaqueArquivo(null)
 
       await carregarFinanceiro()
       setTimeout(() => setMensagem(''), 3000)
@@ -1721,6 +1817,86 @@ export default function AdminFinanceiroPage() {
           font-weight: 750;
         }
 
+        .fileUploadBox {
+          margin-top: 10px;
+          border: 1px dashed rgba(15, 23, 42, 0.18);
+          background: #f8fafc;
+          color: #0f172a;
+          border-radius: 18px;
+          padding: 12px 13px;
+          display: grid;
+          grid-template-columns: 38px minmax(0, 1fr);
+          gap: 10px;
+          align-items: center;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .fileUploadBox:hover {
+          border-color: rgba(22, 163, 74, 0.35);
+          background: #f0fdf4;
+        }
+
+        .fileUploadBox input {
+          display: none;
+        }
+
+        .fileUploadIcon {
+          width: 38px;
+          height: 38px;
+          border-radius: 14px;
+          background: #ffffff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 8px 18px rgba(15,23,42,0.06);
+        }
+
+        .fileUploadBox strong {
+          display: block;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .fileUploadBox small {
+          display: block;
+          margin-top: 2px;
+          color: #64748b;
+          font-size: 11px;
+          font-weight: 750;
+          line-height: 1.3;
+        }
+
+        .filePreviewLine {
+          margin-top: 8px;
+          border-radius: 14px;
+          background: #ecfdf5;
+          color: #166534;
+          padding: 9px 10px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          font-size: 12px;
+          font-weight: 850;
+        }
+
+        .filePreviewLine span {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .filePreviewLine button {
+          border: none;
+          background: transparent;
+          color: #991b1b;
+          font-size: 11px;
+          font-weight: 950;
+          cursor: pointer;
+        }
+
         .modalActions {
           display: flex;
           gap: 10px;
@@ -2196,8 +2372,31 @@ export default function AdminFinanceiroPage() {
                     className="input"
                     value={comprovanteSaqueUrl}
                     onChange={(event) => setComprovanteSaqueUrl(event.target.value)}
-                    placeholder="Link, ID da transação, comprovante ou observação curta"
+                    placeholder="Link, ID da transação, número do comprovante ou observação curta"
                   />
+
+                  <label className="fileUploadBox">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={selecionarComprovanteSaque}
+                      disabled={processandoSaque}
+                    />
+                    <span className="fileUploadIcon">📎</span>
+                    <span>
+                      <strong>Anexar comprovante</strong>
+                      <small>PDF, imagem ou print do pagamento · máximo 10 MB</small>
+                    </span>
+                  </label>
+
+                  {comprovanteSaqueArquivo && (
+                    <div className="filePreviewLine">
+                      <span>{comprovanteSaqueArquivo.name}</span>
+                      <button type="button" onClick={removerComprovanteSaque} disabled={processandoSaque}>
+                        Remover
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

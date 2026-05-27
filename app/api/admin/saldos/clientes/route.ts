@@ -73,9 +73,29 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    let reembolsosPendentes: AnyRecord[] = []
+
+    try {
+      if (clienteIds.length > 0) {
+        const { data: reembolsosData } = await supabase
+          .from('solicitacoes_reembolso')
+          .select('id, cliente_id, valor_solicitado, status')
+          .in('cliente_id', clienteIds)
+          .in('status', ['pendente', 'em_analise', 'aprovado'])
+
+        reembolsosPendentes = (reembolsosData || []) as AnyRecord[]
+      }
+    } catch (error) {
+      console.warn('Aviso ao carregar reembolsos pendentes:', error)
+    }
+
     const lista = (saldos || []).map((saldo: AnyRecord) => {
       const usuario =
         usuarios.find((u) => String(u.id) === String(saldo.cliente_id)) || {}
+
+      const reembolsosCliente = reembolsosPendentes.filter(
+        (item) => String(item.cliente_id) === String(saldo.cliente_id)
+      )
 
       return {
         ...saldo,
@@ -89,6 +109,11 @@ export async function GET(request: NextRequest) {
         cliente_avatar:
           usuario.avatar_url || usuario.foto_url || usuario.imagem_url || '',
         saldo_disponivel_num: numero(saldo.saldo_disponivel),
+        reembolsos_pendentes: reembolsosCliente.length,
+        valor_reembolsos_pendentes: reembolsosCliente.reduce(
+          (acc, item) => acc + numero(item.valor_solicitado),
+          0
+        ),
       }
     })
 
@@ -106,11 +131,25 @@ export async function GET(request: NextRequest) {
       0
     )
 
+    const totalReembolsosPendentes = filtrada.reduce(
+      (acc: number, item: AnyRecord) => acc + numero(item.valor_reembolsos_pendentes),
+      0
+    )
+
     return NextResponse.json({
       sucesso: true,
       clientes: filtrada,
       totalClientes: filtrada.length,
       totalDisponivel,
+      resumo: {
+        totalClientes: filtrada.length,
+        totalDisponivel,
+        reembolsosPendentes: filtrada.reduce(
+          (acc: number, item: AnyRecord) => acc + numero(item.reembolsos_pendentes),
+          0
+        ),
+        totalReembolsosPendentes,
+      },
     })
   } catch (error) {
     console.error('Erro em GET /api/admin/saldos/clientes:', error)

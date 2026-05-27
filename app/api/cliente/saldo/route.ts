@@ -48,9 +48,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    await supabase.rpc('recalcular_saldo_cliente', {
-      p_cliente_id: clienteId,
-    })
+    try {
+      await supabase.rpc('recalcular_saldo_cliente', {
+        p_cliente_id: clienteId,
+      })
+    } catch (rpcError) {
+      console.warn('Aviso ao recalcular saldo do cliente:', rpcError)
+    }
 
     const { data: saldo, error: saldoError } = await supabase
       .from('cliente_saldos')
@@ -69,6 +73,25 @@ export async function GET(request: NextRequest) {
 
     if (movError) throw movError
 
+    let reembolsos: AnyRecord[] = []
+
+    try {
+      const { data: reembolsosData, error: reembolsoError } = await supabase
+        .from('solicitacoes_reembolso')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (reembolsoError) {
+        console.warn('Aviso ao carregar reembolsos do cliente:', reembolsoError)
+      } else {
+        reembolsos = (reembolsosData || []) as AnyRecord[]
+      }
+    } catch (reembolsoCatch) {
+      console.warn('Aviso: tabela solicitacoes_reembolso indisponível:', reembolsoCatch)
+    }
+
     const saldoSeguro: AnyRecord = saldo || {
       cliente_id: clienteId,
       saldo_disponivel: 0,
@@ -82,6 +105,7 @@ export async function GET(request: NextRequest) {
       sucesso: true,
       saldo: saldoSeguro,
       movimentacoes: movimentacoes || [],
+      reembolsos,
     })
   } catch (error) {
     console.error('Erro em GET /api/cliente/saldo:', error)

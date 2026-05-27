@@ -39,6 +39,18 @@ type SaldoCliente = {
 
 type MovimentacaoSaldo = Record<string, any>
 
+type ReembolsoCliente = Record<string, any>
+
+type ReembolsoModal = {
+  valor: string
+  pixTipo: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria'
+  pixChave: string
+  titularNome: string
+  titularDocumento: string
+  motivo: string
+  confirmaPixTitular: boolean
+}
+
 type CancelamentoModal = {
   reserva: ReservaCompleta
   motivoCodigo: string
@@ -306,6 +318,20 @@ export default function ClienteMinhasReservasPage() {
   const [cancelamento, setCancelamento] = useState<CancelamentoModal | null>(null)
   const [cancelando, setCancelando] = useState(false)
 
+  const [reembolsos, setReembolsos] = useState<ReembolsoCliente[]>([])
+  const [modalReembolsoAberto, setModalReembolsoAberto] = useState(false)
+  const [solicitandoReembolso, setSolicitandoReembolso] = useState(false)
+  const [erroReembolso, setErroReembolso] = useState('')
+  const [reembolsoForm, setReembolsoForm] = useState<ReembolsoModal>({
+    valor: '',
+    pixTipo: 'cpf',
+    pixChave: '',
+    titularNome: '',
+    titularDocumento: '',
+    motivo: '',
+    confirmaPixTitular: false,
+  })
+
   useEffect(() => {
     iniciar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -375,11 +401,103 @@ export default function ClienteMinhasReservasPage() {
       console.warn('Saldo indisponível:', json?.erro || resposta.status)
       setSaldo({ cliente_id: clienteId, saldo_disponivel: 0, moeda: 'BRL' })
       setMovimentacoes([])
+      setReembolsos([])
       return
     }
 
     setSaldo(json.saldo || { cliente_id: clienteId, saldo_disponivel: 0, moeda: 'BRL' })
     setMovimentacoes(Array.isArray(json.movimentacoes) ? json.movimentacoes : [])
+    setReembolsos(Array.isArray(json.reembolsos) ? json.reembolsos : [])
+  }
+
+  function abrirReembolso() {
+    setMensagem('')
+    setErro('')
+    setErroReembolso('')
+
+    if (saldoDisponivel <= 0) {
+      setErro('Não há saldo disponível para solicitar reembolso neste momento.')
+      return
+    }
+
+    setReembolsoForm({
+      valor: String(saldoDisponivel.toFixed(2)).replace('.', ','),
+      pixTipo: 'cpf',
+      pixChave: '',
+      titularNome: user?.nome || user?.name || '',
+      titularDocumento: '',
+      motivo: 'Solicitação de reembolso do Saldo de Jornada.',
+      confirmaPixTitular: false,
+    })
+
+    setModalReembolsoAberto(true)
+  }
+
+  async function solicitarReembolso() {
+    if (!user?.id) return
+
+    const valor = numero(reembolsoForm.valor)
+
+    if (!Number.isFinite(valor) || valor <= 0) {
+      setErroReembolso('Informe um valor válido para o reembolso.')
+      return
+    }
+
+    if (valor > saldoDisponivel) {
+      setErroReembolso('O valor solicitado não pode ser maior que o saldo disponível.')
+      return
+    }
+
+    if (!reembolsoForm.pixChave.trim()) {
+      setErroReembolso('Informe a chave PIX para o reembolso.')
+      return
+    }
+
+    if (!reembolsoForm.titularNome.trim()) {
+      setErroReembolso('Informe o nome do titular do PIX.')
+      return
+    }
+
+    if (!reembolsoForm.confirmaPixTitular) {
+      setErroReembolso('Confirme que a chave PIX está no seu nome antes de solicitar o reembolso.')
+      return
+    }
+
+    try {
+      setSolicitandoReembolso(true)
+      setErroReembolso('')
+      setErro('')
+      setMensagem('')
+
+      const resposta = await fetch('/api/cliente/saldo/solicitar-reembolso', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clienteId: user.id,
+          valorSolicitado: valor,
+          pixTipo: reembolsoForm.pixTipo,
+          chavePix: reembolsoForm.pixChave,
+          titularNome: reembolsoForm.titularNome,
+          titularDocumento: reembolsoForm.titularDocumento,
+          motivo: reembolsoForm.motivo,
+        }),
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível registrar a solicitação de reembolso.')
+      }
+
+      setMensagem('Solicitação de reembolso enviada ao Admin. Você poderá acompanhar o status pelo extrato.')
+      setModalReembolsoAberto(false)
+      await carregarSaldo(user.id)
+    } catch (error) {
+      console.error('Erro ao solicitar reembolso:', error)
+      setErroReembolso(error instanceof Error ? error.message : 'Erro ao solicitar reembolso.')
+    } finally {
+      setSolicitandoReembolso(false)
+    }
   }
 
   async function carregarReservas(clienteId: string) {
@@ -539,6 +657,10 @@ export default function ClienteMinhasReservasPage() {
   const saldoDisponivel = numero(saldo?.saldo_disponivel)
   const saldoUtilizado = numero(saldo?.saldo_utilizado)
   const saldoReservado = numero(saldo?.saldo_reservado)
+  const reembolsoPendente = reembolsos.some((item) => {
+    const status = normalizar(item.status)
+    return status === 'pendente' || status === 'em_analise' || status === 'aprovado'
+  })
 
   const stats = useMemo(() => {
     return reservas.reduce(
@@ -820,6 +942,29 @@ export default function ClienteMinhasReservasPage() {
           color: rgba(255, 253, 247, 0.62);
           font-size: 11px;
           font-weight: 800;
+        }
+
+        .saldoAction {
+          width: 100%;
+          border: 1px solid rgba(255,253,247,0.24);
+          border-radius: 999px;
+          background: #fffdf7;
+          color: #203c2e;
+          padding: 12px 14px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.18s ease;
+        }
+
+        .saldoAction:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 14px 28px rgba(0,0,0,0.16);
+        }
+
+        .saldoAction:disabled {
+          opacity: 0.58;
+          cursor: not-allowed;
         }
 
         .message,
@@ -1226,6 +1371,7 @@ export default function ClienteMinhasReservasPage() {
         }
 
         .field select,
+        .field input,
         .field textarea {
           width: 100%;
           border-radius: 18px;
@@ -1242,6 +1388,44 @@ export default function ClienteMinhasReservasPage() {
         .field textarea {
           min-height: 100px;
           resize: vertical;
+        }
+
+        .checkField {
+          margin-top: 16px;
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          color: #334155;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 820;
+        }
+
+        .checkField input {
+          margin-top: 2px;
+          width: 18px;
+          height: 18px;
+          accent-color: #203c2e;
+          flex: 0 0 auto;
+        }
+
+        .reembolsoStatus {
+          margin-top: 12px;
+          border-radius: 18px;
+          background: rgba(255,255,255,0.60);
+          border: 1px solid rgba(32,60,46,0.10);
+          padding: 12px;
+          color: #475569;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 780;
+        }
+
+        .reembolsoStatus strong {
+          display: block;
+          color: #203c2e;
+          font-size: 13px;
+          margin-bottom: 4px;
         }
 
         .policyBox {
@@ -1404,7 +1588,7 @@ export default function ClienteMinhasReservasPage() {
                 <div className="saldoValor">{formatarMoeda(saldoDisponivel)}</div>
                 <p className="saldoText">
                   {saldoDisponivel > 0
-                    ? 'Você pode usar este saldo em uma nova jornada quando a função for liberada no checkout.'
+                    ? 'Você pode usar este saldo em uma nova jornada ou solicitar reembolso quando aplicável.'
                     : 'Se algum roteiro for cancelado com direito a crédito, o saldo aparecerá aqui.'}
                 </p>
               </div>
@@ -1419,6 +1603,15 @@ export default function ClienteMinhasReservasPage() {
                   <span>Reservado</span>
                 </div>
               </div>
+
+              <button
+                type="button"
+                className="saldoAction"
+                onClick={abrirReembolso}
+                disabled={saldoDisponivel <= 0 || reembolsoPendente}
+              >
+                {reembolsoPendente ? 'Reembolso em análise' : 'Solicitar reembolso'}
+              </button>
             </aside>
           </div>
         </section>
@@ -1635,6 +1828,155 @@ export default function ClienteMinhasReservasPage() {
           </aside>
         </div>
       </div>
+
+
+      {modalReembolsoAberto && (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modalHeader">
+              <div>
+                <h2 className="modalTitle">Solicitar reembolso</h2>
+                <p className="modalText">
+                  O reembolso será analisado pelo Admin. O PIX informado precisa estar no nome do cliente titular da conta.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="closeBtn"
+                onClick={() => setModalReembolsoAberto(false)}
+                disabled={solicitandoReembolso}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="field">
+              <label>Valor solicitado</label>
+              <input
+                value={reembolsoForm.valor}
+                onChange={(event) =>
+                  setReembolsoForm((prev) => ({ ...prev, valor: event.target.value }))
+                }
+                placeholder="Ex.: 238,65"
+                inputMode="decimal"
+                disabled={solicitandoReembolso}
+              />
+            </div>
+
+            <div className="field">
+              <label>Tipo da chave PIX</label>
+              <select
+                value={reembolsoForm.pixTipo}
+                onChange={(event) =>
+                  setReembolsoForm((prev) => ({
+                    ...prev,
+                    pixTipo: event.target.value as ReembolsoModal['pixTipo'],
+                  }))
+                }
+                disabled={solicitandoReembolso}
+              >
+                <option value="cpf">CPF</option>
+                <option value="cnpj">CNPJ</option>
+                <option value="email">E-mail</option>
+                <option value="telefone">Telefone</option>
+                <option value="aleatoria">Chave aleatória</option>
+              </select>
+            </div>
+
+            <div className="field">
+              <label>Chave PIX</label>
+              <input
+                value={reembolsoForm.pixChave}
+                onChange={(event) =>
+                  setReembolsoForm((prev) => ({ ...prev, pixChave: event.target.value }))
+                }
+                placeholder="Informe a chave PIX"
+                disabled={solicitandoReembolso}
+              />
+            </div>
+
+            <div className="field">
+              <label>Nome do titular</label>
+              <input
+                value={reembolsoForm.titularNome}
+                onChange={(event) =>
+                  setReembolsoForm((prev) => ({ ...prev, titularNome: event.target.value }))
+                }
+                placeholder="Nome completo do titular da chave PIX"
+                disabled={solicitandoReembolso}
+              />
+            </div>
+
+            <div className="field">
+              <label>CPF/CNPJ do titular, se desejar informar</label>
+              <input
+                value={reembolsoForm.titularDocumento}
+                onChange={(event) =>
+                  setReembolsoForm((prev) => ({ ...prev, titularDocumento: event.target.value }))
+                }
+                placeholder="Opcional"
+                disabled={solicitandoReembolso}
+              />
+            </div>
+
+            <div className="field">
+              <label>Motivo/observação</label>
+              <textarea
+                value={reembolsoForm.motivo}
+                onChange={(event) =>
+                  setReembolsoForm((prev) => ({ ...prev, motivo: event.target.value }))
+                }
+                placeholder="Explique brevemente o motivo do reembolso."
+                disabled={solicitandoReembolso}
+              />
+            </div>
+
+            <label className="checkField">
+              <input
+                type="checkbox"
+                checked={reembolsoForm.confirmaPixTitular}
+                onChange={(event) =>
+                  setReembolsoForm((prev) => ({
+                    ...prev,
+                    confirmaPixTitular: event.target.checked,
+                  }))
+                }
+                disabled={solicitandoReembolso}
+              />
+              <span>
+                Confirmo que a chave PIX informada está no meu nome e que o valor solicitado corresponde ao meu Saldo de Jornada disponível.
+              </span>
+            </label>
+
+            <div className="policyBox">
+              Saldo disponível atual: <strong>{formatarMoeda(saldoDisponivel)}</strong>. Após aprovação e pagamento pelo Admin, o valor pago será debitado do seu Saldo de Jornada.
+            </div>
+
+            {erroReembolso && <div className="error" style={{ marginTop: 12 }}>{erroReembolso}</div>}
+
+            <div className="modalActions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setModalReembolsoAberto(false)}
+                disabled={solicitandoReembolso}
+              >
+                Voltar
+              </button>
+
+              <button
+                type="button"
+                className="btn danger"
+                onClick={solicitarReembolso}
+                disabled={solicitandoReembolso}
+              >
+                {solicitandoReembolso ? 'Enviando...' : 'Enviar solicitação'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {cancelamento && (
         <div className="overlay">

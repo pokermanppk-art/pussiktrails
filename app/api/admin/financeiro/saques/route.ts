@@ -57,6 +57,64 @@ function statusPermitido(status: string) {
   ].includes(statusNorm)
 }
 
+function erroDeColunaAusente(error: any) {
+  const textoErro = String(
+    error?.message || error?.details || error?.hint || ''
+  ).toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    textoErro.includes('could not find') ||
+    textoErro.includes('schema cache') ||
+    textoErro.includes('column')
+  )
+}
+
+function extrairColunaAusente(error: any) {
+  const textoErro = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+
+  const matchAspas = textoErro.match(/'([^']+)'/)
+  if (matchAspas?.[1]) return matchAspas[1]
+
+  const matchColumn = textoErro.match(/column\s+([a-zA-Z0-9_]+)/i)
+  if (matchColumn?.[1]) return matchColumn[1]
+
+  return ''
+}
+
+async function atualizarSaqueComFallback(params: {
+  supabase: SupabaseAdmin
+  saqueId: string
+  payloadOriginal: AnyRecord
+}) {
+  const { supabase, saqueId, payloadOriginal } = params
+  let payloadAtual = { ...payloadOriginal }
+
+  for (let tentativa = 0; tentativa < 18; tentativa++) {
+    const { data, error } = await supabase
+      .from('solicitacoes_saque_guias')
+      .update(payloadAtual)
+      .eq('id', saqueId)
+      .select('*')
+      .maybeSingle()
+
+    if (!error) return data
+
+    if (!erroDeColunaAusente(error)) throw error
+
+    const coluna = extrairColunaAusente(error)
+
+    if (!coluna || !(coluna in payloadAtual)) throw error
+
+    delete payloadAtual[coluna]
+  }
+
+  throw new Error('Não foi possível atualizar a solicitação de saque.')
+}
+
 async function registrarLog(params: {
   supabase: SupabaseAdmin
   saqueId: string
@@ -65,8 +123,18 @@ async function registrarLog(params: {
   status: string
   observacaoAdmin?: string | null
   repasseId?: string | null
+  comprovanteUrl?: string | null
 }) {
-  const { supabase, saqueId, guiaId, adminId, status, observacaoAdmin, repasseId } = params
+  const {
+    supabase,
+    saqueId,
+    guiaId,
+    adminId,
+    status,
+    observacaoAdmin,
+    repasseId,
+    comprovanteUrl,
+  } = params
 
   try {
     await supabase.from('logs_atividades').insert({
@@ -83,6 +151,7 @@ async function registrarLog(params: {
         status,
         observacao_admin: observacaoAdmin || null,
         repasse_id: repasseId || null,
+        comprovante_url: comprovanteUrl || null,
       },
       created_at: new Date().toISOString(),
     })
@@ -250,6 +319,11 @@ export async function PATCH(request: NextRequest) {
     const adminId = texto(body.adminId || body.admin_id || body.respondidoPor || body.respondido_por)
     const observacaoAdmin = texto(body.observacaoAdmin || body.observacao_admin)
     const comprovanteUrl = texto(body.comprovanteUrl || body.comprovante_url)
+    const comprovanteReferencia = texto(body.comprovanteReferencia || body.comprovante_referencia)
+    const comprovanteNome = texto(body.comprovanteNome || body.comprovante_nome)
+    const comprovanteMimeType = texto(body.comprovanteMimeType || body.comprovante_mime_type)
+    const comprovanteTamanhoBytes = Number(body.comprovanteTamanhoBytes || body.comprovante_tamanho_bytes || 0)
+    const comprovanteStoragePath = texto(body.comprovanteStoragePath || body.comprovante_storage_path)
     const repasseId = texto(body.repasseId || body.repasse_id)
 
     if (!saqueId) {
@@ -313,21 +387,18 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (comprovanteUrl) payload.comprovante_url = comprovanteUrl
+    if (comprovanteReferencia) payload.comprovante_referencia = comprovanteReferencia
+    if (comprovanteNome) payload.comprovante_nome = comprovanteNome
+    if (comprovanteMimeType) payload.comprovante_mime_type = comprovanteMimeType
+    if (comprovanteTamanhoBytes > 0) payload.comprovante_tamanho_bytes = comprovanteTamanhoBytes
+    if (comprovanteStoragePath) payload.comprovante_storage_path = comprovanteStoragePath
     if (repasseId) payload.repasse_id = repasseId
 
-    const { data: saque, error: updateError } = await supabase
-      .from('solicitacoes_saque_guias')
-      .update(payload)
-      .eq('id', saqueId)
-      .select('*')
-      .maybeSingle()
-
-    if (updateError) {
-      return NextResponse.json(
-        { sucesso: false, erro: updateError.message },
-        { status: 500 }
-      )
-    }
+    const saque = await atualizarSaqueComFallback({
+      supabase,
+      saqueId,
+      payloadOriginal: payload,
+    })
 
     await registrarLog({
       supabase,
@@ -337,6 +408,7 @@ export async function PATCH(request: NextRequest) {
       status: statusNovo,
       observacaoAdmin,
       repasseId: repasseId || null,
+      comprovanteUrl: comprovanteUrl || null,
     })
 
     return NextResponse.json({
