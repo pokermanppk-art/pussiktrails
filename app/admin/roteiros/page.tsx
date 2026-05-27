@@ -52,6 +52,11 @@ type Roteiro = {
   imagem?: string | null
   created_at?: string | null
   updated_at?: string | null
+  excluido_admin?: boolean | null
+  excluido_em?: string | null
+  excluido_por?: string | null
+  motivo_exclusao?: string | null
+  exclusao_tipo?: string | null
   [key: string]: any
 }
 
@@ -98,7 +103,7 @@ type RoteiroCompleto = Roteiro & {
   total_avaliacoes?: number
 }
 
-type FiltroStatus = 'todos' | 'ativos' | 'pendentes' | 'pausados' | 'reprovados' | 'com_reservas' | 'sem_grupo'
+type FiltroStatus = 'todos' | 'ativos' | 'pendentes' | 'pausados' | 'reprovados' | 'com_reservas' | 'sem_grupo' | 'ocultados'
 
 type Stats = {
   total: number
@@ -106,6 +111,7 @@ type Stats = {
   pendentes: number
   pausados: number
   reprovados: number
+  ocultados: number
   novosMes: number
   comReservas: number
   semGrupo: number
@@ -120,6 +126,7 @@ const statsInicial: Stats = {
   pendentes: 0,
   pausados: 0,
   reprovados: 0,
+  ocultados: 0,
   novosMes: 0,
   comReservas: 0,
   semGrupo: 0,
@@ -141,6 +148,7 @@ export default function AdminRoteirosPage() {
   const [atualizando, setAtualizando] = useState(false)
   const [alterandoStatusId, setAlterandoStatusId] = useState('')
   const [criandoGrupoId, setCriandoGrupoId] = useState('')
+  const [excluindoRoteiroId, setExcluindoRoteiroId] = useState('')
   const [menuAberto, setMenuAberto] = useState(false)
 
   const [busca, setBusca] = useState('')
@@ -312,6 +320,15 @@ export default function AdminRoteirosPage() {
   const statusRoteiro = (roteiro: Roteiro) => {
     const status = normalizar(roteiro.status)
 
+    if (
+      roteiro?.excluido_admin === true ||
+      status === 'excluido_admin' ||
+      status === 'ocultado_admin' ||
+      status === 'removido_admin'
+    ) {
+      return 'excluido_admin'
+    }
+
     if (status) return status
     if (roteiro.ativo === true) return 'ativo'
     if (roteiro.ativo === false) return 'pausado'
@@ -321,6 +338,8 @@ export default function AdminRoteirosPage() {
 
   const roteiroAtivo = (roteiro: Roteiro) => {
     const status = statusRoteiro(roteiro)
+
+    if (status === 'excluido_admin') return false
 
     return (
       roteiro.ativo === true ||
@@ -355,6 +374,10 @@ export default function AdminRoteirosPage() {
     const status = statusRoteiro(roteiro)
 
     return status === 'reprovado' || status === 'recusado' || status === 'negado'
+  }
+
+  const roteiroOcultado = (roteiro: Roteiro) => {
+    return statusRoteiro(roteiro) === 'excluido_admin'
   }
 
   const extrairColunaAusente = (error: any) => {
@@ -559,15 +582,18 @@ export default function AdminRoteirosPage() {
 
     setRoteiros(roteirosCompletos)
 
+    const roteirosVisiveis = roteirosCompletos.filter((roteiro) => !roteiroOcultado(roteiro))
+
     setStats({
-      total: roteirosCompletos.length,
-      ativos: roteirosCompletos.filter(roteiroAtivo).length,
-      pendentes: roteirosCompletos.filter(roteiroPendente).length,
-      pausados: roteirosCompletos.filter(roteiroPausado).length,
-      reprovados: roteirosCompletos.filter(roteiroReprovado).length,
-      novosMes: roteirosCompletos.filter((roteiro) => dentroDoMesAtual(roteiro.created_at)).length,
-      comReservas: roteirosCompletos.filter((roteiro) => Number(roteiro.total_reservas || 0) > 0).length,
-      semGrupo: roteirosCompletos.filter((roteiro) => !roteiro.grupo?.id).length,
+      total: roteirosVisiveis.length,
+      ativos: roteirosVisiveis.filter(roteiroAtivo).length,
+      pendentes: roteirosVisiveis.filter(roteiroPendente).length,
+      pausados: roteirosVisiveis.filter(roteiroPausado).length,
+      reprovados: roteirosVisiveis.filter(roteiroReprovado).length,
+      ocultados: roteirosCompletos.filter(roteiroOcultado).length,
+      novosMes: roteirosVisiveis.filter((roteiro) => dentroDoMesAtual(roteiro.created_at)).length,
+      comReservas: roteirosVisiveis.filter((roteiro) => Number(roteiro.total_reservas || 0) > 0).length,
+      semGrupo: roteirosVisiveis.filter((roteiro) => !roteiro.grupo?.id).length,
       receitaConfirmada,
       reservasConfirmadas: reservas.filter(pagamentoConfirmado).length,
       mediaAvaliacoes: totalAvaliacoes > 0 ? somaMediasPonderadas / totalAvaliacoes : 0
@@ -765,6 +791,114 @@ export default function AdminRoteirosPage() {
     }
   }
 
+  const excluirRoteiroAdmin = async (roteiro: RoteiroCompleto) => {
+    if (!roteiro?.id) {
+      setErro('Não foi possível identificar o roteiro.')
+      return
+    }
+
+    const titulo = tituloRoteiro(roteiro)
+    const temReservas = Number(roteiro.total_reservas || 0) > 0
+    const temReceita = Number(roteiro.receita_confirmada || 0) > 0
+    const temGrupo = Boolean(roteiro.grupo?.id)
+
+    const confirmar = window.confirm(
+      `Deseja remover o roteiro "${titulo}" da listagem principal?\n\n` +
+        `Regra de segurança:\n` +
+        `• Roteiro sem reservas pode ser apagado definitivamente.\n` +
+        `• Roteiro com reservas, grupo, pagamento ou suspeita de fraude será apenas ocultado/desativado para preservar histórico e auditoria.\n\n` +
+        `Reservas vinculadas: ${roteiro.total_reservas || 0}\n` +
+        `Receita confirmada: ${formatarMoeda(roteiro.receita_confirmada || 0)}\n` +
+        `Grupo interno: ${temGrupo ? 'sim' : 'não'}`
+    )
+
+    if (!confirmar) return
+
+    const motivo = window.prompt(
+      `Informe o motivo administrativo da remoção:\n\n` +
+        `Exemplos:\n` +
+        `- Roteiro criado na fase de testes\n` +
+        `- Roteiro duplicado\n` +
+        `- Suspeita de fraude\n` +
+        `- Guia não autorizado\n` +
+        `- Conteúdo irregular`
+    )
+
+    if (!motivo || !motivo.trim()) {
+      setErro('Exclusão cancelada. O motivo é obrigatório.')
+      return
+    }
+
+    const podeSugerirExclusaoDefinitiva = !temReservas && !temReceita && !temGrupo
+
+    const modo = window.prompt(
+      podeSugerirExclusaoDefinitiva
+        ? `Digite APAGAR para excluir definitivamente ou OCULTAR para apenas desativar.\n\nNa dúvida, use OCULTAR.`
+        : `Este roteiro possui vínculos. Por segurança, digite OCULTAR para desativar e preservar histórico.`
+    )
+
+    if (!modo) return
+
+    const modoNormalizado = modo.trim().toUpperCase()
+
+    if (modoNormalizado !== 'APAGAR' && modoNormalizado !== 'OCULTAR') {
+      setErro('Opção inválida. Digite apenas APAGAR ou OCULTAR.')
+      return
+    }
+
+    const definitivo = modoNormalizado === 'APAGAR' && podeSugerirExclusaoDefinitiva
+
+    if (modoNormalizado === 'APAGAR' && !podeSugerirExclusaoDefinitiva) {
+      setMensagem('Por segurança, o roteiro será ocultado/desativado, pois possui vínculos administrativos.')
+    }
+
+    const segundaConfirmacao = window.confirm(
+      definitivo
+        ? `Confirma a EXCLUSÃO DEFINITIVA do roteiro "${titulo}"?\n\nEssa opção deve ser usada apenas para roteiros de teste sem vínculos.`
+        : `Confirma a OCULTAÇÃO/DESATIVAÇÃO administrativa do roteiro "${titulo}"?\n\nO roteiro sairá da listagem principal, mas o histórico será preservado.`
+    )
+
+    if (!segundaConfirmacao) return
+
+    setExcluindoRoteiroId(roteiro.id)
+    setErro('')
+    setMensagem('')
+
+    try {
+      const response = await fetch('/api/admin/roteiros/excluir', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          roteiroId: roteiro.id,
+          adminId: user?.id || null,
+          motivo: motivo.trim(),
+          definitivo
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.ok === false) {
+        throw new Error(data?.error || data?.erro || 'Não foi possível remover o roteiro.')
+      }
+
+      setRoteiroSelecionado((selecionado) =>
+        selecionado?.id === roteiro.id ? null : selecionado
+      )
+
+      await carregarRoteiros()
+
+      setMensagem(data?.message || 'Roteiro removido da listagem principal.')
+    } catch (error: any) {
+      console.error('Erro ao excluir/ocultar roteiro:', error)
+      setErro(error?.message || 'Erro ao excluir/ocultar roteiro.')
+    } finally {
+      setExcluindoRoteiroId('')
+    }
+  }
+
   const copiarTexto = async (texto: string, label = 'Informação') => {
     try {
       await navigator.clipboard?.writeText(texto)
@@ -871,14 +1005,17 @@ export default function AdminRoteirosPage() {
     const termo = normalizar(busca)
 
     return roteiros.filter((roteiro) => {
+      const ocultado = roteiroOcultado(roteiro)
+
       const passaStatus =
-        filtroStatus === 'todos' ||
-        (filtroStatus === 'ativos' && roteiroAtivo(roteiro)) ||
-        (filtroStatus === 'pendentes' && roteiroPendente(roteiro)) ||
-        (filtroStatus === 'pausados' && roteiroPausado(roteiro)) ||
-        (filtroStatus === 'reprovados' && roteiroReprovado(roteiro)) ||
-        (filtroStatus === 'com_reservas' && Number(roteiro.total_reservas || 0) > 0) ||
-        (filtroStatus === 'sem_grupo' && !roteiro.grupo?.id)
+        (filtroStatus === 'todos' && !ocultado) ||
+        (filtroStatus === 'ativos' && !ocultado && roteiroAtivo(roteiro)) ||
+        (filtroStatus === 'pendentes' && !ocultado && roteiroPendente(roteiro)) ||
+        (filtroStatus === 'pausados' && !ocultado && roteiroPausado(roteiro)) ||
+        (filtroStatus === 'reprovados' && !ocultado && roteiroReprovado(roteiro)) ||
+        (filtroStatus === 'com_reservas' && !ocultado && Number(roteiro.total_reservas || 0) > 0) ||
+        (filtroStatus === 'sem_grupo' && !ocultado && !roteiro.grupo?.id) ||
+        (filtroStatus === 'ocultados' && ocultado)
 
       if (!passaStatus) return false
 
@@ -903,6 +1040,7 @@ export default function AdminRoteirosPage() {
   }, [roteiros, busca, filtroStatus])
 
   const badgeStatus = (roteiro: RoteiroCompleto) => {
+    if (roteiroOcultado(roteiro)) return <span className="badge red">Ocultado Admin</span>
     if (roteiroAtivo(roteiro)) return <span className="badge green">Ativo</span>
     if (roteiroPendente(roteiro)) return <span className="badge yellow">Em análise</span>
     if (roteiroReprovado(roteiro)) return <span className="badge red">Reprovado</span>
@@ -1683,6 +1821,11 @@ export default function AdminRoteirosPage() {
           color: #166534;
         }
 
+        .btn.danger {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+
         .btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
@@ -1882,7 +2025,7 @@ export default function AdminRoteirosPage() {
               </h1>
 
               <p className="heroText">
-                Aprove, pause, acompanhe reservas, garanta grupos internos e monitore a qualidade dos roteiros cadastrados.
+                Aprove, pause, acompanhe reservas, garanta grupos internos e remova da vitrine roteiros de teste, duplicados ou suspeitos.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -2025,6 +2168,14 @@ export default function AdminRoteirosPage() {
             >
               Sem grupo
             </button>
+
+            <button
+              type="button"
+              className={`filterBtn ${filtroStatus === 'ocultados' ? 'active' : ''}`}
+              onClick={() => setFiltroStatus('ocultados')}
+            >
+              Ocultados ({stats.ocultados})
+            </button>
           </div>
         </section>
 
@@ -2058,6 +2209,8 @@ export default function AdminRoteirosPage() {
                   const imagem = imagemRoteiro(roteiro)
                   const emAlteracao = alterandoStatusId === roteiro.id
                   const criandoGrupo = criandoGrupoId === roteiro.id
+                  const excluindo = excluindoRoteiroId === roteiro.id
+                  const ocultado = roteiroOcultado(roteiro)
 
                   return (
                     <article className="roteiroCard" key={roteiro.id}>
@@ -2078,6 +2231,12 @@ export default function AdminRoteirosPage() {
                           Guia: {roteiro.guia_nome || 'Guia não informado'} · {localRoteiro(roteiro)}
                           <br />
                           Criado em {formatarData(roteiro.created_at)} · ID: {roteiro.id.slice(0, 8)}
+                          {ocultado && (
+                            <>
+                              <br />
+                              Ocultado em {formatarData(roteiro.excluido_em)} · Motivo: {roteiro.motivo_exclusao || 'não informado'}
+                            </>
+                          )}
                           <br />
                           Reservas: {roteiro.total_reservas || 0} · Confirmadas: {roteiro.reservas_confirmadas || 0} · Receita: {formatarMoeda(roteiro.receita_confirmada || 0)}
                         </div>
@@ -2113,7 +2272,7 @@ export default function AdminRoteirosPage() {
                           Detalhes
                         </button>
 
-                        {!roteiroAtivo(roteiro) && (
+                        {!ocultado && !roteiroAtivo(roteiro) && (
                           <button
                             type="button"
                             className="actionBtn green"
@@ -2124,7 +2283,7 @@ export default function AdminRoteirosPage() {
                           </button>
                         )}
 
-                        {roteiroAtivo(roteiro) && (
+                        {!ocultado && roteiroAtivo(roteiro) && (
                           <button
                             type="button"
                             className="actionBtn yellow"
@@ -2135,7 +2294,7 @@ export default function AdminRoteirosPage() {
                           </button>
                         )}
 
-                        {!roteiroReprovado(roteiro) && (
+                        {!ocultado && !roteiroReprovado(roteiro) && (
                           <button
                             type="button"
                             className="actionBtn red"
@@ -2146,7 +2305,7 @@ export default function AdminRoteirosPage() {
                           </button>
                         )}
 
-                        {!roteiro.grupo?.id && (
+                        {!ocultado && !roteiro.grupo?.id && (
                           <button
                             type="button"
                             className="actionBtn"
@@ -2154,6 +2313,17 @@ export default function AdminRoteirosPage() {
                             disabled={criandoGrupo}
                           >
                             {criandoGrupo ? 'Criando...' : 'Criar grupo'}
+                          </button>
+                        )}
+
+                        {!ocultado && (
+                          <button
+                            type="button"
+                            className="actionBtn red"
+                            onClick={() => excluirRoteiroAdmin(roteiro)}
+                            disabled={excluindo}
+                          >
+                            {excluindo ? 'Removendo...' : 'Excluir'}
                           </button>
                         )}
 
@@ -2200,6 +2370,20 @@ export default function AdminRoteirosPage() {
                   <span>Status</span>
                   <strong>{statusRoteiro(roteiroSelecionado)}</strong>
                 </div>
+
+                {roteiroOcultado(roteiroSelecionado) && (
+                  <>
+                    <div className="detailRow">
+                      <span>Ocultado em</span>
+                      <strong>{formatarDataHora(roteiroSelecionado.excluido_em)}</strong>
+                    </div>
+
+                    <div className="detailRow">
+                      <span>Motivo da remoção</span>
+                      <strong>{roteiroSelecionado.motivo_exclusao || '-'}</strong>
+                    </div>
+                  </>
+                )}
 
                 <div className="detailRow">
                   <span>Local</span>
@@ -2283,6 +2467,17 @@ export default function AdminRoteirosPage() {
                 >
                   Ver grupos
                 </button>
+
+                {!roteiroOcultado(roteiroSelecionado) && (
+                  <button
+                    type="button"
+                    className="btn danger"
+                    disabled={excluindoRoteiroId === roteiroSelecionado.id}
+                    onClick={() => excluirRoteiroAdmin(roteiroSelecionado)}
+                  >
+                    {excluindoRoteiroId === roteiroSelecionado.id ? 'Removendo...' : 'Excluir roteiro'}
+                  </button>
+                )}
 
                 <button
                   type="button"
