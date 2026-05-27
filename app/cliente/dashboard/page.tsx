@@ -9,6 +9,9 @@ type UsuarioLocal = {
   nome?: string | null
   email?: string | null
   tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
 type Stats = {
@@ -94,6 +97,269 @@ type MedalhaUsuario = {
   medalhas?: Medalha | Medalha[] | null
 }
 
+
+type TierJornada = {
+  key: string
+  titulo: string
+  nome: string
+  km: number
+  svg: string
+  cor: string
+}
+
+const METAS_JORNADA: TierJornada[] = [
+  {
+    key: 'mochila_partida',
+    nome: 'Partida',
+    titulo: 'Mochila de Partida',
+    km: 0,
+    svg: '/medalhas/progressao/01_mochila_de_partida.svg',
+    cor: '#8b5e34'
+  },
+  {
+    key: 'barraca_base',
+    nome: 'Base',
+    titulo: 'Barraca Base',
+    km: 32,
+    svg: '/medalhas/progressao/02_barraca_base.svg',
+    cor: '#64748b'
+  },
+  {
+    key: 'fogueira_jornada',
+    nome: 'Fogueira',
+    titulo: 'Fogueira da Jornada',
+    km: 96,
+    svg: '/medalhas/progressao/03_fogueira_da_jornada.svg',
+    cor: '#b45309'
+  },
+  {
+    key: 'lanterna_serra',
+    nome: 'Lanterna',
+    titulo: 'Lanterna da Serra',
+    km: 192,
+    svg: '/medalhas/progressao/04_lanterna_da_serra.svg',
+    cor: '#365314'
+  },
+  {
+    key: 'placa_trilha',
+    nome: 'Rumo',
+    titulo: 'Rumo Certo',
+    km: 384,
+    svg: '/medalhas/progressao/05_rumo_certo.svg',
+    cor: '#3f6212'
+  },
+  {
+    key: 'corda_prussik',
+    nome: 'Prussik',
+    titulo: 'Corda Prussik',
+    km: 768,
+    svg: '/medalhas/progressao/06_prussik.svg',
+    cor: '#334155'
+  },
+  {
+    key: 'cachoeira_viva',
+    nome: 'Cachoeira',
+    titulo: 'Cachoeira Viva',
+    km: 1152,
+    svg: '/medalhas/progressao/07_cachoeira_viva.svg',
+    cor: '#0f766e'
+  },
+  {
+    key: 'amanhecer_cume',
+    nome: 'Cume',
+    titulo: 'Amanhecer no Cume',
+    km: 1920,
+    svg: '/medalhas/progressao/08_amanhecer_no_cume.svg',
+    cor: '#ca8a04'
+  },
+  {
+    key: 'mirante_explorador',
+    nome: 'Mirante',
+    titulo: 'Mirante do Explorador',
+    km: 3840,
+    svg: '/medalhas/progressao/09_mirante_do_explorador.svg',
+    cor: '#111827'
+  },
+  {
+    key: 'mapa_lendario',
+    nome: 'Lenda',
+    titulo: 'Mapa Lendário',
+    km: 7680,
+    svg: '/medalhas/progressao/10_mapa_lendario.svg',
+    cor: '#0f172a'
+  }
+]
+
+const BETA_MEDALHAS_SVG: Record<string, string> = {
+  inicio_jornada_beta: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
+  primeiros_passos: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
+  botinha_beta_oficial: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
+  aventureiro_pioneiro_beta: '/medalhas/iniciais_jornada/02_aventureiro_pioneiro_beta.svg',
+  voz_da_trilha_beta: '/medalhas/iniciais_jornada/03_voz_da_trilha_beta.svg',
+  guia_pioneiro_beta: '/medalhas/iniciais_jornada/04_guia_pioneiro_beta.svg',
+  construtor_da_jornada_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg',
+  construtor_da_trilha_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg'
+}
+
+function normalizarChaveMedalha(valor?: string | null) {
+  return String(valor || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function obterSvgMedalhaBeta(medalha?: Medalha | null) {
+  const codigo = normalizarChaveMedalha(medalha?.codigo)
+  const nome = normalizarChaveMedalha(medalha?.nome)
+
+  if (BETA_MEDALHAS_SVG[codigo]) return BETA_MEDALHAS_SVG[codigo]
+  if (BETA_MEDALHAS_SVG[nome]) return BETA_MEDALHAS_SVG[nome]
+
+  if (nome.includes('inicio') && nome.includes('beta')) return BETA_MEDALHAS_SVG.inicio_jornada_beta
+  if (nome.includes('botinha') && nome.includes('beta')) return BETA_MEDALHAS_SVG.botinha_beta_oficial
+  if (nome.includes('aventureiro') && nome.includes('pioneiro') && nome.includes('beta')) return BETA_MEDALHAS_SVG.aventureiro_pioneiro_beta
+  if (nome.includes('voz') && nome.includes('trilha') && nome.includes('beta')) return BETA_MEDALHAS_SVG.voz_da_trilha_beta
+  if (nome.includes('guia') && nome.includes('pioneiro') && nome.includes('beta')) return BETA_MEDALHAS_SVG.guia_pioneiro_beta
+  if (nome.includes('construtor') && nome.includes('beta')) return BETA_MEDALHAS_SVG.construtor_da_jornada_beta
+
+  return ''
+}
+
+function obterFallbackSvgMedalhaBeta(svg: string) {
+  if (!svg.startsWith('/medalhas/iniciais_jornada/')) return ''
+  return svg.replace('/medalhas/iniciais_jornada/', '/medalhas/prussik_svg_pack/iniciais_jornada/')
+}
+
+type IconeNome =
+  | 'reservas'
+  | 'explorar'
+  | 'perfil'
+  | 'pagamentos'
+  | 'roteiro'
+  | 'medalha'
+  | 'curtida'
+  | 'reserva'
+  | 'comunidade'
+  | 'check'
+
+function IconeDashboard({ name }: { name: IconeNome }) {
+  const common = {
+    width: 22,
+    height: 22,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.9,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  }
+
+  if (name === 'reservas') {
+    return (
+      <svg {...common}>
+        <path d="M6.7 8.2h10.6l1 10.3a2 2 0 0 1-2 2.2H7.7a2 2 0 0 1-2-2.2l1-10.3Z" />
+        <path d="M9 8.2V6.6a3 3 0 0 1 6 0v1.6" />
+        <path d="M9.6 12.4h4.8" />
+        <path d="M9.6 15.8h3.1" />
+      </svg>
+    )
+  }
+
+  if (name === 'explorar') {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="m15.4 8.6-2.2 5.1-5.1 2.2 2.2-5.1 5.1-2.2Z" />
+        <path d="M12 2.8v1.7M12 19.5v1.7M2.8 12h1.7M19.5 12h1.7" />
+      </svg>
+    )
+  }
+
+  if (name === 'perfil') {
+    return (
+      <svg {...common}>
+        <path d="M12 12.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Z" />
+        <path d="M4.8 20.2a7.4 7.4 0 0 1 14.4 0" />
+        <path d="M17.5 5.4l1.2 1.2 2-2" />
+      </svg>
+    )
+  }
+
+  if (name === 'pagamentos') {
+    return (
+      <svg {...common}>
+        <rect x="3.4" y="5.3" width="17.2" height="13.4" rx="3" />
+        <path d="M3.8 9.1h16.4" />
+        <path d="M7.1 14.9h4.1" />
+        <path d="m15.3 14.6 1.2 1.2 2.3-2.6" />
+      </svg>
+    )
+  }
+
+  if (name === 'roteiro') {
+    return (
+      <svg {...common}>
+        <path d="M4.4 18.7 8.8 5.3l4.2 13.4 2.7-8.3 3.9 8.3" />
+        <path d="M7.1 14.6h4.8" />
+        <path d="M14.2 14.6h2.9" />
+      </svg>
+    )
+  }
+
+  if (name === 'medalha') {
+    return (
+      <svg {...common}>
+        <path d="M8.2 3.5 12 8.1l3.8-4.6" />
+        <path d="M8.2 3.5h7.6" />
+        <circle cx="12" cy="14.2" r="5.2" />
+        <path d="m12 11.7.8 1.6 1.8.3-1.3 1.3.3 1.8-1.6-.9-1.6.9.3-1.8-1.3-1.3 1.8-.3.8-1.6Z" />
+      </svg>
+    )
+  }
+
+  if (name === 'curtida') {
+    return (
+      <svg {...common}>
+        <path d="M20.2 8.7c0 5-8.2 9.6-8.2 9.6S3.8 13.7 3.8 8.7a4.4 4.4 0 0 1 7.9-2.6 4.4 4.4 0 0 1 8.5 2.6Z" />
+      </svg>
+    )
+  }
+
+  if (name === 'reserva') {
+    return (
+      <svg {...common}>
+        <path d="M7.2 3.8v3.1M16.8 3.8v3.1" />
+        <rect x="4.2" y="5.4" width="15.6" height="15" rx="3" />
+        <path d="M4.6 9.2h14.8" />
+        <path d="m8.2 14.4 2.1 2.1 5-5" />
+      </svg>
+    )
+  }
+
+  if (name === 'check') {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="8.7" />
+        <path d="m8.5 12.4 2.2 2.2 4.9-5.2" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg {...common}>
+      <path d="M12 4.4v15.2" />
+      <path d="M4.4 12h15.2" />
+      <path d="M6.6 6.6 17.4 17.4" />
+      <path d="M17.4 6.6 6.6 17.4" />
+      <circle cx="12" cy="12" r="8.5" />
+    </svg>
+  )
+}
+
+
 const statsInicial: Stats = {
   totalKm: 0,
   totalTrilhas: 0,
@@ -118,7 +384,12 @@ export default function ClienteDashboardPage() {
   const [roteirosQuentes, setRoteirosQuentes] = useState<Roteiro[]>([])
   const [proximasReservas, setProximasReservas] = useState<Reserva[]>([])
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([])
-  const [abaNotificacao, setAbaNotificacao] = useState<'all' | 'com'>('all')
+  const [abaNotificacao, setAbaNotificacao] = useState<'all' | 'com'>(() => {
+    if (typeof window === 'undefined') return 'all'
+
+    const salva = window.localStorage.getItem('cliente_dashboard_notificacoes_aba')
+    return salva === 'com' ? 'com' : 'all'
+  })
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
   const [medalhasConquistadas, setMedalhasConquistadas] = useState<MedalhaUsuario[]>([])
   const [proximaMedalha, setProximaMedalha] = useState<MedalhaUsuario | null>(null)
@@ -159,11 +430,35 @@ export default function ClienteDashboardPage() {
         return
       }
 
-      setUser(parsedUser)
+      let usuarioAtualizado = parsedUser
 
-      await carregarDados(parsedUser.id)
-      await reconciliarPagamentosPendentesInterno(parsedUser.id, true)
-      await carregarDados(parsedUser.id)
+      try {
+        const { data: perfilCliente } = await supabase
+          .from('users')
+          .select('nome, avatar_url, foto_url, imagem_url')
+          .eq('id', parsedUser.id)
+          .maybeSingle()
+
+        if (perfilCliente) {
+          usuarioAtualizado = {
+            ...parsedUser,
+            nome: perfilCliente.nome || parsedUser.nome,
+            avatar_url: perfilCliente.avatar_url || parsedUser.avatar_url || null,
+            foto_url: perfilCliente.foto_url || parsedUser.foto_url || null,
+            imagem_url: perfilCliente.imagem_url || parsedUser.imagem_url || null,
+          }
+
+          localStorage.setItem('user', JSON.stringify(usuarioAtualizado))
+        }
+      } catch (error) {
+        console.warn('Não foi possível sincronizar avatar do cliente:', error)
+      }
+
+      setUser(usuarioAtualizado)
+
+      await carregarDados(usuarioAtualizado.id)
+      await reconciliarPagamentosPendentesInterno(usuarioAtualizado.id, true)
+      await carregarDados(usuarioAtualizado.id)
     } catch (error) {
       console.error('Erro ao iniciar dashboard do cliente:', error)
       setMensagem('Não foi possível carregar sua área agora.')
@@ -646,6 +941,38 @@ export default function ClienteDashboardPage() {
       log.guia_nome ||
       'Alguém'
 
+    const metadata = typeof log.metadata === 'object' && log.metadata ? log.metadata : {}
+    const destinoLog =
+      typeof log.destino === 'string' && log.destino.startsWith('/')
+        ? log.destino
+        : typeof metadata.destino === 'string' && metadata.destino.startsWith('/')
+          ? metadata.destino
+          : ''
+
+    const roteiroId =
+      log.roteiro_id ||
+      log.id_roteiro ||
+      metadata.roteiro_id ||
+      metadata.roteiroId ||
+      metadata.id_roteiro ||
+      ''
+
+    const perfilUsuarioId =
+      log.perfil_usuario_id ||
+      log.usuario_alvo_id ||
+      log.cliente_id ||
+      metadata.perfil_usuario_id ||
+      metadata.usuario_alvo_id ||
+      metadata.cliente_id ||
+      metadata.userId ||
+      ''
+
+    const fotoId =
+      log.foto_id ||
+      metadata.foto_id ||
+      metadata.fotoId ||
+      ''
+
     if (acao.includes('roteiro') || acao.includes('criou')) {
       return {
         id: String(log.id),
@@ -653,7 +980,7 @@ export default function ClienteDashboardPage() {
         texto: `${nome} criou uma nova experiência outdoor.`,
         emoji: '🧭',
         tipo: isDoUsuario ? 'all' : 'com',
-        destino: '/roteiros',
+        destino: roteiroId ? `/roteiros/${roteiroId}` : destinoLog || '/roteiros',
         created_at: log.created_at
       }
     }
@@ -665,7 +992,7 @@ export default function ClienteDashboardPage() {
         texto: `${nome} curtiu uma foto da comunidade.`,
         emoji: '❤️',
         tipo: isDoUsuario ? 'all' : 'com',
-        destino: '/cliente/dashboard',
+        destino: perfilUsuarioId ? `/cliente/publico/${perfilUsuarioId}${fotoId ? `?foto=${fotoId}` : ''}` : destinoLog || '/cliente/perfil',
         created_at: log.created_at
       }
     }
@@ -701,7 +1028,7 @@ export default function ClienteDashboardPage() {
         texto: `${nome} reservou uma aventura.`,
         emoji: '🎒',
         tipo: isDoUsuario ? 'all' : 'com',
-        destino: '/cliente/minhas-reservas',
+        destino: roteiroId ? `/roteiros/${roteiroId}` : destinoLog || '/cliente/minhas-reservas',
         created_at: log.created_at
       }
     }
@@ -715,7 +1042,7 @@ export default function ClienteDashboardPage() {
         `${nome} interagiu no PrussikTrails.`,
       emoji: '🌿',
       tipo: isDoUsuario ? 'all' : 'com',
-      destino: '/cliente/dashboard',
+      destino: destinoLog || '/cliente/dashboard',
       created_at: log.created_at
     }
   }
@@ -899,6 +1226,33 @@ export default function ClienteDashboardPage() {
     router.replace('/login')
   }
 
+  const alterarAbaNotificacao = (aba: 'all' | 'com') => {
+    setAbaNotificacao(aba)
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('cliente_dashboard_notificacoes_aba', aba)
+    }
+  }
+
+  const avatarCliente = () => {
+    return user?.avatar_url || user?.foto_url || user?.imagem_url || ''
+  }
+
+  const inicialCliente = () => {
+    return primeiroNome(user?.nome || user?.email).slice(0, 1).toUpperCase()
+  }
+
+  const iconeNotificacao = (notificacao: Notificacao): IconeNome => {
+    const texto = normalizar(`${notificacao.titulo} ${notificacao.texto} ${notificacao.emoji}`)
+
+    if (texto.includes('curt') || texto.includes('❤️')) return 'curtida'
+    if (texto.includes('medalha') || texto.includes('conquista')) return 'medalha'
+    if (texto.includes('reserva') || texto.includes('confirmada') || texto.includes('aventura')) return 'reserva'
+    if (texto.includes('roteiro') || texto.includes('guia')) return 'roteiro'
+
+    return 'comunidade'
+  }
+
   const notificacoesFiltradas = useMemo(() => {
     if (abaNotificacao === 'all') return notificacoes
 
@@ -938,6 +1292,67 @@ export default function ClienteDashboardPage() {
   }
 
   const proximaReserva = proximasReservas[0] || null
+
+
+  const medalhasPainel = useMemo(() => {
+    const progressoAtual = METAS_JORNADA.filter((meta) => stats.totalKm >= meta.km)
+    const indiceAtual = Math.max(0, progressoAtual.length - 1)
+    const janelaJornada = METAS_JORNADA.slice(indiceAtual, indiceAtual + 4)
+
+    const especiais = medalhasConquistadas
+      .map((item: MedalhaUsuario) => {
+        const medalha = medalhaRelacionada(item)
+        const svg = obterSvgMedalhaBeta(medalha)
+
+        if (!svg) return null
+
+        return {
+          key: `banco-${item.id}`,
+          nome: medalha?.nome || 'Medalha Beta',
+          svg,
+          fallback: obterFallbackSvgMedalhaBeta(svg),
+          cor: medalha?.cor || '#991b1b',
+          desbloqueada: true,
+          especial: true
+        }
+      })
+      .filter(Boolean) as Array<{
+        key: string
+        nome: string
+        svg: string
+        fallback: string
+        cor: string
+        desbloqueada: boolean
+        especial: boolean
+      }>
+
+    const jornada = janelaJornada.map((meta) => ({
+      key: `jornada-${meta.key}`,
+      nome: meta.titulo,
+      svg: meta.svg,
+      fallback: '',
+      cor: meta.cor,
+      desbloqueada: stats.totalKm >= meta.km,
+      especial: false
+    }))
+
+    const unicas = new Map<string, {
+      key: string
+      nome: string
+      svg: string
+      fallback: string
+      cor: string
+      desbloqueada: boolean
+      especial: boolean
+    }>()
+
+    ;[...especiais, ...jornada].forEach((medalha) => {
+      const chave = normalizarChaveMedalha(medalha.nome)
+      if (!unicas.has(chave)) unicas.set(chave, medalha)
+    })
+
+    return Array.from(unicas.values()).slice(0, 4)
+  }, [stats.totalKm, medalhasConquistadas])
 
   if (carregando || !user) {
     return (
@@ -1024,110 +1439,113 @@ export default function ClienteDashboardPage() {
           color: #172018;
         }
 
-        .header {
+        .topbar {
           position: sticky;
           top: 0;
-          z-index: 40;
-          background: rgba(255, 253, 247, 0.84);
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+          z-index: 50;
+          background: rgba(255,253,247,0.92);
+          border-bottom: 1px solid rgba(15,23,42,0.06);
           backdrop-filter: blur(18px);
-          padding: 10px 16px;
+          padding: 9px 14px;
         }
 
-        .headerInner {
+        .topbarInner {
           max-width: 1180px;
           margin: 0 auto;
           display: flex;
-          justify-content: space-between;
           align-items: center;
-          gap: 12px;
+          justify-content: space-between;
+          gap: 10px;
         }
 
         .brand {
           display: inline-flex;
           align-items: center;
-          justify-content: flex-start;
-          gap: 12px;
+          gap: 10px;
           min-width: 0;
-          flex: 1;
           border: 0;
           background: transparent;
           padding: 0;
-          margin: 0;
-          cursor: pointer;
           text-align: left;
-        }
-
-        .brand img {
-          height: 52px;
-          width: auto;
-          object-fit: contain;
-          display: block;
-          flex: 0 0 auto;
-        }
-
-        .brandText {
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          justify-content: center;
-          line-height: 1;
-        }
-
-        .brandTitle {
-          font-size: clamp(30px, 4.1vw, 58px);
-          font-weight: 950;
-          color: #dc2626;
-          line-height: 0.9;
-          letter-spacing: -0.06em;
-          margin: 0;
-        }
-
-        .brandSub {
-          color: #64748b;
-          font-size: clamp(13px, 1.6vw, 24px);
-          font-weight: 700;
-          margin-top: 5px;
-          line-height: 1;
-          letter-spacing: -0.03em;
-        }
-
-        .headerActions {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-          flex: 0 0 auto;
-        }
-
-        .iconBtn {
-          width: 38px;
-          height: 38px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          background: rgba(255,255,255,0.78);
-          border-radius: 999px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
           cursor: pointer;
-          font-size: 15px;
-          transition: 0.2s ease;
           color: #172018;
         }
 
-        .iconBtn:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
+        .brand img {
+          width: 46px;
+          height: 46px;
+          max-width: 46px;
+          object-fit: contain;
+          flex: 0 0 46px;
+          display: block;
         }
 
-        .primaryMini {
-          width: auto;
-          padding: 0 14px;
-          gap: 7px;
-          background: #172018;
-          color: #ffffff;
-          font-size: 12px;
-          font-weight: 900;
+        .brand div {
+          min-width: 0;
+        }
+
+        .brand strong {
+          display: block;
+          color: #1f3f2d;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: clamp(30px, 3.6vw, 50px);
+          font-weight: 800;
+          line-height: 0.9;
+          letter-spacing: -0.055em;
+          white-space: nowrap;
+        }
+
+        .brand span {
+          display: block;
+          margin-top: 6px;
+          color: #7b8375;
+          font-size: clamp(10px, 1.15vw, 15px);
+          font-weight: 850;
+          letter-spacing: 0.22em;
+          white-space: nowrap;
+        }
+
+        .topActions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex: 0 0 auto;
+          justify-content: flex-end;
+        }
+
+        .profileAvatarBtn {
+          width: 42px;
+          height: 42px;
+          border-radius: 999px;
+          border: 1px solid rgba(15,23,42,0.08);
+          background: rgba(255,255,255,0.86);
+          color: #1f3f2d;
+          box-shadow: 0 10px 22px rgba(15,23,42,0.08);
+          cursor: pointer;
+          overflow: hidden;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          transition: 0.2s ease;
+        }
+
+        .profileAvatarBtn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.13);
+        }
+
+        .profileAvatarBtn img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .profileAvatarBtn span {
+          font-size: 15px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
         }
 
         .container {
@@ -1278,15 +1696,23 @@ export default function ClienteDashboardPage() {
         }
 
         .utilityIcon {
-          width: 42px;
-          height: 42px;
-          border-radius: 18px;
+          width: 46px;
+          height: 46px;
+          border-radius: 19px;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #f0fdf4;
-          font-size: 19px;
+          background:
+            radial-gradient(circle at 30% 20%, rgba(255,255,255,0.94), transparent 38%),
+            linear-gradient(135deg, rgba(132, 204, 22, 0.18), rgba(31, 63, 45, 0.08));
+          color: #1f3f2d;
           margin-bottom: 12px;
+          box-shadow: inset 0 0 0 1px rgba(31, 63, 45, 0.07), 0 10px 20px rgba(23, 32, 24, 0.07);
+        }
+
+        .utilityIcon svg,
+        .notificationIcon svg {
+          display: block;
         }
 
         .utilityTitle {
@@ -1490,6 +1916,23 @@ export default function ClienteDashboardPage() {
           gap: 16px;
         }
 
+
+        .momentPanel {
+          cursor: pointer;
+          transition: 0.22s ease;
+        }
+
+        .momentPanel:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 18px 44px rgba(15,23,42,0.10);
+          border-color: rgba(22,163,74,0.16);
+        }
+
+        .momentPanel:focus-visible {
+          outline: 3px solid rgba(132,204,22,0.34);
+          outline-offset: 3px;
+        }
+
         .tabs {
           display: flex;
           gap: 6px;
@@ -1507,67 +1950,99 @@ export default function ClienteDashboardPage() {
           cursor: pointer;
           color: #64748b;
           background: transparent;
+          transition: 0.2s ease;
         }
 
         .tab.active {
           background: #172018;
           color: #ffffff;
+          box-shadow: 0 8px 18px rgba(23, 32, 24, 0.16);
+        }
+
+        .notificationPanel {
+          margin: 0 0 16px;
+        }
+
+        .notificationPanel .panelHeader {
+          padding: 14px 18px;
+        }
+
+        .notificationPanel .panelBody {
+          padding: 12px 14px 14px;
         }
 
         .notificationList {
           display: grid;
-          gap: 11px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
         }
 
         .notification {
           display: grid;
-          grid-template-columns: 44px minmax(0, 1fr);
-          gap: 12px;
+          grid-template-columns: 40px minmax(0, 1fr);
+          gap: 10px;
           align-items: flex-start;
-          padding: 12px;
-          border-radius: 22px;
+          padding: 10px;
+          border-radius: 20px;
           background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          cursor: pointer;
+          border: 1px solid rgba(15, 23, 42, 0.055);
+          cursor: default;
           transition: 0.2s ease;
+          min-height: 84px;
         }
 
-        .notification:hover {
+        .notification.clickable {
+          cursor: pointer;
+        }
+
+        .notification.clickable:hover {
           transform: translateY(-1px);
           box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+          border-color: rgba(22, 163, 74, 0.18);
+        }
+
+        .notification.static:hover {
+          transform: none;
+          box-shadow: none;
         }
 
         .notificationIcon {
-          width: 44px;
-          height: 44px;
-          border-radius: 18px;
-          background: #f0fdf4;
+          width: 40px;
+          height: 40px;
+          border-radius: 16px;
+          background:
+            radial-gradient(circle at 30% 20%, rgba(255,255,255,0.94), transparent 38%),
+            linear-gradient(135deg, rgba(132, 204, 22, 0.16), rgba(31, 63, 45, 0.08));
+          color: #1f3f2d;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 20px;
         }
 
         .notificationTitle {
           color: #172018;
           font-size: 13px;
           font-weight: 950;
-          line-height: 1.35;
+          line-height: 1.28;
         }
 
         .notificationText {
           color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
+          font-size: 11.5px;
+          line-height: 1.35;
           margin-top: 3px;
           font-weight: 700;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
         }
 
         .notificationTime {
           color: #94a3b8;
-          font-size: 11px;
+          font-size: 10.5px;
           margin-top: 5px;
-          font-weight: 800;
+          font-weight: 850;
         }
 
         .miniStats {
@@ -1652,6 +2127,46 @@ export default function ClienteDashboardPage() {
           margin-top: 12px;
         }
 
+
+        .dashboardMedalRail {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 9px;
+          margin-top: 12px;
+          align-items: center;
+        }
+
+        .dashboardMedalSvg {
+          width: 52px;
+          height: 52px;
+          border-radius: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          flex: 0 0 auto;
+          transition: 0.2s ease;
+        }
+
+        .dashboardMedalSvg img {
+          width: 58px;
+          height: 58px;
+          object-fit: contain;
+          display: block;
+          filter: drop-shadow(0 10px 16px rgba(15,23,42,0.16));
+        }
+
+        .dashboardMedalSvg.locked img {
+          opacity: 0.26;
+          filter: grayscale(1) saturate(0.12) contrast(0.82) brightness(1.08);
+        }
+
+        .dashboardMedalSvg.special img {
+          width: 64px;
+          height: 64px;
+          filter: drop-shadow(0 12px 20px rgba(80,36,12,0.20));
+        }
+
         .medalHex {
           width: 42px;
           height: 42px;
@@ -1731,10 +2246,6 @@ export default function ClienteDashboardPage() {
         }
 
         @media (max-width: 1040px) {
-          .headerInner {
-            grid-template-columns: 140px minmax(0, 1fr) 140px;
-          }
-
           .utilityGrid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
@@ -1746,29 +2257,50 @@ export default function ClienteDashboardPage() {
         }
 
         @media (max-width: 720px) {
-          .header {
-            padding: 9px 12px;
+          .topbar {
+            padding: 7px 10px;
           }
 
-          .headerInner {
-            grid-template-columns: 36px minmax(0, 1fr) 36px;
+          .topbarInner {
+            gap: 8px;
+            align-items: center;
           }
 
           .brand {
             gap: 8px;
+            min-width: 0;
+            overflow: hidden;
           }
 
-          .brandTitle {
-            font-size: 17px;
+          .brand img {
+            width: 32px;
+            height: 32px;
+            max-width: 32px;
+            flex-basis: 32px;
           }
 
-          .brandSub {
-            font-size: 10px;
-            margin-top: 2px;
+          .brand strong {
+            font-size: clamp(25px, 8vw, 33px);
+            line-height: 0.88;
+            letter-spacing: -0.065em;
+            max-width: calc(100vw - 96px);
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
 
-          .headerActions .hideMobile {
-            display: none;
+          .brand span {
+            font-size: 8px;
+            letter-spacing: 0.12em;
+            margin-top: 4px;
+            max-width: calc(100vw - 96px);
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          .profileAvatarBtn {
+            width: 36px;
+            height: 36px;
+            box-shadow: none;
           }
 
           .container {
@@ -1787,6 +2319,10 @@ export default function ClienteDashboardPage() {
 
           .utilityGrid {
             grid-template-columns: 1fr 1fr;
+          }
+
+          .notificationList {
+            grid-template-columns: 1fr;
           }
 
           .trailCard,
@@ -1809,18 +2345,14 @@ export default function ClienteDashboardPage() {
             font-size: 38px;
           }
 
-          .brand img {
-            height: 40px;
-          }
-
           .miniStats {
             grid-template-columns: 1fr;
           }
         }
       `}</style>
 
-      <header className="header">
-        <div className="headerInner">
+      <header className="topbar">
+        <div className="topbarInner">
           <button
             type="button"
             className="brand"
@@ -1829,21 +2361,25 @@ export default function ClienteDashboardPage() {
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
 
-            <div className="brandText">
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Seu app de aventuras</div>
+            <div>
+              <strong>PrussikTrails</strong>
+              <span>Seu app de aventuras</span>
             </div>
           </button>
 
-          <div className="headerActions">
+          <div className="topActions">
             <button
               type="button"
-              className="iconBtn"
+              className="profileAvatarBtn"
               onClick={() => router.push('/cliente/perfil')}
               title="Perfil"
               aria-label="Abrir perfil e configurações"
             >
-              👤
+              {avatarCliente() ? (
+                <img src={avatarCliente()} alt={user.nome || user.email || 'Perfil'} />
+              ) : (
+                <span>{inicialCliente()}</span>
+              )}
             </button>
           </div>
         </div>
@@ -1902,7 +2438,7 @@ export default function ClienteDashboardPage() {
             className="utilityCard"
             onClick={() => router.push('/cliente/minhas-reservas')}
           >
-            <div className="utilityIcon">🎒</div>
+            <div className="utilityIcon"><IconeDashboard name="reservas" /></div>
             <div className="utilityTitle">Minhas reservas</div>
             <div className="utilityText">
               {stats.reservasConfirmadas} confirmada(s), {stats.reservasPendentes} aguardando.
@@ -1913,7 +2449,7 @@ export default function ClienteDashboardPage() {
             className="utilityCard"
             onClick={() => router.push('/roteiros')}
           >
-            <div className="utilityIcon">🧭</div>
+            <div className="utilityIcon"><IconeDashboard name="explorar" /></div>
             <div className="utilityTitle">Explorar roteiros</div>
             <div className="utilityText">
               Encontre uma nova experiência para o próximo final de semana.
@@ -1924,7 +2460,7 @@ export default function ClienteDashboardPage() {
             className="utilityCard"
             onClick={() => router.push('/cliente/perfil')}
           >
-            <div className="utilityIcon">🏅</div>
+            <div className="utilityIcon"><IconeDashboard name="perfil" /></div>
             <div className="utilityTitle">Meu perfil</div>
             <div className="utilityText">
               {stats.totalMedalhas} medalha(s), {stats.totalKm.toFixed(0)} km no histórico.
@@ -1935,7 +2471,7 @@ export default function ClienteDashboardPage() {
             className="utilityCard"
             onClick={() => reconciliarPagamentosPendentes(false)}
           >
-            <div className="utilityIcon">✅</div>
+            <div className="utilityIcon"><IconeDashboard name="pagamentos" /></div>
             <div className="utilityTitle">Pagamentos</div>
             <div className="utilityText">
               {reconciliando
@@ -1943,6 +2479,89 @@ export default function ClienteDashboardPage() {
                 : 'Conferir confirmação das reservas pendentes.'}
             </div>
           </article>
+        </section>
+
+        <section className="panel notificationPanel">
+          <div className="panelHeader">
+            <div>
+              <h2 className="panelTitle">Notificações</h2>
+              <div className="panelSub">
+                {abaNotificacao === 'com'
+                  ? 'Movimentos da comunidade com atalhos úteis.'
+                  : 'Resumo geral. Sem cliques por enquanto.'}
+              </div>
+            </div>
+
+            <div className="tabs">
+              <button
+                type="button"
+                className={`tab ${abaNotificacao === 'all' ? 'active' : ''}`}
+                onClick={() => alterarAbaNotificacao('all')}
+              >
+                ALL
+              </button>
+
+              <button
+                type="button"
+                className={`tab ${abaNotificacao === 'com' ? 'active' : ''}`}
+                onClick={() => alterarAbaNotificacao('com')}
+              >
+                COM
+              </button>
+            </div>
+          </div>
+
+          <div className="panelBody">
+            {notificacoesFiltradas.length === 0 ? (
+              <div className="empty">
+                Nenhuma notificação por enquanto.
+              </div>
+            ) : (
+              <div className="notificationList">
+                {notificacoesFiltradas.slice(0, 4).map((notificacao: Notificacao) => {
+                  const clicavel = abaNotificacao === 'com' && Boolean(notificacao.destino)
+
+                  return (
+                    <article
+                      className={`notification ${clicavel ? 'clickable' : 'static'}`}
+                      key={notificacao.id}
+                      role={clicavel ? 'button' : undefined}
+                      tabIndex={clicavel ? 0 : undefined}
+                      onClick={() => {
+                        if (clicavel && notificacao.destino) {
+                          router.push(notificacao.destino)
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (clicavel && notificacao.destino && (event.key === 'Enter' || event.key === ' ')) {
+                          event.preventDefault()
+                          router.push(notificacao.destino)
+                        }
+                      }}
+                    >
+                      <div className="notificationIcon">
+                        <IconeDashboard name={iconeNotificacao(notificacao)} />
+                      </div>
+
+                      <div>
+                        <div className="notificationTitle">
+                          {notificacao.titulo}
+                        </div>
+
+                        <div className="notificationText">
+                          {notificacao.texto}
+                        </div>
+
+                        <div className="notificationTime">
+                          {tempoRelativo(notificacao.created_at)}
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="mainGrid">
@@ -1979,7 +2598,7 @@ export default function ClienteDashboardPage() {
                         <article
                           className="trailCard hotCard"
                           key={roteiro.id}
-                          onClick={() => router.push('/roteiros')}
+                          onClick={() => router.push(`/roteiros/${roteiro.id}`)}
                         >
                           <div className="thumb">
                             {foto ? (
@@ -2093,76 +2712,19 @@ export default function ClienteDashboardPage() {
           </div>
 
           <div className="sideGrid">
-            <section className="panel">
-              <div className="panelHeader">
-                <div>
-                  <h2 className="panelTitle">Notificações</h2>
-                  <div className="panelSub">
-                    Movimento leve da comunidade.
-                  </div>
-                </div>
 
-                <div className="tabs">
-                  <button
-                    type="button"
-                    className={`tab ${abaNotificacao === 'all' ? 'active' : ''}`}
-                    onClick={() => setAbaNotificacao('all')}
-                  >
-                    ALL
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`tab ${abaNotificacao === 'com' ? 'active' : ''}`}
-                    onClick={() => setAbaNotificacao('com')}
-                  >
-                    COM
-                  </button>
-                </div>
-              </div>
-
-              <div className="panelBody">
-                {notificacoesFiltradas.length === 0 ? (
-                  <div className="empty">
-                    Nenhuma notificação por enquanto.
-                  </div>
-                ) : (
-                  <div className="notificationList">
-                    {notificacoesFiltradas.map((notificacao: Notificacao) => (
-                      <article
-                        className="notification"
-                        key={notificacao.id}
-                        onClick={() => {
-                          if (notificacao.destino) {
-                            router.push(notificacao.destino)
-                          }
-                        }}
-                      >
-                        <div className="notificationIcon">
-                          {notificacao.emoji}
-                        </div>
-
-                        <div>
-                          <div className="notificationTitle">
-                            {notificacao.titulo}
-                          </div>
-
-                          <div className="notificationText">
-                            {notificacao.texto}
-                          </div>
-
-                          <div className="notificationTime">
-                            {tempoRelativo(notificacao.created_at)}
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="panel">
+            <section
+              className="panel momentPanel"
+              role="button"
+              tabIndex={0}
+              onClick={() => router.push('/cliente/perfil')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  router.push('/cliente/perfil')
+                }
+              }}
+            >
               <div className="panelHeader">
                 <div>
                   <h2 className="panelTitle">Seu momento</h2>
@@ -2196,40 +2758,30 @@ export default function ClienteDashboardPage() {
                       <div className="medalKicker">Coleção</div>
                       <strong>Medalhas da jornada</strong>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => router.push('/cliente/perfil')}
-                    >
-                      Ver perfil
-                    </button>
                   </div>
 
-                  {medalhasConquistadas.length > 0 ? (
-                    <div className="medalRail">
-                      {medalhasConquistadas.slice(0, 8).map((item: MedalhaUsuario) => {
-                        const medalha = medalhaRelacionada(item)
-
-                        return (
-                          <div
-                            key={item.id}
-                            className="medalHex"
-                            title={medalha?.nome || 'Medalha conquistada'}
-                            style={{ borderColor: medalha?.cor || '#92400e' }}
-                          >
-                            <span>{medalha?.icone || '🏅'}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="medalRail">
-                      <div className="medalHex locked"><span>🔒</span></div>
-                      <div className="medalHex locked"><span>🔒</span></div>
-                      <div className="medalHex locked"><span>🔒</span></div>
-                      <div className="medalHex locked"><span>🔒</span></div>
-                    </div>
-                  )}
+                  <div className="dashboardMedalRail">
+                    {medalhasPainel.map((medalha) => (
+                      <div
+                        key={medalha.key}
+                        className={`dashboardMedalSvg ${medalha.desbloqueada ? '' : 'locked'} ${medalha.especial ? 'special' : ''}`}
+                        title={medalha.nome}
+                      >
+                        <img
+                          src={medalha.svg}
+                          alt={medalha.nome}
+                          data-fallback={medalha.fallback}
+                          onError={(event) => {
+                            const fallback = event.currentTarget.dataset.fallback
+                            if (fallback) {
+                              event.currentTarget.src = fallback
+                              event.currentTarget.dataset.fallback = ''
+                            }
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
 
                   {proximaMedalha && (
                     <div className="nextMedalBox">
@@ -2241,19 +2793,6 @@ export default function ClienteDashboardPage() {
                     </div>
                   )}
                 </div>
-
-                <button
-                  type="button"
-                  className="iconBtn primaryMini"
-                  onClick={() => router.push('/cliente/perfil')}
-                  style={{
-                    marginTop: 14,
-                    width: '100%',
-                    height: 44
-                  }}
-                >
-                  Ver meu perfil
-                </button>
               </div>
             </section>
           </div>

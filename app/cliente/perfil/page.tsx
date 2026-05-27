@@ -971,25 +971,16 @@ export default function PerfilCliente() {
 
               {menuConfiguracoesAberto && (
                 <div className="settingsMenu">
-                  <button type="button" onClick={() => router.push('/cliente/dashboard')}>
-                    Dashboard
-                  </button>
-                  <button type="button" onClick={abrirModalSenha}>
-                    Alterar senha
-                  </button>
-                  <div className="settingsDivider" />
-                  <button type="button" onClick={() => abrirModalSuporte('bug')}>
-                    Reportar bug
-                  </button>
                   <button type="button" onClick={() => abrirModalSuporte('suporte')}>
-                    Mensagem ao suporte
+                    🛟 Ajuda e suporte
                   </button>
-                  <button type="button" onClick={() => abrirModalSuporte('sugestao')}>
-                    Sugerir melhoria
+
+                  <button type="button" onClick={abrirModalSenha}>
+                    🔐 Alterar senha
                   </button>
-                  <div className="settingsDivider" />
+
                   <button type="button" className="dangerItem" onClick={handleLogout}>
-                    Sair
+                    🚪 Sair
                   </button>
                 </div>
               )}

@@ -60,9 +60,50 @@ function normalizarStatus(valor: unknown) {
   const status = texto(valor).toLowerCase()
   if (status === 'em_analise') return 'em_analise'
   if (status === 'respondido') return 'respondido'
-  if (status === 'resolvido') return 'resolvido'
+  if (status === 'resolvido' || status === 'concluido' || status === 'concluído' || status === 'finalizado') return 'resolvido'
   if (status === 'arquivado') return 'arquivado'
   return 'novo'
+}
+
+function normalizarAcao(valor: unknown) {
+  return texto(valor)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+function normalizarNota(valor: unknown) {
+  const nota = Number(valor)
+
+  if (!Number.isFinite(nota)) return 0
+
+  return Math.max(0, Math.min(5, Math.round(nota)))
+}
+
+function extrairColunaAusente(error: any) {
+  const textoErro = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+
+  const matchAspas = textoErro.match(/'([^']+)'/)
+  if (matchAspas?.[1]) return matchAspas[1]
+
+  const matchColumn = textoErro.match(/column\s+([a-zA-Z0-9_]+)/i)
+  if (matchColumn?.[1]) return matchColumn[1]
+
+  return ''
+}
+
+function erroDeColunaAusente(error: any) {
+  const textoErro = String(error?.message || error?.details || error?.hint || '').toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    textoErro.includes('could not find') ||
+    textoErro.includes('schema cache') ||
+    textoErro.includes('column')
+  )
 }
 
 export async function POST(request: NextRequest) {
@@ -142,7 +183,13 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdmin()
     const { searchParams } = new URL(request.url)
 
-    const usuarioId = texto(searchParams.get('usuarioId') || searchParams.get('usuario_id'))
+    const usuarioId = texto(
+      searchParams.get('usuarioId') ||
+        searchParams.get('usuario_id') ||
+        searchParams.get('userId') ||
+        searchParams.get('user_id')
+    )
+    const tipoUsuario = texto(searchParams.get('tipoUsuario') || searchParams.get('tipo_usuario') || 'todos')
     const status = texto(searchParams.get('status') || 'todos')
     const tipo = texto(searchParams.get('tipo') || 'todos')
     const prioridade = texto(searchParams.get('prioridade') || 'todas')
@@ -156,6 +203,7 @@ export async function GET(request: NextRequest) {
       .limit(limite)
 
     if (usuarioId) query = query.eq('usuario_id', usuarioId)
+    if (tipoUsuario !== 'todos') query = query.eq('tipo_usuario', normalizarTipoUsuario(tipoUsuario))
     if (status !== 'todos') query = query.eq('status', normalizarStatus(status))
     if (tipo !== 'todos') query = query.eq('tipo_chamado', normalizarTipo(tipo))
     if (prioridade !== 'todas') query = query.eq('prioridade', normalizarPrioridade(prioridade))
@@ -264,6 +312,119 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
+    const acao = normalizarAcao(body.acao || body.action || body.operacao)
+
+    if (acao === 'finalizar' || acao === 'avaliar' || acao === 'concluir') {
+      const usuarioId = idOuNull(body.usuarioId || body.usuario_id || body.userId || body.user_id)
+      const tipoUsuario = normalizarTipoUsuario(body.tipoUsuario || body.tipo_usuario)
+      const nota = normalizarNota(
+        body.nota ||
+          body.avaliacaoNota ||
+          body.avaliacao_nota ||
+          body.avaliacao_resposta_nota
+      )
+      const comentario = texto(
+        body.comentario ||
+          body.avaliacaoComentario ||
+          body.avaliacao_comentario ||
+          body.avaliacao_resposta_comentario
+      )
+
+      if (!usuarioId) {
+        return NextResponse.json(
+          { sucesso: false, erro: 'usuarioId é obrigatório para finalizar o chamado.' },
+          { status: 400 }
+        )
+      }
+
+      if (nota < 1 || nota > 5) {
+        return NextResponse.json(
+          { sucesso: false, erro: 'Informe uma nota de 1 a 5 para avaliar a resposta.' },
+          { status: 400 }
+        )
+      }
+
+      const { data: chamadoAtual, error: chamadoError } = await supabase
+        .from('suporte_chamados')
+        .select('*')
+        .eq('id', chamadoId)
+        .maybeSingle()
+
+      if (chamadoError) throw chamadoError
+
+      if (!chamadoAtual) {
+        return NextResponse.json(
+          { sucesso: false, erro: 'Chamado não encontrado.' },
+          { status: 404 }
+        )
+      }
+
+      if (chamadoAtual.usuario_id && String(chamadoAtual.usuario_id) !== String(usuarioId)) {
+        return NextResponse.json(
+          { sucesso: false, erro: 'Você não pode finalizar um chamado de outro usuário.' },
+          { status: 403 }
+        )
+      }
+
+      if (!texto(chamadoAtual.resposta_admin)) {
+        return NextResponse.json(
+          { sucesso: false, erro: 'Aguarde a resposta do Admin antes de concluir e avaliar este chamado.' },
+          { status: 400 }
+        )
+      }
+
+      const agora = new Date().toISOString()
+
+      const payload: AnyRecord = {
+        status: 'resolvido',
+        finalizado_pelo_usuario: true,
+        finalizado_por_id: usuarioId,
+        finalizado_por_tipo: tipoUsuario,
+        finalizado_em: agora,
+        avaliacao_resposta_nota: nota,
+        avaliacao_resposta_comentario: comentario || null,
+        avaliacao_resposta_em: agora,
+        updated_at: agora,
+      }
+
+      let payloadAtual = { ...payload }
+      let data: AnyRecord | null = null
+      let ultimoErro: any = null
+
+      for (let tentativa = 0; tentativa < 10; tentativa++) {
+        const { data: dataTentativa, error } = await supabase
+          .from('suporte_chamados')
+          .update(payloadAtual)
+          .eq('id', chamadoId)
+          .select('*')
+          .maybeSingle()
+
+        if (!error) {
+          data = dataTentativa as AnyRecord | null
+          ultimoErro = null
+          break
+        }
+
+        ultimoErro = error
+
+        if (!erroDeColunaAusente(error)) break
+
+        const coluna = extrairColunaAusente(error)
+
+        if (!coluna || !(coluna in payloadAtual)) break
+
+        delete payloadAtual[coluna]
+      }
+
+      if (ultimoErro) throw ultimoErro
+
+      return NextResponse.json({
+        sucesso: true,
+        chamado: data,
+        mensagem: 'Chamado concluído e resposta avaliada com sucesso.',
+      })
+    }
+
     const respostaAdmin = texto(body.respostaAdmin || body.resposta_admin)
     const respondidoPorId = idOuNull(body.respondidoPorId || body.respondido_por_id || body.adminId || body.admin_id)
     const status = normalizarStatus(body.status)
@@ -283,14 +444,36 @@ export async function PATCH(request: NextRequest) {
       if (status === 'novo' || status === 'em_analise') payload.status = 'respondido'
     }
 
-    const { data, error } = await supabase
-      .from('suporte_chamados')
-      .update(payload)
-      .eq('id', chamadoId)
-      .select('*')
-      .maybeSingle()
+    let payloadAtual = { ...payload }
+    let data: AnyRecord | null = null
+    let ultimoErro: any = null
 
-    if (error) throw error
+    for (let tentativa = 0; tentativa < 8; tentativa++) {
+      const { data: dataTentativa, error } = await supabase
+        .from('suporte_chamados')
+        .update(payloadAtual)
+        .eq('id', chamadoId)
+        .select('*')
+        .maybeSingle()
+
+      if (!error) {
+        data = dataTentativa as AnyRecord | null
+        ultimoErro = null
+        break
+      }
+
+      ultimoErro = error
+
+      if (!erroDeColunaAusente(error)) break
+
+      const coluna = extrairColunaAusente(error)
+
+      if (!coluna || !(coluna in payloadAtual)) break
+
+      delete payloadAtual[coluna]
+    }
+
+    if (ultimoErro) throw ultimoErro
 
     return NextResponse.json({
       sucesso: true,

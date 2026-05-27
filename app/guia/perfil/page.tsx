@@ -58,6 +58,31 @@ type Avaliacao = {
   [key: string]: any
 }
 
+
+type SuporteChamado = {
+  id: string
+  usuario_id?: string | null
+  tipo_usuario?: string | null
+  tipo_chamado?: 'bug' | 'suporte' | 'sugestao' | string | null
+  assunto?: string | null
+  descricao?: string | null
+  prioridade?: string | null
+  status?: string | null
+  resposta_admin?: string | null
+  respondido_em?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  pagina_origem?: string | null
+  finalizado_pelo_usuario?: boolean | null
+  finalizado_por_id?: string | null
+  finalizado_por_tipo?: string | null
+  finalizado_em?: string | null
+  avaliacao_resposta_nota?: number | null
+  avaliacao_resposta_comentario?: string | null
+  avaliacao_resposta_em?: string | null
+  [key: string]: any
+}
+
 type Stats = {
   totalRoteiros: number
   totalReservas: number
@@ -278,6 +303,13 @@ export default function PerfilGuiaPage() {
   const [prioridadeSuporte, setPrioridadeSuporte] = useState<'baixa' | 'normal' | 'alta' | 'urgente'>('normal')
   const [enviandoSuporte, setEnviandoSuporte] = useState(false)
   const [erroSuporte, setErroSuporte] = useState('')
+  const [chamadosSuporte, setChamadosSuporte] = useState<SuporteChamado[]>([])
+  const [carregandoChamadosSuporte, setCarregandoChamadosSuporte] = useState(false)
+  const [avaliandoChamadoId, setAvaliandoChamadoId] = useState('')
+  const [notaAvaliacaoSuporte, setNotaAvaliacaoSuporte] = useState(5)
+  const [comentarioAvaliacaoSuporte, setComentarioAvaliacaoSuporte] = useState('')
+  const [finalizandoChamadoId, setFinalizandoChamadoId] = useState('')
+  const [erroFinalizarSuporte, setErroFinalizarSuporte] = useState('')
 
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
@@ -842,14 +874,114 @@ export default function PerfilGuiaPage() {
     setModalSenhaAberto(true)
   }
 
-  const abrirSuporte = (tipo: 'bug' | 'suporte' | 'sugestao') => {
+  const rotuloTipoChamado = (tipo?: string | null) => {
+    const normalizado = normalizar(tipo)
+
+    if (normalizado === 'bug') return 'Bug'
+    if (normalizado === 'sugestao') return 'Sugestão'
+
+    return 'Suporte'
+  }
+
+  const rotuloStatusChamado = (status?: string | null) => {
+    const normalizado = normalizar(status)
+
+    if (normalizado === 'respondido') return 'Respondido'
+    if (normalizado === 'em_analise') return 'Em análise'
+    if (normalizado === 'resolvido') return 'Concluído'
+    if (normalizado === 'arquivado') return 'Arquivado'
+
+    return 'Novo'
+  }
+
+  const classeStatusChamado = (status?: string | null) => {
+    const normalizado = normalizar(status)
+
+    if (normalizado === 'respondido' || normalizado === 'resolvido') return 'respondido'
+    if (normalizado === 'em_analise') return 'analise'
+    if (normalizado === 'arquivado') return 'arquivado'
+
+    return 'novo'
+  }
+
+  const notaChamado = (chamado: SuporteChamado) => {
+    return Number(chamado.avaliacao_resposta_nota || chamado.nota_resposta || chamado.nota || 0)
+  }
+
+  const chamadoFinalizado = (chamado: SuporteChamado) => {
+    const status = normalizar(chamado.status)
+
+    return (
+      status === 'resolvido' ||
+      Boolean(chamado.finalizado_pelo_usuario) ||
+      Boolean(chamado.finalizado_em) ||
+      notaChamado(chamado) > 0
+    )
+  }
+
+  const podeFinalizarChamado = (chamado: SuporteChamado) => {
+    const status = normalizar(chamado.status)
+
+    return (
+      Boolean(chamado.resposta_admin) &&
+      status !== 'arquivado' &&
+      notaChamado(chamado) <= 0
+    )
+  }
+
+  const abrirAvaliacaoChamado = (chamado: SuporteChamado) => {
+    setAvaliandoChamadoId(chamado.id)
+    setNotaAvaliacaoSuporte(5)
+    setComentarioAvaliacaoSuporte('')
+    setErroFinalizarSuporte('')
+  }
+
+  const cancelarAvaliacaoChamado = () => {
+    setAvaliandoChamadoId('')
+    setNotaAvaliacaoSuporte(5)
+    setComentarioAvaliacaoSuporte('')
+    setErroFinalizarSuporte('')
+  }
+
+  const carregarChamadosSuporte = async (guiaId?: string | null) => {
+    const id = String(guiaId || user?.id || '').trim()
+
+    if (!id) return
+
+    setCarregandoChamadosSuporte(true)
+
+    try {
+      const params = new URLSearchParams({
+        usuarioId: id,
+        tipoUsuario: 'guia',
+        limite: '80',
+      })
+
+      const response = await fetch(`/api/suporte/chamados?${params.toString()}`)
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || data?.message || 'Não foi possível carregar seus chamados.')
+      }
+
+      setChamadosSuporte(Array.isArray(data?.chamados) ? data.chamados : [])
+    } catch (error) {
+      console.error('Erro ao carregar chamados de suporte do guia:', error)
+    } finally {
+      setCarregandoChamadosSuporte(false)
+    }
+  }
+
+  const abrirSuporte = async () => {
     setMenuAberto(false)
-    setTipoSuporte(tipo)
-    setPrioridadeSuporte(tipo === 'bug' ? 'alta' : 'normal')
-    setAssuntoSuporte(tipo === 'bug' ? 'Erro no painel do guia' : tipo === 'sugestao' ? 'Sugestão para o PrussikTrails' : 'Mensagem ao suporte')
+    setTipoSuporte('suporte')
+    setPrioridadeSuporte('normal')
+    setAssuntoSuporte('Mensagem ao suporte')
     setDescricaoSuporte('')
     setErroSuporte('')
+    cancelarAvaliacaoChamado()
     setModalSuporteAberto(true)
+    await carregarChamadosSuporte(user?.id)
   }
 
   const enviarSuporte = async (event: FormEvent) => {
@@ -900,14 +1032,64 @@ export default function PerfilGuiaPage() {
       }
 
       setMensagem('Solicitação enviada com sucesso.')
-      setModalSuporteAberto(false)
       setAssuntoSuporte('')
       setDescricaoSuporte('')
+      setTipoSuporte('suporte')
+      setPrioridadeSuporte('normal')
+      await carregarChamadosSuporte(user.id)
     } catch (error) {
       console.error('Erro ao enviar suporte:', error)
       setErroSuporte('Erro ao enviar solicitação.')
     } finally {
       setEnviandoSuporte(false)
+    }
+  }
+
+  const finalizarChamadoSuporte = async (chamado: SuporteChamado) => {
+    if (!user?.id) {
+      router.replace('/login')
+      return
+    }
+
+    const nota = Number(notaAvaliacaoSuporte || 0)
+
+    if (!Number.isFinite(nota) || nota < 1 || nota > 5) {
+      setErroFinalizarSuporte('Selecione uma nota de 1 a 5 para avaliar a resposta.')
+      return
+    }
+
+    setFinalizandoChamadoId(chamado.id)
+    setErroFinalizarSuporte('')
+
+    try {
+      const response = await fetch('/api/suporte/chamados', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'finalizar',
+          chamadoId: chamado.id,
+          usuarioId: user.id,
+          tipoUsuario: 'guia',
+          nota,
+          comentario: comentarioAvaliacaoSuporte,
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        setErroFinalizarSuporte(data?.erro || data?.message || 'Não foi possível concluir o chamado.')
+        return
+      }
+
+      setMensagem('Chamado concluído e resposta avaliada com sucesso.')
+      cancelarAvaliacaoChamado()
+      await carregarChamadosSuporte(user.id)
+    } catch (error) {
+      console.error('Erro ao finalizar chamado de suporte:', error)
+      setErroFinalizarSuporte('Erro ao concluir e avaliar o chamado.')
+    } finally {
+      setFinalizandoChamadoId('')
     }
   }
 
@@ -2091,6 +2273,225 @@ export default function PerfilGuiaPage() {
           overflow: hidden;
         }
 
+        .modal.supportModal {
+          max-width: 780px;
+          max-height: 92vh;
+          overflow-y: auto;
+        }
+
+        .supportGrid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 300px;
+          gap: 14px;
+          align-items: start;
+        }
+
+        .supportHistory {
+          background: #fffdf7;
+          border: 1px solid rgba(15,23,42,0.06);
+          border-radius: 22px;
+          padding: 14px;
+          display: grid;
+          gap: 10px;
+          max-height: 470px;
+          overflow-y: auto;
+        }
+
+        .supportHistoryTitle {
+          color: #172018;
+          font-size: 14px;
+          font-weight: 950;
+          letter-spacing: -0.03em;
+        }
+
+        .supportHistorySub {
+          color: #64748b;
+          font-size: 11px;
+          line-height: 1.4;
+          font-weight: 750;
+          margin-top: 2px;
+        }
+
+        .supportTicket {
+          border: 1px solid rgba(15,23,42,0.08);
+          background: #ffffff;
+          border-radius: 18px;
+          padding: 12px;
+        }
+
+        .supportTicketTop {
+          display: flex;
+          justify-content: space-between;
+          gap: 8px;
+          align-items: flex-start;
+          margin-bottom: 8px;
+        }
+
+        .supportTicketTitle {
+          color: #172018;
+          font-size: 12px;
+          font-weight: 950;
+          line-height: 1.25;
+        }
+
+        .supportTicketMeta {
+          color: #64748b;
+          font-size: 10px;
+          font-weight: 850;
+          line-height: 1.35;
+          margin-top: 3px;
+        }
+
+        .supportStatus {
+          display: inline-flex;
+          border-radius: 999px;
+          padding: 5px 7px;
+          font-size: 9px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          white-space: nowrap;
+        }
+
+        .supportStatus.novo {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .supportStatus.analise {
+          background: #dbeafe;
+          color: #1d4ed8;
+        }
+
+        .supportStatus.respondido {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .supportStatus.arquivado {
+          background: #f1f5f9;
+          color: #475569;
+        }
+
+        .supportTicketText {
+          color: #475569;
+          font-size: 11px;
+          line-height: 1.45;
+          font-weight: 700;
+          white-space: pre-wrap;
+          margin-top: 8px;
+        }
+
+        .adminAnswer {
+          margin-top: 10px;
+          border-radius: 16px;
+          background: #ecfdf5;
+          border: 1px solid #bbf7d0;
+          padding: 10px;
+        }
+
+        .adminAnswerLabel {
+          color: #166534;
+          font-size: 10px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .adminAnswerText {
+          color: #14532d;
+          font-size: 12px;
+          line-height: 1.48;
+          font-weight: 750;
+          margin-top: 5px;
+          white-space: pre-wrap;
+        }
+
+        .supportRatingBox {
+          margin-top: 10px;
+          border-radius: 16px;
+          background: #fff7ed;
+          border: 1px solid #fed7aa;
+          padding: 10px;
+          display: grid;
+          gap: 8px;
+        }
+
+        .supportRatingTitle {
+          color: #9a3412;
+          font-size: 10px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .supportRatingText {
+          color: #7c2d12;
+          font-size: 11px;
+          line-height: 1.42;
+          font-weight: 750;
+        }
+
+        .supportRatingRow {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+
+        .ratingBtn {
+          width: 34px;
+          height: 34px;
+          border-radius: 999px;
+          border: 1px solid rgba(154,52,18,0.22);
+          background: #ffffff;
+          color: #9a3412;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+        }
+
+        .ratingBtn.active {
+          background: #9a3412;
+          color: #ffffff;
+          border-color: #9a3412;
+        }
+
+        .supportRatingInput {
+          width: 100%;
+          min-height: 62px;
+          border: 1px solid rgba(154,52,18,0.16);
+          border-radius: 14px;
+          background: #ffffff;
+          color: #7c2d12;
+          padding: 10px;
+          font-size: 12px;
+          font-weight: 750;
+          resize: vertical;
+          outline: none;
+        }
+
+        .supportResolvedBox {
+          margin-top: 10px;
+          border-radius: 16px;
+          background: #f8fafc;
+          border: 1px solid rgba(15,23,42,0.08);
+          padding: 10px;
+          color: #475569;
+          font-size: 11px;
+          line-height: 1.42;
+          font-weight: 750;
+        }
+
+        .supportResolvedBox strong {
+          color: #172018;
+        }
+
+        .supportMiniActions {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 10px;
+        }
+
         .modalHeader {
           padding: 20px;
           border-bottom: 1px solid rgba(15,23,42,0.08);
@@ -2141,6 +2542,14 @@ export default function PerfilGuiaPage() {
         }
 
         @media (max-width: 760px) {
+          .supportGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .supportHistory {
+            max-height: 320px;
+          }
+
           .header {
             padding: 9px 12px;
           }
@@ -2265,12 +2674,9 @@ export default function PerfilGuiaPage() {
                 <button
                   type="button"
                   className="menuButton"
-                  onClick={() => {
-                    setMenuAberto(false)
-                    router.push('/guia/financeiro')
-                  }}
+                  onClick={abrirSuporte}
                 >
-                  💰 Financeiro
+                  🛟 Ajuda e suporte
                 </button>
 
                 <button
@@ -2279,30 +2685,6 @@ export default function PerfilGuiaPage() {
                   onClick={abrirAlterarSenha}
                 >
                   🔐 Alterar senha
-                </button>
-
-                <button
-                  type="button"
-                  className="menuButton"
-                  onClick={() => abrirSuporte('bug')}
-                >
-                  🐞 Reportar bug
-                </button>
-
-                <button
-                  type="button"
-                  className="menuButton"
-                  onClick={() => abrirSuporte('suporte')}
-                >
-                  💬 Mensagem ao suporte
-                </button>
-
-                <button
-                  type="button"
-                  className="menuButton"
-                  onClick={() => abrirSuporte('sugestao')}
-                >
-                  ✨ Sugerir melhoria
                 </button>
 
                 <button
@@ -2710,80 +3092,234 @@ export default function PerfilGuiaPage() {
 
       {modalSuporteAberto && (
         <div className="modalOverlay">
-          <form className="modal" onSubmit={enviarSuporte}>
+          <form className="modal supportModal" onSubmit={enviarSuporte}>
             <div className="modalHeader">
-              <h2 className="modalTitle">
-                {tipoSuporte === 'bug' ? 'Reportar bug' : tipoSuporte === 'sugestao' ? 'Sugerir melhoria' : 'Mensagem ao suporte'}
-              </h2>
+              <h2 className="modalTitle">Ajuda e suporte</h2>
               <div className="modalSub">
-                Conte para nós o que aconteceu. Sua mensagem ajuda a melhorar o PrussikTrails durante a fase Beta.
+                Envie bug, pedido de suporte ou sugestão em um único canal. Depois da resposta do Admin, conclua o chamado e avalie a solução de 1 a 5.
               </div>
             </div>
 
             <div className="modalBody">
-              <div className="field">
-                <label className="label">Tipo</label>
-                <select
-                  className="input"
-                  value={tipoSuporte}
-                  onChange={(event) => setTipoSuporte(event.target.value as 'bug' | 'suporte' | 'sugestao')}
-                >
-                  <option value="bug">Bug / erro no app</option>
-                  <option value="suporte">Mensagem ao suporte</option>
-                  <option value="sugestao">Sugestão de melhoria</option>
-                </select>
-              </div>
+              <div className="supportGrid">
+                <div>
+                  <div className="field">
+                    <label className="label">Tipo da solicitação</label>
+                    <select
+                      className="input"
+                      value={tipoSuporte}
+                      onChange={(event) => {
+                        const novoTipo = event.target.value as 'bug' | 'suporte' | 'sugestao'
+                        setTipoSuporte(novoTipo)
+                        setPrioridadeSuporte(novoTipo === 'bug' ? 'alta' : 'normal')
 
-              <div className="field">
-                <label className="label">Assunto</label>
-                <input
-                  className="input"
-                  type="text"
-                  value={assuntoSuporte}
-                  onChange={(event) => setAssuntoSuporte(event.target.value)}
-                  placeholder="Ex.: erro ao abrir grupos"
-                />
-              </div>
+                        if (novoTipo === 'bug') setAssuntoSuporte('Erro no painel do guia')
+                        if (novoTipo === 'suporte') setAssuntoSuporte('Mensagem ao suporte')
+                        if (novoTipo === 'sugestao') setAssuntoSuporte('Sugestão para o PrussikTrails')
+                      }}
+                    >
+                      <option value="bug">Bug / erro no app</option>
+                      <option value="suporte">Mensagem ao suporte</option>
+                      <option value="sugestao">Sugestão de melhoria</option>
+                    </select>
+                  </div>
 
-              <div className="field">
-                <label className="label">Descrição</label>
-                <textarea
-                  className="input suporteTextarea"
-                  value={descricaoSuporte}
-                  onChange={(event) => setDescricaoSuporte(event.target.value)}
-                  placeholder="Descreva a situação com detalhes."
-                />
-              </div>
+                  <div className="field">
+                    <label className="label">Assunto</label>
+                    <input
+                      className="input"
+                      type="text"
+                      value={assuntoSuporte}
+                      onChange={(event) => setAssuntoSuporte(event.target.value)}
+                      placeholder="Ex.: erro ao abrir grupos"
+                    />
+                  </div>
 
-              <div className="field">
-                <label className="label">Prioridade</label>
-                <select
-                  className="input"
-                  value={prioridadeSuporte}
-                  onChange={(event) => setPrioridadeSuporte(event.target.value as 'baixa' | 'normal' | 'alta' | 'urgente')}
-                >
-                  <option value="baixa">Baixa</option>
-                  <option value="normal">Normal</option>
-                  <option value="alta">Alta</option>
-                  <option value="urgente">Urgente</option>
-                </select>
-              </div>
+                  <div className="field">
+                    <label className="label">Descrição</label>
+                    <textarea
+                      className="input suporteTextarea"
+                      value={descricaoSuporte}
+                      onChange={(event) => setDescricaoSuporte(event.target.value)}
+                      placeholder="Descreva a situação com detalhes."
+                    />
+                  </div>
 
-              {erroSuporte && <div className="errorBox">{erroSuporte}</div>}
+                  <div className="field">
+                    <label className="label">Prioridade</label>
+                    <select
+                      className="input"
+                      value={prioridadeSuporte}
+                      onChange={(event) => setPrioridadeSuporte(event.target.value as 'baixa' | 'normal' | 'alta' | 'urgente')}
+                    >
+                      <option value="baixa">Baixa</option>
+                      <option value="normal">Normal</option>
+                      <option value="alta">Alta</option>
+                      <option value="urgente">Urgente</option>
+                    </select>
+                  </div>
 
-              <div className="modalActions">
-                <button type="submit" className="btn dark" disabled={enviandoSuporte}>
-                  {enviandoSuporte ? 'Enviando...' : 'Enviar solicitação'}
-                </button>
+                  {erroSuporte && <div className="errorBox">{erroSuporte}</div>}
 
-                <button
-                  type="button"
-                  className="btn light"
-                  disabled={enviandoSuporte}
-                  onClick={() => setModalSuporteAberto(false)}
-                >
-                  Cancelar
-                </button>
+                  <div className="modalActions">
+                    <button type="submit" className="btn dark" disabled={enviandoSuporte}>
+                      {enviandoSuporte ? 'Enviando...' : 'Enviar solicitação'}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn light"
+                      disabled={enviandoSuporte}
+                      onClick={() => setModalSuporteAberto(false)}
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+
+                <aside className="supportHistory">
+                  <div>
+                    <div className="supportHistoryTitle">Meus chamados</div>
+                    <div className="supportHistorySub">
+                      Acompanhe status, respostas do Admin e finalize o chamado quando a solução estiver concluída.
+                    </div>
+                  </div>
+
+                  <div className="supportMiniActions">
+                    <button
+                      type="button"
+                      className="btn light"
+                      onClick={() => carregarChamadosSuporte(user?.id)}
+                      disabled={carregandoChamadosSuporte}
+                    >
+                      {carregandoChamadosSuporte ? 'Atualizando...' : 'Atualizar'}
+                    </button>
+                  </div>
+
+                  {carregandoChamadosSuporte ? (
+                    <div className="empty">Carregando seus chamados...</div>
+                  ) : chamadosSuporte.length === 0 ? (
+                    <div className="empty">
+                      Nenhuma solicitação registrada ainda. Quando o Admin responder, a resposta aparecerá nesta área.
+                    </div>
+                  ) : (
+                    chamadosSuporte.map((chamado) => (
+                      <article className="supportTicket" key={chamado.id}>
+                        <div className="supportTicketTop">
+                          <div>
+                            <div className="supportTicketTitle">
+                              {chamado.assunto || 'Solicitação sem assunto'}
+                            </div>
+                            <div className="supportTicketMeta">
+                              {rotuloTipoChamado(chamado.tipo_chamado)} · {formatarData(chamado.created_at)}
+                            </div>
+                          </div>
+
+                          <span className={`supportStatus ${classeStatusChamado(chamado.status)}`}>
+                            {rotuloStatusChamado(chamado.status)}
+                          </span>
+                        </div>
+
+                        <div className="supportTicketText">
+                          {chamado.descricao || 'Sem descrição.'}
+                        </div>
+
+                        {chamado.resposta_admin ? (
+                          <>
+                            <div className="adminAnswer">
+                              <div className="adminAnswerLabel">
+                                Resposta do Admin
+                                {chamado.respondido_em ? ` · ${formatarData(chamado.respondido_em)}` : ''}
+                              </div>
+                              <div className="adminAnswerText">
+                                {chamado.resposta_admin}
+                              </div>
+                            </div>
+
+                            {notaChamado(chamado) > 0 || chamadoFinalizado(chamado) ? (
+                              <div className="supportResolvedBox">
+                                <strong>Chamado concluído pelo guia.</strong>
+                                {notaChamado(chamado) > 0 ? ` Nota da resposta: ${notaChamado(chamado)}/5.` : ''}
+                                {chamado.avaliacao_resposta_em ? ` Avaliado em ${formatarData(chamado.avaliacao_resposta_em)}.` : chamado.finalizado_em ? ` Finalizado em ${formatarData(chamado.finalizado_em)}.` : ''}
+                                {chamado.avaliacao_resposta_comentario ? (
+                                  <>
+                                    <br />
+                                    {chamado.avaliacao_resposta_comentario}
+                                  </>
+                                ) : null}
+                              </div>
+                            ) : podeFinalizarChamado(chamado) ? (
+                              <div className="supportRatingBox">
+                                <div className="supportRatingTitle">Concluir e avaliar resposta</div>
+                                <div className="supportRatingText">
+                                  Quando a solução estiver concluída, finalize o chamado e dê uma nota de 1 a 5 para a resposta recebida.
+                                </div>
+
+                                {avaliandoChamadoId === chamado.id ? (
+                                  <>
+                                    <div className="supportRatingRow" aria-label="Nota da resposta">
+                                      {[1, 2, 3, 4, 5].map((nota) => (
+                                        <button
+                                          key={nota}
+                                          type="button"
+                                          className={`ratingBtn ${notaAvaliacaoSuporte === nota ? 'active' : ''}`}
+                                          onClick={() => setNotaAvaliacaoSuporte(nota)}
+                                        >
+                                          {nota}
+                                        </button>
+                                      ))}
+                                    </div>
+
+                                    <textarea
+                                      className="supportRatingInput"
+                                      value={comentarioAvaliacaoSuporte}
+                                      onChange={(event) => setComentarioAvaliacaoSuporte(event.target.value)}
+                                      placeholder="Comentário opcional sobre a resposta do suporte."
+                                    />
+
+                                    {erroFinalizarSuporte && <div className="errorBox">{erroFinalizarSuporte}</div>}
+
+                                    <div className="modalActions">
+                                      <button
+                                        type="button"
+                                        className="btn dark"
+                                        disabled={finalizandoChamadoId === chamado.id}
+                                        onClick={() => finalizarChamadoSuporte(chamado)}
+                                      >
+                                        {finalizandoChamadoId === chamado.id ? 'Finalizando...' : 'Finalizar chamado'}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        className="btn light"
+                                        disabled={finalizandoChamadoId === chamado.id}
+                                        onClick={cancelarAvaliacaoChamado}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="btn light"
+                                    onClick={() => abrirAvaliacaoChamado(chamado)}
+                                  >
+                                    Concluir e avaliar
+                                  </button>
+                                )}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <div className="supportTicketMeta">
+                            Ainda sem resposta do Admin.
+                          </div>
+                        )}
+                      </article>
+                    ))
+                  )}
+                </aside>
               </div>
             </div>
           </form>
