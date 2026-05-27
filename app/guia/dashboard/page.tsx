@@ -292,7 +292,10 @@ export default function GuiaDashboardPage() {
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([])
   const [notificacoesGerais, setNotificacoesGerais] = useState<Notificacao[]>([])
   const [notificacoesCom, setNotificacoesCom] = useState<Notificacao[]>([])
-  const [abaNotificacao, setAbaNotificacao] = useState<'geral' | 'com'>('geral')
+  const [abaNotificacao, setAbaNotificacao] = useState<'geral' | 'com'>(() => {
+    if (typeof window === 'undefined') return 'geral'
+    return localStorage.getItem('prussik_guia_aba_notificacoes') === 'com' ? 'com' : 'geral'
+  })
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
   const [encerrandoGrupos, setEncerrandoGrupos] = useState(false)
 
@@ -798,13 +801,65 @@ export default function GuiaDashboardPage() {
     return avaliacoes.slice(0, 3)
   }, [avaliacoes])
 
+
+  const avatarDoGuia = user?.avatar_url || user?.foto_url || user?.imagem_url || ''
+  const nomeDoGuia = user?.nome || user?.email || 'Guia'
+
+  function mudarAbaNotificacao(aba: 'geral' | 'com') {
+    setAbaNotificacao(aba)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('prussik_guia_aba_notificacoes', aba)
+    }
+  }
+
+  const notificacoesCompactas = useMemo(() => {
+    return notificacoesAtivas.slice(0, 4)
+  }, [notificacoesAtivas])
+
+  const pendenciasDoGuia = useMemo(() => {
+    return [
+      {
+        titulo: 'Reservas pendentes',
+        valor: stats.reservasPendentes,
+        texto: 'Clientes aguardando confirmação, pagamento ou acompanhamento.',
+        destino: '/guia/financeiro',
+        icone: '🎒',
+        destaque: stats.reservasPendentes > 0,
+      },
+      {
+        titulo: 'Roteiros em análise',
+        valor: stats.roteirosPendentes,
+        texto: 'Experiências que ainda precisam de revisão ou ajuste.',
+        destino: '/guia/roteiros',
+        icone: '🧭',
+        destaque: stats.roteirosPendentes > 0,
+      },
+      {
+        titulo: 'Movimentos na COM',
+        valor: notificacoesCom.length,
+        texto: 'Novidades da comunidade ligadas ao guia e aos seguidores.',
+        destino: 'com',
+        icone: '🌿',
+        destaque: notificacoesCom.length > 0,
+      },
+      {
+        titulo: 'Avaliações recebidas',
+        valor: avaliacoes.length,
+        texto: stats.mediaAvaliacoes > 0 ? `Média atual ${stats.mediaAvaliacoes.toFixed(1)} estrelas.` : 'Aguardando os primeiros retornos dos clientes.',
+        destino: '/guia/avaliacoes',
+        icone: '⭐',
+        destaque: avaliacoes.length > 0,
+      },
+    ]
+  }, [stats.reservasPendentes, stats.roteirosPendentes, stats.mediaAvaliacoes, notificacoesCom.length, avaliacoes.length])
+
   if (carregando || !user) {
     return (
       <main className="loadingPage">
         <style>{estilos}</style>
         <div className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <span>Preparando a área do guia...</span>
+          <span>Preparando a central do guia...</span>
         </div>
       </main>
     )
@@ -825,7 +880,7 @@ export default function GuiaDashboardPage() {
             <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
             <span className="brandTextBlock">
               <span className="brandName">PrussikTrails</span>
-              <span className="brandSubtitle">Dashboard do guia</span>
+              <span className="brandSubtitle">Central do guia</span>
             </span>
           </button>
 
@@ -836,64 +891,108 @@ export default function GuiaDashboardPage() {
             aria-label="Abrir perfil do guia"
             title="Perfil"
           >
-            👤
+            {avatarDoGuia ? (
+              <img src={avatarDoGuia} alt={nomeDoGuia} />
+            ) : (
+              <span>{nomeDoGuia.slice(0, 1).toUpperCase()}</span>
+            )}
           </button>
         </div>
       </header>
 
       <section className="container">
-        <section className="hero">
-          <div className="heroTextBlock">
+        <section className="heroSlim">
+          <div className="heroCopy">
             <span className="eyebrow">Área do guia</span>
             <h1>
               Olá, {primeiroNome(user.nome)}.
               <br />
-              Suas trilhas, clientes e grupos em um só lugar.
+              Sua operação em movimento.
             </h1>
             <p>
-              Acompanhe reservas, pagamentos, avaliações e movimentos da comunidade.
+              Roteiros, reservas, grupos, avaliações e financeiro em uma central mais limpa para o uso diário.
               {ultimaAtualizacao ? ` Atualizado às ${ultimaAtualizacao}.` : ''}
             </p>
           </div>
 
-          <div className="heroCard">
+          <button
+            type="button"
+            className="heroFinanceCard"
+            onClick={() => router.push('/guia/financeiro')}
+          >
             <span>Receita confirmada</span>
             <strong>{formatarMoeda(stats.receitaConfirmada)}</strong>
             <small>{stats.reservasConfirmadas} reserva(s) confirmada(s)</small>
-          </div>
+          </button>
         </section>
 
         {(mensagem || erro) && (
           <div className={erro ? 'notice error' : 'notice'}>{erro || mensagem}</div>
         )}
 
+        <section className="commandPanel">
+          <div className="panelHeader commandHeader">
+            <div>
+              <h2>Pendências do guia</h2>
+              <p>O que merece atenção antes de publicar novas experiências.</p>
+            </div>
+            <button type="button" onClick={atualizar} disabled={atualizando}>
+              {atualizando ? 'Atualizando...' : 'Atualizar'}
+            </button>
+          </div>
+
+          <div className="commandGrid">
+            {pendenciasDoGuia.map((item) => (
+              <button
+                type="button"
+                key={item.titulo}
+                className={`commandItem ${item.destaque ? 'active' : ''}`}
+                onClick={() => {
+                  if (item.destino === 'com') {
+                    mudarAbaNotificacao('com')
+                    return
+                  }
+                  router.push(item.destino)
+                }}
+              >
+                <span className="commandIcon">{item.icone}</span>
+                <span className="commandContent">
+                  <strong>{item.valor}</strong>
+                  <b>{item.titulo}</b>
+                  <small>{item.texto}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="quickGrid">
           <button className="quickCard" type="button" onClick={() => router.push('/guia/roteiros')}>
-            <span className="quickIcon">🧭</span>
+            <span className="quickIcon route">🧭</span>
             <strong>Meus roteiros</strong>
             <small>{stats.roteirosAtivos} ativo(s), {stats.roteirosPendentes} em análise.</small>
           </button>
 
           <button className="quickCard" type="button" onClick={() => router.push('/guia/roteiros/novo')}>
-            <span className="quickIcon">＋</span>
+            <span className="quickIcon plus">＋</span>
             <strong>Novo roteiro</strong>
-            <small>Criar uma nova experiência para clientes.</small>
+            <small>Publicar uma experiência com dados completos.</small>
           </button>
 
           <button className="quickCard" type="button" onClick={() => router.push('/guia/financeiro')}>
-            <span className="quickIcon">💰</span>
+            <span className="quickIcon money">R$</span>
             <strong>Financeiro</strong>
             <small>{formatarMoeda(stats.receitaPendente)} pendente.</small>
           </button>
 
           <button className="quickCard" type="button" onClick={() => router.push('/guia/grupos')}>
-            <span className="quickIcon">💬</span>
+            <span className="quickIcon group">💬</span>
             <strong>Grupos</strong>
-            <small>Administrar grupos dos roteiros.</small>
+            <small>Administrar comunicação por roteiro.</small>
           </button>
         </section>
 
-        <section className="statsGrid">
+        <section className="momentGrid">
           <article>
             <span>Clientes</span>
             <strong>{stats.clientes}</strong>
@@ -912,13 +1011,64 @@ export default function GuiaDashboardPage() {
           </article>
         </section>
 
+        <section className="notificationsPanel">
+          <div className="panelHeader compactHeader">
+            <div>
+              <h2>Notificações</h2>
+              <p>Resumo rápido para o guia.</p>
+            </div>
+            <div className="tabs">
+              <button
+                type="button"
+                className={abaNotificacao === 'geral' ? 'active' : ''}
+                onClick={() => mudarAbaNotificacao('geral')}
+              >
+                Geral
+              </button>
+              <button
+                type="button"
+                className={abaNotificacao === 'com' ? 'active' : ''}
+                onClick={() => mudarAbaNotificacao('com')}
+              >
+                COM
+              </button>
+            </div>
+          </div>
+
+          <div className="notificationGrid">
+            {notificacoesCompactas.length === 0 ? (
+              <div className="empty compactEmpty">Nenhuma notificação por enquanto.</div>
+            ) : (
+              notificacoesCompactas.map((notificacao: Notificacao) => (
+                <button
+                  type="button"
+                  key={notificacao.id}
+                  className="notificationItem"
+                  onClick={() => {
+                    if (abaNotificacao === 'com' && notificacao.destino) {
+                      router.push(notificacao.destino)
+                    }
+                  }}
+                >
+                  <span className="notificationIcon">{notificacao.emoji}</span>
+                  <span>
+                    <strong>{notificacao.titulo}</strong>
+                    <small>{notificacao.texto}</small>
+                    <em>{tempoRelativo(notificacao.created_at)}</em>
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+
         <section className="mainGrid">
           <div className="leftColumn">
             <section className="panel">
               <div className="panelHeader">
                 <div>
                   <h2>Roteiros recentes</h2>
-                  <p>Os últimos roteiros cadastrados ou movimentados.</p>
+                  <p>Últimos roteiros cadastrados ou movimentados.</p>
                 </div>
                 <button type="button" onClick={() => router.push('/guia/roteiros')}>Ver todos</button>
               </div>
@@ -927,7 +1077,7 @@ export default function GuiaDashboardPage() {
                 {roteirosRecentes.length === 0 ? (
                   <div className="empty">Você ainda não tem roteiros ativos.</div>
                 ) : (
-                  roteirosRecentes.map((roteiro: Roteiro) => {
+                  roteirosRecentes.slice(0, 3).map((roteiro: Roteiro) => {
                     const foto = fotoRoteiro(roteiro)
                     const status = normalizar(roteiro.status) || 'ativo'
 
@@ -943,9 +1093,7 @@ export default function GuiaDashboardPage() {
                         </span>
                         <span className="itemContent">
                           <strong>{tituloRoteiro(roteiro)}</strong>
-                          <small>
-                            {localRoteiro(roteiro)} · {formatarData(dataRoteiro(roteiro))}
-                          </small>
+                          <small>{localRoteiro(roteiro)} · {formatarData(dataRoteiro(roteiro))}</small>
                           <span className="itemFooter">
                             <em>{formatarMoeda(precoRoteiro(roteiro))}</em>
                             <b>{status}</b>
@@ -967,11 +1115,11 @@ export default function GuiaDashboardPage() {
                 <button type="button" onClick={() => router.push('/guia/financeiro')}>Financeiro</button>
               </div>
 
-              <div className="list">
+              <div className="list compactList">
                 {reservasRecentes.length === 0 ? (
                   <div className="empty">Nenhuma reserva recente por enquanto.</div>
                 ) : (
-                  reservasRecentes.map((reserva: Reserva) => (
+                  reservasRecentes.slice(0, 3).map((reserva: Reserva) => (
                     <article className="reservationItem" key={reserva.id}>
                       <span className="avatarMini">{(reserva.cliente_nome || 'C').slice(0, 1).toUpperCase()}</span>
                       <span className="itemContent">
@@ -993,58 +1141,12 @@ export default function GuiaDashboardPage() {
 
           <aside className="rightColumn">
             <section className="panel">
-              <div className="panelHeader compact">
-                <div>
-                  <h2>Notificações</h2>
-                  <p>Geral e COM.</p>
-                </div>
-                <div className="tabs">
-                  <button
-                    type="button"
-                    className={abaNotificacao === 'geral' ? 'active' : ''}
-                    onClick={() => setAbaNotificacao('geral')}
-                  >
-                    Geral
-                  </button>
-                  <button
-                    type="button"
-                    className={abaNotificacao === 'com' ? 'active' : ''}
-                    onClick={() => setAbaNotificacao('com')}
-                  >
-                    COM
-                  </button>
-                </div>
-              </div>
-
-              <div className="notificationList">
-                {notificacoesAtivas.length === 0 ? (
-                  <div className="empty">Nenhuma notificação por enquanto.</div>
-                ) : (
-                  notificacoesAtivas.map((notificacao: Notificacao) => (
-                    <button
-                      type="button"
-                      key={notificacao.id}
-                      className="notificationItem"
-                      onClick={() => notificacao.destino && router.push(notificacao.destino)}
-                    >
-                      <span>{notificacao.emoji}</span>
-                      <span>
-                        <strong>{notificacao.titulo}</strong>
-                        <small>{notificacao.texto}</small>
-                        <em>{tempoRelativo(notificacao.created_at)}</em>
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </section>
-
-            <section className="panel panelSpacing">
-              <div className="panelHeader compact">
+              <div className="panelHeader compactHeader">
                 <div>
                   <h2>Avaliações</h2>
                   <p>Últimos retornos dos clientes.</p>
                 </div>
+                <button type="button" onClick={() => router.push('/guia/avaliacoes')}>Ver painel</button>
               </div>
 
               <div className="reviewList">
@@ -1078,16 +1180,18 @@ export default function GuiaDashboardPage() {
               </div>
             </section>
 
-            <section className="panel panelSpacing actionsPanel">
-              <button type="button" onClick={atualizar} disabled={atualizando}>
-                {atualizando ? 'Atualizando...' : 'Atualizar dados'}
-              </button>
-              <button type="button" onClick={encerrarGruposFinalizados} disabled={encerrandoGrupos}>
-                {encerrandoGrupos ? 'Verificando...' : 'Encerrar grupos finalizados'}
-              </button>
-              <button type="button" className="ghost" onClick={sair}>
-                Sair
-              </button>
+            <section className="opsCard">
+              <span>Operação</span>
+              <strong>Fechamento de grupos</strong>
+              <p>Use para verificar grupos de roteiros finalizados e encerrar comunicações que já cumpriram o ciclo.</p>
+              <div className="opsActions">
+                <button type="button" onClick={encerrarGruposFinalizados} disabled={encerrandoGrupos}>
+                  {encerrandoGrupos ? 'Verificando...' : 'Encerrar grupos finalizados'}
+                </button>
+                <button type="button" className="ghost" onClick={atualizar} disabled={atualizando}>
+                  {atualizando ? 'Atualizando...' : 'Atualizar dados'}
+                </button>
+              </div>
             </section>
           </aside>
         </section>
@@ -1148,10 +1252,10 @@ const estilos = `
     position: sticky;
     top: 0;
     z-index: 50;
-    background: rgba(255, 253, 247, 0.86);
+    background: rgba(255, 253, 247, 0.90);
     border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     backdrop-filter: blur(18px);
-    padding: 10px 16px;
+    padding: 9px 14px;
   }
 
   .topbarInner {
@@ -1160,7 +1264,7 @@ const estilos = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 10px;
   }
 
   .brandHeader {
@@ -1174,11 +1278,12 @@ const estilos = `
     min-width: 0;
     cursor: pointer;
     text-align: left;
+    color: inherit;
   }
 
   .brandLogo {
-    width: 38px;
-    height: 38px;
+    width: 42px;
+    height: 42px;
     object-fit: contain;
     flex: 0 0 auto;
   }
@@ -1192,16 +1297,16 @@ const estilos = `
 
   .brandName {
     font-family: Georgia, 'Times New Roman', serif;
-    font-size: clamp(26px, 3.8vw, 44px);
-    font-weight: 700;
+    font-size: clamp(30px, 4.2vw, 52px);
+    font-weight: 800;
     color: #203c2e;
-    line-height: 0.92;
-    letter-spacing: -0.055em;
+    line-height: 0.9;
+    letter-spacing: -0.06em;
     white-space: nowrap;
   }
 
   .brandSubtitle {
-    margin-top: 5px;
+    margin-top: 6px;
     color: #7b8372;
     font-size: clamp(10px, 1.4vw, 14px);
     font-weight: 850;
@@ -1211,35 +1316,49 @@ const estilos = `
   }
 
   .profileButton {
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
     border-radius: 999px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(255, 255, 255, 0.78);
-    color: #172018;
+    border: 2px solid rgba(255, 255, 255, 0.82);
+    background: #203c2e;
+    color: #ffffff;
     cursor: pointer;
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    font-size: 14px;
+    font-weight: 950;
+  }
+
+  .profileButton img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .container {
     width: min(1180px, 100%);
     margin: 0 auto;
-    padding: 20px 16px 52px;
+    padding: 18px 16px 52px;
   }
 
-  .hero {
+  .heroSlim {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) 284px;
+    gap: 16px;
     align-items: stretch;
     border-radius: 34px;
     overflow: hidden;
-    padding: 26px;
+    padding: 24px;
     color: #fff;
     background:
-      linear-gradient(135deg, rgba(23, 32, 24, 0.76), rgba(23, 32, 24, 0.35)),
+      linear-gradient(135deg, rgba(23, 32, 24, 0.80), rgba(23, 32, 24, 0.42)),
       radial-gradient(circle at top right, rgba(132, 204, 22, 0.28), transparent 34%),
-      linear-gradient(135deg, #203322 0%, #647a49 46%, #d7c6a1 100%);
+      linear-gradient(135deg, #203322 0%, #647a49 48%, #d7c6a1 100%);
     box-shadow: 0 24px 60px rgba(23, 32, 24, 0.16);
   }
 
@@ -1255,10 +1374,10 @@ const estilos = `
     font-weight: 950;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    margin-bottom: 14px;
+    margin-bottom: 13px;
   }
 
-  .hero h1 {
+  .heroCopy h1 {
     margin: 0;
     max-width: 720px;
     font-size: clamp(36px, 5vw, 62px);
@@ -1267,26 +1386,41 @@ const estilos = `
     letter-spacing: -0.07em;
   }
 
-  .hero p {
+  .heroCopy p {
     max-width: 660px;
     color: rgba(255, 255, 255, 0.80);
     line-height: 1.55;
     margin: 14px 0 0;
     font-size: 14px;
+    font-weight: 650;
   }
 
-  .heroCard {
+  .heroFinanceCard {
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    border-radius: 28px;
+    padding: 18px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    backdrop-filter: blur(16px);
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    border-radius: 26px;
-    padding: 18px;
-    background: rgba(255, 255, 255, 0.14);
-    border: 1px solid rgba(255, 255, 255, 0.20);
-    backdrop-filter: blur(16px);
+    text-align: left;
+    cursor: pointer;
+    transition: 0.2s ease;
   }
 
-  .heroCard span {
+  .heroFinanceCard:hover,
+  .quickCard:hover,
+  .commandItem:hover,
+  .notificationItem:hover,
+  .routeItem:hover,
+  .reviewItem:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
+  }
+
+  .heroFinanceCard span {
     color: rgba(255, 255, 255, 0.74);
     font-size: 11px;
     font-weight: 950;
@@ -1294,7 +1428,7 @@ const estilos = `
     text-transform: uppercase;
   }
 
-  .heroCard strong {
+  .heroFinanceCard strong {
     display: block;
     margin-top: 8px;
     font-size: 30px;
@@ -1303,7 +1437,7 @@ const estilos = `
     letter-spacing: -0.06em;
   }
 
-  .heroCard small {
+  .heroFinanceCard small {
     margin-top: 8px;
     color: rgba(255, 255, 255, 0.76);
     font-weight: 750;
@@ -1326,108 +1460,18 @@ const estilos = `
     border-color: #fecaca;
   }
 
-  .quickGrid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 16px;
-  }
-
-  .quickCard,
-  .statsGrid article,
-  .panel {
+  .commandPanel,
+  .notificationsPanel,
+  .panel,
+  .opsCard {
     border: 1px solid rgba(15, 23, 42, 0.06);
-    background: rgba(255, 255, 255, 0.88);
+    background: rgba(255, 255, 255, 0.90);
     box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
-  }
-
-  .quickCard {
-    min-height: 132px;
-    border-radius: 26px;
-    padding: 16px;
-    text-align: left;
-    cursor: pointer;
-    transition: 0.2s ease;
-  }
-
-  .quickCard:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
-  }
-
-  .quickIcon {
-    width: 42px;
-    height: 42px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 18px;
-    background: #f0fdf4;
-    font-size: 19px;
-    margin-bottom: 12px;
-  }
-
-  .quickCard strong {
-    display: block;
-    color: #172018;
-    font-size: 15px;
-    line-height: 1.2;
-    font-weight: 950;
-  }
-
-  .quickCard small {
-    display: block;
-    margin-top: 5px;
-    color: #64748b;
-    font-size: 12px;
-    line-height: 1.45;
-    font-weight: 750;
-  }
-
-  .statsGrid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 16px;
-  }
-
-  .statsGrid article {
-    border-radius: 22px;
-    padding: 15px;
-  }
-
-  .statsGrid span {
-    display: block;
-    color: #64748b;
-    font-size: 11px;
-    font-weight: 900;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .statsGrid strong {
-    display: block;
-    margin-top: 8px;
-    color: #172018;
-    font-size: 26px;
-    line-height: 1;
-    font-weight: 950;
-    letter-spacing: -0.06em;
-  }
-
-  .mainGrid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
-    gap: 16px;
-    margin-top: 16px;
-  }
-
-  .panel {
     border-radius: 30px;
     overflow: hidden;
   }
 
-  .panelSpacing {
+  .commandPanel {
     margin-top: 16px;
   }
 
@@ -1436,12 +1480,8 @@ const estilos = `
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 18px 20px;
+    padding: 16px 18px;
     border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-  }
-
-  .panelHeader.compact {
-    align-items: flex-start;
   }
 
   .panelHeader h2 {
@@ -1461,7 +1501,7 @@ const estilos = `
   }
 
   .panelHeader button,
-  .actionsPanel button {
+  .opsActions button {
     border: 0;
     border-radius: 999px;
     background: #172018;
@@ -1472,32 +1512,292 @@ const estilos = `
     cursor: pointer;
   }
 
-  .panelHeader button:hover,
-  .actionsPanel button:hover {
-    filter: brightness(1.06);
-  }
-
   .panelHeader button:disabled,
-  .actionsPanel button:disabled {
+  .opsActions button:disabled {
     opacity: 0.62;
     cursor: not-allowed;
   }
 
+  .commandGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .commandItem {
+    border: 1px solid rgba(15, 23, 42, 0.07);
+    border-radius: 22px;
+    background: #fffdf7;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+
+  .commandItem.active {
+    border-color: rgba(234, 88, 12, 0.18);
+    background: linear-gradient(135deg, #fff7ed, #fffdf7);
+  }
+
+  .commandIcon {
+    width: 42px;
+    height: 42px;
+    border-radius: 16px;
+    background: #f0fdf4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  .commandContent strong {
+    display: block;
+    color: #172018;
+    font-size: 23px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.06em;
+  }
+
+  .commandContent b {
+    display: block;
+    margin-top: 4px;
+    color: #172018;
+    font-size: 12px;
+    line-height: 1.25;
+    font-weight: 950;
+  }
+
+  .commandContent small {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
+    font-weight: 750;
+  }
+
+  .quickGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .quickCard,
+  .momentGrid article {
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+  }
+
+  .quickCard {
+    min-height: 128px;
+    border-radius: 26px;
+    padding: 16px;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+
+  .quickIcon {
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18px;
+    background: #f0fdf4;
+    font-size: 19px;
+    margin-bottom: 12px;
+    color: #166534;
+    font-weight: 950;
+  }
+
+  .quickIcon.plus { background: #fff7ed; color: #c2410c; }
+  .quickIcon.money { background: #ecfdf5; color: #15803d; }
+  .quickIcon.group { background: #eff6ff; color: #1d4ed8; }
+
+  .quickCard strong {
+    display: block;
+    color: #172018;
+    font-size: 15px;
+    line-height: 1.2;
+    font-weight: 950;
+  }
+
+  .quickCard small {
+    display: block;
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .momentGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .momentGrid article {
+    border-radius: 22px;
+    padding: 15px;
+  }
+
+  .momentGrid span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .momentGrid strong {
+    display: block;
+    margin-top: 8px;
+    color: #172018;
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.06em;
+  }
+
+  .notificationsPanel {
+    margin-top: 16px;
+  }
+
+  .compactHeader {
+    flex-wrap: wrap;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: #eef2e5;
+  }
+
+  .tabs button {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: transparent;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .tabs button.active {
+    background: #172018;
+    color: #fff;
+  }
+
+  .notificationGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .notificationItem {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    min-height: 112px;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    border-radius: 22px;
+    background: #fffdf7;
+    padding: 12px;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+
+  .notificationIcon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: #f0fdf4;
+    font-size: 18px;
+  }
+
+  .notificationItem strong,
+  .reviewItem strong,
+  .itemContent strong {
+    display: block;
+    color: #172018;
+    font-size: 14px;
+    font-weight: 950;
+    line-height: 1.3;
+  }
+
+  .notificationItem small,
+  .reviewItem small,
+  .itemContent small {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 750;
+  }
+
+  .notificationItem em,
+  .reviewItem em {
+    display: block;
+    margin-top: 5px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1.35;
+  }
+
+  .mainGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .panelSpacing {
+    margin-top: 16px;
+  }
+
   .list,
-  .notificationList,
   .reviewList {
     display: grid;
-    gap: 11px;
-    padding: 16px;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .compactList {
+    gap: 9px;
   }
 
   .routeItem,
   .reservationItem,
-  .notificationItem,
   .reviewItem {
     display: grid;
-    grid-template-columns: 76px minmax(0, 1fr);
-    gap: 13px;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
     align-items: center;
     width: 100%;
     border: 1px solid rgba(15, 23, 42, 0.06);
@@ -1509,22 +1809,14 @@ const estilos = `
   }
 
   .routeItem,
-  .notificationItem,
   .reviewItem {
     cursor: pointer;
     transition: 0.2s ease;
   }
 
-  .routeItem:hover,
-  .notificationItem:hover,
-  .reviewItem:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
-  }
-
   .thumb {
-    width: 76px;
-    height: 76px;
+    width: 72px;
+    height: 72px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1568,33 +1860,13 @@ const estilos = `
     min-width: 0;
   }
 
-  .itemContent strong,
-  .notificationItem strong,
-  .reviewItem strong {
-    display: block;
-    color: #172018;
-    font-size: 14px;
-    font-weight: 950;
-    line-height: 1.3;
-  }
-
-  .itemContent small,
-  .notificationItem small,
-  .reviewItem small {
-    display: block;
-    margin-top: 4px;
-    color: #64748b;
-    font-size: 12px;
-    line-height: 1.4;
-    font-weight: 750;
-  }
-
   .itemFooter {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
     margin-top: 9px;
+    flex-wrap: wrap;
   }
 
   .itemFooter em {
@@ -1628,79 +1900,65 @@ const estilos = `
     color: #92400e;
   }
 
-  .tabs {
-    display: flex;
-    gap: 4px;
-    padding: 4px;
-    border-radius: 999px;
-    background: #eef2e5;
-  }
-
-  .tabs button {
-    border: 0;
-    border-radius: 999px;
-    padding: 8px 11px;
-    background: transparent;
-    color: #64748b;
-    font-size: 11px;
-    font-weight: 950;
-    cursor: pointer;
-  }
-
-  .tabs button.active {
-    background: #172018;
-    color: #fff;
-  }
-
-  .notificationItem {
-    grid-template-columns: 42px minmax(0, 1fr);
-  }
-
-  .notificationItem > span:first-child {
-    width: 42px;
-    height: 42px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 17px;
-    background: #f0fdf4;
-    font-size: 19px;
-  }
-
-  .notificationItem em,
-  .reviewItem em {
-    display: block;
-    margin-top: 5px;
-    color: #94a3b8;
-    font-size: 11px;
-    font-style: normal;
-    font-weight: 800;
-    line-height: 1.35;
-  }
-
   .reviewItem {
     grid-template-columns: 52px minmax(0, 1fr);
   }
 
-  .actionsPanel {
-    display: grid;
-    gap: 10px;
-    padding: 16px;
+  .opsCard {
+    margin-top: 16px;
+    padding: 20px;
+    background:
+      radial-gradient(circle at top right, rgba(132, 204, 22, 0.18), transparent 35%),
+      linear-gradient(135deg, #172018, #294735);
+    color: #ffffff;
   }
 
-  .actionsPanel button {
+  .opsCard span {
+    color: rgba(255,255,255,0.68);
+    font-size: 11px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+  }
+
+  .opsCard strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 22px;
+    line-height: 1.1;
+    font-weight: 950;
+    letter-spacing: -0.045em;
+  }
+
+  .opsCard p {
+    color: rgba(255,255,255,0.74);
+    font-size: 13px;
+    line-height: 1.55;
+    font-weight: 700;
+    margin: 10px 0 0;
+  }
+
+  .opsActions {
+    display: grid;
+    gap: 9px;
+    margin-top: 16px;
+  }
+
+  .opsActions button {
     width: 100%;
     min-height: 42px;
+    background: #bef264;
+    color: #172018;
   }
 
-  .actionsPanel button.ghost {
-    background: rgba(255, 255, 255, 0.72);
-    color: #991b1b;
-    border: 1px solid rgba(153, 27, 27, 0.16);
+  .opsActions button.ghost {
+    background: rgba(255,255,255,0.12);
+    color: #ffffff;
+    border: 1px solid rgba(255,255,255,0.18);
   }
 
   .empty {
-    padding: 22px;
+    padding: 20px;
     border-radius: 20px;
     border: 1px dashed #cbd5e1;
     background: #fffdf7;
@@ -1710,68 +1968,88 @@ const estilos = `
     font-weight: 750;
   }
 
-  @media (max-width: 1040px) {
+  .compactEmpty {
+    grid-column: 1 / -1;
+  }
+
+  @media (max-width: 1120px) {
+    .commandGrid,
     .quickGrid,
-    .statsGrid {
+    .momentGrid,
+    .notificationGrid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .mainGrid,
-    .hero {
+    .heroSlim {
       grid-template-columns: 1fr;
     }
 
-    .heroCard {
-      min-height: 130px;
+    .heroFinanceCard {
+      min-height: 128px;
     }
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: 720px) {
     .topbar {
-      padding: 8px 12px;
+      padding: 8px 10px;
     }
 
     .brandLogo {
-      width: 30px;
-      height: 30px;
+      width: 34px;
+      height: 34px;
     }
 
     .brandName {
-      font-size: 25px;
-      line-height: 0.9;
+      font-size: 30px;
+      line-height: 0.88;
     }
 
     .brandSubtitle {
       margin-top: 4px;
       font-size: 9px;
-      letter-spacing: 0.11em;
+      letter-spacing: 0.12em;
     }
 
     .profileButton {
-      width: 36px;
-      height: 36px;
+      width: 38px;
+      height: 38px;
     }
 
     .container {
-      padding: 14px 12px 40px;
+      padding: 12px 10px 38px;
     }
 
-    .hero {
-      border-radius: 26px;
-      padding: 20px;
+    .heroSlim,
+    .commandPanel,
+    .notificationsPanel,
+    .panel,
+    .opsCard {
+      border-radius: 24px;
     }
 
-    .hero h1 {
+    .heroSlim {
+      padding: 18px;
+      gap: 12px;
+    }
+
+    .heroCopy h1 {
       font-size: 34px;
       letter-spacing: -0.065em;
     }
 
-    .hero p {
+    .heroCopy p {
       font-size: 13px;
     }
 
+    .panelHeader {
+      padding: 14px;
+    }
+
+    .commandGrid,
     .quickGrid,
-    .statsGrid {
+    .momentGrid,
+    .notificationGrid {
       grid-template-columns: 1fr;
     }
 
@@ -1779,23 +2057,16 @@ const estilos = `
       min-height: auto;
     }
 
-    .panel {
-      border-radius: 24px;
-    }
-
-    .panelHeader {
-      padding: 16px;
-    }
-
     .routeItem,
     .reservationItem {
-      grid-template-columns: 64px minmax(0, 1fr);
+      grid-template-columns: 62px minmax(0, 1fr);
+      gap: 10px;
     }
 
     .thumb {
-      width: 64px;
-      height: 64px;
-      border-radius: 20px;
+      width: 62px;
+      height: 62px;
+      border-radius: 19px;
     }
 
     .itemFooter {
@@ -1804,8 +2075,17 @@ const estilos = `
       gap: 6px;
     }
 
-    .panelHeader.compact {
+    .compactHeader {
+      align-items: flex-start;
       flex-direction: column;
+    }
+
+    .tabs {
+      width: 100%;
+    }
+
+    .tabs button {
+      flex: 1;
     }
   }
 `

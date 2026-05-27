@@ -73,6 +73,38 @@ type RepasseRow = {
   [key: string]: any
 }
 
+type SaqueGuiaRow = {
+  id: string
+  guia_id?: string | null
+  valor_solicitado?: number | null
+  valor_disponivel_no_momento?: number | null
+  pix_tipo?: string | null
+  pix_chave?: string | null
+  titular_nome?: string | null
+  status?: string | null
+  observacao_guia?: string | null
+  observacao_admin?: string | null
+  respondido_por?: string | null
+  respondido_em?: string | null
+  comprovante_url?: string | null
+  repasse_id?: string | null
+  metadata?: any
+  created_at?: string | null
+  updated_at?: string | null
+  [key: string]: any
+}
+
+type SaqueGuiaCompleto = SaqueGuiaRow & {
+  guia_nome?: string
+  guia_email?: string
+  guia_pix_tipo?: string
+  guia_pix_chave?: string
+  saldo_atual_guia?: number
+}
+
+type FiltroSaque = 'pendentes' | 'aprovados' | 'pagos' | 'recusados' | 'todos'
+type AcaoSaque = 'aprovar' | 'pagar' | 'recusar'
+
 type GuiaFinanceiro = {
   guia_id: string
   nome: string
@@ -125,6 +157,8 @@ export default function AdminFinanceiroPage() {
   const [admin, setAdmin] = useState<UsuarioLocal | null>(null)
   const [guias, setGuias] = useState<GuiaFinanceiro[]>([])
   const [resumo, setResumo] = useState<ResumoFinanceiro>(resumoInicial)
+  const [saques, setSaques] = useState<SaqueGuiaCompleto[]>([])
+  const [filtroSaque, setFiltroSaque] = useState<FiltroSaque>('pendentes')
 
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
@@ -138,6 +172,13 @@ export default function AdminFinanceiroPage() {
   const [valorPagamento, setValorPagamento] = useState('')
   const [observacao, setObservacao] = useState('Pix')
   const [registrando, setRegistrando] = useState(false)
+
+  const [modalSaqueAberto, setModalSaqueAberto] = useState(false)
+  const [saqueSelecionado, setSaqueSelecionado] = useState<SaqueGuiaCompleto | null>(null)
+  const [acaoSaque, setAcaoSaque] = useState<AcaoSaque>('aprovar')
+  const [observacaoSaque, setObservacaoSaque] = useState('')
+  const [comprovanteSaqueUrl, setComprovanteSaqueUrl] = useState('')
+  const [processandoSaque, setProcessandoSaque] = useState(false)
 
   useEffect(() => {
     if (iniciouRef.current) return
@@ -281,6 +322,47 @@ export default function AdminFinanceiroPage() {
     )
   }
 
+  const statusSaqueNormalizado = (saque?: SaqueGuiaRow | null) => {
+    return normalizar(saque?.status || 'novo')
+  }
+
+  const saquePendente = (saque?: SaqueGuiaRow | null) => {
+    const status = statusSaqueNormalizado(saque)
+
+    return (
+      status === 'novo' ||
+      status === 'pendente' ||
+      status === 'solicitado' ||
+      status === 'em_analise'
+    )
+  }
+
+  const saqueAprovado = (saque?: SaqueGuiaRow | null) => {
+    const status = statusSaqueNormalizado(saque)
+    return status === 'aprovado' || status === 'aprovada'
+  }
+
+  const saquePago = (saque?: SaqueGuiaRow | null) => {
+    const status = statusSaqueNormalizado(saque)
+    return status === 'pago' || status === 'paga' || status === 'concluido' || status === 'concluida'
+  }
+
+  const saqueRecusado = (saque?: SaqueGuiaRow | null) => {
+    const status = statusSaqueNormalizado(saque)
+    return status === 'recusado' || status === 'recusada' || status === 'cancelado' || status === 'cancelada'
+  }
+
+  const valorDoSaque = (saque?: SaqueGuiaRow | null) => {
+    return Number(saque?.valor_solicitado || 0)
+  }
+
+  const badgeSaque = (saque: SaqueGuiaRow) => {
+    if (saquePago(saque)) return <span className="badge green">Pago</span>
+    if (saqueAprovado(saque)) return <span className="badge blue">Aprovado</span>
+    if (saqueRecusado(saque)) return <span className="badge red">Recusado</span>
+    return <span className="badge yellow">Pendente</span>
+  }
+
   const guiaIdDoRoteiro = (roteiro?: RoteiroRow | null) => {
     return limparTexto(
       roteiro?.id_guia ||
@@ -379,6 +461,32 @@ export default function AdminFinanceiroPage() {
     }
   }
 
+  const carregarSaquesAdmin = async () => {
+    try {
+      const response = await fetch(`/api/admin/financeiro/saques?_ts=${Date.now()}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache'
+        }
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Aviso ao carregar solicitações de saque:', data)
+        return [] as SaqueGuiaCompleto[]
+      }
+
+      const lista = data?.saques || data?.data || data?.items || []
+      return Array.isArray(lista) ? (lista as SaqueGuiaCompleto[]) : []
+    } catch (error) {
+      console.warn('Erro ao carregar solicitações de saque:', error)
+      return [] as SaqueGuiaCompleto[]
+    }
+  }
+
   const carregarFinanceiro = async () => {
     setErro('')
     setAviso('')
@@ -387,12 +495,14 @@ export default function AdminFinanceiroPage() {
       usuariosResult,
       roteirosResult,
       reservasResult,
-      repassesBackend
+      repassesBackend,
+      saquesBackend
     ] = await Promise.all([
       supabase.from('users').select('*'),
       supabase.from('roteiros').select('*'),
       supabase.from('reservas').select('*').order('created_at', { ascending: false }),
-      carregarRepassesViaBackend()
+      carregarRepassesViaBackend(),
+      carregarSaquesAdmin()
     ])
 
     if (usuariosResult.error) {
@@ -411,11 +521,26 @@ export default function AdminFinanceiroPage() {
     const roteiros = (roteirosResult.data || []) as RoteiroRow[]
     const reservas = (reservasResult.data || []) as ReservaRow[]
     const repasses = (repassesBackend || []) as RepasseRow[]
+    const saquesBase = (saquesBackend || []) as SaqueGuiaCompleto[]
 
     const usuariosPorId = new Map<string, UserRow>()
     usuarios.forEach((usuario) => {
       if (usuario?.id) usuariosPorId.set(usuario.id, usuario)
     })
+
+    const saquesEnriquecidos = saquesBase.map((saque) => {
+      const usuario = saque.guia_id ? usuariosPorId.get(String(saque.guia_id)) : null
+
+      return {
+        ...saque,
+        guia_nome: saque.guia_nome || usuario?.nome || usuario?.email || `Guia ${String(saque.guia_id || '').slice(0, 8)}`,
+        guia_email: saque.guia_email || usuario?.email || '',
+        guia_pix_tipo: saque.guia_pix_tipo || usuario?.pix_tipo || '',
+        guia_pix_chave: saque.guia_pix_chave || usuario?.pix_chave || ''
+      }
+    })
+
+    setSaques(saquesEnriquecidos)
 
     const roteirosPorId = new Map<string, RoteiroRow>()
     roteiros.forEach((roteiro) => {
@@ -688,6 +813,175 @@ export default function AdminFinanceiroPage() {
     }
   }
 
+  const abrirModalSaque = (saque: SaqueGuiaCompleto, acao: AcaoSaque) => {
+    setErro('')
+    setMensagem('')
+    setSaqueSelecionado(saque)
+    setAcaoSaque(acao)
+    setObservacaoSaque(
+      acao === 'aprovar'
+        ? 'Saque aprovado para pagamento administrativo.'
+        : acao === 'pagar'
+          ? 'Pagamento do saque registrado pelo Admin.'
+          : ''
+    )
+    setComprovanteSaqueUrl('')
+    setModalSaqueAberto(true)
+  }
+
+  const fecharModalSaque = () => {
+    if (processandoSaque) return
+
+    setModalSaqueAberto(false)
+    setSaqueSelecionado(null)
+    setAcaoSaque('aprovar')
+    setObservacaoSaque('')
+    setComprovanteSaqueUrl('')
+  }
+
+  const atualizarStatusSaque = async (params: {
+    saqueId: string
+    status: string
+    observacaoAdmin?: string
+    comprovanteUrl?: string
+    repasseId?: string | null
+  }) => {
+    const response = await fetch('/api/admin/financeiro/saques', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store'
+      },
+      body: JSON.stringify({
+        saqueId: params.saqueId,
+        status: params.status,
+        observacaoAdmin: params.observacaoAdmin || '',
+        comprovanteUrl: params.comprovanteUrl || '',
+        repasseId: params.repasseId || null,
+        adminId: admin?.id || null
+      })
+    })
+
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok || data?.sucesso === false) {
+      throw new Error(data?.erro || data?.message || 'Não foi possível atualizar a solicitação de saque.')
+    }
+
+    return data
+  }
+
+  const processarSaque = async (event?: FormEvent) => {
+    event?.preventDefault()
+
+    if (!saqueSelecionado?.id) {
+      setErro('Solicitação de saque não selecionada.')
+      return
+    }
+
+    setErro('')
+    setMensagem('')
+    setProcessandoSaque(true)
+
+    try {
+      if (acaoSaque === 'recusar' && !limparTexto(observacaoSaque)) {
+        setErro('Informe uma observação para recusar o saque.')
+        return
+      }
+
+      if (acaoSaque === 'aprovar') {
+        await atualizarStatusSaque({
+          saqueId: saqueSelecionado.id,
+          status: 'aprovado',
+          observacaoAdmin: observacaoSaque || 'Saque aprovado pelo Admin.'
+        })
+
+        setMensagem('Solicitação de saque aprovada.')
+      }
+
+      if (acaoSaque === 'recusar') {
+        await atualizarStatusSaque({
+          saqueId: saqueSelecionado.id,
+          status: 'recusado',
+          observacaoAdmin: observacaoSaque
+        })
+
+        setMensagem('Solicitação de saque recusada.')
+      }
+
+      if (acaoSaque === 'pagar') {
+        const guia = guias.find((item) => item.guia_id === saqueSelecionado.guia_id) || null
+        const valorSolicitado = arredondarMoeda(valorDoSaque(saqueSelecionado))
+        const saldoAtual = arredondarMoeda(guia?.saldo_pendente || 0)
+
+        if (!guia) {
+          setErro('Guia não localizado na lista financeira atual. Recarregue a página.')
+          return
+        }
+
+        if (valorSolicitado <= 0) {
+          setErro('Valor solicitado inválido.')
+          return
+        }
+
+        if (emCentavos(valorSolicitado) > emCentavos(saldoAtual)) {
+          setErro(`O valor solicitado (${formatarMoeda(valorSolicitado)}) é maior que o saldo líquido disponível do guia (${formatarMoeda(saldoAtual)}).`)
+          return
+        }
+
+        const response = await fetch('/api/admin/financeiro/registrar-repasse', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store'
+          },
+          body: JSON.stringify({
+            guiaId: guia.guia_id,
+            guia_id: guia.guia_id,
+            id_guia: guia.guia_id,
+            adminId: admin?.id || null,
+            admin_id: admin?.id || null,
+            criado_por: admin?.id || null,
+            valorPago: valorSolicitado,
+            valor_pago: valorSolicitado,
+            valor: valorSolicitado,
+            observacao: limparTexto(observacaoSaque) || `Saque solicitado pelo guia. PIX: ${saqueSelecionado.pix_tipo || ''} ${saqueSelecionado.pix_chave || ''}. Titular: ${saqueSelecionado.titular_nome || ''}.`
+          })
+        })
+
+        const data = await response.json().catch(() => null)
+
+        if (!response.ok || data?.sucesso === false) {
+          throw new Error(data?.erro || data?.message || 'Não foi possível registrar o pagamento do saque.')
+        }
+
+        await atualizarStatusSaque({
+          saqueId: saqueSelecionado.id,
+          status: 'pago',
+          observacaoAdmin: observacaoSaque || 'Pagamento de saque registrado pelo Admin.',
+          comprovanteUrl: comprovanteSaqueUrl,
+          repasseId: data?.repasse?.id || data?.data?.id || data?.registro?.id || null
+        })
+
+        setMensagem('Saque pago e repasse registrado no financeiro.')
+      }
+
+      setModalSaqueAberto(false)
+      setSaqueSelecionado(null)
+      setAcaoSaque('aprovar')
+      setObservacaoSaque('')
+      setComprovanteSaqueUrl('')
+
+      await carregarFinanceiro()
+      setTimeout(() => setMensagem(''), 3000)
+    } catch (error: any) {
+      console.error('Erro ao processar saque:', error)
+      setErro(error?.message || 'Erro ao processar solicitação de saque.')
+    } finally {
+      setProcessandoSaque(false)
+    }
+  }
+
   const guiasFiltrados = useMemo(() => {
     const termo = normalizar(busca)
 
@@ -708,8 +1002,30 @@ export default function AdminFinanceiroPage() {
     })
   }, [guias, busca])
 
-  if (carregando) {
-    return (
+  const resumoSaques = useMemo(() => {
+    return {
+      total: saques.length,
+      pendentes: saques.filter(saquePendente).length,
+      aprovados: saques.filter(saqueAprovado).length,
+      pagos: saques.filter(saquePago).length,
+      recusados: saques.filter(saqueRecusado).length,
+      valorPendente: saques.filter(saquePendente).reduce((total, saque) => total + valorDoSaque(saque), 0),
+      valorPago: saques.filter(saquePago).reduce((total, saque) => total + valorDoSaque(saque), 0),
+    }
+  }, [saques])
+
+  const saquesFiltrados = useMemo(() => {
+    if (filtroSaque === 'todos') return saques
+    if (filtroSaque === 'pendentes') return saques.filter(saquePendente)
+    if (filtroSaque === 'aprovados') return saques.filter(saqueAprovado)
+    if (filtroSaque === 'pagos') return saques.filter(saquePago)
+    if (filtroSaque === 'recusados') return saques.filter(saqueRecusado)
+
+    return saques
+  }, [saques, filtroSaque])
+
+
+  if (carregando) {    return (
       <main className="loading">
         <style>{`
           * { box-sizing: border-box; }
@@ -1153,6 +1469,85 @@ export default function AdminFinanceiroPage() {
           background: #fee2e2;
           color: #991b1b;
         }
+        .badge.blue {
+          background: #dbeafe;
+          color: #1d4ed8;
+        }
+
+        .saqueTabs {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .tabBtn {
+          border: 1px solid rgba(15,23,42,0.10);
+          background: #ffffff;
+          color: #475569;
+          border-radius: 999px;
+          padding: 9px 12px;
+          font-size: 11px;
+          font-weight: 950;
+          cursor: pointer;
+        }
+
+        .tabBtn.active {
+          background: #0f172a;
+          color: #ffffff;
+          border-color: #0f172a;
+        }
+
+        .saqueList {
+          display: grid;
+          gap: 10px;
+        }
+
+        .saqueCard {
+          border: 1px solid rgba(15,23,42,0.08);
+          background: #ffffff;
+          border-radius: 22px;
+          padding: 14px;
+          display: grid;
+          gap: 12px;
+        }
+
+        .saqueTop {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .saqueTitle {
+          color: #0f172a;
+          font-size: 15px;
+          font-weight: 950;
+          letter-spacing: -0.03em;
+        }
+
+        .saqueMeta {
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 750;
+          margin-top: 4px;
+        }
+
+        .saqueValue {
+          color: #16a34a;
+          font-size: 22px;
+          font-weight: 950;
+          letter-spacing: -0.05em;
+          text-align: right;
+        }
+
+        .saqueActions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
 
         .guideMetrics {
           display: grid;
@@ -1496,6 +1891,12 @@ export default function AdminFinanceiroPage() {
           </article>
 
           <article className="statCard">
+            <div className="statIcon">🏦</div>
+            <div className="statValue">{resumoSaques.pendentes}</div>
+            <div className="statLabel">saque(s) pendente(s) · {formatarMoeda(resumoSaques.valorPendente)} solicitado(s)</div>
+          </article>
+
+          <article className="statCard">
             <div className="statIcon">⚠️</div>
             <div className="statValue">{formatarMoeda(resumo.excesso_repasse)}</div>
             <div className="statLabel">excesso de repasse</div>
@@ -1528,6 +1929,106 @@ export default function AdminFinanceiroPage() {
             >
               Voltar
             </button>
+          </div>
+        </section>
+
+        <section className="panel" style={{ marginBottom: 16 }}>
+          <div className="panelHeader">
+            <div>
+              <h2 className="panelTitle">Solicitações de saque dos guias</h2>
+              <div className="panelSub">
+                {resumoSaques.pendentes} pendente(s), {resumoSaques.aprovados} aprovado(s), {resumoSaques.pagos} pago(s).
+              </div>
+            </div>
+
+            <div className="saqueTabs">
+              <button type="button" className={`tabBtn ${filtroSaque === 'pendentes' ? 'active' : ''}`} onClick={() => setFiltroSaque('pendentes')}>Pendentes</button>
+              <button type="button" className={`tabBtn ${filtroSaque === 'aprovados' ? 'active' : ''}`} onClick={() => setFiltroSaque('aprovados')}>Aprovados</button>
+              <button type="button" className={`tabBtn ${filtroSaque === 'pagos' ? 'active' : ''}`} onClick={() => setFiltroSaque('pagos')}>Pagos</button>
+              <button type="button" className={`tabBtn ${filtroSaque === 'recusados' ? 'active' : ''}`} onClick={() => setFiltroSaque('recusados')}>Recusados</button>
+              <button type="button" className={`tabBtn ${filtroSaque === 'todos' ? 'active' : ''}`} onClick={() => setFiltroSaque('todos')}>Todos</button>
+            </div>
+          </div>
+
+          <div className="panelBody">
+            {saquesFiltrados.length === 0 ? (
+              <div className="empty">
+                Nenhuma solicitação de saque encontrada neste filtro.
+              </div>
+            ) : (
+              <div className="saqueList">
+                {saquesFiltrados.slice(0, 8).map((saque) => {
+                  const guia = guias.find((item) => item.guia_id === saque.guia_id) || null
+                  const saldoAtual = Number(guia?.saldo_pendente || saque.saldo_atual_guia || 0)
+                  const valorSaque = valorDoSaque(saque)
+
+                  return (
+                    <article className="saqueCard" key={saque.id}>
+                      <div className="saqueTop">
+                        <div>
+                          <div className="saqueTitle">{saque.guia_nome || guia?.nome || `Guia ${String(saque.guia_id || '').slice(0, 8)}`}</div>
+                          <div className="saqueMeta">
+                            {saque.guia_email || guia?.email || 'E-mail não informado'} · solicitado em {formatarData(saque.created_at)}
+                            <br />
+                            PIX informado: {saque.pix_tipo || '-'} · {saque.pix_chave || '-'}
+                            <br />
+                            Titular informado: {saque.titular_nome || '-'}
+                            <br />
+                            Saldo líquido atual do guia: {formatarMoeda(saldoAtual)}
+                            {saque.observacao_guia && (
+                              <>
+                                <br />
+                                Observação do guia: {saque.observacao_guia}
+                              </>
+                            )}
+                            {saque.observacao_admin && (
+                              <>
+                                <br />
+                                Observação Admin: {saque.observacao_admin}
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="saqueValue">{formatarMoeda(valorSaque)}</div>
+                          {badgeSaque(saque)}
+                        </div>
+                      </div>
+
+                      <div className="saqueActions">
+                        {saquePendente(saque) && (
+                          <button type="button" className="smallBtn green" onClick={() => abrirModalSaque(saque, 'aprovar')}>
+                            Aprovar
+                          </button>
+                        )}
+
+                        {(saquePendente(saque) || saqueAprovado(saque)) && (
+                          <button
+                            type="button"
+                            className="smallBtn dark"
+                            disabled={valorSaque <= 0 || valorSaque > saldoAtual}
+                            onClick={() => abrirModalSaque(saque, 'pagar')}
+                          >
+                            Registrar pagamento
+                          </button>
+                        )}
+
+                        {(saquePendente(saque) || saqueAprovado(saque)) && (
+                          <button type="button" className="smallBtn light" onClick={() => abrirModalSaque(saque, 'recusar')}>
+                            Recusar
+                          </button>
+                        )}
+
+                        {valorSaque > saldoAtual && !saquePago(saque) && (
+                          <span className="badge red">Valor acima do saldo atual</span>
+                        )}
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </section>
 
@@ -1641,7 +2142,7 @@ export default function AdminFinanceiroPage() {
 
                     {guia.repasses.length > 0 && (
                       <div className="history">
-                        {guia.repasses.slice(0, 3).map((repasse) => (
+                        {guia.repasses.slice(0, 2).map((repasse) => (
                           <div className="historyItem" key={repasse.id}>
                             <span>
                               {repasse.descricao || repasse.observacao || 'Repasse registrado'}
@@ -1660,6 +2161,78 @@ export default function AdminFinanceiroPage() {
           </div>
         </section>
       </div>
+
+      {modalSaqueAberto && saqueSelecionado && (
+        <div className="modalOverlay">
+          <form className="modal" onSubmit={processarSaque}>
+            <div className="modalHeader">
+              <h2 className="modalTitle">
+                {acaoSaque === 'aprovar' && 'Aprovar solicitação de saque'}
+                {acaoSaque === 'pagar' && 'Registrar pagamento do saque'}
+                {acaoSaque === 'recusar' && 'Recusar solicitação de saque'}
+              </h2>
+              <div className="modalSub">
+                Guia: {saqueSelecionado.guia_nome || `Guia ${String(saqueSelecionado.guia_id || '').slice(0, 8)}`} · valor solicitado: {formatarMoeda(valorDoSaque(saqueSelecionado))}
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <div className="helperBox">
+                <strong>PIX informado pelo guia</strong>
+                <br />
+                Tipo: {saqueSelecionado.pix_tipo || '-'}
+                <br />
+                Chave: {saqueSelecionado.pix_chave || '-'}
+                <br />
+                Titular: {saqueSelecionado.titular_nome || '-'}
+                <br />
+                O Admin deve conferir se a chave PIX está no nome do guia antes de registrar o pagamento.
+              </div>
+
+              {acaoSaque === 'pagar' && (
+                <div className="field">
+                  <label className="label">Comprovante ou referência do pagamento</label>
+                  <input
+                    className="input"
+                    value={comprovanteSaqueUrl}
+                    onChange={(event) => setComprovanteSaqueUrl(event.target.value)}
+                    placeholder="Link, ID da transação, comprovante ou observação curta"
+                  />
+                </div>
+              )}
+
+              <div className="field">
+                <label className="label">Observação administrativa</label>
+                <textarea
+                  className="textarea"
+                  value={observacaoSaque}
+                  onChange={(event) => setObservacaoSaque(event.target.value)}
+                  placeholder={acaoSaque === 'recusar' ? 'Informe o motivo da recusa.' : 'Observação para histórico administrativo.'}
+                />
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="submit"
+                  className={acaoSaque === 'recusar' ? 'smallBtn light' : 'smallBtn dark'}
+                  disabled={processandoSaque}
+                >
+                  {processandoSaque ? 'Processando...' : acaoSaque === 'aprovar' ? 'Confirmar aprovação' : acaoSaque === 'pagar' ? 'Confirmar pagamento' : 'Confirmar recusa'}
+                </button>
+
+                <button
+                  type="button"
+                  className="smallBtn light"
+                  disabled={processandoSaque}
+                  onClick={fecharModalSaque}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
 
       {modalAberto && guiaSelecionado && (
         <div className="modalOverlay">

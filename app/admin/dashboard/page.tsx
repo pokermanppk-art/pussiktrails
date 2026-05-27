@@ -168,16 +168,28 @@ type SuporteResumo = {
   total: number
   novos: number
   emAnalise: number
+  respondidos: number
+  resolvidos: number
+  arquivados: number
   urgentes: number
   bugs: number
+  aguardandoAvaliacao: number
+  avaliados: number
+  mediaAvaliacao: number
 }
 
 const suporteInicial: SuporteResumo = {
   total: 0,
   novos: 0,
   emAnalise: 0,
+  respondidos: 0,
+  resolvidos: 0,
+  arquivados: 0,
   urgentes: 0,
-  bugs: 0
+  bugs: 0,
+  aguardandoAvaliacao: 0,
+  avaliados: 0,
+  mediaAvaliacao: 0
 }
 
 type CancelamentosResumo = {
@@ -462,7 +474,7 @@ export default function AdminDashboardPage() {
 
   const carregarSuporte = async () => {
     try {
-      const response = await fetch('/api/suporte/chamados?status=todos&limite=200')
+      const response = await fetch('/api/suporte/chamados?status=todos&limite=300')
       const data = await response.json().catch(() => null)
 
       if (!response.ok || data?.sucesso === false || data?.success === false) {
@@ -474,28 +486,96 @@ export default function AdminDashboardPage() {
       const chamados = (data?.chamados || data?.suporte_chamados || data?.items || []) as any[]
       const resumoApi = data?.resumo || {}
 
+      const countStatus = (status: string) =>
+        chamados.filter((item) => normalizar(item.status) === status).length
+
+      const notas = chamados
+        .map((item) => Number(item.avaliacao_resposta_nota || item.avaliacao_nota || 0))
+        .filter((nota) => Number.isFinite(nota) && nota >= 1 && nota <= 5)
+
+      const mediaAvaliacaoCalculada =
+        notas.length > 0
+          ? notas.reduce((total, nota) => total + nota, 0) / notas.length
+          : 0
+
+      const respondidos = Number(
+        resumoApi.respondidos ||
+          resumoApi.respondido ||
+          resumoApi.porStatus?.respondido ||
+          countStatus('respondido') ||
+          0
+      )
+
+      const avaliados = Number(
+        resumoApi.avaliados ||
+          resumoApi.totalAvaliacoesResposta ||
+          resumoApi.total_avaliacoes_resposta ||
+          notas.length ||
+          0
+      )
+
+      const aguardandoAvaliacao = Number(
+        resumoApi.aguardandoAvaliacao ||
+          resumoApi.aguardando_avaliacao ||
+          chamados.filter((item) => {
+            const status = normalizar(item.status)
+            const nota = Number(item.avaliacao_resposta_nota || item.avaliacao_nota || 0)
+            return status === 'respondido' && Boolean(item.resposta_admin) && !(nota >= 1 && nota <= 5)
+          }).length ||
+          0
+      )
+
       const resumo: SuporteResumo = {
         total: Number(resumoApi.total || chamados.length || 0),
         novos: Number(
           resumoApi.novos ||
             resumoApi.novo ||
-            chamados.filter((item) => normalizar(item.status) === 'novo').length ||
+            resumoApi.porStatus?.novo ||
+            countStatus('novo') ||
             0
         ),
         emAnalise: Number(
           resumoApi.em_analise ||
             resumoApi.emAnalise ||
-            chamados.filter((item) => normalizar(item.status) === 'em_analise').length ||
+            resumoApi.porStatus?.em_analise ||
+            countStatus('em_analise') ||
+            0
+        ),
+        respondidos,
+        resolvidos: Number(
+          resumoApi.resolvidos ||
+            resumoApi.resolvido ||
+            resumoApi.porStatus?.resolvido ||
+            countStatus('resolvido') ||
+            0
+        ),
+        arquivados: Number(
+          resumoApi.arquivados ||
+            resumoApi.arquivado ||
+            resumoApi.porStatus?.arquivado ||
+            countStatus('arquivado') ||
             0
         ),
         urgentes: Number(
           resumoApi.urgentes ||
+            resumoApi.porPrioridade?.urgente ||
             chamados.filter((item) => normalizar(item.prioridade) === 'urgente').length ||
             0
         ),
         bugs: Number(
           resumoApi.bugs ||
+            resumoApi.porTipo?.bug ||
             chamados.filter((item) => normalizar(item.tipo_chamado || item.tipo) === 'bug').length ||
+            0
+        ),
+        aguardandoAvaliacao,
+        avaliados,
+        mediaAvaliacao: Number(
+          resumoApi.mediaAvaliacao ||
+            resumoApi.media_avaliacao ||
+            resumoApi.mediaNotaResposta ||
+            resumoApi.media_nota_resposta ||
+            mediaAvaliacaoCalculada ||
             0
         )
       }
@@ -867,12 +947,12 @@ export default function AdminDashboardPage() {
         destaque: cadasturResumo.informado > 0,
       },
       {
-        titulo: 'Chamados novos',
-        valor: suporteResumo.novos,
-        texto: `${suporteResumo.bugs} bug(s) e ${suporteResumo.urgentes} urgente(s) no suporte.`,
+        titulo: 'Suporte e comunicação',
+        valor: suporteResumo.novos + suporteResumo.emAnalise,
+        texto: `${suporteResumo.bugs} bug(s), ${suporteResumo.urgentes} urgente(s) e ${suporteResumo.aguardandoAvaliacao} aguardando avaliação do usuário.`,
         rota: '/admin/suporte',
         icone: '🛟',
-        destaque: suporteResumo.novos > 0 || suporteResumo.urgentes > 0,
+        destaque: suporteResumo.novos > 0 || suporteResumo.urgentes > 0 || suporteResumo.emAnalise > 0,
       },
       {
         titulo: 'Reservas pendentes',
@@ -2170,9 +2250,9 @@ export default function AdminDashboardPage() {
             <div className="statIcon">🛟</div>
             <div className="statValue">{suporteResumo.novos}</div>
             <div className="statLabel">
-              suporte · {suporteResumo.total} chamado(s) · {suporteResumo.bugs} bug(s) · {suporteResumo.urgentes} urgente(s)
+              suporte e comunicação · {suporteResumo.total} chamado(s) · {suporteResumo.aguardandoAvaliacao} aguardando avaliação · média {formatarNota(suporteResumo.mediaAvaliacao)}/5
             </div>
-            <div className="statHint">Abrir suporte</div>
+            <div className="statHint">Abrir central de suporte</div>
           </article>
 
           <article
@@ -2319,8 +2399,8 @@ export default function AdminDashboardPage() {
                     onClick={() => router.push('/admin/suporte')}
                   >
                     <div className="quickIcon">🛟</div>
-                    <div className="quickTitle">Suporte</div>
-                    <div className="quickText">Bugs, mensagens de suporte e sugestões da fase Beta.</div>
+                    <div className="quickTitle">Suporte e comunicação</div>
+                    <div className="quickText">Responder chamados, acompanhar finalizações e nota da resposta.</div>
                   </button>
                 </div>
               </div>
