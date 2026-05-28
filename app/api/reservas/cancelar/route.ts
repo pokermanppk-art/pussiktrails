@@ -82,7 +82,7 @@ async function atualizarComFallback(params: {
   const { supabase, tabela, id } = params
   let payload: AnyRecord = { ...params.payloadOriginal }
 
-  for (let tentativa = 0; tentativa < 16; tentativa++) {
+  for (let tentativa = 0; tentativa < 18; tentativa++) {
     const { data, error } = await supabase
       .from(tabela)
       .update(payload)
@@ -96,7 +96,9 @@ async function atualizarComFallback(params: {
 
     const coluna = extrairColunaAusente(error)
 
-    if (!coluna || !(coluna in payload)) throw error
+    if (!coluna || !(coluna in payload)) {
+      throw error
+    }
 
     delete payload[coluna]
   }
@@ -112,7 +114,7 @@ async function inserirComFallback(params: {
   const { supabase, tabela } = params
   let payload: AnyRecord = { ...params.payloadOriginal }
 
-  for (let tentativa = 0; tentativa < 16; tentativa++) {
+  for (let tentativa = 0; tentativa < 18; tentativa++) {
     const { data, error } = await supabase
       .from(tabela)
       .insert(payload)
@@ -125,12 +127,195 @@ async function inserirComFallback(params: {
 
     const coluna = extrairColunaAusente(error)
 
-    if (!coluna || !(coluna in payload)) throw error
+    if (!coluna || !(coluna in payload)) {
+      throw error
+    }
 
     delete payload[coluna]
   }
 
   throw new Error(`Não foi possível inserir em ${tabela} após ajustar colunas.`)
+}
+
+/**
+ * REGRA CENTRAL — QUARTA FASE / MECÂNICA FINANCEIRA
+ *
+ * Reserva pendente cancelada NÃO gera Saldo de Jornada.
+ *
+ * Não usamos transaction_id como prova de pagamento.
+ * A transação pode existir apenas porque o PIX foi criado.
+ *
+ * Também não usamos reservas.status como prova financeira,
+ * porque ele é status operacional da reserva.
+ *
+ * Para gerar crédito, precisa existir:
+ * 1. pagamento_status ou status_pagamento pago/aprovado/confirmado; ou
+ * 2. pagamento_confirmado_em preenchido; ou
+ * 3. pagamento integral com Saldo de Jornada já utilizado.
+ */
+function pagamentoFinanceiramenteConfirmado(reserva: AnyRecord) {
+  const pagamento = normalizar(
+    reserva.pagamento_status ||
+      reserva.status_pagamento ||
+      reserva.payment_status ||
+      reserva.status_pagamento_gateway
+  )
+
+  const statusGateway = normalizar(
+    reserva.paghiper_status ||
+      reserva.gateway_status ||
+      reserva.transaction_status ||
+      reserva.status_gateway
+  )
+
+  const formaPagamento = normalizar(reserva.forma_pagamento)
+
+  const statusPagos = [
+    'pago',
+    'paga',
+    'confirmado',
+    'confirmada',
+    'aprovado',
+    'aprovada',
+    'paid',
+    'approved',
+    'settled',
+    'completed',
+    'liquidado',
+    'liquidada',
+  ]
+
+  const statusNaoPagos = [
+    'pendente',
+    'pending',
+    'aguardando',
+    'aguardando_pagamento',
+    'cancelado',
+    'cancelada',
+    'cancelled',
+    'canceled',
+    'expirado',
+    'expirada',
+    'expired',
+    'falhou',
+    'failed',
+    'erro',
+    'recusado',
+    'recusada',
+    'rejected',
+  ]
+
+  const statusFinanceiroOk =
+    statusPagos.includes(pagamento) ||
+    statusPagos.includes(statusGateway)
+
+  const statusFinanceiroNegativo =
+    statusNaoPagos.includes(pagamento) ||
+    statusNaoPagos.includes(statusGateway)
+
+  const temConfirmacaoFinanceira = Boolean(
+    texto(
+      reserva.pagamento_confirmado_em ||
+        reserva.pago_em ||
+        reserva.data_pagamento ||
+        reserva.payment_date ||
+        reserva.paid_at
+    )
+  )
+
+  const pagoIntegralComSaldo =
+    formaPagamento.includes('saldo') &&
+    numero(reserva.saldo_utilizado) > 0 &&
+    numero(reserva.valor_total) > 0 &&
+    numero(reserva.saldo_utilizado) >= numero(reserva.valor_total)
+
+  if (statusFinanceiroOk) return true
+
+  if (temConfirmacaoFinanceira && !statusFinanceiroNegativo) return true
+
+  if (pagoIntegralComSaldo) return true
+
+  return false
+}
+
+function reservaCancelada(reserva: AnyRecord) {
+  const status = normalizar(reserva.status)
+
+  return (
+    status === 'cancelada' ||
+    status === 'cancelado' ||
+    status === 'cancelled' ||
+    status === 'canceled'
+  )
+}
+
+function calcularValorCredito(reserva: AnyRecord, pagamentoConfirmado: boolean) {
+  if (!pagamentoConfirmado) return 0
+
+  const valorReserva =
+    numero(reserva.valor_total) ||
+    numero(reserva.valor_pago) ||
+    numero(reserva.valor) ||
+    0
+
+  const saldoJaUtilizado = numero(reserva.saldo_utilizado)
+
+  const valorCredito = Math.max(
+    0,
+    Number((valorReserva - saldoJaUtilizado).toFixed(2))
+  )
+
+  return valorCredito
+}
+
+async function jaExisteCreditoCancelamento(params: {
+  supabase: any
+  clienteId: string
+  reservaId: string
+}) {
+  const { supabase, clienteId, reservaId } = params
+
+  const tentativas = [
+    async () =>
+      supabase
+        .from('cliente_saldo_movimentacoes')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .eq('reserva_id', reservaId)
+        .in('tipo', [
+          'credito_cancelamento',
+          'cancelamento_reserva',
+          'cancelamento',
+        ])
+        .neq('status', 'estornado')
+        .limit(1),
+
+    async () =>
+      supabase
+        .from('cliente_saldo_movimentacoes')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .eq('origem_id', reservaId)
+        .neq('status', 'estornado')
+        .limit(1),
+  ]
+
+  for (const executar of tentativas) {
+    const { data, error } = await executar()
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data[0] as AnyRecord
+    }
+
+    if (error && !erroDeColunaAusente(error)) {
+      console.warn(
+        '[cancelar-reserva] Aviso ao verificar duplicidade de crédito:',
+        error
+      )
+    }
+  }
+
+  return null
 }
 
 async function upsertSaldoCliente(params: {
@@ -151,7 +336,10 @@ async function upsertSaldoCliente(params: {
     .maybeSingle()
 
   if (saldoSelectError && saldoSelectError.code !== 'PGRST116') {
-    console.warn('[cancelar-reserva] Erro ao buscar cliente_saldos:', saldoSelectError)
+    console.warn(
+      '[cancelar-reserva] Erro ao buscar cliente_saldos:',
+      saldoSelectError
+    )
   }
 
   if (saldoAtual?.cliente_id) {
@@ -177,7 +365,9 @@ async function upsertSaldoCliente(params: {
       if (!erroDeColunaAusente(error)) throw error
 
       const coluna = extrairColunaAusente(error)
+
       if (!coluna || !(coluna in payload)) throw error
+
       delete payload[coluna]
     }
 
@@ -208,95 +398,46 @@ async function upsertSaldoCliente(params: {
   return data || null
 }
 
-/**
- * REGRA CRÍTICA:
- * Não usar `reservas.status === confirmada/realizada` para gerar crédito.
- * Só gera Saldo de Jornada se houver confirmação financeira real.
- *
- * Motivo: algumas reservas podem ter status operacional "confirmada" sem pagamento real,
- * ou podem estar pendentes/canceladas por teste. Nesses casos, cancelamento NÃO gera crédito.
- */
-function pagamentoFinanceiramenteConfirmado(reserva: AnyRecord) {
-  const pagamento = normalizar(reserva.pagamento_status)
-  const forma = normalizar(reserva.forma_pagamento)
-
-  const statusFinanceiroOk = [
-    'pago',
-    'paga',
-    'confirmado',
-    'confirmada',
-    'aprovado',
-    'aprovada',
-    'paid',
-    'approved',
-  ].includes(pagamento)
-
-  const temDataPagamento = Boolean(texto(reserva.pago_em || reserva.data_pagamento || reserva.payment_date))
-  const temTransacaoPaga =
-    Boolean(texto(reserva.transaction_id || reserva.transacao_id)) &&
-    statusFinanceiroOk
-
-  const pagoIntegralComSaldo =
-    forma.includes('saldo') &&
-    numero(reserva.saldo_utilizado) > 0 &&
-    numero(reserva.valor_total) > 0 &&
-    numero(reserva.saldo_utilizado) >= numero(reserva.valor_total)
-
-  return statusFinanceiroOk || temDataPagamento || temTransacaoPaga || pagoIntegralComSaldo
-}
-
-function reservaCancelada(reserva: AnyRecord) {
-  const status = normalizar(reserva.status)
-  return status === 'cancelada' || status === 'cancelado' || status === 'cancelled'
-}
-
-async function jaExisteCreditoCancelamento(params: {
+async function recalcularSaldoCliente(params: {
   supabase: any
   clienteId: string
-  reservaId: string
+  valorCreditoFallback: number
 }) {
-  const { supabase, clienteId, reservaId } = params
+  const { supabase, clienteId, valorCreditoFallback } = params
 
-  const queries = [
-    async () =>
-      supabase
-        .from('cliente_saldo_movimentacoes')
-        .select('*')
-        .eq('cliente_id', clienteId)
-        .eq('reserva_id', reservaId)
-        .in('tipo', ['credito_cancelamento', 'cancelamento_reserva', 'cancelamento'])
-        .limit(1),
-    async () =>
-      supabase
-        .from('cliente_saldo_movimentacoes')
-        .select('*')
-        .eq('cliente_id', clienteId)
-        .eq('origem_id', reservaId)
-        .limit(1),
-  ]
+  const { error: rpcError } = await supabase.rpc('recalcular_saldo_cliente', {
+    p_cliente_id: clienteId,
+  })
 
-  for (const executar of queries) {
-    const { data, error } = await executar()
+  if (!rpcError) {
+    const { data } = await supabase
+      .from('cliente_saldos')
+      .select('*')
+      .eq('cliente_id', clienteId)
+      .maybeSingle()
 
-    if (!error && Array.isArray(data) && data.length > 0) {
-      return data[0] as AnyRecord
-    }
-
-    if (error && !erroDeColunaAusente(error)) {
-      console.warn('[cancelar-reserva] Não foi possível checar duplicidade de crédito:', error)
-    }
+    return data || null
   }
 
-  return null
+  console.warn(
+    '[cancelar-reserva] RPC recalcular_saldo_cliente falhou; atualizando saldo manualmente:',
+    rpcError
+  )
+
+  return upsertSaldoCliente({
+    supabase,
+    clienteId,
+    valorCredito: valorCreditoFallback,
+  })
 }
 
 export async function GET() {
   return NextResponse.json({
     sucesso: true,
     rota: '/api/reservas/cancelar',
-    mensagem: 'Rota ativa. Use POST para cancelar uma reserva.',
+    mensagem: 'Rota ativa. Use POST para cancelar reserva.',
     regra:
-      'Saldo de Jornada só é creditado quando pagamento_status/pago_em indicam pagamento real.',
+      'Reserva pendente sem pagamento financeiro confirmado não gera Saldo de Jornada.',
   })
 }
 
@@ -327,18 +468,22 @@ export async function POST(request: NextRequest) {
         recebido.usuarioId ||
         recebido.usuario_id ||
         recebido.clienteId ||
-        recebido.cliente_id
+        recebido.cliente_id ||
+        recebido.adminId ||
+        recebido.admin_id
     )
 
     const motivoCodigo = texto(
       recebido.motivoCodigo ||
         recebido.motivo_codigo ||
+        recebido.cancelamento_motivo_codigo ||
         'cancelamento'
     )
 
     const motivoDescricao = texto(
       recebido.motivoDescricao ||
         recebido.motivo_descricao ||
+        recebido.cancelamento_motivo ||
         recebido.motivo ||
         'Cancelamento solicitado.'
     )
@@ -410,36 +555,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const pagamentoConfirmado = pagamentoFinanceiramenteConfirmado(reservaAtual)
+
     if (reservaCancelada(reservaAtual)) {
       return NextResponse.json({
         sucesso: true,
         reserva: reservaAtual,
+        pagamentoConfirmado,
         saldoCreditado: 0,
-        mensagem: 'Reserva já estava cancelada.',
+        movimento: null,
+        saldo: null,
+        mensagem: 'Reserva já estava cancelada. Nenhum novo saldo foi gerado.',
       })
     }
 
-    const pagamentoConfirmado = pagamentoFinanceiramenteConfirmado(reservaAtual)
-
-    const valorReserva =
-      numero(reservaAtual.valor_total) ||
-      numero(reservaAtual.valor_pago) ||
-      numero(reservaAtual.valor) ||
-      0
-
-    const valorJaUsadoDeSaldo = numero(reservaAtual.saldo_utilizado)
-
-    /**
-     * Regra atual de segurança:
-     * - Reserva pendente, aguardando pagamento, sem pago_em e sem pagamento_status pago: NÃO gera saldo.
-     * - Reserva financeiramente paga: gera crédito líquido, evitando duplicidade.
-     */
-    const valorCredito = pagamentoConfirmado
-      ? Math.max(0, Number((valorReserva - valorJaUsadoDeSaldo).toFixed(2)))
-      : 0
-
+    const valorCredito = calcularValorCredito(reservaAtual, pagamentoConfirmado)
     const agora = new Date().toISOString()
 
+    /**
+     * Primeiro cancela a reserva.
+     * Para reserva sem pagamento confirmado, já grava saldo_creditado = 0
+     * e saldo_movimentacao_id = null.
+     */
     const reservaAtualizada = await atualizarComFallback({
       supabase,
       tabela: 'reservas',
@@ -447,13 +584,12 @@ export async function POST(request: NextRequest) {
       payloadOriginal: {
         status: 'cancelada',
         cancelado_em: agora,
-        cancelada_em: agora,
-        data_cancelamento: agora,
         cancelado_por_tipo: canceladoPorTipo || 'cliente',
         cancelado_por_id: canceladoPorId,
         cancelamento_motivo_codigo: motivoCodigo,
         cancelamento_motivo: motivoDescricao,
-        motivo_cancelamento: motivoDescricao,
+        saldo_creditado: 0,
+        saldo_movimentacao_id: null,
         updated_at: agora,
       },
     })
@@ -472,10 +608,21 @@ export async function POST(request: NextRequest) {
       if (existente?.id) {
         movimento = existente
         saldoCreditado = 0
+
+        await atualizarComFallback({
+          supabase,
+          tabela: 'reservas',
+          id: reservaId,
+          payloadOriginal: {
+            saldo_creditado: numero(existente.valor),
+            saldo_movimentacao_id: existente.id,
+            updated_at: agora,
+          },
+        })
       } else {
         const descricao =
           motivoDescricao ||
-          'Crédito gerado pelo cancelamento da reserva paga.'
+          'Crédito gerado pelo cancelamento de reserva financeiramente paga.'
 
         movimento = await inserirComFallback({
           supabase,
@@ -494,47 +641,54 @@ export async function POST(request: NextRequest) {
             created_at: agora,
             updated_at: agora,
             metadata: {
-              regra: 'credito_somente_pagamento_confirmado',
+              regra: 'credito_somente_com_pagamento_financeiro_confirmado',
               reserva_id: reservaId,
               cancelado_por_tipo: canceladoPorTipo,
               cancelado_por_id: canceladoPorId,
               motivo_codigo: motivoCodigo,
               motivo_descricao: motivoDescricao,
-              valor_reserva: valorReserva,
-              saldo_utilizado: valorJaUsadoDeSaldo,
+              valor_reserva:
+                numero(reservaAtual.valor_total) ||
+                numero(reservaAtual.valor_pago) ||
+                numero(reservaAtual.valor) ||
+                0,
+              saldo_utilizado: numero(reservaAtual.saldo_utilizado),
               pagamento_status: reservaAtual.pagamento_status || null,
-              pago_em: reservaAtual.pago_em || null,
+              status_pagamento: reservaAtual.status_pagamento || null,
+              pagamento_confirmado_em:
+                reservaAtual.pagamento_confirmado_em || null,
+              pagamento_criado_em: reservaAtual.pagamento_criado_em || null,
               forma_pagamento: reservaAtual.forma_pagamento || null,
+              transaction_id: reservaAtual.transaction_id || null,
+              paghiper_order_id: reservaAtual.paghiper_order_id || null,
+              paghiper_transaction_id:
+                reservaAtual.paghiper_transaction_id || null,
+              observacao:
+                'transaction_id/paghiper_transaction_id não foram usados como prova isolada de pagamento.',
             },
           },
         })
 
         saldoCreditado = valorCredito
 
-        const { error: rpcError } = await supabase.rpc('recalcular_saldo_cliente', {
-          p_cliente_id: clienteId,
-        })
-
-        if (rpcError) {
-          console.warn(
-            '[cancelar-reserva] RPC recalcular_saldo_cliente falhou; atualizando saldo manualmente:',
-            rpcError
-          )
-
-          saldoAtualizado = await upsertSaldoCliente({
+        if (movimento?.id) {
+          await atualizarComFallback({
             supabase,
-            clienteId,
-            valorCredito,
+            tabela: 'reservas',
+            id: reservaId,
+            payloadOriginal: {
+              saldo_creditado: valorCredito,
+              saldo_movimentacao_id: movimento.id,
+              updated_at: agora,
+            },
           })
-        } else {
-          const { data } = await supabase
-            .from('cliente_saldos')
-            .select('*')
-            .eq('cliente_id', clienteId)
-            .maybeSingle()
-
-          saldoAtualizado = data || null
         }
+
+        saldoAtualizado = await recalcularSaldoCliente({
+          supabase,
+          clienteId,
+          valorCreditoFallback: valorCredito,
+        })
       }
     }
 
@@ -548,10 +702,14 @@ export async function POST(request: NextRequest) {
       saldoCreditado,
       movimento,
       saldo: saldoAtualizado,
+      motivoSemCredito:
+        valorCredito <= 0
+          ? 'Reserva sem pagamento financeiro confirmado ou sem valor elegível para crédito.'
+          : null,
       mensagem:
         saldoCreditado > 0
           ? 'Reserva cancelada e Saldo de Jornada creditado.'
-          : 'Reserva cancelada sem crédito automático porque não havia pagamento confirmado.',
+          : 'Reserva cancelada sem crédito automático porque não havia pagamento financeiro confirmado.',
     })
   } catch (error: any) {
     console.error('Erro em POST /api/reservas/cancelar:', {
