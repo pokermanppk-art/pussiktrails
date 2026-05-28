@@ -247,12 +247,23 @@ export default function RoteirosPage() {
   }
 
   const pagamentoConfirmado = (reserva: any) => {
-    const pagamento = normalizar(reserva?.pagamento_status)
+    const pagamento = normalizar(
+      reserva?.pagamento_status ||
+        reserva?.status_pagamento ||
+        reserva?.payment_status
+    )
     const status = normalizar(reserva?.status)
 
     return (
       pagamento === 'pago' ||
+      pagamento === 'paga' ||
       pagamento === 'confirmado' ||
+      pagamento === 'confirmada' ||
+      pagamento === 'aprovado' ||
+      pagamento === 'aprovada' ||
+      pagamento === 'paid' ||
+      pagamento === 'approved' ||
+      Boolean(reserva?.pagamento_confirmado_em) ||
       status === 'confirmada' ||
       status === 'realizada'
     )
@@ -312,7 +323,7 @@ export default function RoteirosPage() {
       if (roteiroIds.length > 0) {
         const { data: reservasData, error: reservasError } = await supabase
           .from('reservas')
-          .select('id, roteiro_id, status, pagamento_status, created_at')
+          .select('id, roteiro_id, status, pagamento_status, status_pagamento, pagamento_confirmado_em, created_at')
           .in('roteiro_id', roteiroIds)
 
         if (!reservasError) {
@@ -394,7 +405,10 @@ export default function RoteirosPage() {
   }
 
   const abrirReserva = (roteiro: Roteiro) => {
+    if (!roteiro?.id) return
+
     if (!user?.id) {
+      localStorage.setItem('redirectAfterLogin', `/roteiros/${roteiro.id}`)
       router.push('/login')
       return
     }
@@ -1327,8 +1341,8 @@ export default function RoteirosPage() {
           <button
             type="button"
             className="brandCenter"
-            onClick={() => router.push('/')}
-            aria-label="Ir para início"
+            onClick={() => router.push(user?.id ? rotaPainelUsuario(user) : '/')}
+            aria-label={user?.id ? 'Voltar para sua área inicial' : 'Ir para início'}
             title="PrussikTrails"
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
@@ -1441,15 +1455,15 @@ export default function RoteirosPage() {
 
           <article className="statCard">
             <div className="statValue">
-              {roteiros.length > 0
-                ? formatarMoeda(
-                    Math.min(
-                      ...roteiros
-                        .map((roteiro) => precoRoteiro(roteiro))
-                        .filter((preco) => preco > 0)
-                    )
-                  )
-                : 'R$ 0,00'}
+              {(() => {
+                const precosValidos = roteiros
+                  .map((roteiro) => precoRoteiro(roteiro))
+                  .filter((preco) => preco > 0)
+
+                return precosValidos.length > 0
+                  ? formatarMoeda(Math.min(...precosValidos))
+                  : 'R$ 0,00'
+              })()}
             </div>
             <div className="statLabel">menor valor disponível</div>
           </article>
