@@ -1,28 +1,31 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
 
-type Usuario = {
+type UsuarioLocal = {
   id: string
   nome?: string | null
-  name?: string | null
   email?: string | null
-  senha?: string | null
-  password?: string | null
   tipo?: string | null
-  status?: string | null
-  ativo?: boolean | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
 export default function LoginPage() {
   const router = useRouter()
 
-  const [email, setEmail] = useState('')
+  const [login, setLogin] = useState('')
   const [senha, setSenha] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [mensagem, setMensagem] = useState('')
+
+  useEffect(() => {
+    router.prefetch('/cliente/dashboard')
+    router.prefetch('/guia/dashboard')
+    router.prefetch('/roteiros')
+  }, [router])
 
   useEffect(() => {
     const userData = localStorage.getItem('user')
@@ -30,7 +33,7 @@ export default function LoginPage() {
     if (!userData) return
 
     try {
-      const user = JSON.parse(userData)
+      const user = JSON.parse(userData) as UsuarioLocal
 
       if (user?.tipo === 'cliente') {
         router.replace('/cliente/dashboard')
@@ -50,42 +53,57 @@ export default function LoginPage() {
     }
   }, [router])
 
-  const normalizarTexto = (valor: any) => {
+  const redirectAfterLogin = useMemo(() => {
+    if (typeof window === 'undefined') return ''
+
+    const salvo = localStorage.getItem('redirectAfterLogin') || ''
+
+    if (
+      salvo.startsWith('/') &&
+      !salvo.startsWith('/api') &&
+      !salvo.startsWith('/admin') &&
+      !salvo.startsWith('//')
+    ) {
+      return salvo
+    }
+
+    return ''
+  }, [])
+
+  function texto(valor: unknown) {
     return String(valor || '').trim()
   }
 
-  const normalizarEmail = (valor: string) => {
-    return normalizarTexto(valor).toLowerCase()
+  function normalizarLogin(valor: string) {
+    return texto(valor).toLowerCase()
   }
 
-  const validarEmail = (valor: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)
-  }
+  function rotaPorTipo(tipo?: string | null) {
+    const t = String(tipo || '').toLowerCase()
 
-  const redirecionarUsuario = (tipo: string) => {
-    if (tipo === 'admin') {
-      router.replace('/admin/dashboard')
-      return
+    if (redirectAfterLogin && t === 'cliente') return redirectAfterLogin
+    if (redirectAfterLogin && t === 'guia' && redirectAfterLogin.startsWith('/roteiros')) {
+      return redirectAfterLogin
     }
 
-    if (tipo === 'guia') {
-      router.replace('/guia/dashboard')
-      return
-    }
+    if (t === 'admin') return '/admin/dashboard'
+    if (t === 'guia') return '/guia/dashboard'
 
-    router.replace('/cliente/dashboard')
+    return '/cliente/dashboard'
   }
 
-  const entrar = async (event: FormEvent) => {
+  async function entrar(event: FormEvent) {
     event.preventDefault()
+
+    if (carregando) return
 
     setMensagem('')
 
-    const emailFinal = normalizarEmail(email)
-    const senhaFinal = normalizarTexto(senha)
+    const loginFinal = normalizarLogin(login)
+    const senhaFinal = texto(senha)
 
-    if (!emailFinal || !validarEmail(emailFinal)) {
-      setMensagem('Informe um e-mail válido.')
+    if (!loginFinal) {
+      setMensagem('Informe seu e-mail ou CPF.')
       return
     }
 
@@ -97,50 +115,35 @@ export default function LoginPage() {
     setCarregando(true)
 
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', emailFinal)
-        .maybeSingle()
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          login: loginFinal,
+          email: loginFinal,
+          cpf: loginFinal,
+          senha: senhaFinal,
+          redirectAfterLogin,
+        }),
+      })
 
-      if (error) {
-        console.error('Erro ao buscar usuário:', error)
-        setMensagem('Erro ao acessar sua conta. Tente novamente.')
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.sucesso || !data?.user?.id) {
+        setMensagem(data?.erro || data?.error || 'Usuário ou senha inválidos.')
         return
       }
 
-      if (!data) {
-        setMensagem('E-mail ou senha inválidos.')
-        return
-      }
+      const user: UsuarioLocal = data.user
+      const destino = data.redirectTo || rotaPorTipo(user.tipo)
 
-      const usuario = data as Usuario
-      const senhaBanco = normalizarTexto(usuario.senha || usuario.password)
+      localStorage.setItem('user', JSON.stringify(user))
+      localStorage.removeItem('redirectAfterLogin')
 
-      if (senhaBanco !== senhaFinal) {
-        setMensagem('E-mail ou senha inválidos.')
-        return
-      }
-
-      const status = normalizarTexto(usuario.status).toLowerCase()
-
-      if (status === 'inativo' || usuario.ativo === false) {
-        setMensagem('Sua conta está inativa. Entre em contato com o suporte.')
-        return
-      }
-
-      const tipo = normalizarTexto(usuario.tipo || 'cliente').toLowerCase()
-
-      const usuarioLocal = {
-        id: usuario.id,
-        nome: usuario.nome || usuario.name || 'Usuário',
-        email: usuario.email || emailFinal,
-        tipo
-      }
-
-      localStorage.setItem('user', JSON.stringify(usuarioLocal))
-
-      redirecionarUsuario(tipo)
+      router.replace(destino)
     } catch (error) {
       console.error('Erro no login:', error)
       setMensagem('Erro ao fazer login. Tente novamente.')
@@ -406,13 +409,13 @@ export default function LoginPage() {
 
           <form className="form" onSubmit={entrar}>
             <div className="formGroup">
-              <label>E-mail *</label>
+              <label>E-mail ou CPF *</label>
               <input
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="seuemail@email.com"
-                type="email"
-                autoComplete="email"
+                value={login}
+                onChange={(event) => setLogin(event.target.value)}
+                placeholder="seuemail@email.com ou CPF"
+                type="text"
+                autoComplete="username"
               />
             </div>
 
@@ -463,7 +466,7 @@ export default function LoginPage() {
           </button>
 
           <p className="hint">
-            Use o mesmo e-mail cadastrado no app.
+            Use o mesmo e-mail ou CPF cadastrado no app.
           </p>
         </section>
       </div>
