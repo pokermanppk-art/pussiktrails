@@ -2,17 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 type AnyRecord = Record<string, any>
 
-type PoliticaCalculada = {
-  codigo: string
-  percentualCredito: number
-  percentualRetencaoPlataforma: number
-  titulo: string
-}
-
-function getSupabaseAdmin() {
+function getSupabaseAdmin(): any {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 
@@ -35,23 +29,9 @@ function texto(valor: unknown) {
   return String(valor || '').trim()
 }
 
-function idOuNull(valor: unknown) {
-  const id = texto(valor)
-  return id || null
-}
-
 function numero(valor: unknown) {
   const n = Number(valor || 0)
   return Number.isFinite(n) ? n : 0
-}
-
-function primeiroId(...valores: unknown[]) {
-  for (const valor of valores) {
-    const id = texto(valor)
-    if (id) return id
-  }
-
-  return ''
 }
 
 function normalizar(valor: unknown) {
@@ -59,193 +39,328 @@ function normalizar(valor: unknown) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .trim()
 }
 
-function extrairDataRoteiro(roteiro: AnyRecord) {
-  const candidatos = [
-    roteiro.data_inicio,
-    roteiro.data_fim,
-    roteiro.data_final,
-    roteiro.data_trilha,
-    roteiro.data_roteiro,
-    roteiro.embarque_data_hora,
-    roteiro.data,
+function erroDeColunaAusente(error: any) {
+  const mensagem = String(
+    error?.message ||
+      error?.details ||
+      error?.hint ||
+      ''
+  ).toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    mensagem.includes('could not find') ||
+    mensagem.includes('schema cache') ||
+    mensagem.includes('column')
+  )
+}
+
+function extrairColunaAusente(error: any) {
+  const mensagem = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+
+  const matchAspas = mensagem.match(/'([^']+)'/)
+  if (matchAspas?.[1]) return matchAspas[1]
+
+  const matchColumn = mensagem.match(/column\s+([a-zA-Z0-9_]+)/i)
+  if (matchColumn?.[1]) return matchColumn[1]
+
+  return ''
+}
+
+async function atualizarComFallback(params: {
+  supabase: any
+  tabela: string
+  id: string
+  payloadOriginal: AnyRecord
+}) {
+  const { supabase, tabela, id } = params
+  let payload: AnyRecord = { ...params.payloadOriginal }
+
+  for (let tentativa = 0; tentativa < 16; tentativa++) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .maybeSingle()
+
+    if (!error) return data as AnyRecord | null
+
+    if (!erroDeColunaAusente(error)) throw error
+
+    const coluna = extrairColunaAusente(error)
+
+    if (!coluna || !(coluna in payload)) throw error
+
+    delete payload[coluna]
+  }
+
+  throw new Error(`Não foi possível atualizar ${tabela} após ajustar colunas.`)
+}
+
+async function inserirComFallback(params: {
+  supabase: any
+  tabela: string
+  payloadOriginal: AnyRecord
+}) {
+  const { supabase, tabela } = params
+  let payload: AnyRecord = { ...params.payloadOriginal }
+
+  for (let tentativa = 0; tentativa < 16; tentativa++) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .insert(payload)
+      .select('*')
+      .maybeSingle()
+
+    if (!error) return data as AnyRecord | null
+
+    if (!erroDeColunaAusente(error)) throw error
+
+    const coluna = extrairColunaAusente(error)
+
+    if (!coluna || !(coluna in payload)) throw error
+
+    delete payload[coluna]
+  }
+
+  throw new Error(`Não foi possível inserir em ${tabela} após ajustar colunas.`)
+}
+
+async function upsertSaldoCliente(params: {
+  supabase: any
+  clienteId: string
+  valorCredito: number
+}) {
+  const { supabase, clienteId, valorCredito } = params
+
+  if (valorCredito <= 0) return null
+
+  const agora = new Date().toISOString()
+
+  const { data: saldoAtual, error: saldoSelectError } = await supabase
+    .from('cliente_saldos')
+    .select('*')
+    .eq('cliente_id', clienteId)
+    .maybeSingle()
+
+  if (saldoSelectError && saldoSelectError.code !== 'PGRST116') {
+    console.warn('[cancelar-reserva] Erro ao buscar cliente_saldos:', saldoSelectError)
+  }
+
+  if (saldoAtual?.cliente_id) {
+    const novoDisponivel = Number(
+      (numero(saldoAtual.saldo_disponivel) + valorCredito).toFixed(2)
+    )
+
+    let payload: AnyRecord = {
+      saldo_disponivel: novoDisponivel,
+      updated_at: agora,
+    }
+
+    for (let tentativa = 0; tentativa < 10; tentativa++) {
+      const { data, error } = await supabase
+        .from('cliente_saldos')
+        .update(payload)
+        .eq('cliente_id', clienteId)
+        .select('*')
+        .maybeSingle()
+
+      if (!error) return data
+
+      if (!erroDeColunaAusente(error)) throw error
+
+      const coluna = extrairColunaAusente(error)
+      if (!coluna || !(coluna in payload)) throw error
+      delete payload[coluna]
+    }
+
+    return null
+  }
+
+  await inserirComFallback({
+    supabase,
+    tabela: 'cliente_saldos',
+    payloadOriginal: {
+      cliente_id: clienteId,
+      saldo_disponivel: valorCredito,
+      saldo_reservado: 0,
+      saldo_utilizado: 0,
+      saldo_expirado: 0,
+      moeda: 'BRL',
+      created_at: agora,
+      updated_at: agora,
+    },
+  })
+
+  const { data } = await supabase
+    .from('cliente_saldos')
+    .select('*')
+    .eq('cliente_id', clienteId)
+    .maybeSingle()
+
+  return data || null
+}
+
+/**
+ * REGRA CRÍTICA:
+ * Não usar `reservas.status === confirmada/realizada` para gerar crédito.
+ * Só gera Saldo de Jornada se houver confirmação financeira real.
+ *
+ * Motivo: algumas reservas podem ter status operacional "confirmada" sem pagamento real,
+ * ou podem estar pendentes/canceladas por teste. Nesses casos, cancelamento NÃO gera crédito.
+ */
+function pagamentoFinanceiramenteConfirmado(reserva: AnyRecord) {
+  const pagamento = normalizar(reserva.pagamento_status)
+  const forma = normalizar(reserva.forma_pagamento)
+
+  const statusFinanceiroOk = [
+    'pago',
+    'paga',
+    'confirmado',
+    'confirmada',
+    'aprovado',
+    'aprovada',
+    'paid',
+    'approved',
+  ].includes(pagamento)
+
+  const temDataPagamento = Boolean(texto(reserva.pago_em || reserva.data_pagamento || reserva.payment_date))
+  const temTransacaoPaga =
+    Boolean(texto(reserva.transaction_id || reserva.transacao_id)) &&
+    statusFinanceiroOk
+
+  const pagoIntegralComSaldo =
+    forma.includes('saldo') &&
+    numero(reserva.saldo_utilizado) > 0 &&
+    numero(reserva.valor_total) > 0 &&
+    numero(reserva.saldo_utilizado) >= numero(reserva.valor_total)
+
+  return statusFinanceiroOk || temDataPagamento || temTransacaoPaga || pagoIntegralComSaldo
+}
+
+function reservaCancelada(reserva: AnyRecord) {
+  const status = normalizar(reserva.status)
+  return status === 'cancelada' || status === 'cancelado' || status === 'cancelled'
+}
+
+async function jaExisteCreditoCancelamento(params: {
+  supabase: any
+  clienteId: string
+  reservaId: string
+}) {
+  const { supabase, clienteId, reservaId } = params
+
+  const queries = [
+    async () =>
+      supabase
+        .from('cliente_saldo_movimentacoes')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .eq('reserva_id', reservaId)
+        .in('tipo', ['credito_cancelamento', 'cancelamento_reserva', 'cancelamento'])
+        .limit(1),
+    async () =>
+      supabase
+        .from('cliente_saldo_movimentacoes')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .eq('origem_id', reservaId)
+        .limit(1),
   ]
 
-  for (const candidato of candidatos) {
-    if (!candidato) continue
+  for (const executar of queries) {
+    const { data, error } = await executar()
 
-    const data = new Date(String(candidato))
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data[0] as AnyRecord
+    }
 
-    if (!Number.isNaN(data.getTime())) return data
+    if (error && !erroDeColunaAusente(error)) {
+      console.warn('[cancelar-reserva] Não foi possível checar duplicidade de crédito:', error)
+    }
   }
 
   return null
 }
 
-function diferencaHorasAte(data: Date | null) {
-  if (!data) return null
-
-  return (data.getTime() - Date.now()) / (1000 * 60 * 60)
-}
-
-function calcularPolitica(params: {
-  canceladoPorTipo: string
-  dataRoteiro: Date | null
-  arrependimentoLegal?: boolean
-  percentualCreditoManual?: number | null
-}): PoliticaCalculada {
-  const tipo = normalizar(params.canceladoPorTipo)
-
-  if (typeof params.percentualCreditoManual === 'number') {
-    const credito = Math.max(0, Math.min(100, params.percentualCreditoManual))
-
-    return {
-      codigo: 'admin_percentual_manual',
-      percentualCredito: credito,
-      percentualRetencaoPlataforma: 100 - credito,
-      titulo: 'Percentual definido pelo administrador',
-    }
-  }
-
-  if (tipo === 'guia' || tipo === 'admin' || tipo === 'sistema') {
-    return {
-      codigo:
-        tipo === 'guia'
-          ? 'guia_cancela_100_credito'
-          : 'admin_cancela_100_credito',
-      percentualCredito: 100,
-      percentualRetencaoPlataforma: 0,
-      titulo:
-        tipo === 'guia'
-          ? 'Cancelamento pelo guia'
-          : 'Cancelamento administrativo',
-    }
-  }
-
-  if (params.arrependimentoLegal) {
-    return {
-      codigo: 'cliente_arrependimento_legal',
-      percentualCredito: 100,
-      percentualRetencaoPlataforma: 0,
-      titulo: 'Arrependimento legal',
-    }
-  }
-
-  const horas = diferencaHorasAte(params.dataRoteiro)
-
-  if (horas === null) {
-    return {
-      codigo: 'cliente_analise_admin',
-      percentualCredito: 0,
-      percentualRetencaoPlataforma: 0,
-      titulo: 'Cancelamento pendente de análise administrativa',
-    }
-  }
-
-  const dias = horas / 24
-
-  if (dias >= 7) {
-    return {
-      codigo: 'cliente_7_dias_ou_mais',
-      percentualCredito: 90,
-      percentualRetencaoPlataforma: 10,
-      titulo: 'Cliente cancela com 7 dias ou mais',
-    }
-  }
-
-  if (dias >= 3) {
-    return {
-      codigo: 'cliente_3_a_6_dias',
-      percentualCredito: 70,
-      percentualRetencaoPlataforma: 30,
-      titulo: 'Cliente cancela entre 3 e 6 dias',
-    }
-  }
-
-  if (horas >= 24) {
-    return {
-      codigo: 'cliente_24h_a_72h',
-      percentualCredito: 50,
-      percentualRetencaoPlataforma: 50,
-      titulo: 'Cliente cancela entre 24h e 72h',
-    }
-  }
-
-  return {
-    codigo: 'cliente_menos_24h_no_show',
-    percentualCredito: 0,
-    percentualRetencaoPlataforma: 100,
-    titulo: 'Menos de 24h ou não comparecimento',
-  }
-}
-
-async function atualizarReserva(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  reservaId: string,
-  payload: AnyRecord
-) {
-  const { data, error } = await supabase
-    .from('reservas')
-    .update(payload)
-    .eq('id', reservaId)
-    .select('*')
-    .maybeSingle()
-
-  if (error) throw error
-
-  return data
+export async function GET() {
+  return NextResponse.json({
+    sucesso: true,
+    rota: '/api/reservas/cancelar',
+    mensagem: 'Rota ativa. Use POST para cancelar uma reserva.',
+    regra:
+      'Saldo de Jornada só é creditado quando pagamento_status/pago_em indicam pagamento real.',
+  })
 }
 
 export async function POST(request: NextRequest) {
+  let recebido: AnyRecord = {}
+
   try {
     const supabase = getSupabaseAdmin()
-    const body = await request.json()
+    recebido = await request.json().catch(() => ({}))
 
-    const reservaId = texto(body.reservaId || body.reserva_id)
+    const reservaId = texto(
+      recebido.reservaId ||
+        recebido.reserva_id ||
+        recebido.id
+    )
+
     const canceladoPorTipo = normalizar(
-      body.canceladoPorTipo || body.cancelado_por_tipo || 'cliente'
+      recebido.canceladoPorTipo ||
+        recebido.cancelado_por_tipo ||
+        recebido.tipoUsuario ||
+        recebido.tipo_usuario ||
+        'cliente'
     )
-    const canceladoPorId = idOuNull(
-      body.canceladoPorId ||
-        body.cancelado_por_id ||
-        body.usuarioId ||
-        body.usuario_id
-    )
-    const motivoDescricao = texto(
-      body.motivoDescricao || body.motivo_descricao || body.motivo
-    )
-    const motivoCodigoInformado = texto(body.motivoCodigo || body.motivo_codigo)
-    const observacao = texto(
-      body.observacao ||
-        body.observacao_admin ||
-        body.observacao_guia ||
-        body.observacao_cliente
-    )
-    const percentualCreditoManual =
-      body.percentualCredito !== undefined ? numero(body.percentualCredito) : null
 
-    const arrependimentoLegal = Boolean(
-      body.arrependimentoLegal || body.arrependimento_legal
+    const canceladoPorId = texto(
+      recebido.canceladoPorId ||
+        recebido.cancelado_por_id ||
+        recebido.usuarioId ||
+        recebido.usuario_id ||
+        recebido.clienteId ||
+        recebido.cliente_id
+    )
+
+    const motivoCodigo = texto(
+      recebido.motivoCodigo ||
+        recebido.motivo_codigo ||
+        'cancelamento'
+    )
+
+    const motivoDescricao = texto(
+      recebido.motivoDescricao ||
+        recebido.motivo_descricao ||
+        recebido.motivo ||
+        'Cancelamento solicitado.'
     )
 
     if (!reservaId) {
       return NextResponse.json(
-        { sucesso: false, erro: 'reservaId é obrigatório.' },
+        {
+          sucesso: false,
+          erro: 'reservaId é obrigatório.',
+          recebido,
+        },
         { status: 400 }
       )
     }
 
-    if (!['guia', 'cliente', 'admin', 'sistema'].includes(canceladoPorTipo)) {
+    if (!canceladoPorId) {
       return NextResponse.json(
-        { sucesso: false, erro: 'canceladoPorTipo inválido.' },
-        { status: 400 }
-      )
-    }
-
-    if (!motivoDescricao) {
-      return NextResponse.json(
-        { sucesso: false, erro: 'Informe o motivo do cancelamento.' },
+        {
+          sucesso: false,
+          erro: 'canceladoPorId é obrigatório.',
+          recebido,
+        },
         { status: 400 }
       )
     }
@@ -258,184 +373,210 @@ export async function POST(request: NextRequest) {
 
     if (reservaError) throw reservaError
 
-    if (!reserva) {
+    if (!reserva?.id) {
       return NextResponse.json(
-        { sucesso: false, erro: 'Reserva não encontrada.' },
+        {
+          sucesso: false,
+          erro: 'Reserva não encontrada.',
+          recebido,
+        },
         { status: 404 }
       )
     }
 
-    const statusAtual = normalizar(reserva.status)
-
-    if (statusAtual === 'cancelada' || statusAtual === 'cancelado') {
-      return NextResponse.json(
-        { sucesso: false, erro: 'Esta reserva já está cancelada.' },
-        { status: 409 }
-      )
-    }
-
-    const clienteId = primeiroId(
-      reserva.cliente_id,
-      reserva.usuario_id,
-      reserva.user_id,
-      body.clienteId,
-      body.cliente_id
-    )
-
-    const roteiroId = primeiroId(
-      reserva.roteiro_id,
-      reserva.id_roteiro,
-      body.roteiroId,
-      body.roteiro_id
-    )
-
-    let roteiro: AnyRecord | null = null
-
-    if (roteiroId) {
-      const { data } = await supabase
-        .from('roteiros')
-        .select('*')
-        .eq('id', roteiroId)
-        .maybeSingle()
-
-      roteiro = data || null
-    }
-
-    const guiaId = primeiroId(
-      reserva.guia_id,
-      reserva.id_guia,
-      roteiro?.guia_id,
-      roteiro?.id_guia,
-      roteiro?.user_id,
-      roteiro?.usuario_id,
-      body.guiaId,
-      body.guia_id
-    )
+    const reservaAtual = reserva as AnyRecord
+    const clienteId = texto(reservaAtual.cliente_id)
 
     if (!clienteId) {
       return NextResponse.json(
         {
           sucesso: false,
-          erro: 'Não foi possível identificar o cliente da reserva.',
+          erro: 'Reserva sem cliente_id vinculado.',
+          reserva: reservaAtual,
+          recebido,
         },
         { status: 400 }
       )
     }
 
-    const valorOriginal =
-      numero(reserva.valor_total) ||
-      numero(reserva.valor_pago) ||
-      numero(reserva.valor) ||
-      numero(reserva.total) ||
-      numero(roteiro?.preco) *
-        Math.max(1, numero(reserva.quantidade_pessoas) || 1)
-
-    const politica = calcularPolitica({
-      canceladoPorTipo,
-      dataRoteiro: extrairDataRoteiro(roteiro || {}),
-      arrependimentoLegal,
-      percentualCreditoManual,
-    })
-
-    const valorCreditado = Number(
-      ((valorOriginal * politica.percentualCredito) / 100).toFixed(2)
-    )
-
-    const valorRetidoPlataforma = Number(
-      ((valorOriginal * politica.percentualRetencaoPlataforma) / 100).toFixed(2)
-    )
-
-    let movimentacaoId: string | null = null
-
-    if (valorCreditado > 0) {
-      const tipoCredito =
-        canceladoPorTipo === 'guia'
-          ? 'credito_cancelamento_guia'
-          : politica.codigo === 'cliente_arrependimento_legal'
-            ? 'credito_arrependimento'
-            : 'credito_cancelamento_cliente'
-
-      const { data: movId, error: rpcError } = await supabase.rpc(
-        'creditar_saldo_cliente',
+    if (canceladoPorTipo === 'cliente' && clienteId !== canceladoPorId) {
+      return NextResponse.json(
         {
-          p_cliente_id: clienteId,
-          p_valor: valorCreditado,
-          p_tipo: tipoCredito,
-          p_origem: canceladoPorTipo,
-          p_descricao: `Crédito gerado por cancelamento de reserva. Política: ${politica.titulo}.`,
-          p_motivo: motivoDescricao,
-          p_reserva_id: reservaId,
-          p_roteiro_id: roteiroId || null,
-          p_guia_id: guiaId || null,
-          p_criado_por_id: canceladoPorId,
-        }
+          sucesso: false,
+          erro: 'Esta reserva não pertence ao cliente informado.',
+          recebido,
+        },
+        { status: 403 }
       )
-
-      if (rpcError) throw rpcError
-
-      movimentacaoId = movId || null
     }
 
-    const { data: cancelamento, error: cancelamentoError } = await supabase
-      .from('reserva_cancelamentos')
-      .insert({
-        reserva_id: reservaId,
-        cliente_id: clienteId,
-        roteiro_id: roteiroId || null,
-        guia_id: guiaId || null,
-        cancelado_por_tipo: canceladoPorTipo,
-        cancelado_por_id: canceladoPorId,
-        motivo_codigo: motivoCodigoInformado || politica.codigo,
-        motivo_descricao: motivoDescricao,
-        valor_original: valorOriginal,
-        valor_creditado: valorCreditado,
-        valor_retido_plataforma: valorRetidoPlataforma,
-        valor_retido_guia: 0,
-        percentual_credito: politica.percentualCredito,
-        percentual_retencao_plataforma: politica.percentualRetencaoPlataforma,
-        status: 'processado',
-        saldo_movimentacao_id: movimentacaoId,
-        observacao_admin: canceladoPorTipo === 'admin' ? observacao : null,
-        observacao_guia: canceladoPorTipo === 'guia' ? observacao : null,
-        observacao_cliente: canceladoPorTipo === 'cliente' ? observacao : null,
-        updated_at: new Date().toISOString(),
+    if (reservaCancelada(reservaAtual)) {
+      return NextResponse.json({
+        sucesso: true,
+        reserva: reservaAtual,
+        saldoCreditado: 0,
+        mensagem: 'Reserva já estava cancelada.',
       })
-      .select('*')
-      .maybeSingle()
+    }
 
-    if (cancelamentoError) throw cancelamentoError
+    const pagamentoConfirmado = pagamentoFinanceiramenteConfirmado(reservaAtual)
 
-    const reservaAtualizada = await atualizarReserva(supabase, reservaId, {
-      status: 'cancelada',
-      cancelado_por_tipo: canceladoPorTipo,
-      cancelado_por_id: canceladoPorId,
-      cancelamento_motivo: motivoDescricao,
-      cancelamento_motivo_codigo: motivoCodigoInformado || politica.codigo,
-      cancelado_em: new Date().toISOString(),
-      saldo_creditado: valorCreditado,
-      taxa_cancelamento_plataforma: valorRetidoPlataforma,
-      saldo_movimentacao_id: movimentacaoId,
-      updated_at: new Date().toISOString(),
+    const valorReserva =
+      numero(reservaAtual.valor_total) ||
+      numero(reservaAtual.valor_pago) ||
+      numero(reservaAtual.valor) ||
+      0
+
+    const valorJaUsadoDeSaldo = numero(reservaAtual.saldo_utilizado)
+
+    /**
+     * Regra atual de segurança:
+     * - Reserva pendente, aguardando pagamento, sem pago_em e sem pagamento_status pago: NÃO gera saldo.
+     * - Reserva financeiramente paga: gera crédito líquido, evitando duplicidade.
+     */
+    const valorCredito = pagamentoConfirmado
+      ? Math.max(0, Number((valorReserva - valorJaUsadoDeSaldo).toFixed(2)))
+      : 0
+
+    const agora = new Date().toISOString()
+
+    const reservaAtualizada = await atualizarComFallback({
+      supabase,
+      tabela: 'reservas',
+      id: reservaId,
+      payloadOriginal: {
+        status: 'cancelada',
+        cancelado_em: agora,
+        cancelada_em: agora,
+        data_cancelamento: agora,
+        cancelado_por_tipo: canceladoPorTipo || 'cliente',
+        cancelado_por_id: canceladoPorId,
+        cancelamento_motivo_codigo: motivoCodigo,
+        cancelamento_motivo: motivoDescricao,
+        motivo_cancelamento: motivoDescricao,
+        updated_at: agora,
+      },
     })
+
+    let movimento: AnyRecord | null = null
+    let saldoAtualizado: AnyRecord | null = null
+    let saldoCreditado = 0
+
+    if (valorCredito > 0) {
+      const existente = await jaExisteCreditoCancelamento({
+        supabase,
+        clienteId,
+        reservaId,
+      })
+
+      if (existente?.id) {
+        movimento = existente
+        saldoCreditado = 0
+      } else {
+        const descricao =
+          motivoDescricao ||
+          'Crédito gerado pelo cancelamento da reserva paga.'
+
+        movimento = await inserirComFallback({
+          supabase,
+          tabela: 'cliente_saldo_movimentacoes',
+          payloadOriginal: {
+            cliente_id: clienteId,
+            reserva_id: reservaId,
+            origem_id: reservaId,
+            origem_tipo: 'reserva_cancelada',
+            tipo: 'credito_cancelamento',
+            valor: valorCredito,
+            descricao,
+            motivo: descricao,
+            status: 'ativo',
+            moeda: 'BRL',
+            created_at: agora,
+            updated_at: agora,
+            metadata: {
+              regra: 'credito_somente_pagamento_confirmado',
+              reserva_id: reservaId,
+              cancelado_por_tipo: canceladoPorTipo,
+              cancelado_por_id: canceladoPorId,
+              motivo_codigo: motivoCodigo,
+              motivo_descricao: motivoDescricao,
+              valor_reserva: valorReserva,
+              saldo_utilizado: valorJaUsadoDeSaldo,
+              pagamento_status: reservaAtual.pagamento_status || null,
+              pago_em: reservaAtual.pago_em || null,
+              forma_pagamento: reservaAtual.forma_pagamento || null,
+            },
+          },
+        })
+
+        saldoCreditado = valorCredito
+
+        const { error: rpcError } = await supabase.rpc('recalcular_saldo_cliente', {
+          p_cliente_id: clienteId,
+        })
+
+        if (rpcError) {
+          console.warn(
+            '[cancelar-reserva] RPC recalcular_saldo_cliente falhou; atualizando saldo manualmente:',
+            rpcError
+          )
+
+          saldoAtualizado = await upsertSaldoCliente({
+            supabase,
+            clienteId,
+            valorCredito,
+          })
+        } else {
+          const { data } = await supabase
+            .from('cliente_saldos')
+            .select('*')
+            .eq('cliente_id', clienteId)
+            .maybeSingle()
+
+          saldoAtualizado = data || null
+        }
+      }
+    }
 
     return NextResponse.json({
       sucesso: true,
-      reserva: reservaAtualizada,
-      cancelamento,
-      saldoCreditado: valorCreditado,
-      valorRetidoPlataforma,
-      politica,
+      reserva: reservaAtualizada || {
+        ...reservaAtual,
+        status: 'cancelada',
+      },
+      pagamentoConfirmado,
+      saldoCreditado,
+      movimento,
+      saldo: saldoAtualizado,
+      mensagem:
+        saldoCreditado > 0
+          ? 'Reserva cancelada e Saldo de Jornada creditado.'
+          : 'Reserva cancelada sem crédito automático porque não havia pagamento confirmado.',
     })
-  } catch (error) {
-    console.error('Erro em POST /api/reservas/cancelar:', error)
+  } catch (error: any) {
+    console.error('Erro em POST /api/reservas/cancelar:', {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      stack: error?.stack,
+      recebido,
+      raw: error,
+    })
 
     return NextResponse.json(
       {
         sucesso: false,
         erro:
-          error instanceof Error
-            ? error.message
-            : 'Erro ao cancelar reserva.',
+          error?.message ||
+          'Erro ao cancelar reserva.',
+        detalhe: {
+          code: error?.code,
+          details: error?.details,
+          hint: error?.hint,
+          message: error?.message,
+        },
+        recebido,
       },
       { status: 500 }
     )
