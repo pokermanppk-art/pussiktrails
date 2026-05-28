@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 type UsuarioLocal = {
@@ -12,6 +12,8 @@ type UsuarioLocal = {
   foto_url?: string | null
   imagem_url?: string | null
 }
+
+const LOGO_LOGIN_SRC = '/logo-login-montanha-prussik.jpg?v=20260528'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -57,7 +59,15 @@ export default function LoginPage() {
     }
   }, [router])
 
-  const redirectAfterLogin = useMemo(() => {
+  function texto(valor: unknown) {
+    return String(valor || '').trim()
+  }
+
+  function normalizarLogin(valor: string) {
+    return texto(valor).toLowerCase()
+  }
+
+  function getRedirectAfterLogin() {
     if (typeof window === 'undefined') return ''
 
     const salvo = localStorage.getItem('redirectAfterLogin') || ''
@@ -72,20 +82,14 @@ export default function LoginPage() {
     }
 
     return ''
-  }, [])
-
-  function texto(valor: unknown) {
-    return String(valor || '').trim()
   }
 
-  function normalizarLogin(valor: string) {
-    return texto(valor).toLowerCase()
-  }
-
-  function rotaPorTipo(tipo?: string | null) {
+  function rotaPorTipo(tipo?: string | null, redirectAfterLogin = '') {
     const t = String(tipo || '').toLowerCase()
 
-    if (redirectAfterLogin && t === 'cliente') return redirectAfterLogin
+    if (redirectAfterLogin && t === 'cliente') {
+      return redirectAfterLogin
+    }
 
     if (
       redirectAfterLogin &&
@@ -110,6 +114,7 @@ export default function LoginPage() {
 
     const loginFinal = normalizarLogin(login)
     const senhaFinal = texto(senha)
+    const redirectAfterLogin = getRedirectAfterLogin()
 
     if (!loginFinal) {
       setMensagem('Informe seu e-mail ou CPF.')
@@ -148,7 +153,7 @@ export default function LoginPage() {
       }
 
       const user: UsuarioLocal = data.user
-      const destino = data.redirectTo || rotaPorTipo(user.tipo)
+      const destino = data.redirectTo || rotaPorTipo(user.tipo, redirectAfterLogin)
 
       localStorage.setItem('user', JSON.stringify(user))
       localStorage.removeItem('redirectAfterLogin')
@@ -186,9 +191,9 @@ export default function LoginPage() {
             min-height: 100vh;
             min-height: 100dvh;
             background:
-              radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
+              radial-gradient(circle at top left, rgba(132, 204, 22, 0.10), transparent 30%),
               linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
-            color: #111827;
+            color: #203c2e;
           }
 
           .loadingPage {
@@ -201,25 +206,29 @@ export default function LoginPage() {
             text-align: center;
             color: #203c2e;
             font-size: 14px;
-            font-weight: 800;
+            font-weight: 850;
+            letter-spacing: -0.01em;
           }
 
-          .loadingBox img {
-            width: 128px;
-            height: 128px;
-            object-fit: contain;
-            display: block;
+          .loadingMark {
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
             margin: 0 auto 14px;
+            border: 3px solid rgba(32, 60, 46, 0.12);
+            border-top-color: #203c2e;
+            animation: spin 0.8s linear infinite;
+          }
+
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
           }
         `}</style>
 
         <div className="loadingBox">
-          <img
-            src="/logo-login-montanha-prussik.jpg"
-            alt="PrussikTrails"
-            loading="eager"
-            decoding="async"
-          />
+          <div className="loadingMark" aria-hidden="true" />
           Abrindo sua área...
         </div>
       </main>
@@ -281,12 +290,13 @@ export default function LoginPage() {
           margin-bottom: 20px;
         }
 
-        .brand img {
+        .brandLogo {
           width: 168px;
           height: 168px;
           object-fit: contain;
           display: block;
           border-radius: 0;
+          mix-blend-mode: multiply;
         }
 
         .heroPhrase {
@@ -400,6 +410,11 @@ export default function LoginPage() {
           text-decoration: underline;
         }
 
+        .textButton:disabled {
+          opacity: 0.58;
+          cursor: not-allowed;
+        }
+
         .divider {
           display: grid;
           grid-template-columns: 1fr auto 1fr;
@@ -431,8 +446,13 @@ export default function LoginPage() {
           transition: 0.2s ease;
         }
 
-        .secondaryButton:hover {
+        .secondaryButton:hover:not(:disabled) {
           background: #f0fdf4;
+        }
+
+        .secondaryButton:disabled {
+          opacity: 0.58;
+          cursor: not-allowed;
         }
 
         .hint {
@@ -458,7 +478,7 @@ export default function LoginPage() {
             margin-bottom: 16px;
           }
 
-          .brand img {
+          .brandLogo {
             width: 138px;
             height: 138px;
           }
@@ -484,12 +504,13 @@ export default function LoginPage() {
         <section className="card">
           <div className="brand">
             <img
-              src="/logo-login-montanha-prussik.jpg"
+              src={LOGO_LOGIN_SRC}
               alt="PrussikTrails"
+              className="brandLogo"
               loading="eager"
               decoding="async"
               onError={(event) => {
-                event.currentTarget.src = '/logo-prussik-display.png'
+                event.currentTarget.style.display = 'none'
               }}
             />
           </div>
