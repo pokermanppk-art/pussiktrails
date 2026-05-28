@@ -3,6 +3,8 @@
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+const LOGO_RECUPERAR_SRC = '/logo-login-montanha-prussik.jpg?v=20260528'
+
 export default function RecuperarSenhaPage() {
   const router = useRouter()
 
@@ -11,17 +13,23 @@ export default function RecuperarSenhaPage() {
   const [mensagem, setMensagem] = useState('')
   const [tipoMensagem, setTipoMensagem] = useState<'erro' | 'sucesso' | ''>('')
 
-  const validarEmail = (valor: string) => {
+  function texto(valor: unknown) {
+    return String(valor || '').trim()
+  }
+
+  function validarEmail(valor: string) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)
   }
 
-  const solicitarRecuperacao = async (event: FormEvent) => {
+  async function solicitarRecuperacao(event: FormEvent) {
     event.preventDefault()
+
+    if (carregando) return
 
     setMensagem('')
     setTipoMensagem('')
 
-    const emailFinal = email.trim().toLowerCase()
+    const emailFinal = texto(email).toLowerCase()
 
     if (!emailFinal || !validarEmail(emailFinal)) {
       setMensagem('Informe um e-mail válido.')
@@ -35,19 +43,19 @@ export default function RecuperarSenhaPage() {
       const response = await fetch('/api/recuperar-senha', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
+        cache: 'no-store',
         body: JSON.stringify({
-          email: emailFinal
-        })
+          email: emailFinal,
+        }),
       })
 
-      const texto = await response.text()
-
+      const respostaTexto = await response.text()
       let data: any = null
 
       try {
-        data = texto ? JSON.parse(texto) : null
+        data = respostaTexto ? JSON.parse(respostaTexto) : null
       } catch {
         throw new Error('A rota de recuperação retornou uma resposta inválida.')
       }
@@ -88,7 +96,7 @@ export default function RecuperarSenhaPage() {
 
         body {
           margin: 0;
-          background: #f3f4f6;
+          background: #fffdf7;
           font-family:
             Inter,
             ui-sans-serif,
@@ -103,233 +111,362 @@ export default function RecuperarSenhaPage() {
           min-height: 100vh;
           min-height: 100dvh;
           background:
-            radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
-            linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
+            radial-gradient(circle at 8% 0%, rgba(132, 204, 22, 0.15), transparent 30%),
+            radial-gradient(circle at 92% 8%, rgba(251, 146, 60, 0.10), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
           color: #111827;
-        }
-
-        .topBar {
-          height: 64px;
-          background: #dc2626;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 0 16px;
-        }
-
-        .topLogo {
-          height: 42px;
-          width: auto;
-          object-fit: contain;
-          display: block;
+          padding: 20px 14px;
         }
 
         .container {
           width: 100%;
-          max-width: 560px;
+          max-width: 492px;
           margin: 0 auto;
-          padding: 34px 18px 44px;
         }
 
         .card {
-          background: #ffffff;
-          border-radius: 32px;
-          padding: 30px;
-          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
-          border: 1px solid #eef2f7;
+          background: rgba(255, 255, 255, 0.94);
+          border-radius: 34px;
+          padding: 30px 30px 34px;
+          box-shadow:
+            0 24px 58px rgba(32, 60, 46, 0.12),
+            0 8px 22px rgba(15, 23, 42, 0.06);
+          border: 1px solid rgba(15, 23, 42, 0.055);
+          backdrop-filter: blur(14px);
+          overflow: hidden;
         }
 
         .brand {
           display: flex;
           justify-content: center;
-          margin-bottom: 18px;
+          margin: 0 auto 16px;
+          width: 100%;
+          overflow: visible;
         }
 
-        .brand img {
-          height: 72px;
-          width: auto;
+        .brandLogoCrop {
+          width: 220px;
+          height: 116px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          flex: 0 0 auto;
+        }
+
+        .brandLogoCrop img {
+          width: 220px;
+          height: 220px;
           object-fit: contain;
+          display: block;
+          transform: scale(1.58);
+          transform-origin: center;
         }
 
-        .title {
-          margin: 0;
+        .heroPhrase {
+          margin: 0 auto 12px;
+          max-width: 340px;
           text-align: center;
+          color: #172018;
           font-size: 30px;
-          font-weight: 900;
-          color: #111827;
-          letter-spacing: -0.04em;
+          line-height: 1.03;
+          font-weight: 950;
+          letter-spacing: -0.065em;
         }
 
-        .subtitle {
-          margin: 10px auto 26px;
+        .heroPhrase span {
+          color: #203c2e;
+        }
+
+        .supportText {
+          max-width: 390px;
+          margin: 0 auto 28px;
           text-align: center;
-          color: #6b7280;
-          font-size: 14px;
-          line-height: 1.6;
-          max-width: 430px;
+          color: #7b8372;
+          font-size: 13px;
+          line-height: 1.55;
+          font-weight: 750;
         }
 
         .form {
           display: grid;
-          gap: 16px;
+          gap: 17px;
         }
 
         .formGroup {
           display: flex;
           flex-direction: column;
-          gap: 7px;
+          gap: 8px;
         }
 
         label {
           font-size: 13px;
-          font-weight: 800;
-          color: #374151;
+          font-weight: 900;
+          color: #334155;
+          letter-spacing: -0.01em;
         }
 
         input {
           width: 100%;
-          border: 1px solid #e5e7eb;
+          border: 1px solid #dbe4f2;
           border-radius: 18px;
-          padding: 15px 16px;
+          padding: 15px 17px;
           font-size: 16px;
           color: #111827;
-          background: #ffffff;
+          background: #eef5ff;
           outline: none;
           transition: 0.2s ease;
         }
 
         input:focus {
-          border-color: #16a34a;
-          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+          background: #ffffff;
+          border-color: #203c2e;
+          box-shadow: 0 0 0 4px rgba(32, 60, 46, 0.11);
         }
 
         input::placeholder {
-          color: #9ca3af;
+          color: #94a3b8;
+        }
+
+        input:disabled {
+          opacity: 0.72;
+          cursor: not-allowed;
         }
 
         .message {
-          padding: 14px 16px;
+          padding: 13px 15px;
           border-radius: 18px;
-          font-size: 14px;
+          font-size: 13px;
           line-height: 1.45;
           text-align: center;
-          font-weight: 700;
+          font-weight: 850;
+          border: 1px solid transparent;
         }
 
         .message.erro {
           background: #fee2e2;
           color: #991b1b;
-          border: 1px solid #fecaca;
+          border-color: #fecaca;
         }
 
         .message.sucesso {
           background: #dcfce7;
           color: #166534;
-          border: 1px solid #bbf7d0;
+          border-color: #bbf7d0;
         }
 
         .submitButton {
           width: 100%;
           border: none;
           border-radius: 999px;
-          padding: 16px;
-          background: #15803d;
+          padding: 17px;
+          background: #203c2e;
           color: #ffffff;
           font-size: 17px;
-          font-weight: 900;
+          font-weight: 950;
           cursor: pointer;
           transition: 0.2s ease;
-          margin-top: 4px;
+          margin-top: 6px;
+          box-shadow: 0 14px 26px rgba(32, 60, 46, 0.18);
         }
 
         .submitButton:hover:not(:disabled) {
-          background: #166534;
+          background: #294735;
           transform: translateY(-1px);
-          box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
+          box-shadow: 0 18px 32px rgba(32, 60, 46, 0.24);
         }
 
         .submitButton:disabled {
-          opacity: 0.7;
+          opacity: 0.72;
           cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
+        }
+
+        .divider {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          align-items: center;
+          gap: 14px;
+          margin: 25px 0;
+          color: #9ca3af;
+          font-size: 14px;
+          font-weight: 850;
+        }
+
+        .divider::before,
+        .divider::after {
+          content: "";
+          height: 1px;
+          background: #e5e7eb;
         }
 
         .secondaryButton {
           width: 100%;
-          border: 1px solid #16a34a;
+          border: 1.5px solid #203c2e;
           border-radius: 999px;
           padding: 15px;
           background: #ffffff;
-          color: #16a34a;
+          color: #203c2e;
           font-size: 16px;
-          font-weight: 900;
+          font-weight: 950;
           cursor: pointer;
           transition: 0.2s ease;
-          margin-top: 12px;
         }
 
-        .secondaryButton:hover {
+        .secondaryButton:hover:not(:disabled) {
           background: #f0fdf4;
+          transform: translateY(-1px);
+        }
+
+        .secondaryButton:disabled {
+          opacity: 0.58;
+          cursor: not-allowed;
+        }
+
+        .linkRow {
+          display: flex;
+          justify-content: center;
+          margin-top: 18px;
+        }
+
+        .textButton {
+          border: none;
+          background: transparent;
+          color: #203c2e;
+          font-size: 14px;
+          font-weight: 900;
+          cursor: pointer;
+          text-decoration: none;
+          padding: 4px 6px;
+        }
+
+        .textButton:hover {
+          text-decoration: underline;
+        }
+
+        .textButton:disabled {
+          opacity: 0.58;
+          cursor: not-allowed;
         }
 
         .hint {
-          margin: 16px 0 0;
+          margin: 20px 0 0;
           text-align: center;
-          color: #9ca3af;
+          color: #7b8372;
           font-size: 12px;
           line-height: 1.45;
+          font-weight: 750;
         }
 
         @media (max-width: 520px) {
-          .topBar {
-            height: 62px;
+          .page {
+            align-items: flex-start;
+            padding: 18px 12px 26px;
           }
 
           .container {
-            padding: 24px 14px 34px;
+            max-width: 100%;
           }
 
           .card {
-            border-radius: 28px;
-            padding: 24px 18px;
+            border-radius: 30px;
+            padding: 26px 20px 30px;
           }
 
-          .brand img {
-            height: 62px;
+          .brand {
+            margin-bottom: 14px;
           }
 
-          .title {
-            font-size: 26px;
+          .brandLogoCrop {
+            width: 198px;
+            height: 106px;
+          }
+
+          .brandLogoCrop img {
+            width: 198px;
+            height: 198px;
+            transform: scale(1.54);
+          }
+
+          .heroPhrase {
+            font-size: 27px;
+            max-width: 320px;
+          }
+
+          .supportText {
+            margin-bottom: 24px;
           }
 
           input {
-            font-size: 16px;
+            font-size: 15px;
             padding: 14px 15px;
+          }
+
+          .submitButton {
+            padding: 15px;
+            font-size: 16px;
+          }
+
+          .secondaryButton {
+            padding: 14px;
+            font-size: 15px;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .card {
+            padding: 24px 18px 28px;
+          }
+
+          .brandLogoCrop {
+            width: 184px;
+            height: 98px;
+          }
+
+          .brandLogoCrop img {
+            width: 184px;
+            height: 184px;
+            transform: scale(1.50);
+          }
+
+          .heroPhrase {
+            font-size: 25px;
           }
         }
       `}</style>
 
-      <header className="topBar">
-        <img
-          src="/logo-prussik-display.png"
-          alt="PrussikTrails"
-          className="topLogo"
-        />
-      </header>
-
       <div className="container">
         <section className="card">
           <div className="brand">
-            <img
-              src="/logo-prussik-display.png"
-              alt="PrussikTrails"
-            />
+            <div className="brandLogoCrop">
+              <img
+                src={LOGO_RECUPERAR_SRC}
+                alt="PrussikTrails"
+                loading="eager"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.style.display = 'none'
+                }}
+              />
+            </div>
           </div>
 
-          <h1 className="title">Recuperar senha</h1>
+          <p className="heroPhrase">
+            Recuperar
+            <br />
+            acesso à sua
+            <br />
+            <span>jornada.</span>
+          </p>
 
-          <p className="subtitle">
-            Informe o e-mail cadastrado. Enviaremos um link para você criar uma
-            nova senha.
+          <p className="supportText">
+            Informe o e-mail cadastrado no app. Se encontrarmos sua conta,
+            enviaremos as instruções para redefinir sua senha.
           </p>
 
           <form className="form" onSubmit={solicitarRecuperacao}>
@@ -337,15 +474,21 @@ export default function RecuperarSenhaPage() {
               <label>E-mail cadastrado *</label>
               <input
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value)
+                  setMensagem('')
+                  setTipoMensagem('')
+                }}
                 placeholder="seuemail@email.com"
                 type="email"
                 autoComplete="email"
+                inputMode="email"
+                disabled={carregando}
               />
             </div>
 
             {mensagem && (
-              <div className={`message ${tipoMensagem}`}>
+              <div className={`message ${tipoMensagem || 'erro'}`}>
                 {mensagem}
               </div>
             )}
@@ -355,20 +498,34 @@ export default function RecuperarSenhaPage() {
               className="submitButton"
               disabled={carregando}
             >
-              {carregando ? 'Enviando...' : 'Enviar link de recuperação'}
+              {carregando ? 'Enviando instruções...' : 'Enviar instruções'}
             </button>
           </form>
+
+          <div className="divider">ou</div>
 
           <button
             type="button"
             className="secondaryButton"
             onClick={() => router.push('/login')}
+            disabled={carregando}
           >
-            Voltar para login
+            Voltar para o login
           </button>
 
+          <div className="linkRow">
+            <button
+              type="button"
+              className="textButton"
+              onClick={() => router.push('/cadastro')}
+              disabled={carregando}
+            >
+              Ainda não tenho conta
+            </button>
+          </div>
+
           <p className="hint">
-            O link será enviado por e-mail e expira em 1 hora.
+            Por segurança, não informamos se o e-mail existe ou não na base.
           </p>
         </section>
       </div>
