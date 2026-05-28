@@ -436,13 +436,25 @@ export default function RoteirosPage() {
         body: JSON.stringify(payload)
       })
 
-      const data = await response.json().catch(() => null)
+      const respostaTexto = await response.text()
+      let data: any = null
+
+      try {
+        data = respostaTexto ? JSON.parse(respostaTexto) : null
+      } catch {
+        data = {
+          sucesso: false,
+          erro: respostaTexto || 'Resposta não JSON da API.',
+          raw: respostaTexto,
+        }
+      }
 
       if (!response.ok || data?.sucesso === false) {
         console.error('Erro ao criar reserva pela API:', {
           status: response.status,
           erro: data?.erro,
           detalhe: data?.detalhe,
+          resposta: data,
           payload
         })
 

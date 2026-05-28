@@ -13,6 +13,10 @@ type UsuarioLocal = {
   nome?: string | null
   email?: string | null
   tipo?: string | null
+  name?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
 type Roteiro = {
@@ -201,10 +205,84 @@ export default function DetalhesRoteiroPage() {
     const salvo = localStorage.getItem('user')
     const usuario = salvo ? (JSON.parse(salvo) as UsuarioLocal) : null
     setUsuarioLogado(usuario)
+
+    if (usuario) {
+      sincronizarUsuarioCabecalho(usuario)
+    }
+
     carregarRoteiro()
     carregarPerguntas()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  const sincronizarUsuarioCabecalho = async (usuarioAtual: UsuarioLocal) => {
+    const usuarioId = extrairUsuarioId(usuarioAtual)
+
+    if (!usuarioId) return
+
+    try {
+      const { data } = await supabase
+        .from('users')
+        .select('id, nome, name, email, tipo, avatar_url, foto_url, imagem_url')
+        .eq('id', usuarioId)
+        .maybeSingle()
+
+      if (!data) return
+
+      const atualizado: UsuarioLocal = {
+        ...usuarioAtual,
+        id: data.id || usuarioAtual.id,
+        nome: data.nome || usuarioAtual.nome || null,
+        name: data.name || usuarioAtual.name || null,
+        email: data.email || usuarioAtual.email || null,
+        tipo: data.tipo || usuarioAtual.tipo || null,
+        avatar_url: data.avatar_url || usuarioAtual.avatar_url || null,
+        foto_url: data.foto_url || usuarioAtual.foto_url || null,
+        imagem_url: data.imagem_url || usuarioAtual.imagem_url || null,
+      }
+
+      setUsuarioLogado(atualizado)
+      localStorage.setItem('user', JSON.stringify(atualizado))
+    } catch (error) {
+      console.warn('Não foi possível sincronizar avatar do usuário no cabeçalho:', error)
+    }
+  }
+
+  const nomeUsuario = (usuario?: UsuarioLocal | null) => {
+    return usuario?.nome || usuario?.name || usuario?.email || 'Usuário'
+  }
+
+  const primeiroNome = (valor?: string | null) => {
+    const nome = String(valor || 'Usuário').trim()
+    return nome.split(' ')[0] || 'Usuário'
+  }
+
+  const avatarUsuario = (usuario?: UsuarioLocal | null) => {
+    return usuario?.avatar_url || usuario?.foto_url || usuario?.imagem_url || ''
+  }
+
+  const inicialUsuario = (usuario?: UsuarioLocal | null) => {
+    return primeiroNome(nomeUsuario(usuario)).slice(0, 1).toUpperCase()
+  }
+
+  const rotaPerfilUsuario = (usuario?: UsuarioLocal | null) => {
+    const tipo = normalizar(usuario?.tipo)
+
+    if (tipo === 'guia') return '/guia/perfil'
+    if (tipo === 'admin') return '/admin/dashboard'
+
+    return '/cliente/perfil'
+  }
+
+  const rotaPrincipalUsuario = () => {
+    const tipo = normalizar(usuarioLogado?.tipo)
+
+    if (tipo === 'cliente') return '/cliente/dashboard'
+    if (tipo === 'guia') return '/guia/dashboard'
+    if (tipo === 'admin') return '/admin/dashboard'
+
+    return '/roteiros'
+  }
 
   const tituloRoteiro = (item?: Roteiro | null) => {
     return textoSeguro(item?.titulo || item?.nome, 'Roteiro PrussikTrails')
@@ -699,13 +777,25 @@ export default function DetalhesRoteiroPage() {
         body: JSON.stringify(payload)
       })
 
-      const data = await response.json().catch(() => null)
+      const respostaTexto = await response.text()
+      let data: any = null
+
+      try {
+        data = respostaTexto ? JSON.parse(respostaTexto) : null
+      } catch {
+        data = {
+          sucesso: false,
+          erro: respostaTexto || 'Resposta não JSON da API.',
+          raw: respostaTexto,
+        }
+      }
 
       if (!response.ok || data?.sucesso === false) {
         console.error('Erro detalhado ao criar reserva pela API:', {
           status: response.status,
           erro: data?.erro,
           detalhe: data?.detalhe,
+          resposta: data,
           payload
         })
 
@@ -746,12 +836,21 @@ export default function DetalhesRoteiroPage() {
     return (
       <main className="page">
         <header className="topbar">
-          <div className="brand">
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <div>
-              <strong>PrussikTrails</strong>
-              <span>Detalhes do roteiro</span>
-            </div>
+          <div className="topbarInner">
+            <div className="headerGhost" aria-hidden="true" />
+
+            <button
+              type="button"
+              className="brandCenter"
+              onClick={() => router.push('/roteiros')}
+              aria-label="Ir para roteiros"
+              title="PrussikTrails"
+            >
+              <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
+              <span className="brandSubtitle">Carregando roteiro outdoor</span>
+            </button>
+
+            <div className="headerGhost" aria-hidden="true" />
           </div>
         </header>
 
@@ -769,9 +868,22 @@ export default function DetalhesRoteiroPage() {
     return (
       <main className="page">
         <header className="topbar">
-          <button type="button" className="backButton" onClick={() => router.push('/roteiros')}>
-            ← Voltar
-          </button>
+          <div className="topbarInner">
+            <div className="headerGhost" aria-hidden="true" />
+
+            <button
+              type="button"
+              className="brandCenter"
+              onClick={() => router.push('/roteiros')}
+              aria-label="Ir para roteiros"
+              title="PrussikTrails"
+            >
+              <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
+              <span className="brandSubtitle">Roteiro não encontrado</span>
+            </button>
+
+            <div className="headerGhost" aria-hidden="true" />
+          </div>
         </header>
 
         <section className="emptyCard">
@@ -800,22 +912,46 @@ export default function DetalhesRoteiroPage() {
   return (
     <main className="page">
       <header className="topbar">
-        <button
-          type="button"
-          className="brand"
-          onClick={() => router.push('/roteiros')}
-          aria-label="Voltar para roteiros"
-        >
-          <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <div>
-            <strong>PrussikTrails</strong>
-            <span>Detalhes do roteiro</span>
-          </div>
-        </button>
+        <div className="topbarInner">
+          <div className="headerGhost" aria-hidden="true" />
 
-        <button type="button" className="ghostBtn" onClick={() => router.push('/roteiros')}>
-          ← Roteiros
-        </button>
+          <button
+            type="button"
+            className="brandCenter"
+            onClick={() => router.push(rotaPrincipalUsuario())}
+            aria-label="Voltar para o início"
+            title="PrussikTrails"
+          >
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
+            <span className="brandSubtitle">Detalhes do passaporte outdoor</span>
+          </button>
+
+          {usuarioLogado ? (
+            <button
+              type="button"
+              className="profileButton"
+              onClick={() => router.push(rotaPerfilUsuario(usuarioLogado))}
+              aria-label={`Abrir ${primeiroNome(nomeUsuario(usuarioLogado))}`}
+              title="Perfil"
+            >
+              {avatarUsuario(usuarioLogado) ? (
+                <img src={avatarUsuario(usuarioLogado)} alt={nomeUsuario(usuarioLogado)} />
+              ) : (
+                <span className="profileInitial">{inicialUsuario(usuarioLogado)}</span>
+              )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="loginButton"
+              onClick={() => router.push('/login')}
+              aria-label="Entrar"
+              title="Entrar"
+            >
+              Entrar
+            </button>
+          )}
+        </div>
       </header>
 
       <section className="hero">
@@ -1326,60 +1462,106 @@ const styles = `
     position: sticky;
     top: 0;
     z-index: 40;
+    background: rgba(255, 253, 247, 0.88);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(18px);
+    padding: 8px 14px;
+  }
+
+  .topbarInner {
+    width: 100%;
     max-width: 1180px;
     margin: 0 auto;
-    padding: 14px 18px;
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) 46px;
     align-items: center;
-    gap: 16px;
-    backdrop-filter: blur(18px);
+    gap: 8px;
   }
 
-  .brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
+  .headerGhost {
+    width: 42px;
+    height: 42px;
+  }
+
+  .brandCenter {
     min-width: 0;
-    border: 0;
+    border: none;
     background: transparent;
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .brand img {
-    width: 38px;
-    height: 38px;
-    object-fit: contain;
-    flex: 0 0 auto;
-  }
-
-  .brand div {
-    min-width: 0;
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    text-align: center;
+  }
+
+  .brandLogo {
+    width: clamp(178px, 54vw, 270px);
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    display: block;
+  }
+
+  .brandSubtitle {
+    color: #6b7280;
+    font-size: clamp(9px, 2.6vw, 11px);
     line-height: 1;
-  }
-
-  .brand strong {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: clamp(26px, 3.8vw, 44px);
-    font-weight: 700;
-    color: #203c2e;
-    line-height: 0.92;
-    letter-spacing: -0.055em;
-    white-space: nowrap;
-  }
-
-  .brand span {
-    margin-top: 5px;
-    font-size: clamp(10px, 1.4vw, 14px);
     font-weight: 850;
-    color: #7b8372;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.08em;
+    margin-top: -3px;
     text-transform: uppercase;
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .profileButton,
+  .loginButton {
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255,255,255,0.78);
+    color: #172018;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+    padding: 0;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+    transition: 0.2s ease;
+    font-size: 11px;
+    font-weight: 950;
+  }
+
+  .profileButton:hover,
+  .loginButton:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+  }
+
+  .profileButton img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .profileInitial {
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: #172018;
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 950;
   }
 
   .ghostBtn,
@@ -2540,23 +2722,29 @@ const styles = `
     }
 
     .topbar {
-      padding: 10px 12px;
+      padding: 7px 10px;
     }
 
-    .brand img {
-      width: 30px;
-      height: 30px;
+    .topbarInner {
+      grid-template-columns: 38px minmax(0, 1fr) 38px;
     }
 
-    .brand strong {
-      font-size: 25px;
-      line-height: 0.9;
+    .headerGhost,
+    .profileButton,
+    .loginButton {
+      width: 36px;
+      height: 36px;
+      box-shadow: none;
     }
 
-    .brand span {
-      font-size: 9px;
-      letter-spacing: 0.11em;
-      margin-top: 4px;
+    .brandLogo {
+      width: clamp(154px, 58vw, 218px);
+    }
+
+    .brandSubtitle {
+      font-size: 8.5px;
+      letter-spacing: 0.06em;
+      margin-top: -2px;
     }
 
     .ghostBtn {

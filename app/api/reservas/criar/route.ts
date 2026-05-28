@@ -14,7 +14,9 @@ function getSupabaseAdmin(): any {
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE
 
   if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Variáveis de ambiente do Supabase não configuradas.')
+    throw new Error(
+      'Variáveis de ambiente do Supabase não configuradas para a rota /api/reservas/criar.'
+    )
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
@@ -39,6 +41,23 @@ function normalizar(valor: unknown) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+}
+
+function serializarErro(error: any) {
+  return {
+    message: error?.message || null,
+    code: error?.code || null,
+    details: error?.details || null,
+    hint: error?.hint || null,
+    name: error?.name || null,
+    raw: (() => {
+      try {
+        return JSON.parse(JSON.stringify(error || {}))
+      } catch {
+        return String(error)
+      }
+    })(),
+  }
 }
 
 function erroDeColunaAusente(error: any) {
@@ -66,53 +85,28 @@ function extrairColunaAusente(error: any) {
   const matchAspas = mensagem.match(/'([^']+)'/)
   if (matchAspas?.[1]) return matchAspas[1]
 
-  const matchColumn = mensagem.match(/column\s+([a-zA-Z0-9_]+)/i)
+  const matchColumn = mensagem.match(/column\s+"?([a-zA-Z0-9_]+)"?/i)
   if (matchColumn?.[1]) return matchColumn[1]
 
   return ''
 }
 
-async function inserirReservaComFallback(params: {
-  supabase: any
-  payloadOriginal: AnyRecord
-}) {
-  const { supabase } = params
-  let payload: AnyRecord = { ...params.payloadOriginal }
+function colunaNotNull(error: any) {
+  if (error?.code !== '23502') return ''
 
-  for (let tentativa = 0; tentativa < 16; tentativa++) {
-    const { data, error } = await supabase
-      .from('reservas')
-      .insert(payload)
-      .select('*')
-      .maybeSingle()
+  const mensagem = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
 
-    if (!error) {
-      return data
-    }
-
-    if (!erroDeColunaAusente(error)) {
-      throw error
-    }
-
-    const coluna = extrairColunaAusente(error)
-
-    if (!coluna || !(coluna in payload)) {
-      throw error
-    }
-
-    delete payload[coluna]
-  }
-
-  throw new Error('Não foi possível criar a reserva após ajustar colunas opcionais.')
+  const match = mensagem.match(/null value in column "([^"]+)"/i)
+  return match?.[1] || ''
 }
 
 function dataNormalizada(valor: unknown) {
   const bruto = texto(valor)
-
   if (!bruto) return null
 
   const yyyyMmDd = bruto.slice(0, 10)
-
   if (/^\d{4}-\d{2}-\d{2}$/.test(yyyyMmDd)) return yyyyMmDd
 
   return null
@@ -131,10 +125,97 @@ function roteiroAtivo(roteiro: AnyRecord) {
   return status === 'ativo' || status === 'publicado' || status === 'publicada' || !status
 }
 
+async function inserirReservaComFallback(params: {
+  supabase: any
+  payloadOriginal: AnyRecord
+}) {
+  const { supabase } = params
+  let payload: AnyRecord = { ...params.payloadOriginal }
+
+  const statusAlternativos = [
+    { status: 'pendente', pagamento_status: 'pendente' },
+    { status: 'aguardando', pagamento_status: 'pendente' },
+    { status: 'aguardando_pagamento', pagamento_status: 'pendente' },
+    { status: 'pendente', pagamento_status: 'aguardando_pagamento' },
+  ]
+
+  const defaultsPorColuna: Record<string, any> = {
+    status: 'pendente',
+    pagamento_status: 'pendente',
+    forma_pagamento: 'pix',
+    quantidade_pessoas: 1,
+    quantidade: 1,
+    valor_total: 0,
+    valor: 0,
+    preco: 0,
+    saldo_utilizado: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  let ultimoErro: any = null
+
+  for (const statusPayload of statusAlternativos) {
+    payload = {
+      ...payload,
+      ...statusPayload,
+    }
+
+    for (let tentativa = 0; tentativa < 18; tentativa++) {
+      const { data, error } = await supabase
+        .from('reservas')
+        .insert(payload)
+        .select('*')
+        .maybeSingle()
+
+      if (!error) return data
+
+      ultimoErro = error
+
+      if (erroDeColunaAusente(error)) {
+        const coluna = extrairColunaAusente(error)
+
+        if (coluna && coluna in payload) {
+          delete payload[coluna]
+          continue
+        }
+      }
+
+      const colunaObrigatoria = colunaNotNull(error)
+
+      if (colunaObrigatoria && !(colunaObrigatoria in payload)) {
+        payload[colunaObrigatoria] =
+          defaultsPorColuna[colunaObrigatoria] ?? texto(defaultsPorColuna[colunaObrigatoria])
+        continue
+      }
+
+      if (String(error?.message || '').toLowerCase().includes('check constraint')) {
+        break
+      }
+
+      throw error
+    }
+  }
+
+  throw ultimoErro || new Error('Não foi possível criar a reserva.')
+}
+
+export async function GET() {
+  return NextResponse.json({
+    sucesso: true,
+    rota: '/api/reservas/criar',
+    metodo: 'GET',
+    mensagem: 'Rota ativa. Use POST para criar reserva.',
+    timestamp: new Date().toISOString(),
+  })
+}
+
 export async function POST(request: NextRequest) {
+  let body: AnyRecord = {}
+
   try {
     const supabase = getSupabaseAdmin()
-    const body = await request.json().catch(() => ({}))
+    body = await request.json().catch(() => ({}))
 
     const clienteId = texto(
       body.clienteId ||
@@ -162,6 +243,7 @@ export async function POST(request: NextRequest) {
         {
           sucesso: false,
           erro: 'clienteId é obrigatório para criar a reserva.',
+          recebido: body,
         },
         { status: 400 }
       )
@@ -172,6 +254,7 @@ export async function POST(request: NextRequest) {
         {
           sucesso: false,
           erro: 'roteiroId é obrigatório para criar a reserva.',
+          recebido: body,
         },
         { status: 400 }
       )
@@ -190,6 +273,7 @@ export async function POST(request: NextRequest) {
         {
           sucesso: false,
           erro: 'Cliente não encontrado. Faça login novamente.',
+          clienteId,
         },
         { status: 404 }
       )
@@ -200,6 +284,7 @@ export async function POST(request: NextRequest) {
         {
           sucesso: false,
           erro: 'A reserva só pode ser criada por um perfil de cliente.',
+          tipoEncontrado: cliente.tipo || null,
         },
         { status: 403 }
       )
@@ -218,6 +303,7 @@ export async function POST(request: NextRequest) {
         {
           sucesso: false,
           erro: 'Roteiro não encontrado.',
+          roteiroId,
         },
         { status: 404 }
       )
@@ -228,13 +314,15 @@ export async function POST(request: NextRequest) {
         {
           sucesso: false,
           erro: 'Este roteiro não está disponível para reserva no momento.',
+          statusRoteiro: roteiro.status || null,
+          ativo: roteiro.ativo ?? null,
         },
         { status: 409 }
       )
     }
 
     const valorUnitarioServidor = numero(
-      (roteiro as AnyRecord).preco || (roteiro as AnyRecord).valor
+      (roteiro as AnyRecord).preco || (roteiro as AnyRecord).valor || body.valorUnitario || body.valor_unitario
     )
 
     if (valorUnitarioServidor <= 0) {
@@ -242,6 +330,8 @@ export async function POST(request: NextRequest) {
         {
           sucesso: false,
           erro: 'Este roteiro está sem valor válido para reserva.',
+          preco: (roteiro as AnyRecord).preco ?? null,
+          valor: (roteiro as AnyRecord).valor ?? null,
         },
         { status: 409 }
       )
@@ -280,10 +370,13 @@ export async function POST(request: NextRequest) {
       cliente_id: clienteId,
       roteiro_id: roteiroId,
       quantidade_pessoas: quantidadePessoas,
+      quantidade: quantidadePessoas,
       valor_total: valorTotal,
+      valor: valorTotal,
       status: 'pendente',
       pagamento_status: 'pendente',
       forma_pagamento: 'pix',
+      saldo_utilizado: 0,
       data_trilha: dataTrilha,
       created_at: agora,
       updated_at: agora,
@@ -299,6 +392,7 @@ export async function POST(request: NextRequest) {
         {
           sucesso: false,
           erro: 'Reserva criada sem identificador. Verifique a tabela reservas.',
+          payloadTentado: payload,
         },
         { status: 500 }
       )
@@ -313,25 +407,21 @@ export async function POST(request: NextRequest) {
       quantidadePessoas,
     })
   } catch (error: any) {
+    const detalhe = serializarErro(error)
+
     console.error('Erro em POST /api/reservas/criar:', {
-      message: error?.message,
-      code: error?.code,
-      details: error?.details,
-      hint: error?.hint,
-      raw: error,
+      detalhe,
+      body,
     })
 
     return NextResponse.json(
       {
         sucesso: false,
         erro:
-          error?.message ||
+          detalhe.message ||
           'Erro interno ao criar reserva.',
-        detalhe: {
-          code: error?.code || null,
-          details: error?.details || null,
-          hint: error?.hint || null,
-        },
+        detalhe,
+        recebido: body,
       },
       { status: 500 }
     )
