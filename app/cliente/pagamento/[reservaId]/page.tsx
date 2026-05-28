@@ -13,6 +13,9 @@ type UsuarioLocal = {
   telefone?: string | null
   celular?: string | null
   tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
 type Reserva = {
@@ -147,10 +150,36 @@ export default function ClientePagamentoPage() {
         return
       }
 
-      setUser(parsedUser)
+      let usuarioAtualizado = parsedUser
 
-      const saldoAtual = await carregarSaldoCliente(parsedUser.id)
-      const reservaAtual = await carregarReserva(parsedUser.id)
+      try {
+        const { data: perfilCliente } = await supabase
+          .from('users')
+          .select('nome, name, email, avatar_url, foto_url, imagem_url')
+          .eq('id', parsedUser.id)
+          .maybeSingle()
+
+        if (perfilCliente) {
+          usuarioAtualizado = {
+            ...parsedUser,
+            nome: perfilCliente.nome || parsedUser.nome || null,
+            name: perfilCliente.name || parsedUser.name || null,
+            email: perfilCliente.email || parsedUser.email || null,
+            avatar_url: perfilCliente.avatar_url || parsedUser.avatar_url || null,
+            foto_url: perfilCliente.foto_url || parsedUser.foto_url || null,
+            imagem_url: perfilCliente.imagem_url || parsedUser.imagem_url || null,
+          }
+
+          localStorage.setItem('user', JSON.stringify(usuarioAtualizado))
+        }
+      } catch (error) {
+        console.warn('Não foi possível sincronizar avatar do cliente:', error)
+      }
+
+      setUser(usuarioAtualizado)
+
+      const saldoAtual = await carregarSaldoCliente(usuarioAtualizado.id)
+      const reservaAtual = await carregarReserva(usuarioAtualizado.id)
 
       if (reservaAtual) {
         const jaPago = pagamentoEstaConfirmado(reservaAtual)
@@ -178,7 +207,7 @@ export default function ClientePagamentoPage() {
           return
         }
 
-        await gerarPixSeNecessario(reservaAtual, parsedUser)
+        await gerarPixSeNecessario(reservaAtual, usuarioAtualizado)
         await verificarPagamento(true)
       }
     } catch (error) {
@@ -268,6 +297,15 @@ export default function ClientePagamentoPage() {
       saldoUtilizadoReserva(reserva) <= 0 &&
       !pagamentoEstaConfirmado(reserva)
     )
+  }
+
+  const avatarCliente = () => {
+    return user?.avatar_url || user?.foto_url || user?.imagem_url || ''
+  }
+
+  const inicialCliente = () => {
+    const nome = String(user?.nome || user?.name || user?.email || 'C').trim()
+    return (nome.slice(0, 1) || 'C').toUpperCase()
   }
 
   const formatarData = (valor?: string | null) => {
@@ -885,82 +923,97 @@ export default function ClientePagamentoPage() {
           position: sticky;
           top: 0;
           z-index: 40;
-          background: rgba(255, 253, 247, 0.86);
+          background: rgba(255, 253, 247, 0.88);
           border-bottom: 1px solid rgba(15, 23, 42, 0.06);
           backdrop-filter: blur(18px);
-          padding: 10px 16px;
+          padding: 8px 12px;
         }
 
         .headerInner {
           max-width: 1180px;
           margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: 42px minmax(0, 1fr) 42px;
           align-items: center;
-          gap: 12px;
+          gap: 8px;
+        }
+
+        .headerSpacer {
+          width: 42px;
+          height: 42px;
         }
 
         .brand {
-          display: flex;
+          justify-self: center;
+          display: inline-flex;
+          flex-direction: column;
           align-items: center;
-          gap: 10px;
-          cursor: pointer;
+          justify-content: center;
+          gap: 3px;
           min-width: 0;
+          max-width: 100%;
+          border: 0;
+          background: transparent;
+          padding: 0;
+          cursor: pointer;
+          text-align: center;
         }
 
         .brand img {
-          height: 34px;
-          width: auto;
+          width: clamp(152px, 42vw, 235px);
+          max-width: 100%;
+          height: auto;
+          max-height: 52px;
           object-fit: contain;
           display: block;
-          flex: 0 0 auto;
-        }
-
-        .brandTitle {
-          font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(25px, 3.4vw, 38px);
-          font-weight: 700;
-          color: #203c2e;
-          line-height: 0.9;
-          letter-spacing: -0.055em;
         }
 
         .brandSub {
           color: #7b8372;
-          font-size: 9px;
-          font-weight: 850;
-          margin-top: 5px;
-          letter-spacing: 0.12em;
+          font-size: clamp(8px, 1.6vw, 10px);
+          font-weight: 900;
+          letter-spacing: clamp(0.08em, 0.8vw, 0.16em);
           text-transform: uppercase;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: min(68vw, 420px);
         }
 
-        .headerActions {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-        }
-
-        .iconBtn {
-          height: 38px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          background: rgba(255,255,255,0.78);
+        .profileAvatarBtn {
+          justify-self: end;
+          width: 42px;
+          height: 42px;
           border-radius: 999px;
-          padding: 0 13px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: rgba(255,255,255,0.86);
+          color: #1f3f2d;
+          box-shadow: 0 10px 22px rgba(15,23,42,0.08);
+          cursor: pointer;
+          overflow: hidden;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 900;
+          padding: 0;
           transition: 0.2s ease;
-          color: #172018;
-          white-space: nowrap;
         }
 
-        .iconBtn.primary {
-          background: #172018;
-          color: #ffffff;
-          border-color: #172018;
+        .profileAvatarBtn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.13);
+        }
+
+        .profileAvatarBtn img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .profileAvatarBtn span {
+          font-size: 15px;
+          font-weight: 950;
+          letter-spacing: -0.04em;
         }
 
         .container {
@@ -1445,16 +1498,28 @@ export default function ClientePagamentoPage() {
 
         @media (max-width: 720px) {
           .header {
-            padding: 9px 12px;
+            padding: 7px 10px;
           }
 
-          .brandTitle,
+          .headerInner {
+            grid-template-columns: 38px minmax(0, 1fr) 38px;
+          }
+
+          .headerSpacer,
+          .profileAvatarBtn {
+            width: 38px;
+            height: 38px;
+          }
+
+          .brand img {
+            width: clamp(142px, 50vw, 205px);
+            max-height: 46px;
+          }
+
           .brandSub {
-            display: none;
-          }
-
-          .headerActions .hideMobile {
-            display: none;
+            max-width: 66vw;
+            font-size: 8px;
+            letter-spacing: 0.09em;
           }
 
           .container {
@@ -1482,7 +1547,12 @@ export default function ClientePagamentoPage() {
           }
 
           .brand img {
-            height: 38px;
+            width: clamp(132px, 54vw, 190px);
+            max-height: 42px;
+          }
+
+          .brandSub {
+            max-width: 62vw;
           }
 
           .paymentValue {
@@ -1497,35 +1567,31 @@ export default function ClientePagamentoPage() {
 
       <header className="header">
         <div className="headerInner">
-          <div
+          <div className="headerSpacer" aria-hidden="true" />
+
+          <button
+            type="button"
             className="brand"
             onClick={() => router.push('/cliente/dashboard')}
+            aria-label="Voltar para a dashboard do cliente"
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+            <span className="brandSub">Pagamento seguro do seu passaporte outdoor</span>
+          </button>
 
-            <div>
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Pagamento da reserva</div>
-            </div>
-          </div>
-
-          <div className="headerActions">
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/cliente/minhas-reservas')}
-            >
-              Reservas
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn primary"
-              onClick={() => router.push('/cliente/perfil')}
-            >
-              Perfil
-            </button>
-          </div>
+          <button
+            type="button"
+            className="profileAvatarBtn"
+            onClick={() => router.push('/cliente/perfil')}
+            title="Perfil"
+            aria-label="Abrir perfil e configurações"
+          >
+            {avatarCliente() ? (
+              <img src={avatarCliente()} alt={user?.nome || user?.email || 'Perfil'} />
+            ) : (
+              <span>{inicialCliente()}</span>
+            )}
+          </button>
         </div>
       </header>
 
@@ -1690,7 +1756,7 @@ export default function ClientePagamentoPage() {
                   <div className="saldoValue">{formatarMoeda(saldoDisponivel())}</div>
                 </div>
 
-                <div className="saldoBadge">Carteira Prussik</div>
+                <div className="saldoBadge">Crédito de Jornada</div>
               </div>
 
               <p className="saldoText">

@@ -185,6 +185,7 @@ export default function DetalhesRoteiroPage() {
   const [usuarioLogado, setUsuarioLogado] = useState<UsuarioLocal | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [reservando, setReservando] = useState(false)
+  const [modalReservaAberto, setModalReservaAberto] = useState(false)
   const [quantidadePessoas, setQuantidadePessoas] = useState(1)
   const [mensagem, setMensagem] = useState('')
   const [fotoSelecionada, setFotoSelecionada] = useState(0)
@@ -628,6 +629,31 @@ export default function DetalhesRoteiroPage() {
     return texto.charAt(0).toUpperCase() + texto.slice(1)
   }
 
+  function abrirModalReserva() {
+    if (!roteiro) return
+
+    const idLogado = extrairUsuarioId(usuarioLogado)
+
+    if (!idLogado) {
+      localStorage.setItem('redirectAfterLogin', `/roteiros/${id}`)
+      router.push('/login')
+      return
+    }
+
+    if (usuarioLogado?.tipo !== 'cliente') {
+      setMensagem('Entre como cliente para reservar este roteiro.')
+      return
+    }
+
+    if (esgotado) {
+      setMensagem('Este roteiro está esgotado para a data disponível.')
+      return
+    }
+
+    setMensagem('')
+    setModalReservaAberto(true)
+  }
+
   async function handleReservar() {
     if (!roteiro) return
 
@@ -656,36 +682,61 @@ export default function DetalhesRoteiroPage() {
       const quantidade = Math.max(1, Number(quantidadePessoas || 1))
 
       const payload = {
-        cliente_id: idLogado,
-        roteiro_id: roteiro.id,
-        data_trilha: String(dataPrincipal(roteiro) || '').slice(0, 10) || null,
-        quantidade_pessoas: quantidade,
-        valor_total: precoRoteiro(roteiro) * quantidade,
-        status: 'pendente',
-        pagamento_status: 'pendente',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        clienteId: idLogado,
+        roteiroId: roteiro.id,
+        dataTrilha: String(dataPrincipal(roteiro) || '').slice(0, 10) || null,
+        quantidadePessoas: quantidade,
+        valorUnitario: precoRoteiro(roteiro),
+        valorTotal: precoRoteiro(roteiro) * quantidade,
+        origem: 'roteiro_detalhe'
       }
 
-      const { data, error } = await supabase
-        .from('reservas')
-        .insert(payload)
-        .select('id')
-        .maybeSingle()
+      const response = await fetch('/api/reservas/criar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      })
 
-      if (error) throw error
+      const data = await response.json().catch(() => null)
 
-      const reserva = data as ReservaCriada | null
+      if (!response.ok || data?.sucesso === false) {
+        console.error('Erro detalhado ao criar reserva pela API:', {
+          status: response.status,
+          erro: data?.erro,
+          detalhe: data?.detalhe,
+          payload
+        })
+
+        throw new Error(
+          data?.erro ||
+            data?.message ||
+            'Não foi possível criar a reserva agora.'
+        )
+      }
+
+      const reserva = (data?.reserva || data) as ReservaCriada | null
 
       if (!reserva?.id) {
         router.push('/cliente/minhas-reservas')
         return
       }
 
+      setModalReservaAberto(false)
       router.push(`/cliente/pagamento/${reserva.id}`)
-    } catch (error) {
-      console.error('Erro ao reservar roteiro:', error)
-      setMensagem('Não foi possível criar a reserva agora.')
+    } catch (error: any) {
+      console.error('Erro ao reservar roteiro:', {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+        raw: error
+      })
+      setMensagem(
+        error?.message ||
+          'Não foi possível criar a reserva agora. Confira os dados e tente novamente.'
+      )
     } finally {
       setReservando(false)
     }
@@ -839,7 +890,7 @@ export default function DetalhesRoteiroPage() {
             <strong>{formatarMoeda(precoRoteiro(roteiro))}</strong>
             <button
               type="button"
-              onClick={handleReservar}
+              onClick={abrirModalReserva}
               disabled={reservando || esgotado}
             >
               {esgotado ? 'Esgotado' : reservando ? 'Reservando...' : 'Reservar'}
@@ -1106,7 +1157,7 @@ export default function DetalhesRoteiroPage() {
             <button
               type="button"
               className="reserveBtn"
-              onClick={handleReservar}
+              onClick={abrirModalReserva}
               disabled={reservando || esgotado}
             >
               {esgotado ? 'Roteiro esgotado' : reservando ? 'Criando reserva...' : 'Reservar agora'}
@@ -1155,6 +1206,104 @@ export default function DetalhesRoteiroPage() {
           )}
         </aside>
       </section>
+
+      {modalReservaAberto && roteiro && (
+        <div className="modalOverlay" role="dialog" aria-modal="true" aria-label="Revisar reserva">
+          <div className="modalCard">
+            <div className="modalHead">
+              <div>
+                <span>Reserva PrussikTrails</span>
+                <h2>Revise sua jornada</h2>
+                <p>Confira os dados antes de gerar o QR Code PIX da sua reserva.</p>
+              </div>
+
+              <button
+                type="button"
+                className="modalClose"
+                onClick={() => setModalReservaAberto(false)}
+                disabled={reservando}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modalBody">
+              <div className="modalRoute">
+                <div className="modalThumb">
+                  {fotoAtual ? (
+                    <img src={fotoAtual} alt={tituloRoteiro(roteiro)} />
+                  ) : (
+                    <span>RT</span>
+                  )}
+                </div>
+
+                <div>
+                  <strong>{tituloRoteiro(roteiro)}</strong>
+                  <small>{localRoteiro(roteiro)}</small>
+                  <small>{dataTexto}{horaTexto ? ` · ${horaTexto}` : ''}</small>
+                </div>
+              </div>
+
+              <div className="modalInfoGrid">
+                <div>
+                  <span>Valor por pessoa</span>
+                  <strong>{formatarMoeda(precoRoteiro(roteiro))}</strong>
+                </div>
+
+                <div>
+                  <span>Pessoas</span>
+                  <strong>{quantidadePessoas}</strong>
+                </div>
+
+                <div>
+                  <span>Total da reserva</span>
+                  <strong>{formatarMoeda(valorTotal)}</strong>
+                </div>
+              </div>
+
+              <label className="modalQuantity">
+                <span>Quantidade de pessoas</span>
+                <select
+                  value={quantidadePessoas}
+                  onChange={(event) => setQuantidadePessoas(Number(event.target.value))}
+                  disabled={reservando || esgotado}
+                >
+                  {Array.from({ length: Math.max(1, Math.min(12, vagasRestantes || 12)) }).map((_, index) => (
+                    <option key={index + 1} value={index + 1}>
+                      {index + 1}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <p className="modalNote">
+                Ao confirmar, criaremos a reserva e abriremos a tela de pagamento para gerar o QR Code PIX.
+              </p>
+
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="modalCancel"
+                  onClick={() => setModalReservaAberto(false)}
+                  disabled={reservando}
+                >
+                  Voltar
+                </button>
+
+                <button
+                  type="button"
+                  className="modalConfirm"
+                  onClick={handleReservar}
+                  disabled={reservando || esgotado}
+                >
+                  {reservando ? 'Criando reserva...' : 'Confirmar e gerar QR Code PIX'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{styles}</style>
     </main>
@@ -2067,6 +2216,231 @@ const styles = `
     box-shadow: 0 18px 36px rgba(32, 60, 46, 0.14);
   }
 
+
+  .modalOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(23, 32, 24, 0.58);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+
+  .modalCard {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 36px);
+    overflow: auto;
+    border-radius: 34px;
+    background: #fffdf7;
+    border: 1px solid rgba(255,255,255,0.28);
+    box-shadow: 0 30px 90px rgba(15, 23, 42, 0.34);
+  }
+
+  .modalHead {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 24px;
+    color: #ffffff;
+    background:
+      radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 36%),
+      linear-gradient(135deg, #172018, #203c2e);
+  }
+
+  .modalHead span {
+    display: inline-flex;
+    color: #bef264;
+    font-size: 11px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 8px;
+  }
+
+  .modalHead h2 {
+    margin: 0;
+    font-size: 31px;
+    line-height: 0.95;
+    font-weight: 950;
+    letter-spacing: -0.07em;
+  }
+
+  .modalHead p {
+    margin: 9px 0 0;
+    color: rgba(255,255,255,0.78);
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .modalClose {
+    width: 38px;
+    height: 38px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.10);
+    color: #ffffff;
+    border-radius: 999px;
+    font-size: 24px;
+    font-weight: 850;
+    line-height: 1;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+
+  .modalBody {
+    padding: 20px;
+  }
+
+  .modalRoute {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 13px;
+    align-items: center;
+    padding: 12px;
+    border-radius: 24px;
+    background: #f6f7f1;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    margin-bottom: 13px;
+  }
+
+  .modalThumb {
+    width: 86px;
+    height: 86px;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #e8eadf;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    font-weight: 950;
+  }
+
+  .modalThumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .modalRoute strong {
+    display: block;
+    color: #172018;
+    font-size: 16px;
+    line-height: 1.25;
+    font-weight: 950;
+  }
+
+  .modalRoute small {
+    display: block;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 750;
+    margin-top: 4px;
+  }
+
+  .modalInfoGrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 9px;
+    margin-bottom: 13px;
+  }
+
+  .modalInfoGrid div {
+    background: #fffdf7;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    border-radius: 19px;
+    padding: 12px;
+  }
+
+  .modalInfoGrid span {
+    display: block;
+    color: #7b8372;
+    font-size: 10px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .modalInfoGrid strong {
+    display: block;
+    margin-top: 5px;
+    color: #172018;
+    font-size: 15px;
+    font-weight: 950;
+  }
+
+  .modalQuantity {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    background: #f6f7f1;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    border-radius: 22px;
+    padding: 13px 14px;
+    color: #172018;
+    font-size: 13px;
+    font-weight: 950;
+    margin-bottom: 13px;
+  }
+
+  .modalQuantity select {
+    border: 1px solid rgba(15,23,42,0.10);
+    background: #ffffff;
+    color: #172018;
+    border-radius: 999px;
+    padding: 10px 13px;
+    font-weight: 950;
+    outline: none;
+  }
+
+  .modalNote {
+    margin: 0 0 15px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .modalActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .modalCancel,
+  .modalConfirm {
+    border: none;
+    border-radius: 999px;
+    padding: 13px 16px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .modalCancel {
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  .modalConfirm {
+    background: #172018;
+    color: #ffffff;
+  }
+
+  .modalCancel:disabled,
+  .modalConfirm:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+  }
+
+
   @media (max-width: 940px) {
     .hero,
     .contentGrid {
@@ -2121,6 +2495,50 @@ const styles = `
   }
 
   @media (max-width: 640px) {
+
+    .modalOverlay {
+      padding: 10px;
+      align-items: flex-end;
+    }
+
+    .modalCard {
+      border-radius: 28px 28px 22px 22px;
+      max-height: calc(100vh - 20px);
+    }
+
+    .modalHead {
+      padding: 20px;
+    }
+
+    .modalHead h2 {
+      font-size: 27px;
+    }
+
+    .modalRoute {
+      grid-template-columns: 72px minmax(0, 1fr);
+    }
+
+    .modalThumb {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+    }
+
+    .modalInfoGrid {
+      grid-template-columns: 1fr;
+    }
+
+    .modalQuantity {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .modalQuantity select,
+    .modalCancel,
+    .modalConfirm {
+      width: 100%;
+    }
+
     .topbar {
       padding: 10px 12px;
     }

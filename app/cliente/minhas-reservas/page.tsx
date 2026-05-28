@@ -13,6 +13,9 @@ type UsuarioLocal = {
   name?: string | null
   email?: string | null
   tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
 type Reserva = Record<string, any>
@@ -290,6 +293,14 @@ function primeiroNome(usuario?: UsuarioLocal | null) {
   return nome.split(' ')[0] || 'aventureiro'
 }
 
+function avatarUsuario(usuario?: UsuarioLocal | null) {
+  return String(usuario?.avatar_url || usuario?.foto_url || usuario?.imagem_url || '').trim()
+}
+
+function inicialUsuario(usuario?: UsuarioLocal | null) {
+  return primeiroNome(usuario).slice(0, 1).toUpperCase()
+}
+
 function resumoMovimentacao(mov: MovimentacaoSaldo) {
   const tipo = normalizar(mov.tipo)
 
@@ -351,9 +362,33 @@ export default function ClienteMinhasReservasPage() {
         return
       }
 
-      const usuarioNormalizado = {
+      let usuarioNormalizado: UsuarioLocal = {
         ...usuario,
         id: usuarioId,
+      }
+
+      try {
+        const { data: perfilAtualizado, error: perfilError } = await supabase
+          .from('users')
+          .select('nome, name, email, avatar_url, foto_url, imagem_url')
+          .eq('id', usuarioId)
+          .maybeSingle()
+
+        if (!perfilError && perfilAtualizado) {
+          usuarioNormalizado = {
+            ...usuarioNormalizado,
+            nome: perfilAtualizado.nome || usuarioNormalizado.nome || null,
+            name: perfilAtualizado.name || usuarioNormalizado.name || null,
+            email: perfilAtualizado.email || usuarioNormalizado.email || null,
+            avatar_url: perfilAtualizado.avatar_url || usuarioNormalizado.avatar_url || null,
+            foto_url: perfilAtualizado.foto_url || usuarioNormalizado.foto_url || null,
+            imagem_url: perfilAtualizado.imagem_url || usuarioNormalizado.imagem_url || null,
+          }
+
+          localStorage.setItem('user', JSON.stringify(usuarioNormalizado))
+        }
+      } catch (avatarError) {
+        console.warn('Não foi possível sincronizar o avatar do cliente:', avatarError)
       }
 
       setUser(usuarioNormalizado)
@@ -764,47 +799,52 @@ export default function ClienteMinhasReservasPage() {
         .headerInner {
           max-width: 1180px;
           margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: 44px minmax(0, 1fr) 44px;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
+        }
+
+        .headerSpacer {
+          width: 44px;
+          height: 44px;
         }
 
         .brand {
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
           min-width: 0;
+          width: 100%;
           border: 0;
           background: transparent;
           cursor: pointer;
-          text-align: left;
+          text-align: center;
           padding: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 3px;
         }
 
-        .brand img {
-          width: 34px;
-          height: 34px;
+        .brandLogo {
+          width: clamp(148px, 42vw, 238px);
+          max-width: 100%;
+          height: auto;
           object-fit: contain;
-          flex: 0 0 auto;
-        }
-
-        .brandTitle {
-          font-family: Georgia, 'Times New Roman', serif;
-          color: #203c2e;
-          font-size: clamp(25px, 3.5vw, 38px);
-          line-height: 0.9;
-          font-weight: 700;
-          letter-spacing: -0.055em;
-          white-space: nowrap;
+          display: block;
+          margin: 0 auto;
+          filter: drop-shadow(0 8px 18px rgba(32, 60, 46, 0.08));
         }
 
         .brandSub {
-          margin-top: 3px;
+          display: block;
+          max-width: min(78vw, 360px);
+          overflow: hidden;
+          text-overflow: ellipsis;
           color: #7b8372;
-          font-size: 9px;
-          font-weight: 900;
-          letter-spacing: 0.12em;
+          font-size: clamp(8px, 1.45vw, 11px);
+          line-height: 1.15;
+          font-weight: 950;
+          letter-spacing: 0.14em;
           text-transform: uppercase;
           white-space: nowrap;
         }
@@ -812,13 +852,14 @@ export default function ClienteMinhasReservasPage() {
         .headerActions {
           display: flex;
           align-items: center;
+          justify-content: flex-end;
           gap: 8px;
         }
 
         .iconBtn {
           min-width: 40px;
           height: 40px;
-          padding: 0 14px;
+          padding: 0 12px;
           border: 1px solid rgba(32, 60, 46, 0.12);
           border-radius: 999px;
           background: rgba(255, 255, 255, 0.68);
@@ -826,6 +867,39 @@ export default function ClienteMinhasReservasPage() {
           font-size: 13px;
           font-weight: 950;
           cursor: pointer;
+          box-shadow: 0 10px 22px rgba(32, 60, 46, 0.07);
+          transition: 0.2s ease;
+        }
+
+        .iconBtn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 14px 28px rgba(32, 60, 46, 0.12);
+        }
+
+        .profileBtn {
+          width: 40px;
+          min-width: 40px;
+          padding: 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          background: rgba(255, 255, 255, 0.84);
+        }
+
+        .profileBtn img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .profileBtn span {
+          color: #203c2e;
+          font-size: 14px;
+          font-weight: 950;
+          line-height: 1;
+          letter-spacing: -0.04em;
         }
 
         .container {
@@ -1463,17 +1537,36 @@ export default function ClienteMinhasReservasPage() {
             padding: 14px 12px 40px;
           }
 
-          .brand img {
-            width: 30px;
-            height: 30px;
+          .header {
+            padding: 7px 9px;
           }
 
-          .brandTitle {
-            font-size: 24px;
+          .headerInner {
+            grid-template-columns: 36px minmax(0, 1fr) 36px;
+            gap: 6px;
+          }
+
+          .headerSpacer {
+            width: 36px;
+            height: 36px;
+          }
+
+          .brandLogo {
+            width: clamp(132px, 58vw, 196px);
           }
 
           .brandSub {
-            display: none;
+            max-width: calc(100vw - 96px);
+            font-size: 7.8px;
+            letter-spacing: 0.10em;
+          }
+
+          .iconBtn,
+          .profileBtn {
+            width: 36px;
+            min-width: 36px;
+            height: 36px;
+            box-shadow: none;
           }
 
           .hideMobile {
@@ -1532,35 +1625,38 @@ export default function ClienteMinhasReservasPage() {
 
       <header className="header">
         <div className="headerInner">
+          <div className="headerSpacer" aria-hidden="true" />
+
           <button
             type="button"
             className="brand"
             onClick={() => router.push('/cliente/dashboard')}
-            aria-label="Voltar para dashboard do cliente"
+            aria-label="Voltar para a dashboard do cliente"
           >
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <div>
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Suas reservas</div>
-            </div>
+            <img
+              className="brandLogo"
+              src="/logo-prussik-display.png"
+              alt="PrussikTrails"
+            />
+            <span className="brandSub">Reservas do seu passaporte outdoor</span>
           </button>
 
           <div className="headerActions">
             <button
               type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/roteiros')}
-            >
-              Explorar
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn"
+              className="iconBtn profileBtn"
               onClick={() => router.push('/cliente/perfil')}
               title="Perfil"
+              aria-label="Abrir perfil"
             >
-              👤
+              {avatarUsuario(user) ? (
+                <img
+                  src={avatarUsuario(user)}
+                  alt={user?.nome || user?.name || user?.email || 'Perfil do cliente'}
+                />
+              ) : (
+                <span>{inicialUsuario(user)}</span>
+              )}
             </button>
           </div>
         </div>

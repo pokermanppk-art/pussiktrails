@@ -420,29 +420,41 @@ export default function RoteirosPage() {
       const valorTotal = valorUnitario * quantidade
 
       const payload = {
-        cliente_id: user.id,
-        roteiro_id: roteiroSelecionado.id,
-        quantidade_pessoas: quantidade,
-        valor_total: valorTotal,
-        status: 'pendente',
-        pagamento_status: 'pendente',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        clienteId: user.id,
+        roteiroId: roteiroSelecionado.id,
+        quantidadePessoas: quantidade,
+        valorUnitario,
+        valorTotal,
+        origem: 'roteiros'
       }
 
-      const { data, error } = await supabase
-        .from('reservas')
-        .insert(payload)
-        .select('id')
-        .maybeSingle()
+      const response = await fetch('/api/reservas/criar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      })
 
-      if (error) {
-        console.error('Erro ao criar reserva:', error)
-        setMensagem('Não foi possível criar a reserva agora.')
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.error('Erro ao criar reserva pela API:', {
+          status: response.status,
+          erro: data?.erro,
+          detalhe: data?.detalhe,
+          payload
+        })
+
+        setMensagem(
+          data?.erro ||
+            data?.message ||
+            'Não foi possível criar a reserva agora. Confira os dados e tente novamente.'
+        )
         return
       }
 
-      const reserva = data as ReservaCriada | null
+      const reserva = (data?.reserva || data) as ReservaCriada | null
 
       if (!reserva?.id) {
         setMensagem('Reserva criada, mas não foi possível localizar o pagamento.')
@@ -1526,12 +1538,14 @@ export default function RoteirosPage() {
         <div className="modalOverlay">
           <div className="modal">
             <div className="modalHeader">
-              <h2 className="modalTitle">Confirmar reserva</h2>
-              <p className="modalText">{tituloRoteiro(roteiroSelecionado)}</p>
+              <h2 className="modalTitle">Revise sua reserva</h2>
+              <p className="modalText">Confira os detalhes antes de gerar o QR Code PIX da sua jornada.</p>
             </div>
 
             <div className="modalBody">
               <div className="modalInfo">
+                <strong>Roteiro:</strong> {tituloRoteiro(roteiroSelecionado)}
+                <br />
                 <strong>Local:</strong> {localRoteiro(roteiroSelecionado)}
                 <br />
                 <strong>Data:</strong> {formatarData(dataRoteiro(roteiroSelecionado))}{' '}
@@ -1577,6 +1591,8 @@ export default function RoteirosPage() {
               <div className="modalInfo">
                 <strong>Total:</strong>{' '}
                 {formatarMoeda(precoRoteiro(roteiroSelecionado) * quantidadePessoas)}
+                <br />
+                <span>Ao confirmar, criaremos a reserva e abriremos a tela de pagamento para gerar o QR Code PIX.</span>
               </div>
 
               <div className="modalActions">
@@ -1595,7 +1611,7 @@ export default function RoteirosPage() {
                   onClick={confirmarReserva}
                   disabled={!!reservandoId}
                 >
-                  {reservandoId ? 'Criando reserva...' : 'Ir para pagamento'}
+                  {reservandoId ? 'Criando reserva...' : 'Confirmar e gerar QR Code PIX'}
                 </button>
               </div>
             </div>
