@@ -1,17 +1,16 @@
 {
-  "id": "/login",
+  "id": "/",
   "name": "PrussikTrails",
-  "short_name": "PrussikTrails",
-  "description": "Plataforma de aventuras e trilhas conectando guias especializados e aventureiros.",
+  "short_name": "Prussik",
+  "description": "Aplicativo de aventuras outdoor que conecta guias especializados e aventureiros.",
   "lang": "pt-BR",
   "dir": "ltr",
   "start_url": "/login",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "browser"],
   "orientation": "portrait",
-  "background_color": "#ffffff",
-  "theme_color": "#dc2626",
+  "background_color": "#fffdf7",
+  "theme_color": "#203C2E",
   "categories": ["travel", "sports", "lifestyle"],
   "icons": [
     {
@@ -31,6 +30,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "shortcuts": [
@@ -48,10 +53,10 @@
       ]
     },
     {
-      "name": "Minhas Reservas",
-      "short_name": "Reservas",
-      "description": "Acessar as reservas do cliente",
-      "url": "/cliente/minhas-reservas",
+      "name": "Roteiros",
+      "short_name": "Roteiros",
+      "description": "Explorar roteiros disponíveis",
+      "url": "/roteiros",
       "icons": [
         {
           "src": "/icon-192.png",
@@ -61,10 +66,10 @@
       ]
     },
     {
-      "name": "Roteiros",
-      "short_name": "Roteiros",
-      "description": "Explorar roteiros disponíveis",
-      "url": "/roteiros",
+      "name": "Minhas Reservas",
+      "short_name": "Reservas",
+      "description": "Acessar as reservas do cliente",
+      "url": "/cliente/minhas-reservas",
       "icons": [
         {
           "src": "/icon-192.png",
