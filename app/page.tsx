@@ -41,82 +41,102 @@ export default function HomePage() {
           position: sticky;
           top: 0;
           z-index: 20;
-          background: rgba(255, 253, 247, 0.86);
+          background: rgba(255, 253, 247, 0.88);
           backdrop-filter: blur(18px);
           border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-          padding: 12px 18px;
+          padding: 10px 16px;
         }
 
         .headerInner {
           max-width: 1180px;
           margin: 0 auto;
-          display: flex;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
           align-items: center;
-          justify-content: space-between;
-          gap: 16px;
+          gap: 12px;
         }
 
         .brand {
-          display: flex;
+          border: 0;
+          background: transparent;
+          padding: 0;
+          display: inline-flex;
           align-items: center;
-          gap: 10px;
+          gap: clamp(12px, 2.2vw, 18px);
           min-width: 0;
+          width: fit-content;
+          max-width: 100%;
+          cursor: pointer;
+          color: inherit;
+          text-align: left;
         }
 
-        .brand img {
-          height: 46px;
-          width: auto;
+        .brandLogoWrap {
+          width: clamp(72px, 10vw, 96px);
+          height: clamp(72px, 10vw, 96px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          flex: 0 0 auto;
+          overflow: visible;
+        }
+
+        .brandLogoWrap img {
+          width: 100%;
+          height: 100%;
           object-fit: contain;
           display: block;
+          transform: scale(1.22);
+          transform-origin: center;
         }
 
         .brandText {
           min-width: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: visible;
         }
 
         .brandName {
-          font-size: 20px;
-          font-weight: 950;
-          color: #dc2626;
-          line-height: 1;
-          letter-spacing: -0.05em;
-        }
-
-        .brandSub {
-          margin-top: 3px;
-          color: #64748b;
-          font-size: 11px;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: clamp(34px, 5.8vw, 56px);
           font-weight: 800;
+          color: #1f3f2d;
+          line-height: 1.04;
+          letter-spacing: -0.045em;
+          white-space: nowrap;
+          overflow: visible;
+          text-overflow: unset;
+          padding-right: 6px;
+          max-width: calc(100vw - 190px);
         }
 
         .headerActions {
           display: flex;
           align-items: center;
-          gap: 8px;
+          justify-content: flex-end;
+          min-width: 0;
         }
 
         .navButton {
           border: 1px solid rgba(15, 23, 42, 0.08);
-          background: rgba(255, 255, 255, 0.78);
-          color: #172018;
+          background: #172018;
+          color: #ffffff;
           border-radius: 999px;
-          padding: 10px 14px;
+          padding: 10px 15px;
           font-size: 12px;
           font-weight: 950;
           cursor: pointer;
           transition: 0.2s ease;
           white-space: nowrap;
+          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
         }
 
         .navButton:hover {
           transform: translateY(-1px);
-          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
-        }
-
-        .navButton.primary {
-          background: #172018;
-          color: #ffffff;
-          border-color: #172018;
+          box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
         }
 
         .container {
@@ -449,15 +469,38 @@ export default function HomePage() {
 
         @media (max-width: 720px) {
           .header {
-            padding: 10px 12px;
+            padding: 8px 10px;
           }
 
-          .brandSub {
-            display: none;
+          .headerInner {
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
           }
 
-          .headerActions .desktopOnly {
-            display: none;
+          .brand {
+            gap: 8px;
+          }
+
+          .brandLogoWrap {
+            width: 58px;
+            height: 58px;
+          }
+
+          .brandLogoWrap img {
+            transform: scale(1.18);
+          }
+
+          .brandName {
+            font-size: clamp(28px, 7.2vw, 36px);
+            line-height: 1.04;
+            letter-spacing: -0.04em;
+            max-width: calc(100vw - 132px);
+            padding-right: 5px;
+          }
+
+          .navButton {
+            padding: 9px 12px;
+            font-size: 11px;
           }
 
           .container {
@@ -483,17 +526,26 @@ export default function HomePage() {
           }
         }
 
-        @media (max-width: 460px) {
-          .brand img {
-            height: 38px;
+        @media (max-width: 390px) {
+          .brandLogoWrap {
+            width: 52px;
+            height: 52px;
+          }
+
+          .brandLogoWrap img {
+            transform: scale(1.18);
           }
 
           .brandName {
-            font-size: 18px;
+            font-size: clamp(25px, 6.9vw, 31px);
+            letter-spacing: -0.035em;
+            max-width: calc(100vw - 124px);
+            padding-right: 4px;
           }
 
           .navButton {
-            padding: 9px 12px;
+            padding: 8px 10px;
+            font-size: 10.5px;
           }
 
           .heroTitle {
@@ -516,38 +568,32 @@ export default function HomePage() {
 
       <header className="header">
         <div className="headerInner">
-          <div className="brand">
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          <button
+            type="button"
+            className="brand"
+            onClick={() => router.push('/')}
+            aria-label="PrussikTrails - página inicial"
+          >
+            <span className="brandLogoWrap">
+              <img
+                src="/logo-prussik-display.png"
+                alt=""
+                aria-hidden="true"
+              />
+            </span>
 
-            <div className="brandText">
-              <div className="brandName">PrussikTrails</div>
-              <div className="brandSub">Aventuras, trilhas e guias reais</div>
-            </div>
-          </div>
+            <span className="brandText">
+              <span className="brandName">PrussikTrails</span>
+            </span>
+          </button>
 
           <div className="headerActions">
-            <button
-              type="button"
-              className="navButton desktopOnly"
-              onClick={() => router.push('/roteiros')}
-            >
-              Explorar
-            </button>
-
             <button
               type="button"
               className="navButton"
               onClick={() => router.push('/login')}
             >
-              Entrar
-            </button>
-
-            <button
-              type="button"
-              className="navButton primary"
-              onClick={() => router.push('/cadastro')}
-            >
-              Criar conta
+              Login
             </button>
           </div>
         </div>

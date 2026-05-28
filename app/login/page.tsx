@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 type UsuarioLocal = {
@@ -59,15 +59,7 @@ export default function LoginPage() {
     }
   }, [router])
 
-  function texto(valor: unknown) {
-    return String(valor || '').trim()
-  }
-
-  function normalizarLogin(valor: string) {
-    return texto(valor).toLowerCase()
-  }
-
-  function getRedirectAfterLogin() {
+  const redirectAfterLogin = useMemo(() => {
     if (typeof window === 'undefined') return ''
 
     const salvo = localStorage.getItem('redirectAfterLogin') || ''
@@ -82,14 +74,20 @@ export default function LoginPage() {
     }
 
     return ''
+  }, [])
+
+  function texto(valor: unknown) {
+    return String(valor || '').trim()
   }
 
-  function rotaPorTipo(tipo?: string | null, redirectAfterLogin = '') {
+  function normalizarLogin(valor: string) {
+    return texto(valor).toLowerCase()
+  }
+
+  function rotaPorTipo(tipo?: string | null) {
     const t = String(tipo || '').toLowerCase()
 
-    if (redirectAfterLogin && t === 'cliente') {
-      return redirectAfterLogin
-    }
+    if (redirectAfterLogin && t === 'cliente') return redirectAfterLogin
 
     if (
       redirectAfterLogin &&
@@ -114,7 +112,6 @@ export default function LoginPage() {
 
     const loginFinal = normalizarLogin(login)
     const senhaFinal = texto(senha)
-    const redirectAfterLogin = getRedirectAfterLogin()
 
     if (!loginFinal) {
       setMensagem('Informe seu e-mail ou CPF.')
@@ -153,7 +150,7 @@ export default function LoginPage() {
       }
 
       const user: UsuarioLocal = data.user
-      const destino = data.redirectTo || rotaPorTipo(user.tipo, redirectAfterLogin)
+      const destino = data.redirectTo || rotaPorTipo(user.tipo)
 
       localStorage.setItem('user', JSON.stringify(user))
       localStorage.removeItem('redirectAfterLogin')
@@ -207,7 +204,6 @@ export default function LoginPage() {
             color: #203c2e;
             font-size: 14px;
             font-weight: 850;
-            letter-spacing: -0.01em;
           }
 
           .loadingMark {
@@ -259,54 +255,71 @@ export default function LoginPage() {
           min-height: 100vh;
           min-height: 100dvh;
           background:
-            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.13), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.10), transparent 28%),
+            radial-gradient(circle at 8% 0%, rgba(132, 204, 22, 0.15), transparent 30%),
+            radial-gradient(circle at 92% 8%, rgba(251, 146, 60, 0.10), transparent 28%),
             linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
           color: #111827;
           display: flex;
           align-items: center;
           justify-content: center;
+          padding: 20px 14px;
         }
 
         .container {
           width: 100%;
-          max-width: 520px;
+          max-width: 492px;
           margin: 0 auto;
-          padding: 34px 18px 44px;
         }
 
         .card {
-          background: rgba(255, 255, 255, 0.92);
-          border-radius: 32px;
-          padding: 38px 30px;
-          box-shadow: 0 18px 42px rgba(15, 23, 42, 0.09);
-          border: 1px solid rgba(15, 23, 42, 0.06);
+          background: rgba(255, 255, 255, 0.94);
+          border-radius: 34px;
+          padding: 30px 30px 34px;
+          box-shadow:
+            0 24px 58px rgba(32, 60, 46, 0.12),
+            0 8px 22px rgba(15, 23, 42, 0.06);
+          border: 1px solid rgba(15, 23, 42, 0.055);
           backdrop-filter: blur(14px);
+          overflow: hidden;
         }
 
         .brand {
           display: flex;
           justify-content: center;
-          margin-bottom: 20px;
+          margin: 0 auto 16px;
+          width: 100%;
+          overflow: visible;
         }
 
-        .brandLogo {
-          width: 168px;
-          height: 168px;
+        .brandLogoCrop {
+          width: 220px;
+          height: 116px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          flex: 0 0 auto;
+        }
+
+        .brandLogoCrop img {
+          width: 220px;
+          height: 220px;
           object-fit: contain;
           display: block;
-          border-radius: 0;
-          mix-blend-mode: multiply;
+          transform: scale(1.58);
+          transform-origin: center;
         }
 
         .heroPhrase {
-          margin: 0 auto 30px;
+          margin: 0 auto 28px;
+          max-width: 330px;
           text-align: center;
           color: #172018;
-          font-size: 26px;
-          line-height: 1.2;
+          font-size: 30px;
+          line-height: 1.03;
           font-weight: 950;
-          letter-spacing: -0.055em;
+          letter-spacing: -0.065em;
         }
 
         .heroPhrase span {
@@ -315,7 +328,7 @@ export default function LoginPage() {
 
         .form {
           display: grid;
-          gap: 18px;
+          gap: 17px;
         }
 
         .formGroup {
@@ -326,38 +339,45 @@ export default function LoginPage() {
 
         label {
           font-size: 13px;
-          font-weight: 850;
-          color: #374151;
+          font-weight: 900;
+          color: #334155;
+          letter-spacing: -0.01em;
         }
 
         input {
           width: 100%;
-          border: 1px solid #e5e7eb;
+          border: 1px solid #dbe4f2;
           border-radius: 18px;
-          padding: 15px 16px;
+          padding: 15px 17px;
           font-size: 16px;
           color: #111827;
-          background: #ffffff;
+          background: #eef5ff;
           outline: none;
           transition: 0.2s ease;
         }
 
         input:focus {
+          background: #ffffff;
           border-color: #203c2e;
           box-shadow: 0 0 0 4px rgba(32, 60, 46, 0.11);
         }
 
         input::placeholder {
-          color: #9ca3af;
+          color: #94a3b8;
+        }
+
+        input:disabled {
+          opacity: 0.72;
+          cursor: not-allowed;
         }
 
         .message {
-          padding: 14px 16px;
+          padding: 13px 15px;
           border-radius: 18px;
-          font-size: 14px;
+          font-size: 13px;
           line-height: 1.45;
           text-align: center;
-          font-weight: 750;
+          font-weight: 800;
           background: #fee2e2;
           color: #991b1b;
           border: 1px solid #fecaca;
@@ -367,20 +387,21 @@ export default function LoginPage() {
           width: 100%;
           border: none;
           border-radius: 999px;
-          padding: 16px;
+          padding: 17px;
           background: #203c2e;
           color: #ffffff;
           font-size: 17px;
-          font-weight: 850;
+          font-weight: 950;
           cursor: pointer;
           transition: 0.2s ease;
           margin-top: 6px;
+          box-shadow: 0 14px 26px rgba(32, 60, 46, 0.18);
         }
 
         .submitButton:hover:not(:disabled) {
           background: #294735;
           transform: translateY(-1px);
-          box-shadow: 0 10px 24px rgba(32, 60, 46, 0.22);
+          box-shadow: 0 18px 32px rgba(32, 60, 46, 0.24);
         }
 
         .submitButton:disabled {
@@ -401,9 +422,10 @@ export default function LoginPage() {
           background: transparent;
           color: #203c2e;
           font-size: 14px;
-          font-weight: 850;
+          font-weight: 900;
           cursor: pointer;
           text-decoration: none;
+          padding: 4px 6px;
         }
 
         .textButton:hover {
@@ -420,10 +442,10 @@ export default function LoginPage() {
           grid-template-columns: 1fr auto 1fr;
           align-items: center;
           gap: 14px;
-          margin: 24px 0;
+          margin: 25px 0;
           color: #9ca3af;
           font-size: 14px;
-          font-weight: 700;
+          font-weight: 850;
         }
 
         .divider::before,
@@ -435,19 +457,20 @@ export default function LoginPage() {
 
         .secondaryButton {
           width: 100%;
-          border: 1px solid #203c2e;
+          border: 1.5px solid #203c2e;
           border-radius: 999px;
           padding: 15px;
           background: #ffffff;
           color: #203c2e;
           font-size: 16px;
-          font-weight: 850;
+          font-weight: 950;
           cursor: pointer;
           transition: 0.2s ease;
         }
 
         .secondaryButton:hover:not(:disabled) {
           background: #f0fdf4;
+          transform: translateY(-1px);
         }
 
         .secondaryButton:disabled {
@@ -461,41 +484,83 @@ export default function LoginPage() {
           color: #7b8372;
           font-size: 12px;
           line-height: 1.45;
-          font-weight: 650;
+          font-weight: 750;
         }
 
         @media (max-width: 520px) {
+          .page {
+            align-items: flex-start;
+            padding: 18px 12px 26px;
+          }
+
           .container {
-            padding: 22px 14px 34px;
+            max-width: 100%;
           }
 
           .card {
-            border-radius: 28px;
-            padding: 28px 20px;
+            border-radius: 30px;
+            padding: 26px 20px 30px;
           }
 
           .brand {
-            margin-bottom: 16px;
+            margin-bottom: 14px;
           }
 
-          .brandLogo {
-            width: 138px;
-            height: 138px;
+          .brandLogoCrop {
+            width: 198px;
+            height: 106px;
+          }
+
+          .brandLogoCrop img {
+            width: 198px;
+            height: 198px;
+            transform: scale(1.54);
           }
 
           .heroPhrase {
-            font-size: 22px;
+            font-size: 27px;
+            max-width: 300px;
             margin-bottom: 26px;
+          }
+
+          .form {
+            gap: 16px;
           }
 
           input {
             font-size: 15px;
-            padding: 13px 14px;
+            padding: 14px 15px;
           }
 
           .submitButton {
-            padding: 14px;
+            padding: 15px;
             font-size: 16px;
+          }
+
+          .secondaryButton {
+            padding: 14px;
+            font-size: 15px;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .card {
+            padding: 24px 18px 28px;
+          }
+
+          .brandLogoCrop {
+            width: 184px;
+            height: 98px;
+          }
+
+          .brandLogoCrop img {
+            width: 184px;
+            height: 184px;
+            transform: scale(1.50);
+          }
+
+          .heroPhrase {
+            font-size: 25px;
           }
         }
       `}</style>
@@ -503,16 +568,17 @@ export default function LoginPage() {
       <div className="container">
         <section className="card">
           <div className="brand">
-            <img
-              src={LOGO_LOGIN_SRC}
-              alt="PrussikTrails"
-              className="brandLogo"
-              loading="eager"
-              decoding="async"
-              onError={(event) => {
-                event.currentTarget.style.display = 'none'
-              }}
-            />
+            <div className="brandLogoCrop">
+              <img
+                src={LOGO_LOGIN_SRC}
+                alt="PrussikTrails"
+                loading="eager"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.style.display = 'none'
+                }}
+              />
+            </div>
           </div>
 
           <p className="heroPhrase">
