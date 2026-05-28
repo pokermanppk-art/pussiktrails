@@ -14,9 +14,7 @@ function getSupabaseAdmin(): any {
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE
 
   if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error(
-      'Variáveis de ambiente do Supabase não configuradas para a rota /api/reservas/criar.'
-    )
+    throw new Error('Variáveis de ambiente do Supabase não configuradas.')
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
@@ -41,23 +39,22 @@ function normalizar(valor: unknown) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .trim()
 }
 
-function serializarErro(error: any) {
-  return {
-    message: error?.message || null,
-    code: error?.code || null,
-    details: error?.details || null,
-    hint: error?.hint || null,
-    name: error?.name || null,
-    raw: (() => {
-      try {
-        return JSON.parse(JSON.stringify(error || {}))
-      } catch {
-        return String(error)
-      }
-    })(),
-  }
+function apenasData(valor: unknown) {
+  const bruto = texto(valor)
+
+  if (!bruto) return ''
+
+  // Já veio como YYYY-MM-DD.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(bruto)) return bruto
+
+  const data = new Date(bruto)
+
+  if (Number.isNaN(data.getTime())) return bruto
+
+  return data.toISOString().slice(0, 10)
 }
 
 function erroDeColunaAusente(error: any) {
@@ -85,165 +82,97 @@ function extrairColunaAusente(error: any) {
   const matchAspas = mensagem.match(/'([^']+)'/)
   if (matchAspas?.[1]) return matchAspas[1]
 
-  const matchColumn = mensagem.match(/column\s+"?([a-zA-Z0-9_]+)"?/i)
+  const matchColumn = mensagem.match(/column\s+([a-zA-Z0-9_]+)/i)
   if (matchColumn?.[1]) return matchColumn[1]
 
   return ''
 }
 
-function colunaNotNull(error: any) {
-  if (error?.code !== '23502') return ''
-
-  const mensagem = [error?.message, error?.details, error?.hint]
-    .filter(Boolean)
-    .join(' ')
-
-  const match = mensagem.match(/null value in column "([^"]+)"/i)
-  return match?.[1] || ''
-}
-
-function dataNormalizada(valor: unknown) {
-  const bruto = texto(valor)
-  if (!bruto) return null
-
-  const yyyyMmDd = bruto.slice(0, 10)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(yyyyMmDd)) return yyyyMmDd
-
-  return null
-}
-
-function roteiroAtivo(roteiro: AnyRecord) {
-  const status = normalizar(roteiro.status)
-
-  if (roteiro.excluido_admin === true) return false
-  if (status === 'excluido_admin') return false
-  if (status === 'cancelado' || status === 'cancelada') return false
-  if (status === 'reprovado') return false
-
-  if (typeof roteiro.ativo === 'boolean') return roteiro.ativo
-
-  return status === 'ativo' || status === 'publicado' || status === 'publicada' || !status
-}
-
 async function inserirReservaComFallback(params: {
   supabase: any
   payloadOriginal: AnyRecord
-}) {
+}): Promise<AnyRecord> {
   const { supabase } = params
   let payload: AnyRecord = { ...params.payloadOriginal }
 
-  const statusAlternativos = [
-    { status: 'pendente', pagamento_status: 'pendente' },
-    { status: 'aguardando', pagamento_status: 'pendente' },
-    { status: 'aguardando_pagamento', pagamento_status: 'pendente' },
-    { status: 'pendente', pagamento_status: 'aguardando_pagamento' },
-  ]
+  for (let tentativa = 0; tentativa < 14; tentativa++) {
+    const { data, error } = await supabase
+      .from('reservas')
+      .insert(payload)
+      .select('*')
+      .single()
 
-  const defaultsPorColuna: Record<string, any> = {
-    status: 'pendente',
-    pagamento_status: 'pendente',
-    forma_pagamento: 'pix',
-    quantidade_pessoas: 1,
-    quantidade: 1,
-    valor_total: 0,
-    valor: 0,
-    preco: 0,
-    saldo_utilizado: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
+    if (!error) return (data || {}) as AnyRecord
 
-  let ultimoErro: any = null
-
-  for (const statusPayload of statusAlternativos) {
-    payload = {
-      ...payload,
-      ...statusPayload,
-    }
-
-    for (let tentativa = 0; tentativa < 18; tentativa++) {
-      const { data, error } = await supabase
-        .from('reservas')
-        .insert(payload)
-        .select('*')
-        .maybeSingle()
-
-      if (!error) return data
-
-      ultimoErro = error
-
-      if (erroDeColunaAusente(error)) {
-        const coluna = extrairColunaAusente(error)
-
-        if (coluna && coluna in payload) {
-          delete payload[coluna]
-          continue
-        }
-      }
-
-      const colunaObrigatoria = colunaNotNull(error)
-
-      if (colunaObrigatoria && !(colunaObrigatoria in payload)) {
-        payload[colunaObrigatoria] =
-          defaultsPorColuna[colunaObrigatoria] ?? texto(defaultsPorColuna[colunaObrigatoria])
-        continue
-      }
-
-      if (String(error?.message || '').toLowerCase().includes('check constraint')) {
-        break
-      }
-
+    if (!erroDeColunaAusente(error)) {
       throw error
     }
+
+    const coluna = extrairColunaAusente(error)
+
+    if (!coluna || !(coluna in payload)) {
+      throw error
+    }
+
+    delete payload[coluna]
   }
 
-  throw ultimoErro || new Error('Não foi possível criar a reserva.')
+  throw new Error('Não foi possível criar a reserva após ajustar colunas ausentes.')
 }
 
 export async function GET() {
   return NextResponse.json({
     sucesso: true,
     rota: '/api/reservas/criar',
-    metodo: 'GET',
     mensagem: 'Rota ativa. Use POST para criar reserva.',
-    timestamp: new Date().toISOString(),
   })
 }
 
 export async function POST(request: NextRequest) {
-  let body: AnyRecord = {}
+  let recebido: AnyRecord = {}
 
   try {
     const supabase = getSupabaseAdmin()
-    body = await request.json().catch(() => ({}))
+
+    recebido = await request.json().catch(() => ({}))
 
     const clienteId = texto(
-      body.clienteId ||
-        body.cliente_id ||
-        body.usuarioId ||
-        body.usuario_id ||
-        body.userId ||
-        body.user_id
+      recebido.clienteId ||
+        recebido.cliente_id ||
+        recebido.usuarioId ||
+        recebido.usuario_id
     )
 
     const roteiroId = texto(
-      body.roteiroId ||
-        body.roteiro_id ||
-        body.idRoteiro ||
-        body.id_roteiro
+      recebido.roteiroId ||
+        recebido.roteiro_id ||
+        recebido.idRoteiro ||
+        recebido.id_roteiro
     )
 
     const quantidadePessoas = Math.max(
       1,
-      Math.floor(numero(body.quantidadePessoas || body.quantidade_pessoas || 1))
+      Math.floor(numero(recebido.quantidadePessoas || recebido.quantidade_pessoas || 1))
+    )
+
+    const valorUnitarioInformado = numero(
+      recebido.valorUnitario ||
+        recebido.valor_unitario ||
+        recebido.preco ||
+        recebido.valor
+    )
+
+    const valorTotalInformado = numero(
+      recebido.valorTotal ||
+        recebido.valor_total
     )
 
     if (!clienteId) {
       return NextResponse.json(
         {
           sucesso: false,
-          erro: 'clienteId é obrigatório para criar a reserva.',
-          recebido: body,
+          erro: 'clienteId é obrigatório.',
+          recebido,
         },
         { status: 400 }
       )
@@ -253,8 +182,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           sucesso: false,
-          erro: 'roteiroId é obrigatório para criar a reserva.',
-          recebido: body,
+          erro: 'roteiroId é obrigatório.',
+          recebido,
         },
         { status: 400 }
       )
@@ -262,29 +191,51 @@ export async function POST(request: NextRequest) {
 
     const { data: cliente, error: clienteError } = await supabase
       .from('users')
-      .select('id, nome, name, email, tipo')
+      .select('*')
       .eq('id', clienteId)
       .maybeSingle()
 
-    if (clienteError) throw clienteError
-
-    if (!cliente?.id) {
+    if (clienteError) {
       return NextResponse.json(
         {
           sucesso: false,
-          erro: 'Cliente não encontrado. Faça login novamente.',
-          clienteId,
+          erro: clienteError.message || 'Erro ao localizar cliente.',
+          detalhe: {
+            code: clienteError.code,
+            details: clienteError.details,
+            hint: clienteError.hint,
+            message: clienteError.message,
+          },
+          recebido,
+        },
+        { status: 500 }
+      )
+    }
+
+    if (!cliente) {
+      return NextResponse.json(
+        {
+          sucesso: false,
+          erro: 'Cliente não encontrado.',
+          recebido,
         },
         { status: 404 }
       )
     }
 
-    if (normalizar(cliente.tipo) !== 'cliente') {
+    const tipoCliente = normalizar((cliente as AnyRecord).tipo)
+
+    if (tipoCliente && tipoCliente !== 'cliente') {
       return NextResponse.json(
         {
           sucesso: false,
-          erro: 'A reserva só pode ser criada por um perfil de cliente.',
-          tipoEncontrado: cliente.tipo || null,
+          erro: 'Apenas usuários do tipo cliente podem reservar roteiros.',
+          recebido,
+          cliente: {
+            id: (cliente as AnyRecord).id,
+            tipo: (cliente as AnyRecord).tipo,
+            nome: (cliente as AnyRecord).nome || (cliente as AnyRecord).email || '',
+          },
         },
         { status: 403 }
       )
@@ -296,132 +247,161 @@ export async function POST(request: NextRequest) {
       .eq('id', roteiroId)
       .maybeSingle()
 
-    if (roteiroError) throw roteiroError
-
-    if (!roteiro?.id) {
+    if (roteiroError) {
       return NextResponse.json(
         {
           sucesso: false,
-          erro: 'Roteiro não encontrado.',
-          roteiroId,
-        },
-        { status: 404 }
-      )
-    }
-
-    if (!roteiroAtivo(roteiro as AnyRecord)) {
-      return NextResponse.json(
-        {
-          sucesso: false,
-          erro: 'Este roteiro não está disponível para reserva no momento.',
-          statusRoteiro: roteiro.status || null,
-          ativo: roteiro.ativo ?? null,
-        },
-        { status: 409 }
-      )
-    }
-
-    const valorUnitarioServidor = numero(
-      (roteiro as AnyRecord).preco || (roteiro as AnyRecord).valor || body.valorUnitario || body.valor_unitario
-    )
-
-    if (valorUnitarioServidor <= 0) {
-      return NextResponse.json(
-        {
-          sucesso: false,
-          erro: 'Este roteiro está sem valor válido para reserva.',
-          preco: (roteiro as AnyRecord).preco ?? null,
-          valor: (roteiro as AnyRecord).valor ?? null,
-        },
-        { status: 409 }
-      )
-    }
-
-    const limitePessoas = numero(
-      (roteiro as AnyRecord).limite_pessoas ||
-        (roteiro as AnyRecord).capacidade ||
-        (roteiro as AnyRecord).max_pessoas
-    )
-
-    if (limitePessoas > 0 && quantidadePessoas > limitePessoas) {
-      return NextResponse.json(
-        {
-          sucesso: false,
-          erro: `Este roteiro permite no máximo ${limitePessoas} pessoa(s) por reserva.`,
-        },
-        { status: 409 }
-      )
-    }
-
-    const valorTotal = Number((valorUnitarioServidor * quantidadePessoas).toFixed(2))
-    const agora = new Date().toISOString()
-
-    const dataTrilha =
-      dataNormalizada(body.dataTrilha || body.data_trilha) ||
-      dataNormalizada(
-        (roteiro as AnyRecord).data_roteiro ||
-          (roteiro as AnyRecord).data_saida ||
-          (roteiro as AnyRecord).data_trilha ||
-          (roteiro as AnyRecord).proxima_data ||
-          (roteiro as AnyRecord).data
-      )
-
-    const payload: AnyRecord = {
-      cliente_id: clienteId,
-      roteiro_id: roteiroId,
-      quantidade_pessoas: quantidadePessoas,
-      quantidade: quantidadePessoas,
-      valor_total: valorTotal,
-      valor: valorTotal,
-      status: 'pendente',
-      pagamento_status: 'pendente',
-      forma_pagamento: 'pix',
-      saldo_utilizado: 0,
-      data_trilha: dataTrilha,
-      created_at: agora,
-      updated_at: agora,
-    }
-
-    const reserva = await inserirReservaComFallback({
-      supabase,
-      payloadOriginal: payload,
-    })
-
-    if (!reserva?.id) {
-      return NextResponse.json(
-        {
-          sucesso: false,
-          erro: 'Reserva criada sem identificador. Verifique a tabela reservas.',
-          payloadTentado: payload,
+          erro: roteiroError.message || 'Erro ao localizar roteiro.',
+          detalhe: {
+            code: roteiroError.code,
+            details: roteiroError.details,
+            hint: roteiroError.hint,
+            message: roteiroError.message,
+          },
+          recebido,
         },
         { status: 500 }
       )
     }
 
+    if (!roteiro) {
+      return NextResponse.json(
+        {
+          sucesso: false,
+          erro: 'Roteiro não encontrado.',
+          recebido,
+        },
+        { status: 404 }
+      )
+    }
+
+    const roteiroRecord = roteiro as AnyRecord
+
+    const precoBanco = numero(roteiroRecord.preco || roteiroRecord.valor)
+    const valorUnitario = valorUnitarioInformado || precoBanco
+
+    if (valorUnitario <= 0) {
+      return NextResponse.json(
+        {
+          sucesso: false,
+          erro: 'Não foi possível calcular o valor do roteiro.',
+          recebido,
+          roteiro: {
+            id: roteiroRecord.id,
+            titulo: roteiroRecord.titulo || roteiroRecord.nome || '',
+            preco: roteiroRecord.preco,
+            valor: roteiroRecord.valor,
+          },
+        },
+        { status: 400 }
+      )
+    }
+
+    const valorTotal = Number(
+      (valorTotalInformado > 0
+        ? valorTotalInformado
+        : valorUnitario * quantidadePessoas
+      ).toFixed(2)
+    )
+
+    const dataTrilha = apenasData(
+      recebido.dataTrilha ||
+        recebido.data_trilha ||
+        recebido.dataRoteiro ||
+        recebido.data_roteiro ||
+        roteiroRecord.data_trilha ||
+        roteiroRecord.data_roteiro ||
+        roteiroRecord.data_saida ||
+        roteiroRecord.data
+    )
+
+    if (!dataTrilha) {
+      return NextResponse.json(
+        {
+          sucesso: false,
+          erro:
+            'A data da trilha é obrigatória para criar a reserva. Preencha a data do roteiro antes de reservar.',
+          recebido,
+          roteiro: {
+            id: roteiroRecord.id,
+            titulo: roteiroRecord.titulo || roteiroRecord.nome || '',
+            data_trilha: roteiroRecord.data_trilha || null,
+            data_roteiro: roteiroRecord.data_roteiro || null,
+            data_saida: roteiroRecord.data_saida || null,
+            data: roteiroRecord.data || null,
+          },
+        },
+        { status: 400 }
+      )
+    }
+
+    const agora = new Date().toISOString()
+
+    const payloadReserva: AnyRecord = {
+      cliente_id: clienteId,
+      roteiro_id: roteiroId,
+      quantidade_pessoas: quantidadePessoas,
+      valor_total: valorTotal,
+      data_trilha: dataTrilha,
+      status: 'pendente',
+      pagamento_status: 'pendente',
+      forma_pagamento: null,
+      saldo_utilizado: 0,
+      created_at: agora,
+      updated_at: agora,
+    }
+
+    const reservaCriada: AnyRecord = await inserirReservaComFallback({
+      supabase,
+      payloadOriginal: payloadReserva,
+    })
+
+    const reservaCriadaId = texto(reservaCriada.id)
+
     return NextResponse.json({
       sucesso: true,
-      reserva,
-      reservaId: reserva.id,
-      valorUnitario: valorUnitarioServidor,
-      valorTotal,
-      quantidadePessoas,
+      reserva: reservaCriada,
+      reservaId: reservaCriadaId,
+      redirectUrl: reservaCriadaId
+        ? `/cliente/pagamento/${reservaCriadaId}`
+        : '',
+      cliente: {
+        id: (cliente as AnyRecord).id,
+        nome: (cliente as AnyRecord).nome || (cliente as AnyRecord).email || '',
+        email: (cliente as AnyRecord).email || '',
+      },
+      roteiro: {
+        id: roteiroRecord.id,
+        titulo: roteiroRecord.titulo || roteiroRecord.nome || 'Roteiro',
+        valor_unitario: valorUnitario,
+        data_trilha: dataTrilha,
+      },
+      payload: payloadReserva,
     })
   } catch (error: any) {
-    const detalhe = serializarErro(error)
-
     console.error('Erro em POST /api/reservas/criar:', {
-      detalhe,
-      body,
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      stack: error?.stack,
+      recebido,
+      raw: error,
     })
 
     return NextResponse.json(
       {
         sucesso: false,
         erro:
-          detalhe.message ||
-          'Erro interno ao criar reserva.',
-        detalhe,
-        recebido: body,
+          error?.message ||
+          'Erro ao criar reserva.',
+        detalhe: {
+          code: error?.code,
+          details: error?.details,
+          hint: error?.hint,
+          message: error?.message,
+        },
+        recebido,
       },
       { status: 500 }
     )
