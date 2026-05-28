@@ -1409,65 +1409,68 @@ export default function PerfilGuiaPage() {
           position: sticky;
           top: 0;
           z-index: 50;
-          background: rgba(255,253,247,0.88);
+          background: rgba(255,253,247,0.90);
           border-bottom: 1px solid rgba(15,23,42,0.06);
           backdrop-filter: blur(18px);
-          padding: 10px 16px;
+          padding: 8px 14px;
         }
 
         .headerInner {
           max-width: 1180px;
           margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: 42px minmax(0, 1fr) 42px;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
+        }
+
+        .headerGhost {
+          width: 42px;
+          height: 42px;
+          pointer-events: none;
         }
 
         .brand {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          gap: 12px;
-          cursor: pointer;
           min-width: 0;
+          max-width: min(540px, calc(100vw - 120px));
+          justify-self: center;
+          border: none;
+          background: transparent;
+          padding: 0;
+          display: inline-flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          text-align: center;
         }
 
         .brand img {
-          width: 42px;
-          height: 42px;
+          width: clamp(154px, 36vw, 260px);
+          max-width: 100%;
+          max-height: 60px;
+          height: auto;
           display: block;
           object-fit: contain;
-          flex: 0 0 auto;
         }
 
-        .brandText {
-          min-width: 0;
-          line-height: 1;
-        }
-
-        .brandTitle {
-          color: #1f3d2d;
-          font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(30px, 4.2vw, 52px);
-          font-weight: 800;
-          line-height: 0.9;
-          letter-spacing: -0.06em;
-          white-space: nowrap;
-        }
-
-        .brandSub {
+        .brand span {
+          display: block;
           color: #7b8372;
-          font-size: clamp(10px, 1.4vw, 14px);
+          font-size: clamp(8px, 1.05vw, 12px);
           font-weight: 850;
-          margin-top: 6px;
+          margin-top: -2px;
           letter-spacing: 0.16em;
           text-transform: uppercase;
           white-space: nowrap;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .headerActions {
           position: relative;
+          justify-self: end;
           display: flex;
           align-items: center;
           gap: 8px;
@@ -2551,25 +2554,34 @@ export default function PerfilGuiaPage() {
           }
 
           .header {
-            padding: 9px 12px;
+            padding: 7px 10px;
+          }
+
+          .headerInner {
+            grid-template-columns: 36px minmax(0, 1fr) 36px;
+            gap: 8px;
+          }
+
+          .headerGhost,
+          .gearBtn {
+            width: 36px;
+            height: 36px;
+            box-shadow: none;
+          }
+
+          .brand {
+            max-width: calc(100vw - 92px);
           }
 
           .brand img {
-            width: 34px;
-            height: 34px;
+            width: clamp(136px, 48vw, 214px);
+            max-height: 50px;
           }
 
-          .brandTitle {
-            display: block;
-            font-size: 30px;
-            line-height: 0.88;
-          }
-
-          .brandSub {
-            display: block;
-            font-size: 9px;
-            letter-spacing: 0.12em;
-            margin-top: 4px;
+          .brand span {
+            font-size: 7.5px;
+            letter-spacing: 0.10em;
+            max-width: calc(100vw - 112px);
           }
 
           .container {
@@ -2650,14 +2662,17 @@ export default function PerfilGuiaPage() {
 
       <header className="header">
         <div className="headerInner">
-          <div className="brand" onClick={() => router.push('/guia/dashboard')}>
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          <div className="headerGhost" aria-hidden="true" />
 
-            <div className="brandText">
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Passaporte do guia</div>
-            </div>
-          </div>
+          <button
+            type="button"
+            className="brand"
+            onClick={() => router.push('/guia/dashboard')}
+            aria-label="Voltar para a dashboard do guia"
+          >
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+            <span>Passaporte do guia</span>
+          </button>
 
           <div className="headerActions">
             <button

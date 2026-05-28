@@ -552,21 +552,23 @@ export default function DetalhesRoteiroPage() {
     try {
       setPerguntasAviso('')
 
-      const { data, error } = await supabase
-        .from('roteiro_perguntas')
-        .select('*')
-        .eq('roteiro_id', id)
-        .neq('status', 'removida')
-        .order('created_at', { ascending: false })
+      const response = await fetch(`/api/roteiros/perguntas?roteiroId=${encodeURIComponent(id)}`, {
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache'
+        }
+      })
 
-      if (error) {
-        console.warn('Perguntas públicas ainda não disponíveis:', error)
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Perguntas públicas ainda não disponíveis:', data)
         setPerguntas([])
-        setPerguntasAviso('A caixa de perguntas ainda precisa ser ativada no banco de dados.')
+        setPerguntasAviso(data?.erro || 'A caixa de perguntas ainda precisa ser ativada no banco de dados.')
         return
       }
 
-      setPerguntas((data || []) as PerguntaPublica[])
+      setPerguntas(Array.isArray(data?.perguntas) ? data.perguntas : [])
     } catch (error) {
       console.warn('Erro ao carregar perguntas públicas:', error)
       setPerguntas([])
@@ -598,29 +600,31 @@ export default function DetalhesRoteiroPage() {
       setPerguntasAviso('')
       setEnviandoPergunta(true)
 
-      const nome = textoSeguro(
-        usuarioLogado?.nome || usuarioLogado?.email,
-        'Aventureiro PrussikTrails'
-      )
-
-      const { error } = await supabase.from('roteiro_perguntas').insert({
-        roteiro_id: roteiro.id,
-        cliente_id: idUsuarioLogado,
-        cliente_nome: nome,
-        pergunta: texto,
-        status: 'publicada',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+      const response = await fetch('/api/roteiros/perguntas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          roteiroId: roteiro.id,
+          clienteId: idUsuarioLogado,
+          pergunta: texto,
+          paginaOrigem: `/roteiros/${id}`
+        })
       })
 
-      if (error) throw error
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || 'Não foi possível publicar a pergunta agora.')
+      }
 
       setNovaPergunta('')
-      setPerguntasAviso('Pergunta publicada. O guia poderá responder aqui no roteiro.')
+      setPerguntasAviso('Pergunta enviada. O guia verá esta pendência na dashboard e poderá responder aqui no roteiro.')
       await carregarPerguntas()
     } catch (error) {
       console.error('Erro ao enviar pergunta pública:', error)
-      setPerguntasAviso('Não foi possível publicar a pergunta agora.')
+      setPerguntasAviso(error instanceof Error ? error.message : 'Não foi possível publicar a pergunta agora.')
     } finally {
       setEnviandoPergunta(false)
     }
@@ -640,25 +644,30 @@ export default function DetalhesRoteiroPage() {
       setPerguntasAviso('')
       setRespondendoPerguntaId(perguntaId)
 
-      const { error } = await supabase
-        .from('roteiro_perguntas')
-        .update({
-          resposta,
-          respondido_por: idUsuarioLogado,
-          respondido_em: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          status: 'respondida'
+      const response = await fetch('/api/roteiros/perguntas/responder', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          perguntaId,
+          roteiroId: id,
+          guiaId: idUsuarioLogado,
+          resposta
         })
-        .eq('id', perguntaId)
-        .eq('roteiro_id', id)
+      })
 
-      if (error) throw error
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || 'Não foi possível publicar a resposta agora.')
+      }
 
       setRespostasGuia((prev) => ({ ...prev, [perguntaId]: '' }))
       await carregarPerguntas()
     } catch (error) {
       console.error('Erro ao responder pergunta pública:', error)
-      setPerguntasAviso('Não foi possível publicar a resposta agora.')
+      setPerguntasAviso(error instanceof Error ? error.message : 'Não foi possível publicar a resposta agora.')
     } finally {
       setRespondendoPerguntaId('')
     }

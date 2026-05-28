@@ -825,22 +825,31 @@ export default function PerfilPublicoGuiaPage() {
 
       <header className="header">
         <div className="headerInner">
-          <button className="brand" type="button" onClick={() => router.push('/roteiros')} aria-label="PrussikTrails">
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <div className="brandText">
-              <strong>PrussikTrails</strong>
-              <span>Passaporte do guia</span>
-            </div>
+          <button
+            type="button"
+            className="headerBtn ghost leftAction"
+            onClick={() => router.push('/roteiros')}
+          >
+            Roteiros
           </button>
 
-          <div className="headerActions">
-            <button type="button" className="headerBtn ghost" onClick={() => router.push('/roteiros')}>
-              Roteiros
-            </button>
-            <button type="button" className="headerBtn" onClick={() => setReportAberto(true)}>
-              Reportar
-            </button>
-          </div>
+          <button
+            className="brand"
+            type="button"
+            onClick={() => router.push('/roteiros')}
+            aria-label="Voltar para roteiros"
+          >
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+            <span>Perfil público do guia</span>
+          </button>
+
+          <button
+            type="button"
+            className="headerBtn rightAction"
+            onClick={() => setReportAberto(true)}
+          >
+            Reportar
+          </button>
         </div>
       </header>
 
@@ -1172,72 +1181,57 @@ const estilos = `
     position: sticky;
     top: 0;
     z-index: 50;
-    background: rgba(255,253,247,0.88);
+    background: rgba(255,253,247,0.90);
     border-bottom: 1px solid rgba(15,23,42,0.06);
     backdrop-filter: blur(18px);
-    padding: 10px 16px;
+    padding: 8px 14px;
   }
 
   .headerInner {
     max-width: 1180px;
     margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr) 92px;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
   }
 
   .brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
     min-width: 0;
+    max-width: min(540px, calc(100vw - 210px));
+    justify-self: center;
     border: 0;
     background: transparent;
     padding: 0;
     cursor: pointer;
-    text-align: left;
+    text-align: center;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
 
   .brand img {
-    width: 42px;
-    height: 42px;
+    width: clamp(154px, 36vw, 260px);
+    max-width: 100%;
+    max-height: 60px;
+    height: auto;
     object-fit: contain;
-    flex: 0 0 auto;
+    display: block;
   }
 
-  .brandText {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    line-height: 1;
-  }
-
-  .brandText strong {
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: clamp(30px, 4.2vw, 52px);
-    font-weight: 800;
-    color: #1f3d2d;
-    line-height: 0.88;
-    letter-spacing: -0.06em;
-    white-space: nowrap;
-  }
-
-  .brandText span {
-    margin-top: 7px;
+  .brand span {
+    display: block;
     color: #7b8372;
-    font-size: clamp(10px, 1.4vw, 14px);
+    font-size: clamp(8px, 1.05vw, 12px);
     font-weight: 850;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     white-space: nowrap;
-  }
-
-  .headerActions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 0 0 auto;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: -2px;
   }
 
   .headerBtn {
@@ -1255,6 +1249,14 @@ const estilos = `
   .headerBtn.ghost {
     background: rgba(255,255,255,0.84);
     color: #172018;
+  }
+
+  .leftAction {
+    justify-self: start;
+  }
+
+  .rightAction {
+    justify-self: end;
   }
 
   .container {
@@ -1985,32 +1987,52 @@ const estilos = `
 
   @media (max-width: 720px) {
     .header {
-      padding: 9px 12px;
+      padding: 7px 10px;
+    }
+
+    .headerInner {
+      grid-template-columns: 40px minmax(0, 1fr) 40px;
+      gap: 8px;
+    }
+
+    .brand {
+      max-width: calc(100vw - 96px);
     }
 
     .brand img {
-      width: 34px;
-      height: 34px;
+      width: clamp(136px, 48vw, 214px);
+      max-height: 50px;
     }
 
-    .brandText strong {
-      font-size: 30px;
-      line-height: 0.88;
-    }
-
-    .brandText span {
-      font-size: 10px;
-      letter-spacing: 0.13em;
-      margin-top: 5px;
-    }
-
-    .headerActions .ghost {
-      display: none;
+    .brand span {
+      font-size: 7.5px;
+      letter-spacing: 0.10em;
+      max-width: calc(100vw - 112px);
     }
 
     .headerBtn {
-      padding: 9px 11px;
-      font-size: 11px;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      padding: 0;
+      font-size: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .headerBtn.ghost::before {
+      content: '‹';
+      font-size: 23px;
+      line-height: 1;
+      font-weight: 950;
+    }
+
+    .rightAction::before {
+      content: '!';
+      font-size: 14px;
+      line-height: 1;
+      font-weight: 950;
     }
 
     .container {

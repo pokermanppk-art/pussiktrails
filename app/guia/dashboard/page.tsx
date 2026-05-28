@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+import PerguntasRoteirosCard from '@/components/guia/PerguntasRoteirosCard'
 
 type UsuarioLocal = {
   id?: string | null
@@ -871,17 +872,16 @@ export default function GuiaDashboardPage() {
 
       <header className="topbar">
         <div className="topbarInner">
+          <div className="topbarSpacer" aria-hidden="true" />
+
           <button
             type="button"
-            className="brandHeader"
+            className="brandHeader brandNameOnly"
             onClick={() => router.push('/guia/dashboard')}
-            aria-label="PrussikTrails"
+            aria-label="Voltar para a dashboard do guia"
           >
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
-            <span className="brandTextBlock">
-              <span className="brandName">PrussikTrails</span>
-              <span className="brandSubtitle">Central do guia</span>
-            </span>
+            <span className="brandName">PrussikTrails</span>
+            <span className="brandSubtitle">Central do guia</span>
           </button>
 
           <button
@@ -1140,6 +1140,8 @@ export default function GuiaDashboardPage() {
           </div>
 
           <aside className="rightColumn">
+            <PerguntasRoteirosCard />
+
             <section className="panel">
               <div className="panelHeader compactHeader">
                 <div>
@@ -1261,58 +1263,62 @@ const estilos = `
   .topbarInner {
     width: min(1180px, 100%);
     margin: 0 auto;
-    display: flex;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
   }
 
+  .topbarSpacer {
+    width: 42px;
+    height: 42px;
+    pointer-events: none;
+  }
+
   .brandHeader {
+    grid-column: 2;
+    justify-self: center;
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
-    gap: 10px;
+    justify-content: center;
+    gap: 4px;
     border: 0;
     background: transparent;
     padding: 0;
     min-width: 0;
+    max-width: min(620px, calc(100vw - 120px));
     cursor: pointer;
-    text-align: left;
+    text-align: center;
     color: inherit;
   }
 
-  .brandLogo {
-    width: 42px;
-    height: 42px;
-    object-fit: contain;
-    flex: 0 0 auto;
-  }
-
-  .brandTextBlock {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    line-height: 1;
-  }
-
   .brandName {
+    display: block;
     font-family: Georgia, 'Times New Roman', serif;
-    font-size: clamp(30px, 4.2vw, 52px);
+    font-size: clamp(34px, 6vw, 58px);
     font-weight: 800;
     color: #203c2e;
-    line-height: 0.9;
-    letter-spacing: -0.06em;
+    line-height: 0.88;
+    letter-spacing: -0.065em;
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .brandSubtitle {
-    margin-top: 6px;
+    display: block;
+    margin-top: 4px;
     color: #7b8372;
-    font-size: clamp(10px, 1.4vw, 14px);
+    font-size: clamp(9px, 1.25vw, 13px);
     font-weight: 850;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .profileButton {
@@ -1995,20 +2001,30 @@ const estilos = `
       padding: 8px 10px;
     }
 
-    .brandLogo {
-      width: 34px;
-      height: 34px;
+    .topbarInner {
+      grid-template-columns: 38px minmax(0, 1fr) 38px;
+      gap: 8px;
+    }
+
+    .topbarSpacer {
+      width: 38px;
+      height: 38px;
+    }
+
+    .brandHeader {
+      max-width: calc(100vw - 104px);
     }
 
     .brandName {
-      font-size: 30px;
-      line-height: 0.88;
+      font-size: clamp(30px, 10vw, 42px);
+      line-height: 0.86;
+      letter-spacing: -0.07em;
     }
 
     .brandSubtitle {
       margin-top: 4px;
-      font-size: 9px;
-      letter-spacing: 0.12em;
+      font-size: 8.5px;
+      letter-spacing: 0.10em;
     }
 
     .profileButton {
