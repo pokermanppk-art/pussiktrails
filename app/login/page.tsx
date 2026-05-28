@@ -20,36 +20,40 @@ export default function LoginPage() {
   const [senha, setSenha] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [mensagem, setMensagem] = useState('')
-
-  useEffect(() => {
-    router.prefetch('/cliente/dashboard')
-    router.prefetch('/guia/dashboard')
-    router.prefetch('/roteiros')
-  }, [router])
+  const [checandoSessao, setChecandoSessao] = useState(true)
 
   useEffect(() => {
     const userData = localStorage.getItem('user')
 
-    if (!userData) return
+    if (!userData) {
+      setChecandoSessao(false)
+      return
+    }
 
     try {
       const user = JSON.parse(userData) as UsuarioLocal
+      const tipo = String(user?.tipo || '').toLowerCase()
 
-      if (user?.tipo === 'cliente') {
+      if (user?.id && tipo === 'cliente') {
         router.replace('/cliente/dashboard')
         return
       }
 
-      if (user?.tipo === 'guia') {
+      if (user?.id && tipo === 'guia') {
         router.replace('/guia/dashboard')
         return
       }
 
-      if (user?.tipo === 'admin') {
+      if (user?.id && tipo === 'admin') {
         router.replace('/admin/dashboard')
+        return
       }
+
+      localStorage.removeItem('user')
+      setChecandoSessao(false)
     } catch {
       localStorage.removeItem('user')
+      setChecandoSessao(false)
     }
   }, [router])
 
@@ -82,7 +86,12 @@ export default function LoginPage() {
     const t = String(tipo || '').toLowerCase()
 
     if (redirectAfterLogin && t === 'cliente') return redirectAfterLogin
-    if (redirectAfterLogin && t === 'guia' && redirectAfterLogin.startsWith('/roteiros')) {
+
+    if (
+      redirectAfterLogin &&
+      t === 'guia' &&
+      redirectAfterLogin.startsWith('/roteiros')
+    ) {
       return redirectAfterLogin
     }
 
@@ -134,6 +143,7 @@ export default function LoginPage() {
 
       if (!response.ok || !data?.sucesso || !data?.user?.id) {
         setMensagem(data?.erro || data?.error || 'Usuário ou senha inválidos.')
+        setCarregando(false)
         return
       }
 
@@ -147,9 +157,73 @@ export default function LoginPage() {
     } catch (error) {
       console.error('Erro no login:', error)
       setMensagem('Erro ao fazer login. Tente novamente.')
-    } finally {
       setCarregando(false)
     }
+  }
+
+  if (checandoSessao) {
+    return (
+      <main className="page loadingPage">
+        <style>{`
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            background: #fffdf7;
+            font-family:
+              Inter,
+              ui-sans-serif,
+              system-ui,
+              -apple-system,
+              BlinkMacSystemFont,
+              "Segoe UI",
+              sans-serif;
+          }
+
+          .page {
+            min-height: 100vh;
+            min-height: 100dvh;
+            background:
+              radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
+              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
+            color: #111827;
+          }
+
+          .loadingPage {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+
+          .loadingBox {
+            text-align: center;
+            color: #203c2e;
+            font-size: 14px;
+            font-weight: 800;
+          }
+
+          .loadingBox img {
+            width: 128px;
+            height: 128px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 14px;
+          }
+        `}</style>
+
+        <div className="loadingBox">
+          <img
+            src="/logo-login-montanha-prussik.jpg"
+            alt="PrussikTrails"
+            loading="eager"
+            decoding="async"
+          />
+          Abrindo sua área...
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -161,7 +235,7 @@ export default function LoginPage() {
 
         body {
           margin: 0;
-          background: #f3f4f6;
+          background: #fffdf7;
           font-family:
             Inter,
             ui-sans-serif,
@@ -176,8 +250,9 @@ export default function LoginPage() {
           min-height: 100vh;
           min-height: 100dvh;
           background:
-            radial-gradient(circle at top left, rgba(22, 163, 74, 0.12), transparent 30%),
-            linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
+            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.13), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.10), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
           color: #111827;
           display: flex;
           align-items: center;
@@ -192,43 +267,45 @@ export default function LoginPage() {
         }
 
         .card {
-          background: #ffffff;
+          background: rgba(255, 255, 255, 0.92);
           border-radius: 32px;
-          padding: 40px 30px;
-          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
-          border: 1px solid #eef2f7;
+          padding: 38px 30px;
+          box-shadow: 0 18px 42px rgba(15, 23, 42, 0.09);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          backdrop-filter: blur(14px);
         }
 
         .brand {
           display: flex;
           justify-content: center;
-          margin-bottom: 24px;
+          margin-bottom: 20px;
         }
 
         .brand img {
-          height: 88px;
-          width: auto;
+          width: 168px;
+          height: 168px;
           object-fit: contain;
           display: block;
+          border-radius: 0;
         }
 
         .heroPhrase {
-          margin: 0 auto 32px;
+          margin: 0 auto 30px;
           text-align: center;
-          color: #111827;
+          color: #172018;
           font-size: 26px;
           line-height: 1.2;
-          font-weight: 900;
-          letter-spacing: -0.05em;
+          font-weight: 950;
+          letter-spacing: -0.055em;
         }
 
         .heroPhrase span {
-          color: #16a34a;
+          color: #203c2e;
         }
 
         .form {
           display: grid;
-          gap: 20px;
+          gap: 18px;
         }
 
         .formGroup {
@@ -239,7 +316,7 @@ export default function LoginPage() {
 
         label {
           font-size: 13px;
-          font-weight: 800;
+          font-weight: 850;
           color: #374151;
         }
 
@@ -256,8 +333,8 @@ export default function LoginPage() {
         }
 
         input:focus {
-          border-color: #16a34a;
-          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+          border-color: #203c2e;
+          box-shadow: 0 0 0 4px rgba(32, 60, 46, 0.11);
         }
 
         input::placeholder {
@@ -270,7 +347,7 @@ export default function LoginPage() {
           font-size: 14px;
           line-height: 1.45;
           text-align: center;
-          font-weight: 700;
+          font-weight: 750;
           background: #fee2e2;
           color: #991b1b;
           border: 1px solid #fecaca;
@@ -281,24 +358,26 @@ export default function LoginPage() {
           border: none;
           border-radius: 999px;
           padding: 16px;
-          background: #16a34a;
+          background: #203c2e;
           color: #ffffff;
           font-size: 17px;
-          font-weight: 800;
+          font-weight: 850;
           cursor: pointer;
           transition: 0.2s ease;
-          margin-top: 8px;
+          margin-top: 6px;
         }
 
         .submitButton:hover:not(:disabled) {
-          background: #15803d;
+          background: #294735;
           transform: translateY(-1px);
-          box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
+          box-shadow: 0 10px 24px rgba(32, 60, 46, 0.22);
         }
 
         .submitButton:disabled {
-          opacity: 0.7;
+          opacity: 0.72;
           cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
         }
 
         .linkRow {
@@ -310,11 +389,15 @@ export default function LoginPage() {
         .textButton {
           border: none;
           background: transparent;
-          color: #16a34a;
+          color: #203c2e;
           font-size: 14px;
-          font-weight: 800;
+          font-weight: 850;
           cursor: pointer;
           text-decoration: none;
+        }
+
+        .textButton:hover {
+          text-decoration: underline;
         }
 
         .divider {
@@ -325,6 +408,7 @@ export default function LoginPage() {
           margin: 24px 0;
           color: #9ca3af;
           font-size: 14px;
+          font-weight: 700;
         }
 
         .divider::before,
@@ -336,13 +420,13 @@ export default function LoginPage() {
 
         .secondaryButton {
           width: 100%;
-          border: 1px solid #16a34a;
+          border: 1px solid #203c2e;
           border-radius: 999px;
           padding: 15px;
           background: #ffffff;
-          color: #16a34a;
+          color: #203c2e;
           font-size: 16px;
-          font-weight: 800;
+          font-weight: 850;
           cursor: pointer;
           transition: 0.2s ease;
         }
@@ -354,14 +438,15 @@ export default function LoginPage() {
         .hint {
           margin: 20px 0 0;
           text-align: center;
-          color: #9ca3af;
+          color: #7b8372;
           font-size: 12px;
           line-height: 1.45;
+          font-weight: 650;
         }
 
         @media (max-width: 520px) {
           .container {
-            padding: 24px 14px 34px;
+            padding: 22px 14px 34px;
           }
 
           .card {
@@ -369,13 +454,18 @@ export default function LoginPage() {
             padding: 28px 20px;
           }
 
+          .brand {
+            margin-bottom: 16px;
+          }
+
           .brand img {
-            height: 72px;
+            width: 138px;
+            height: 138px;
           }
 
           .heroPhrase {
             font-size: 22px;
-            margin-bottom: 28px;
+            margin-bottom: 26px;
           }
 
           input {
@@ -394,8 +484,13 @@ export default function LoginPage() {
         <section className="card">
           <div className="brand">
             <img
-              src="/logo-prussik-display.png"
+              src="/logo-login-montanha-prussik.jpg"
               alt="PrussikTrails"
+              loading="eager"
+              decoding="async"
+              onError={(event) => {
+                event.currentTarget.src = '/logo-prussik-display.png'
+              }}
             />
           </div>
 
@@ -416,6 +511,8 @@ export default function LoginPage() {
                 placeholder="seuemail@email.com ou CPF"
                 type="text"
                 autoComplete="username"
+                inputMode="email"
+                disabled={carregando}
               />
             </div>
 
@@ -427,6 +524,7 @@ export default function LoginPage() {
                 placeholder="Digite sua senha"
                 type="password"
                 autoComplete="current-password"
+                disabled={carregando}
               />
             </div>
 
@@ -450,6 +548,7 @@ export default function LoginPage() {
               type="button"
               className="textButton"
               onClick={() => router.push('/recuperar-senha')}
+              disabled={carregando}
             >
               Esqueci minha senha
             </button>
@@ -461,6 +560,7 @@ export default function LoginPage() {
             type="button"
             className="secondaryButton"
             onClick={() => router.push('/cadastro')}
+            disabled={carregando}
           >
             Criar nova conta
           </button>
