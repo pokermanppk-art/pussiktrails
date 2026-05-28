@@ -1,89 +1,100 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-const resendApiKey = process.env.RESEND_API_KEY || ''
+type AnyRecord = Record<string, any>
 
-function json(data: any, status = 200) {
-  return NextResponse.json(data, { status })
-}
+const CAMPOS_USUARIO_BASE = [
+  'id',
+  'nome',
+  'email',
+  'status',
+  'tipo',
+  'ativo',
+]
 
-function getAppUrl() {
-  const publicUrl = process.env.NEXT_PUBLIC_APP_URL
+function getSupabaseAdmin(): any {
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 
-  if (publicUrl && publicUrl.startsWith('https://')) {
-    return publicUrl.replace(/\/$/, '')
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Variáveis de ambiente do Supabase não configuradas.')
   }
 
-  const vercelUrl = process.env.VERCEL_URL
-
-  if (vercelUrl) {
-    return `https://${vercelUrl}`.replace(/\/$/, '')
-  }
-
-  return 'https://prussiktrails.vercel.app'
-}
-
-function getSupabaseAdmin() {
-  if (!supabaseUrl) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL ausente no ambiente.')
-  }
-
-  if (!supabaseServiceKey) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY ausente no ambiente.')
-  }
-
-  return createClient(supabaseUrl, supabaseServiceKey, {
+  return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
       persistSession: false,
-      autoRefreshToken: false
-    }
+      autoRefreshToken: false,
+    },
   })
 }
 
-function limparTexto(valor: any) {
+function texto(valor: unknown) {
   return String(valor || '').trim()
 }
 
-function emailValido(email: string) {
+function normalizar(valor: unknown) {
+  return texto(valor)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function validarEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function appUrl() {
+  const explicitUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL
+
+  if (explicitUrl) {
+    return explicitUrl.replace(/\/$/, '')
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`.replace(/\/$/, '')
+  }
+
+  return 'http://localhost:3000'
+}
+
+function hashToken(token: string) {
+  return crypto
+    .createHash('sha256')
+    .update(token)
+    .digest('hex')
 }
 
 function gerarTokenSeguro() {
   return crypto.randomBytes(32).toString('hex')
 }
 
-function extrairColunaAusente(error: any) {
-  const texto = [
-    error?.message,
-    error?.details,
-    error?.hint
-  ]
-    .filter(Boolean)
-    .join(' ')
-
-  const matchAspas = texto.match(/'([^']+)'/)
-
-  if (matchAspas?.[1]) {
-    return matchAspas[1]
-  }
-
-  const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
-
-  if (matchColumn?.[1]) {
-    return matchColumn[1]
-  }
-
-  return ''
+function nomeUsuario(user: AnyRecord) {
+  return user.nome || user.email || 'Aventureiro'
 }
 
-function erroDeColunaAusente(error: any) {
-  const texto = String(
+function respostaGenerica() {
+  return NextResponse.json({
+    sucesso: true,
+    mensagem:
+      'Se este e-mail estiver cadastrado, enviaremos as instruções de recuperação.',
+  })
+}
+
+function erroColunaInexistente(error: any) {
+  const mensagem = String(
     error?.message ||
       error?.details ||
       error?.hint ||
@@ -93,241 +104,402 @@ function erroDeColunaAusente(error: any) {
   return (
     error?.code === '42703' ||
     error?.code === 'PGRST204' ||
-    texto.includes('could not find') ||
-    texto.includes('schema cache') ||
-    texto.includes('column')
+    mensagem.includes('column') ||
+    mensagem.includes('schema cache') ||
+    mensagem.includes('does not exist') ||
+    mensagem.includes('could not find')
   )
 }
 
-async function atualizarUsuarioComFallback(
-  supabase: any,
-  userId: string,
-  payloadOriginal: Record<string, any>
-) {
-  let payloadAtual = { ...payloadOriginal }
-  const colunasIgnoradas: string[] = []
+function extrairColunaInexistente(error: any) {
+  const textoErro = [
+    error?.message,
+    error?.details,
+    error?.hint,
+  ]
+    .filter(Boolean)
+    .join(' ')
 
-  for (let tentativa = 0; tentativa < 10; tentativa++) {
-    const { data, error } = await supabase
-      .from('users')
-      .update(payloadAtual)
-      .eq('id', userId)
-      .select()
-      .maybeSingle()
+  const matchUsers = textoErro.match(/users\.([a-zA-Z0-9_]+)/)
 
-    if (!error) {
-      return {
-        data,
-        colunasIgnoradas
-      }
-    }
+  if (matchUsers?.[1]) return matchUsers[1]
 
-    if (!erroDeColunaAusente(error)) {
-      throw error
-    }
+  const matchColumn = textoErro.match(/column\s+["']?([a-zA-Z0-9_]+)["']?/i)
 
-    const coluna = extrairColunaAusente(error)
+  if (matchColumn?.[1]) return matchColumn[1]
 
-    if (!coluna || !(coluna in payloadAtual)) {
-      throw error
-    }
+  const matchAspas = textoErro.match(/'([^']+)'/)
 
-    delete payloadAtual[coluna]
-    colunasIgnoradas.push(coluna)
-  }
+  if (matchAspas?.[1]) return matchAspas[1]
 
-  throw new Error('Não foi possível atualizar usuário.')
+  return ''
 }
 
-async function enviarEmailRecuperacao({
-  email,
-  nome,
-  link
-}: {
-  email: string
+async function buscarUsuarioPorEmailComFallback(supabase: any, emailEntrada: string) {
+  const email = normalizar(emailEntrada)
+
+  if (!email || !email.includes('@')) return null
+
+  let campos = [...CAMPOS_USUARIO_BASE]
+
+  for (let tentativa = 0; tentativa < 12; tentativa++) {
+    const select = campos.join(', ')
+
+    const { data, error } = await supabase
+      .from('users')
+      .select(select)
+      .ilike('email', email)
+      .limit(1)
+
+    if (!error) {
+      if (Array.isArray(data) && data[0]?.id) {
+        return data[0] as AnyRecord
+      }
+
+      return null
+    }
+
+    if (!erroColunaInexistente(error)) {
+      console.warn('[recuperar-senha] Erro ao buscar usuário por e-mail:', {
+        email,
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+
+      return null
+    }
+
+    const coluna = extrairColunaInexistente(error)
+
+    if (!coluna) {
+      console.warn('[recuperar-senha] Erro de coluna sem identificação:', {
+        email,
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+
+      return null
+    }
+
+    campos = campos.filter((campo) => campo !== coluna)
+
+    console.warn('[recuperar-senha] Coluna removida do SELECT por não existir:', coluna)
+
+    if (campos.length === 0) {
+      return null
+    }
+  }
+
+  return null
+}
+
+function htmlEmailReset(params: {
   nome: string
   link: string
+  emailSolicitado: string
+  destinatarioReal: string
+  modoTeste: boolean
 }) {
-  if (!resendApiKey) {
-    return {
-      enviado: false,
-      erro:
-        'RESEND_API_KEY ausente. Configure a chave da Resend na Vercel para enviar o e-mail.'
-    }
-  }
+  const { nome, link, emailSolicitado, destinatarioReal, modoTeste } = params
 
-  const from =
-    process.env.RESEND_FROM_EMAIL ||
-    'PrussikTrails <onboarding@resend.dev>'
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      from,
-      to: email,
-      subject: 'Recuperação de senha - PrussikTrails',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111827;">
-          <div style="text-align: center; margin-bottom: 24px;">
-            <h1 style="margin: 0; color: #dc2626;">PrussikTrails</h1>
+  return `
+    <div style="margin:0;padding:0;background:#f3f5ea;font-family:Inter,Arial,sans-serif;color:#172018;">
+      <div style="max-width:560px;margin:0 auto;padding:32px 18px;">
+        <div style="background:#fffdf7;border-radius:28px;padding:32px;border:1px solid #e5e7eb;box-shadow:0 18px 42px rgba(32,60,46,0.10);">
+          <div style="text-align:center;margin-bottom:24px;">
+            <div style="font-family:Georgia,'Times New Roman',serif;font-size:36px;font-weight:800;color:#1f3f2d;letter-spacing:-0.05em;">
+              PrussikTrails
+            </div>
+            <div style="font-size:12px;font-weight:800;color:#7b8372;text-transform:uppercase;letter-spacing:0.12em;margin-top:6px;">
+              Recuperação de senha
+            </div>
           </div>
 
-          <h2 style="color: #111827;">Recuperação de senha</h2>
+          <h1 style="font-size:28px;line-height:1.08;letter-spacing:-0.04em;margin:0 0 14px;color:#172018;">
+            Olá, ${nome}.
+          </h1>
 
-          <p>Olá${nome ? `, ${nome}` : ''}.</p>
-
-          <p>
-            Recebemos uma solicitação para redefinir sua senha no PrussikTrails.
+          <p style="font-size:15px;line-height:1.65;color:#475569;margin:0 0 22px;">
+            Recebemos uma solicitação para redefinir a senha da sua conta no PrussikTrails.
           </p>
 
-          <p>
-            Clique no botão abaixo para criar uma nova senha:
-          </p>
+          ${
+            modoTeste
+              ? `
+                <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:18px;padding:14px;margin:0 0 22px;color:#92400e;font-size:13px;line-height:1.55;font-weight:700;">
+                  Modo teste ativo: a solicitação foi feita para <strong>${emailSolicitado}</strong>, mas este e-mail foi enviado para <strong>${destinatarioReal}</strong> por causa da limitação do Resend sem domínio verificado.
+                </div>
+              `
+              : ''
+          }
 
-          <p style="margin: 28px 0;">
-            <a href="${link}" style="background: #16a34a; color: #ffffff; padding: 14px 22px; border-radius: 999px; text-decoration: none; font-weight: bold; display: inline-block;">
-              Redefinir senha
+          <div style="text-align:center;margin:30px 0;">
+            <a href="${link}" style="display:inline-block;background:#203c2e;color:#ffffff;text-decoration:none;border-radius:999px;padding:15px 24px;font-size:15px;font-weight:900;">
+              Redefinir minha senha
             </a>
+          </div>
+
+          <p style="font-size:13px;line-height:1.55;color:#64748b;margin:0 0 12px;">
+            Este link é válido por 30 minutos. Se você não solicitou esta alteração, ignore este e-mail.
           </p>
 
-          <p>
-            Se o botão não abrir, copie e cole este endereço no navegador:
+          <p style="font-size:12px;line-height:1.55;color:#94a3b8;margin:20px 0 0;">
+            Solicitação para: ${emailSolicitado}
           </p>
 
-          <p style="word-break: break-all; color: #2563eb;">
-            ${link}
-          </p>
+          <div style="height:1px;background:#e5e7eb;margin:26px 0;"></div>
 
-          <p style="color: #6b7280; font-size: 13px; margin-top: 28px;">
-            Este link expira em 1 hora. Se você não solicitou esta alteração, ignore este e-mail.
+          <p style="font-size:11px;line-height:1.55;color:#94a3b8;margin:0;">
+            Caso o botão não funcione, copie e cole este link no navegador:<br />
+            <span style="word-break:break-all;">${link}</span>
           </p>
         </div>
-      `
-    })
-  })
+      </div>
+    </div>
+  `
+}
 
-  const texto = await response.text()
+function textoEmailReset(params: {
+  nome: string
+  link: string
+  emailSolicitado: string
+  destinatarioReal: string
+  modoTeste: boolean
+}) {
+  const avisoTeste = params.modoTeste
+    ? `\n\nModo teste ativo: a solicitação foi feita para ${params.emailSolicitado}, mas este e-mail foi enviado para ${params.destinatarioReal} por causa da limitação do Resend sem domínio verificado.`
+    : ''
 
-  let data: any = null
+  return `Olá, ${params.nome}.
 
-  try {
-    data = texto ? JSON.parse(texto) : null
-  } catch {
-    data = {
-      raw: texto
+Recebemos uma solicitação para redefinir sua senha no PrussikTrails.
+
+Acesse o link abaixo para criar uma nova senha:
+${params.link}
+
+Este link é válido por 30 minutos.
+
+Se você não solicitou essa alteração, ignore este e-mail.${avisoTeste}`
+}
+
+function escolherDestinatario(params: {
+  emailSolicitado: string
+  from: string
+}) {
+  const emailSolicitado = normalizar(params.emailSolicitado)
+  const from = texto(params.from)
+  const testTo = normalizar(process.env.RESEND_TEST_TO_EMAIL)
+
+  const usandoDominioTesteResend =
+    from.includes('@resend.dev') ||
+    from.includes('onboarding@resend.dev')
+
+  if (testTo) {
+    return {
+      destinatario: testTo,
+      modoTeste: true,
     }
   }
 
-  if (!response.ok) {
+  if (usandoDominioTesteResend) {
     return {
-      enviado: false,
-      erro:
-        data?.message ||
-        data?.error ||
-        data?.raw ||
-        `Erro HTTP ${response.status} ao enviar e-mail.`
+      destinatario: 'pokermanppk@gmail.com',
+      modoTeste: true,
     }
   }
 
   return {
-    enviado: true,
-    data
+    destinatario: emailSolicitado,
+    modoTeste: false,
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
+  let body: AnyRecord = {}
+
   try {
     const supabase = getSupabaseAdmin()
-    const body = await request.json().catch(() => ({}))
 
-    const email = limparTexto(body.email).toLowerCase()
+    body = await request.json().catch(() => ({}))
 
-    if (!email || !emailValido(email)) {
-      return json(
+    const email = normalizar(body.email)
+
+    if (!email || !validarEmail(email)) {
+      return NextResponse.json(
         {
           sucesso: false,
-          erro: 'Informe um e-mail válido.'
+          erro: 'Informe um e-mail válido.',
         },
-        400
+        { status: 400 }
       )
     }
 
-    const { data: usuario, error: usuarioError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .maybeSingle()
+    const user = await buscarUsuarioPorEmailComFallback(supabase, email)
 
-    if (usuarioError) {
-      throw usuarioError
+    if (!user?.id) {
+      console.warn('[recuperar-senha] Solicitação para e-mail não encontrado:', {
+        email,
+      })
+
+      return respostaGenerica()
     }
 
-    if (!usuario) {
-      return json({
-        sucesso: true,
-        mensagem:
-          'Se este e-mail estiver cadastrado, enviaremos as instruções de recuperação.'
+    const status = normalizar(user.status)
+
+    if (
+      status === 'inativo' ||
+      status === 'bloqueado' ||
+      status === 'suspenso' ||
+      status === 'pendente' ||
+      status === 'aguardando' ||
+      status === 'aguardando_aprovacao' ||
+      user.ativo === false
+    ) {
+      console.warn('[recuperar-senha] Usuário sem permissão para reset:', {
+        userId: user.id,
+        status: user.status,
+        ativo: user.ativo,
       })
+
+      return respostaGenerica()
     }
 
     const token = gerarTokenSeguro()
-    const expiraEm = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-    const link = `${getAppUrl()}/resetar-senha?token=${token}`
+    const tokenHash = hashToken(token)
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 30).toISOString()
+    const resetLink = `${appUrl()}/redefinir-senha?token=${encodeURIComponent(token)}`
 
-    await atualizarUsuarioComFallback(supabase, usuario.id, {
-      reset_token: token,
-      reset_token_expires_at: expiraEm,
-      updated_at: new Date().toISOString()
-    })
+    const ip =
+      request.headers.get('x-forwarded-for') ||
+      request.headers.get('x-real-ip') ||
+      ''
 
-    const envio = await enviarEmailRecuperacao({
-      email,
-      nome: usuario.nome || usuario.name || '',
-      link
-    })
+    const userAgent = request.headers.get('user-agent') || ''
 
-    if (!envio.enviado) {
-      return json(
+    await supabase
+      .from('senha_reset_tokens')
+      .update({
+        status: 'cancelado',
+        used_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id)
+      .eq('status', 'ativo')
+
+    const { error: insertError } = await supabase
+      .from('senha_reset_tokens')
+      .insert({
+        user_id: user.id,
+        email,
+        token_hash: tokenHash,
+        status: 'ativo',
+        expires_at: expiresAt,
+        ip,
+        user_agent: userAgent,
+      })
+
+    if (insertError) {
+      console.error('[recuperar-senha] Erro ao inserir token:', insertError)
+
+      return NextResponse.json(
         {
           sucesso: false,
           erro:
-            envio.erro ||
-            'Não foi possível enviar o e-mail de recuperação neste momento.'
+            'Não foi possível gerar o link de recuperação. Verifique se a tabela senha_reset_tokens foi criada.',
         },
-        500
+        { status: 500 }
       )
     }
 
-    return json({
-      sucesso: true,
-      mensagem:
-        'Se este e-mail estiver cadastrado, enviaremos as instruções de recuperação.',
-      emailEnviado: true
-    })
-  } catch (error: any) {
-    console.error('Erro em recuperar senha:', error)
+    const apiKey = texto(process.env.RESEND_API_KEY)
 
-    return json(
+    if (!apiKey) {
+      console.error('[recuperar-senha] RESEND_API_KEY ausente.')
+
+      return NextResponse.json(
+        {
+          sucesso: false,
+          erro: 'RESEND_API_KEY não configurada.',
+        },
+        { status: 500 }
+      )
+    }
+
+    const from =
+      texto(process.env.RESEND_FROM_EMAIL) ||
+      'PrussikTrails <onboarding@resend.dev>'
+
+    const { destinatario, modoTeste } = escolherDestinatario({
+      emailSolicitado: email,
+      from,
+    })
+
+    console.log('[recuperar-senha] Enviando e-mail de recuperação:', {
+      emailSolicitado: email,
+      destinatarioReal: destinatario,
+      modoTeste,
+      from,
+      appUrl: appUrl(),
+    })
+
+    const resend = new Resend(apiKey)
+
+    const { error: resendError } = await resend.emails.send({
+      from,
+      to: [destinatario],
+      subject: 'Redefinição de senha | PrussikTrails',
+      html: htmlEmailReset({
+        nome: nomeUsuario(user),
+        link: resetLink,
+        emailSolicitado: email,
+        destinatarioReal: destinatario,
+        modoTeste,
+      }),
+      text: textoEmailReset({
+        nome: nomeUsuario(user),
+        link: resetLink,
+        emailSolicitado: email,
+        destinatarioReal: destinatario,
+        modoTeste,
+      }),
+    })
+
+    if (resendError) {
+      console.error('[recuperar-senha] Erro Resend:', resendError)
+
+      return NextResponse.json(
+        {
+          sucesso: false,
+          erro:
+            resendError.message ||
+            'Erro ao enviar o e-mail de recuperação pelo Resend.',
+        },
+        { status: 500 }
+      )
+    }
+
+    return respostaGenerica()
+  } catch (error: any) {
+    console.error('Erro em POST /api/recuperar-senha:', {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      stack: error?.stack,
+      body,
+    })
+
+    return NextResponse.json(
       {
         sucesso: false,
         erro:
           error?.message ||
-          'Erro interno ao solicitar recuperação de senha.'
+          'Erro interno ao solicitar recuperação de senha.',
       },
-      500
+      { status: 500 }
     )
   }
-}
-
-export async function GET() {
-  return json({
-    sucesso: true,
-    rota: '/api/recuperar-senha',
-    metodo: 'POST',
-    mensagem: 'Rota de recuperação de senha ativa.'
-  })
 }
