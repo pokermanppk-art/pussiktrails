@@ -950,12 +950,16 @@ export default function PerfilCliente() {
 
       <header className="topbar">
         <div className="topbarInner">
-          <button className="brand" type="button" onClick={() => router.push('/cliente/dashboard')}>
+          <div className="topbarSpacer" aria-hidden="true" />
+
+          <button
+            className="brand brandLogoOnly"
+            type="button"
+            onClick={() => router.push('/cliente/dashboard')}
+            aria-label="Voltar para a dashboard do cliente"
+          >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <div>
-              <strong>PrussikTrails</strong>
-              <span>Passaporte PrussikTrails</span>
-            </div>
+            <span>Passaporte outdoor</span>
           </button>
 
           <div className="topActions">
@@ -1535,60 +1539,57 @@ const styles = `
   .topbarInner {
     max-width: 1180px;
     margin: 0 auto;
-    display: flex;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
   }
 
+  .topbarSpacer {
+    width: 42px;
+    height: 42px;
+    pointer-events: none;
+  }
+
   .brand {
+    grid-column: 2;
+    justify-self: center;
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    gap: 5px;
     min-width: 0;
+    max-width: min(520px, calc(100vw - 120px));
     border: 0;
     background: transparent;
     padding: 0;
-    text-align: left;
+    text-align: center;
     cursor: pointer;
     color: #172018;
   }
 
   .brand img {
-    width: 46px;
-    height: 46px;
-    max-width: 46px;
+    width: clamp(140px, 34vw, 250px);
+    height: auto;
+    max-height: 58px;
     object-fit: contain;
-    flex: 0 0 46px;
     display: block;
-  }
-
-  .brand div {
-    min-width: 0;
-  }
-
-  .brand strong {
-    display: block;
-    color: #1f3f2d;
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: clamp(30px, 3.6vw, 50px);
-    font-weight: 800;
-    line-height: 0.9;
-    letter-spacing: -0.055em;
-    white-space: nowrap;
   }
 
   .brand span {
     display: block;
-    margin-top: 6px;
     color: #7b8375;
-    font-size: clamp(10px, 1.15vw, 15px);
+    font-size: clamp(8px, 1.05vw, 12px);
     font-weight: 850;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
     white-space: nowrap;
   }
 
   .topActions {
+    grid-column: 3;
+    justify-self: end;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -2536,37 +2537,34 @@ const styles = `
     }
 
     .topbarInner {
+      grid-template-columns: 36px minmax(0, 1fr) 36px;
       gap: 8px;
       align-items: center;
     }
 
+    .topbarSpacer {
+      width: 36px;
+      height: 36px;
+    }
+
     .brand {
-      gap: 8px;
+      gap: 4px;
       min-width: 0;
+      max-width: calc(100vw - 92px);
       overflow: hidden;
     }
 
     .brand img {
-      width: 32px;
-      height: 32px;
-      max-width: 32px;
-      flex-basis: 32px;
-    }
-
-    .brand strong {
-      font-size: clamp(25px, 8vw, 33px);
-      line-height: 0.88;
-      letter-spacing: -0.065em;
-      max-width: calc(100vw - 96px);
-      overflow: hidden;
-      text-overflow: ellipsis;
+      width: clamp(134px, 46vw, 210px);
+      height: auto;
+      max-height: 50px;
+      object-fit: contain;
     }
 
     .brand span {
-      font-size: 8px;
+      font-size: 7.5px;
       letter-spacing: 0.12em;
-      margin-top: 4px;
-      max-width: calc(100vw - 96px);
+      max-width: calc(100vw - 112px);
       overflow: hidden;
       text-overflow: ellipsis;
     }
@@ -2776,7 +2774,5 @@ const styles = `
     .passwordActions button {
       width: 100%;
     }
-  }
-
   }
 `
