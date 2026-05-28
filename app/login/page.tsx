@@ -80,6 +80,46 @@ export default function LoginPage() {
     return String(valor || '').trim()
   }
 
+  function limparCpf(valor: unknown) {
+    return texto(valor).replace(/\D/g, '')
+  }
+
+  function formatarCPF(valor: unknown) {
+    const numeros = limparCpf(valor).slice(0, 11)
+
+    if (numeros.length <= 3) return numeros
+    if (numeros.length <= 6) {
+      return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
+    }
+    if (numeros.length <= 9) {
+      return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
+    }
+
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
+  }
+
+  function pareceEntradaCPF(valor: string) {
+    const v = texto(valor)
+
+    if (!v) return false
+    if (v.includes('@')) return false
+
+    const temLetra = /[a-zA-Z]/.test(v)
+    if (temLetra) return false
+
+    const numeros = limparCpf(v)
+    return numeros.length > 0 && numeros.length <= 11
+  }
+
+  function handleLoginChange(valor: string) {
+    if (pareceEntradaCPF(valor)) {
+      setLogin(formatarCPF(valor))
+      return
+    }
+
+    setLogin(valor)
+  }
+
   function normalizarLogin(valor: string) {
     return texto(valor).toLowerCase()
   }
@@ -111,6 +151,7 @@ export default function LoginPage() {
     setMensagem('')
 
     const loginFinal = normalizarLogin(login)
+    const cpfLimpo = limparCpf(loginFinal)
     const senhaFinal = texto(senha)
 
     if (!loginFinal) {
@@ -135,7 +176,8 @@ export default function LoginPage() {
         body: JSON.stringify({
           login: loginFinal,
           email: loginFinal,
-          cpf: loginFinal,
+          cpf: cpfLimpo.length === 11 ? cpfLimpo : loginFinal,
+          cpf_formatado: cpfLimpo.length === 11 ? formatarCPF(cpfLimpo) : '',
           senha: senhaFinal,
           redirectAfterLogin,
         }),
@@ -144,7 +186,7 @@ export default function LoginPage() {
       const data = await response.json().catch(() => null)
 
       if (!response.ok || !data?.sucesso || !data?.user?.id) {
-        setMensagem(data?.erro || data?.error || 'Usuário ou senha inválidos.')
+        setMensagem(data?.erro || data?.error || 'Erro ao acessar sua conta.')
         setCarregando(false)
         return
       }
@@ -594,11 +636,11 @@ export default function LoginPage() {
               <label>E-mail ou CPF *</label>
               <input
                 value={login}
-                onChange={(event) => setLogin(event.target.value)}
+                onChange={(event) => handleLoginChange(event.target.value)}
                 placeholder="seuemail@email.com ou CPF"
                 type="text"
                 autoComplete="username"
-                inputMode="email"
+                inputMode="text"
                 disabled={carregando}
               />
             </div>

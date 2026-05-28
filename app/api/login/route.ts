@@ -7,6 +7,21 @@ export const runtime = 'nodejs'
 
 type AnyRecord = Record<string, any>
 
+const CAMPOS_USUARIO_BASE = [
+  'id',
+  'nome',
+  'email',
+  'cpf',
+  'tipo',
+  'status',
+  'ativo',
+  'avatar_url',
+  'foto_url',
+  'imagem_url',
+  'senha_hash',
+  'senha',
+]
+
 function getSupabaseAdmin(): any {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
@@ -44,9 +59,130 @@ function limparCpf(valor: unknown) {
   return texto(valor).replace(/\D/g, '')
 }
 
+function formatarCPF(valor: unknown) {
+  const numeros = limparCpf(valor).slice(0, 11)
+
+  if (numeros.length <= 3) return numeros
+
+  if (numeros.length <= 6) {
+    return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
+  }
+
+  if (numeros.length <= 9) {
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
+  }
+
+  return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
+}
+
+function erroColunaInexistente(error: any) {
+  const mensagem = String(
+    error?.message ||
+      error?.details ||
+      error?.hint ||
+      ''
+  ).toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    mensagem.includes('column') ||
+    mensagem.includes('schema cache') ||
+    mensagem.includes('does not exist')
+  )
+}
+
+function extrairColunaInexistente(error: any) {
+  const textoErro = [
+    error?.message,
+    error?.details,
+    error?.hint,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const matchUsers = textoErro.match(/users\.([a-zA-Z0-9_]+)/)
+
+  if (matchUsers?.[1]) return matchUsers[1]
+
+  const matchColumn = textoErro.match(/column\s+["']?([a-zA-Z0-9_]+)["']?/i)
+
+  if (matchColumn?.[1]) return matchColumn[1]
+
+  const matchAspas = textoErro.match(/'([^']+)'/)
+
+  if (matchAspas?.[1]) return matchAspas[1]
+
+  return ''
+}
+
+async function executarBuscaUsuariosComFallback(params: {
+  supabase: any
+  aplicarFiltros: (query: any) => any
+  limite?: number
+}) {
+  const { supabase, aplicarFiltros, limite = 1 } = params
+
+  let campos = [...CAMPOS_USUARIO_BASE]
+
+  for (let tentativa = 0; tentativa < 18; tentativa++) {
+    const select = campos.join(', ')
+
+    let query = supabase
+      .from('users')
+      .select(select)
+
+    query = aplicarFiltros(query)
+
+    if (limite > 0) {
+      query = query.limit(limite)
+    }
+
+    const { data, error } = await query
+
+    if (!error) {
+      return Array.isArray(data) ? (data as AnyRecord[]) : []
+    }
+
+    if (!erroColunaInexistente(error)) {
+      console.warn('[login] Erro ao buscar usuário:', {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+
+      return []
+    }
+
+    const coluna = extrairColunaInexistente(error)
+
+    if (!coluna) {
+      console.warn('[login] Erro de coluna sem identificação:', {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+
+      return []
+    }
+
+    campos = campos.filter((campo) => campo !== coluna)
+
+    console.warn('[login] Coluna removida do SELECT por não existir:', coluna)
+
+    if (campos.length === 0) {
+      return []
+    }
+  }
+
+  return []
+}
+
 async function senhaConfere(senhaDigitada: string, user: AnyRecord) {
   const senhaHash = texto(user.senha_hash)
-  const senhaAntiga = texto(user.senha || user.password)
+  const senhaAntiga = texto(user.senha)
 
   if (!senhaDigitada) return false
 
@@ -85,13 +221,93 @@ function rotaPorTipo(tipo: string, redirectAfterLogin?: string) {
     !redirectAfterLogin.startsWith('//')
   ) {
     if (tipoNormalizado === 'cliente') return redirectAfterLogin
-    if (tipoNormalizado === 'guia' && redirectAfterLogin.startsWith('/roteiros')) return redirectAfterLogin
+
+    if (
+      tipoNormalizado === 'guia' &&
+      redirectAfterLogin.startsWith('/roteiros')
+    ) {
+      return redirectAfterLogin
+    }
   }
 
   if (tipoNormalizado === 'admin') return '/admin/dashboard'
   if (tipoNormalizado === 'guia') return '/guia/dashboard'
 
   return '/cliente/dashboard'
+}
+
+async function buscarUsuarioPorCpfExato(supabase: any, cpfValor: string) {
+  const cpf = texto(cpfValor)
+
+  if (!cpf) return null
+
+  const usuarios = await executarBuscaUsuariosComFallback({
+    supabase,
+    limite: 1,
+    aplicarFiltros: (query) => query.eq('cpf', cpf),
+  })
+
+  if (usuarios[0]?.id) {
+    return usuarios[0]
+  }
+
+  return null
+}
+
+async function buscarUsuarioPorCpfNormalizado(supabase: any, cpfEntrada: string) {
+  const cpfLimpo = limparCpf(cpfEntrada)
+
+  if (cpfLimpo.length !== 11) return null
+
+  const cpfFormatado = formatarCPF(cpfLimpo)
+  const cpfOriginal = texto(cpfEntrada)
+
+  const tentativas = Array.from(
+    new Set([
+      cpfLimpo,
+      cpfFormatado,
+      cpfOriginal,
+      cpfOriginal.replace(/\s/g, ''),
+    ].filter(Boolean))
+  )
+
+  for (const tentativa of tentativas) {
+    const encontrado = await buscarUsuarioPorCpfExato(supabase, tentativa)
+
+    if (encontrado?.id) {
+      return encontrado
+    }
+  }
+
+  const usuarios = await executarBuscaUsuariosComFallback({
+    supabase,
+    limite: 5000,
+    aplicarFiltros: (query) => query.not('cpf', 'is', null),
+  })
+
+  const encontrado = usuarios.find((usuario: AnyRecord) => {
+    return limparCpf(usuario.cpf) === cpfLimpo
+  })
+
+  return encontrado?.id ? encontrado : null
+}
+
+async function buscarUsuarioPorEmail(supabase: any, emailEntrada: string) {
+  const email = normalizar(emailEntrada)
+
+  if (!email || !email.includes('@')) return null
+
+  const usuarios = await executarBuscaUsuariosComFallback({
+    supabase,
+    limite: 1,
+    aplicarFiltros: (query) => query.ilike('email', email),
+  })
+
+  if (usuarios[0]?.id) {
+    return usuarios[0]
+  }
+
+  return null
 }
 
 export async function POST(request: Request) {
@@ -107,67 +323,53 @@ export async function POST(request: Request) {
 
     if (!login) {
       return NextResponse.json(
-        { sucesso: false, erro: 'Informe e-mail ou CPF.' },
+        {
+          sucesso: false,
+          erro: 'Informe e-mail ou CPF.',
+        },
         { status: 400 }
       )
     }
 
     if (!senha) {
       return NextResponse.json(
-        { sucesso: false, erro: 'Informe sua senha.' },
+        {
+          sucesso: false,
+          erro: 'Informe sua senha.',
+        },
         { status: 400 }
       )
     }
 
     const cpfLimpo = limparCpf(login)
-    const ehCpf = cpfLimpo.length === 11
-    const email = normalizar(login)
+    const contemArroba = login.includes('@')
+    const pareceCpf = cpfLimpo.length === 11 && !contemArroba
 
-    let query = supabase
-      .from('users')
-      .select(`
-        id,
-        nome,
-        name,
-        email,
-        cpf,
-        tipo,
-        status,
-        ativo,
-        avatar_url,
-        foto_url,
-        imagem_url,
-        senha_hash,
-        senha,
-        password
-      `)
-      .limit(1)
+    let user: AnyRecord | null = null
 
-    if (ehCpf) {
-      query = query.eq('cpf', cpfLimpo)
+    if (pareceCpf) {
+      user = await buscarUsuarioPorCpfNormalizado(supabase, login)
     } else {
-      query = query.eq('email', email)
+      user = await buscarUsuarioPorEmail(supabase, login)
     }
 
-    const { data, error } = await query.maybeSingle()
-
-    if (error) {
-      console.error('Erro em POST /api/login:', error)
+    if (!user?.id) {
+      console.warn('[login] Usuário não encontrado pelo login informado:', {
+        tipoBusca: pareceCpf ? 'cpf' : 'email',
+        loginMascarado: pareceCpf
+          ? `${cpfLimpo.slice(0, 3)}.***.***-${cpfLimpo.slice(9, 11)}`
+          : normalizar(login),
+      })
 
       return NextResponse.json(
-        { sucesso: false, erro: 'Erro ao acessar sua conta.' },
-        { status: 500 }
-      )
-    }
-
-    if (!data?.id) {
-      return NextResponse.json(
-        { sucesso: false, erro: 'Usuário ou senha inválidos.' },
+        {
+          sucesso: false,
+          erro: 'Usuário ou senha inválidos.',
+        },
         { status: 401 }
       )
     }
 
-    const user = data as AnyRecord
     const status = normalizar(user.status)
 
     if (
@@ -202,16 +404,26 @@ export async function POST(request: Request) {
     const senhaValida = await senhaConfere(senha, user)
 
     if (!senhaValida) {
+      console.warn('[login] Senha inválida para usuário encontrado:', {
+        userId: user.id,
+        tipo: user.tipo,
+        cpf: user.cpf ? `${limparCpf(user.cpf).slice(0, 3)}.***.***-${limparCpf(user.cpf).slice(9, 11)}` : null,
+      })
+
       return NextResponse.json(
-        { sucesso: false, erro: 'Usuário ou senha inválidos.' },
+        {
+          sucesso: false,
+          erro: 'Usuário ou senha inválidos.',
+        },
         { status: 401 }
       )
     }
 
     const tipo = normalizar(user.tipo || 'cliente') || 'cliente'
+
     const usuarioLocal = {
       id: user.id,
-      nome: user.nome || user.name || user.email || 'Usuário',
+      nome: user.nome || user.email || 'Usuário',
       email: user.email || '',
       tipo,
       avatar_url: user.avatar_url || null,
@@ -227,8 +439,15 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Erro interno em POST /api/login:', {
       message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
       stack: error?.stack,
-      body,
+      body: {
+        ...body,
+        senha: body?.senha ? '[oculta]' : undefined,
+        password: body?.password ? '[oculta]' : undefined,
+      },
     })
 
     return NextResponse.json(
