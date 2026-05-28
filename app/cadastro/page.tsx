@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+type TipoUsuario = 'cliente' | 'guia'
+
 type FormCadastro = {
   nome: string
   email: string
@@ -11,8 +13,20 @@ type FormCadastro = {
   data_nascimento: string
   senha: string
   confirmar_senha: string
-  tipo: 'cliente' | 'guia'
+  tipo: TipoUsuario
 }
+
+type UsuarioLocal = {
+  id?: string
+  nome?: string | null
+  email?: string | null
+  tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
+}
+
+const LOGO_CADASTRO_SRC = '/logo-login-montanha-prussik.jpg?v=20260528'
 
 const formInicial: FormCadastro = {
   nome: '',
@@ -22,7 +36,7 @@ const formInicial: FormCadastro = {
   data_nascimento: '',
   senha: '',
   confirmar_senha: '',
-  tipo: 'cliente'
+  tipo: 'cliente',
 }
 
 export default function CadastroPage() {
@@ -39,19 +53,20 @@ export default function CadastroPage() {
     if (!userData) return
 
     try {
-      const user = JSON.parse(userData)
+      const user = JSON.parse(userData) as UsuarioLocal
+      const tipo = String(user?.tipo || '').toLowerCase()
 
-      if (user?.tipo === 'cliente') {
+      if (user?.id && tipo === 'cliente') {
         router.replace('/cliente/dashboard')
         return
       }
 
-      if (user?.tipo === 'guia') {
+      if (user?.id && tipo === 'guia') {
         router.replace('/guia/dashboard')
         return
       }
 
-      if (user?.tipo === 'admin') {
+      if (user?.id && tipo === 'admin') {
         router.replace('/admin/dashboard')
       }
     } catch {
@@ -59,52 +74,34 @@ export default function CadastroPage() {
     }
   }, [router])
 
-  // Função para calcular idade a partir da data de nascimento
-  const calcularIdade = (dataNascimento: string): number => {
-    if (!dataNascimento) return 0
-    
-    const hoje = new Date()
-    const nascimento = new Date(dataNascimento)
-    
-    let idade = hoje.getFullYear() - nascimento.getFullYear()
-    const mes = hoje.getMonth() - nascimento.getMonth()
-    
-    if (mes < 0 || (mes === 0 && hoje.getDate() < nascimento.getDate())) {
-      idade--
-    }
-    
-    return idade
+  function texto(valor: unknown) {
+    return String(valor || '').trim()
   }
 
-  // Verificar se o usuário é maior de idade (>= 18 anos)
-  const isMaiorDeIdade = (dataNascimento: string): boolean => {
-    return calcularIdade(dataNascimento) >= 18
+  function somenteNumeros(valor: unknown) {
+    return texto(valor).replace(/\D/g, '')
   }
 
-  const somenteNumeros = (valor: string) => {
-    return String(valor || '').replace(/\D/g, '')
-  }
-
-  const formatarTelefone = (valor: string) => {
+  function formatarTelefone(valor: string) {
     const numeros = somenteNumeros(valor).slice(0, 11)
 
-    if (numeros.length <= 2) {
-      return numeros
+    if (numeros.length <= 2) return numeros
+
+    if (numeros.length <= 6) {
+      return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`
     }
 
-    if (numeros.length <= 7) {
-      return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`
+    if (numeros.length <= 10) {
+      return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`
     }
 
     return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`
   }
 
-  const formatarCpf = (valor: string) => {
+  function formatarCpf(valor: string) {
     const numeros = somenteNumeros(valor).slice(0, 11)
 
-    if (numeros.length <= 3) {
-      return numeros
-    }
+    if (numeros.length <= 3) return numeros
 
     if (numeros.length <= 6) {
       return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
@@ -114,14 +111,17 @@ export default function CadastroPage() {
       return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
     }
 
-    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9)}`
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
   }
 
-  const atualizarCampo = (campo: keyof FormCadastro, valor: string) => {
+  function atualizarCampo(campo: keyof FormCadastro, valor: string) {
+    setMensagem('')
+    setTipoMensagem('')
+
     if (campo === 'telefone') {
       setForm((prev) => ({
         ...prev,
-        telefone: formatarTelefone(valor)
+        telefone: formatarTelefone(valor),
       }))
       return
     }
@@ -129,29 +129,63 @@ export default function CadastroPage() {
     if (campo === 'cpf') {
       setForm((prev) => ({
         ...prev,
-        cpf: formatarCpf(valor)
+        cpf: formatarCpf(valor),
       }))
       return
     }
 
     setForm((prev) => ({
       ...prev,
-      [campo]: valor
+      [campo]: valor,
     }))
   }
 
-  const validarEmail = (email: string) => {
+  function alterarTipo(tipo: TipoUsuario) {
+    setMensagem('')
+    setTipoMensagem('')
+
+    setForm((prev) => ({
+      ...prev,
+      tipo,
+    }))
+  }
+
+  function validarEmail(email: string) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
   }
 
-  const validarFormulario = () => {
-    const nome = form.nome.trim()
-    const email = form.email.trim().toLowerCase()
+  function calcularIdade(dataNascimento: string) {
+    if (!dataNascimento) return 0
+
+    const hoje = new Date()
+    const nascimento = new Date(dataNascimento)
+
+    if (Number.isNaN(nascimento.getTime())) return 0
+
+    let idade = hoje.getFullYear() - nascimento.getFullYear()
+    const mes = hoje.getMonth() - nascimento.getMonth()
+
+    if (mes < 0 || (mes === 0 && hoje.getDate() < nascimento.getDate())) {
+      idade--
+    }
+
+    return idade
+  }
+
+  function isMaiorDeIdade(dataNascimento: string) {
+    return calcularIdade(dataNascimento) >= 18
+  }
+
+  function validarFormulario() {
+    const nome = texto(form.nome)
+    const email = texto(form.email).toLowerCase()
     const telefone = somenteNumeros(form.telefone)
     const cpf = somenteNumeros(form.cpf)
 
-    if (!nome) {
-      return 'Informe seu nome.'
+    if (!nome) return 'Informe seu nome completo.'
+
+    if (nome.split(' ').filter(Boolean).length < 2) {
+      return 'Informe seu nome e sobrenome.'
     }
 
     if (!email || !validarEmail(email)) {
@@ -170,10 +204,9 @@ export default function CadastroPage() {
       return 'Informe sua data de nascimento.'
     }
 
-    // VALIDAÇÃO DE IDADE - BLOQUEIA MENORES DE 18 ANOS
     if (!isMaiorDeIdade(form.data_nascimento)) {
       const idade = calcularIdade(form.data_nascimento)
-      return `❌ Cadastro não permitido para menores de 18 anos. Você tem ${idade} anos.`
+      return `Cadastro não permitido para menores de 18 anos. Idade informada: ${idade} anos.`
     }
 
     if (!form.senha || form.senha.length < 6) {
@@ -187,8 +220,19 @@ export default function CadastroPage() {
     return ''
   }
 
-  const cadastrar = async (event: FormEvent) => {
+  function rotaPorTipo(tipo?: string | null) {
+    const t = String(tipo || '').toLowerCase()
+
+    if (t === 'guia') return '/guia/dashboard'
+    if (t === 'admin') return '/admin/dashboard'
+
+    return '/cliente/dashboard'
+  }
+
+  async function cadastrar(event: FormEvent) {
     event.preventDefault()
+
+    if (carregando) return
 
     setMensagem('')
     setTipoMensagem('')
@@ -207,29 +251,30 @@ export default function CadastroPage() {
       const response = await fetch('/api/cadastro', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
+        cache: 'no-store',
         body: JSON.stringify({
-          nome: form.nome.trim(),
-          email: form.email.trim().toLowerCase(),
-          telefone: form.telefone.trim(),
-          celular: form.telefone.trim(),
+          nome: texto(form.nome),
+          email: texto(form.email).toLowerCase(),
+          telefone: texto(form.telefone),
+          celular: texto(form.telefone),
           cpf: somenteNumeros(form.cpf),
+          cpf_formatado: formatarCpf(form.cpf),
           data_nascimento: form.data_nascimento,
           nascimento: form.data_nascimento,
           senha: form.senha,
           password: form.senha,
           confirmar_senha: form.confirmar_senha,
-          tipo: form.tipo
-        })
+          tipo: form.tipo,
+        }),
       })
 
-      const texto = await response.text()
-
+      const respostaTexto = await response.text()
       let data: any = null
 
       try {
-        data = texto ? JSON.parse(texto) : null
+        data = respostaTexto ? JSON.parse(respostaTexto) : null
       } catch {
         throw new Error('A rota de cadastro retornou uma resposta inválida.')
       }
@@ -242,32 +287,36 @@ export default function CadastroPage() {
         )
       }
 
-      const usuario = {
+      const usuario: UsuarioLocal = {
         id: data.usuario?.id,
-        nome: data.usuario?.nome || form.nome.trim(),
-        email: data.usuario?.email || form.email.trim().toLowerCase(),
-        tipo: data.usuario?.tipo || form.tipo
+        nome: data.usuario?.nome || texto(form.nome),
+        email: data.usuario?.email || texto(form.email).toLowerCase(),
+        tipo: data.usuario?.tipo || form.tipo,
+        avatar_url: data.usuario?.avatar_url || null,
+        foto_url: data.usuario?.foto_url || null,
+        imagem_url: data.usuario?.imagem_url || null,
       }
 
-      localStorage.setItem('user', JSON.stringify(usuario))
+      if (usuario.id) {
+        localStorage.setItem('user', JSON.stringify(usuario))
+      }
 
-      setMensagem('Cadastro realizado com sucesso!')
+      setMensagem(
+        form.tipo === 'guia'
+          ? 'Cadastro de guia realizado com sucesso. Vamos preparar sua área.'
+          : 'Cadastro realizado com sucesso. Vamos preparar sua área.'
+      )
       setTipoMensagem('sucesso')
 
       setTimeout(() => {
-        if (usuario.tipo === 'guia') {
-          router.replace('/guia/dashboard')
-          return
-        }
-
-        router.replace('/cliente/dashboard')
-      }, 600)
+        router.replace(data.redirectTo || rotaPorTipo(usuario.tipo))
+      }, 650)
     } catch (error: any) {
-      console.error('Erro ao cadastrar:', error)
+      console.error('Erro no cadastro:', error)
 
       setMensagem(
         error?.message ||
-          'Erro ao cadastrar. Verifique os dados e tente novamente.'
+          'Erro ao realizar cadastro. Verifique os dados e tente novamente.'
       )
       setTipoMensagem('erro')
     } finally {
@@ -284,7 +333,7 @@ export default function CadastroPage() {
 
         body {
           margin: 0;
-          background: #f3f4f6;
+          background: #fffdf7;
           font-family:
             Inter,
             ui-sans-serif,
@@ -299,95 +348,115 @@ export default function CadastroPage() {
           min-height: 100vh;
           min-height: 100dvh;
           background:
-            radial-gradient(circle at top left, rgba(22, 163, 74, 0.10), transparent 30%),
-            linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
+            radial-gradient(circle at 8% 0%, rgba(132, 204, 22, 0.15), transparent 30%),
+            radial-gradient(circle at 92% 8%, rgba(251, 146, 60, 0.10), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
           color: #111827;
-        }
-
-        .topBar {
-          height: 64px;
-          background: #dc2626;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 0 16px;
-        }
-
-        .topLogo {
-          height: 42px;
-          width: auto;
-          object-fit: contain;
-          display: block;
+          padding: 20px 14px;
         }
 
         .container {
           width: 100%;
-          max-width: 680px;
+          max-width: 540px;
           margin: 0 auto;
-          padding: 26px 18px 44px;
         }
 
         .card {
-          background: #ffffff;
-          border-radius: 32px;
-          padding: 28px;
-          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
-          border: 1px solid #eef2f7;
+          background: rgba(255, 255, 255, 0.94);
+          border-radius: 34px;
+          padding: 30px 30px 34px;
+          box-shadow:
+            0 24px 58px rgba(32, 60, 46, 0.12),
+            0 8px 22px rgba(15, 23, 42, 0.06);
+          border: 1px solid rgba(15, 23, 42, 0.055);
+          backdrop-filter: blur(14px);
+          overflow: hidden;
         }
 
         .brand {
           display: flex;
           justify-content: center;
-          margin-bottom: 16px;
+          margin: 0 auto 12px;
+          width: 100%;
+          overflow: visible;
         }
 
-        .brand img {
-          height: 70px;
-          width: auto;
+        .brandLogoCrop {
+          width: 220px;
+          height: 116px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          flex: 0 0 auto;
+        }
+
+        .brandLogoCrop img {
+          width: 220px;
+          height: 220px;
           object-fit: contain;
+          display: block;
+          transform: scale(1.58);
+          transform-origin: center;
         }
 
-        .title {
-          margin: 0;
+        .heroPhrase {
+          margin: 0 auto 22px;
+          max-width: 360px;
           text-align: center;
-          font-size: 30px;
-          font-weight: 900;
-          color: #111827;
-          letter-spacing: -0.04em;
+          color: #172018;
+          font-size: 29px;
+          line-height: 1.04;
+          font-weight: 950;
+          letter-spacing: -0.065em;
         }
 
-        .subtitle {
-          margin: 8px auto 24px;
+        .heroPhrase span {
+          color: #203c2e;
+        }
+
+        .supportText {
+          max-width: 410px;
+          margin: -10px auto 22px;
           text-align: center;
-          color: #6b7280;
-          font-size: 14px;
-          line-height: 1.55;
-          max-width: 440px;
+          color: #7b8372;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 750;
         }
 
-        .tipoBox {
+        .typeSelector {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 10px;
           margin-bottom: 18px;
+          background: #eef2e5;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 999px;
+          padding: 5px;
         }
 
-        .tipoButton {
-          border: 1px solid #e5e7eb;
-          background: #f9fafb;
-          color: #374151;
+        .typeButton {
+          border: none;
           border-radius: 999px;
-          padding: 13px 14px;
-          font-weight: 900;
+          padding: 12px 14px;
+          background: transparent;
+          color: #64748b;
           font-size: 13px;
+          font-weight: 950;
           cursor: pointer;
           transition: 0.2s ease;
+          white-space: nowrap;
         }
 
-        .tipoButton.active {
-          background: #111827;
-          border-color: #111827;
+        .typeButton.active {
+          background: #203c2e;
           color: #ffffff;
+          box-shadow: 0 12px 24px rgba(32, 60, 46, 0.18);
         }
 
         .form {
@@ -395,296 +464,368 @@ export default function CadastroPage() {
           gap: 15px;
         }
 
+        .formGrid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+
         .formGroup {
           display: flex;
           flex-direction: column;
-          gap: 7px;
+          gap: 8px;
+        }
+
+        .formGroup.full {
+          grid-column: 1 / -1;
         }
 
         label {
           font-size: 13px;
-          font-weight: 800;
-          color: #374151;
+          font-weight: 900;
+          color: #334155;
+          letter-spacing: -0.01em;
         }
 
         input {
           width: 100%;
-          border: 1px solid #e5e7eb;
+          border: 1px solid #dbe4f2;
           border-radius: 18px;
-          padding: 15px 16px;
-          font-size: 16px;
+          padding: 15px 17px;
+          font-size: 15.5px;
           color: #111827;
-          background: #ffffff;
+          background: #eef5ff;
           outline: none;
           transition: 0.2s ease;
         }
 
         input:focus {
-          border-color: #16a34a;
-          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+          background: #ffffff;
+          border-color: #203c2e;
+          box-shadow: 0 0 0 4px rgba(32, 60, 46, 0.11);
         }
 
         input::placeholder {
-          color: #9ca3af;
+          color: #94a3b8;
+        }
+
+        input:disabled {
+          opacity: 0.72;
+          cursor: not-allowed;
         }
 
         .message {
-          padding: 14px 16px;
+          padding: 13px 15px;
           border-radius: 18px;
-          font-size: 14px;
+          font-size: 13px;
           line-height: 1.45;
           text-align: center;
-          font-weight: 700;
+          font-weight: 850;
+          border: 1px solid transparent;
         }
 
         .message.erro {
           background: #fee2e2;
           color: #991b1b;
-          border: 1px solid #fecaca;
+          border-color: #fecaca;
         }
 
         .message.sucesso {
           background: #dcfce7;
           color: #166534;
-          border: 1px solid #bbf7d0;
+          border-color: #bbf7d0;
         }
 
         .submitButton {
           width: 100%;
           border: none;
           border-radius: 999px;
-          padding: 16px;
-          background: #15803d;
+          padding: 17px;
+          background: #203c2e;
           color: #ffffff;
-          font-size: 18px;
-          font-weight: 900;
+          font-size: 17px;
+          font-weight: 950;
           cursor: pointer;
           transition: 0.2s ease;
-          margin-top: 8px;
+          margin-top: 4px;
+          box-shadow: 0 14px 26px rgba(32, 60, 46, 0.18);
         }
 
         .submitButton:hover:not(:disabled) {
-          background: #166534;
+          background: #294735;
           transform: translateY(-1px);
-          box-shadow: 0 10px 24px rgba(22, 101, 52, 0.22);
+          box-shadow: 0 18px 32px rgba(32, 60, 46, 0.24);
         }
 
         .submitButton:disabled {
-          opacity: 0.7;
+          opacity: 0.72;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
+        }
+
+        .linkRow {
+          display: flex;
+          justify-content: center;
+          margin-top: 18px;
+        }
+
+        .textButton {
+          border: none;
+          background: transparent;
+          color: #203c2e;
+          font-size: 14px;
+          font-weight: 900;
+          cursor: pointer;
+          text-decoration: none;
+          padding: 4px 6px;
+        }
+
+        .textButton:hover {
+          text-decoration: underline;
+        }
+
+        .textButton:disabled {
+          opacity: 0.58;
           cursor: not-allowed;
         }
 
-        .divider {
-          display: grid;
-          grid-template-columns: 1fr auto 1fr;
-          align-items: center;
-          gap: 14px;
-          margin: 22px 0;
-          color: #9ca3af;
-          font-size: 14px;
-        }
-
-        .divider::before,
-        .divider::after {
-          content: "";
-          height: 1px;
-          background: #e5e7eb;
-        }
-
-        .loginButton {
-          width: 100%;
-          border: 1px solid #16a34a;
-          border-radius: 999px;
-          padding: 15px;
-          background: #ffffff;
-          color: #16a34a;
-          font-size: 17px;
-          font-weight: 900;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .loginButton:hover {
-          background: #f0fdf4;
-        }
-
         .hint {
-          margin: 14px 0 0;
+          margin: 18px 0 0;
           text-align: center;
-          color: #9ca3af;
+          color: #7b8372;
           font-size: 12px;
           line-height: 1.45;
+          font-weight: 750;
         }
 
-        @media (max-width: 520px) {
-          .topBar {
-            height: 62px;
+        @media (max-width: 560px) {
+          .page {
+            align-items: flex-start;
+            padding: 18px 12px 26px;
           }
 
           .container {
-            padding: 20px 14px 34px;
+            max-width: 100%;
           }
 
           .card {
-            border-radius: 28px;
-            padding: 24px 18px;
+            border-radius: 30px;
+            padding: 26px 20px 30px;
           }
 
-          .brand img {
-            height: 60px;
+          .brand {
+            margin-bottom: 10px;
           }
 
-          .title {
-            font-size: 26px;
+          .brandLogoCrop {
+            width: 198px;
+            height: 106px;
+          }
+
+          .brandLogoCrop img {
+            width: 198px;
+            height: 198px;
+            transform: scale(1.54);
+          }
+
+          .heroPhrase {
+            font-size: 27px;
+            max-width: 300px;
+            margin-bottom: 18px;
+          }
+
+          .supportText {
+            margin-bottom: 20px;
+          }
+
+          .formGrid {
+            grid-template-columns: 1fr;
+            gap: 14px;
+          }
+
+          .typeButton {
+            font-size: 12px;
+            padding: 11px 10px;
           }
 
           input {
-            font-size: 16px;
+            font-size: 15px;
             padding: 14px 15px;
           }
 
           .submitButton {
-            font-size: 17px;
+            padding: 15px;
+            font-size: 16px;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .card {
+            padding: 24px 18px 28px;
+          }
+
+          .brandLogoCrop {
+            width: 184px;
+            height: 98px;
+          }
+
+          .brandLogoCrop img {
+            width: 184px;
+            height: 184px;
+            transform: scale(1.50);
+          }
+
+          .heroPhrase {
+            font-size: 25px;
+          }
+
+          .typeSelector {
+            border-radius: 24px;
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
 
-      <header className="topBar">
-        <img
-          src="/logo-prussik-display.png"
-          alt="PrussikTrails"
-          className="topLogo"
-        />
-      </header>
-
       <div className="container">
         <section className="card">
           <div className="brand">
-            <img
-              src="/logo-prussik-display.png"
-              alt="PrussikTrails"
-            />
+            <div className="brandLogoCrop">
+              <img
+                src={LOGO_CADASTRO_SRC}
+                alt="PrussikTrails"
+                loading="eager"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.style.display = 'none'
+                }}
+              />
+            </div>
           </div>
 
-          <h1 className="title">Criar conta</h1>
-
-          <p className="subtitle">
-            Cadastre-se para reservar roteiros, acompanhar suas aventuras e acessar o app PrussikTrails.
+          <p className="heroPhrase">
+            Comece sua
+            <br />
+            jornada no
+            <br />
+            <span>PrussikTrails.</span>
           </p>
 
-          <div className="tipoBox">
+          <p className="supportText">
+            Crie sua conta para reservar experiências ou cadastrar roteiros como guia.
+          </p>
+
+          <div className="typeSelector" aria-label="Tipo de cadastro">
             <button
               type="button"
-              className={`tipoButton ${form.tipo === 'cliente' ? 'active' : ''}`}
-              onClick={() => atualizarCampo('tipo', 'cliente')}
+              className={`typeButton ${form.tipo === 'cliente' ? 'active' : ''}`}
+              onClick={() => alterarTipo('cliente')}
+              disabled={carregando}
             >
-              Sou cliente
+              Sou aventureiro
             </button>
 
             <button
               type="button"
-              className={`tipoButton ${form.tipo === 'guia' ? 'active' : ''}`}
-              onClick={() => atualizarCampo('tipo', 'guia')}
+              className={`typeButton ${form.tipo === 'guia' ? 'active' : ''}`}
+              onClick={() => alterarTipo('guia')}
+              disabled={carregando}
             >
               Sou guia
             </button>
           </div>
 
           <form className="form" onSubmit={cadastrar}>
-            <div className="formGroup">
-              <label>Nome completo *</label>
-              <input
-                value={form.nome}
-                onChange={(event) =>
-                  atualizarCampo('nome', event.target.value)
-                }
-                placeholder="Seu nome completo"
-                autoComplete="name"
-              />
-            </div>
+            <div className="formGrid">
+              <div className="formGroup full">
+                <label>Nome completo *</label>
+                <input
+                  value={form.nome}
+                  onChange={(event) => atualizarCampo('nome', event.target.value)}
+                  placeholder="Seu nome completo"
+                  type="text"
+                  autoComplete="name"
+                  disabled={carregando}
+                />
+              </div>
 
-            <div className="formGroup">
-              <label>E-mail *</label>
-              <input
-                value={form.email}
-                onChange={(event) =>
-                  atualizarCampo('email', event.target.value)
-                }
-                placeholder="seuemail@email.com"
-                type="email"
-                autoComplete="email"
-              />
-            </div>
+              <div className="formGroup full">
+                <label>E-mail *</label>
+                <input
+                  value={form.email}
+                  onChange={(event) => atualizarCampo('email', event.target.value)}
+                  placeholder="seuemail@email.com"
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  disabled={carregando}
+                />
+              </div>
 
-            <div className="formGroup">
-              <label>Celular *</label>
-              <input
-                value={form.telefone}
-                onChange={(event) =>
-                  atualizarCampo('telefone', event.target.value)
-                }
-                placeholder="(11) 98888-8888"
-                inputMode="tel"
-                autoComplete="tel"
-              />
-            </div>
+              <div className="formGroup">
+                <label>Celular *</label>
+                <input
+                  value={form.telefone}
+                  onChange={(event) => atualizarCampo('telefone', event.target.value)}
+                  placeholder="(11) 99999-9999"
+                  type="tel"
+                  autoComplete="tel"
+                  inputMode="tel"
+                  disabled={carregando}
+                />
+              </div>
 
-            <div className="formGroup">
-              <label>CPF *</label>
-              <input
-                value={form.cpf}
-                onChange={(event) =>
-                  atualizarCampo('cpf', event.target.value)
-                }
-                placeholder="000.000.000-00"
-                inputMode="numeric"
-                autoComplete="off"
-              />
-            </div>
+              <div className="formGroup">
+                <label>CPF *</label>
+                <input
+                  value={form.cpf}
+                  onChange={(event) => atualizarCampo('cpf', event.target.value)}
+                  placeholder="000.000.000-00"
+                  type="text"
+                  autoComplete="off"
+                  inputMode="numeric"
+                  disabled={carregando}
+                />
+              </div>
 
-            <div className="formGroup">
-              <label>Data de nascimento *</label>
-              <input
-                value={form.data_nascimento}
-                onChange={(event) =>
-                  atualizarCampo('data_nascimento', event.target.value)
-                }
-                type="date"
-                autoComplete="bday"
-              />
-              <small style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
-                ⚠️ Apenas maiores de 18 anos podem se cadastrar.
-              </small>
-            </div>
+              <div className="formGroup full">
+                <label>Data de nascimento *</label>
+                <input
+                  value={form.data_nascimento}
+                  onChange={(event) => atualizarCampo('data_nascimento', event.target.value)}
+                  type="date"
+                  autoComplete="bday"
+                  disabled={carregando}
+                />
+              </div>
 
-            <div className="formGroup">
-              <label>Senha *</label>
-              <input
-                value={form.senha}
-                onChange={(event) =>
-                  atualizarCampo('senha', event.target.value)
-                }
-                type="password"
-                placeholder="Mínimo de 6 caracteres"
-                autoComplete="new-password"
-              />
-            </div>
+              <div className="formGroup">
+                <label>Senha *</label>
+                <input
+                  value={form.senha}
+                  onChange={(event) => atualizarCampo('senha', event.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  type="password"
+                  autoComplete="new-password"
+                  disabled={carregando}
+                />
+              </div>
 
-            <div className="formGroup">
-              <label>Confirmar senha *</label>
-              <input
-                value={form.confirmar_senha}
-                onChange={(event) =>
-                  atualizarCampo('confirmar_senha', event.target.value)
-                }
-                type="password"
-                placeholder="Digite a senha novamente"
-                autoComplete="new-password"
-              />
+              <div className="formGroup">
+                <label>Confirmar senha *</label>
+                <input
+                  value={form.confirmar_senha}
+                  onChange={(event) => atualizarCampo('confirmar_senha', event.target.value)}
+                  placeholder="Repita sua senha"
+                  type="password"
+                  autoComplete="new-password"
+                  disabled={carregando}
+                />
+              </div>
             </div>
 
             {mensagem && (
-              <div className={`message ${tipoMensagem}`}>
+              <div className={`message ${tipoMensagem || 'erro'}`}>
                 {mensagem}
               </div>
             )}
@@ -694,22 +835,27 @@ export default function CadastroPage() {
               className="submitButton"
               disabled={carregando}
             >
-              {carregando ? 'Cadastrando...' : 'Cadastrar'}
+              {carregando
+                ? 'Criando sua conta...'
+                : form.tipo === 'guia'
+                  ? 'Criar conta de guia'
+                  : 'Criar minha conta'}
             </button>
           </form>
 
-          <div className="divider">ou</div>
-
-          <button
-            type="button"
-            className="loginButton"
-            onClick={() => router.push('/login')}
-          >
-            Já tenho conta
-          </button>
+          <div className="linkRow">
+            <button
+              type="button"
+              className="textButton"
+              onClick={() => router.push('/login')}
+              disabled={carregando}
+            >
+              Já tenho conta. Entrar
+            </button>
+          </div>
 
           <p className="hint">
-            Ao cadastrar, você poderá acessar o app instalado pelo celular.
+            O cadastro é permitido apenas para maiores de 18 anos.
           </p>
         </section>
       </div>
