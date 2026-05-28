@@ -1443,7 +1443,7 @@ export default function ClienteDashboardPage() {
           position: sticky;
           top: 0;
           z-index: 50;
-          background: rgba(255,253,247,0.92);
+          background: rgba(255,253,247,0.94);
           border-bottom: 1px solid rgba(15,23,42,0.06);
           backdrop-filter: blur(18px);
           padding: 9px 14px;
@@ -1452,65 +1452,68 @@ export default function ClienteDashboardPage() {
         .topbarInner {
           max-width: 1180px;
           margin: 0 auto;
-          display: flex;
+          display: grid;
+          grid-template-columns: 44px minmax(0, 1fr) 44px;
           align-items: center;
-          justify-content: space-between;
-          gap: 10px;
+          gap: 8px;
         }
 
-        .brand {
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
+        .headerSpacer {
+          width: 42px;
+          height: 42px;
+        }
+
+        .brandDashboard {
           min-width: 0;
           border: 0;
           background: transparent;
-          padding: 0;
-          text-align: left;
+          padding: 4px 6px 3px;
+          text-align: center;
           cursor: pointer;
           color: #172018;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          justify-self: center;
+          max-width: 100%;
         }
 
-        .brand img {
-          width: 46px;
-          height: 46px;
-          max-width: 46px;
-          object-fit: contain;
-          flex: 0 0 46px;
-          display: block;
-        }
-
-        .brand div {
-          min-width: 0;
-        }
-
-        .brand strong {
+        .brandDashboard strong {
           display: block;
           color: #1f3f2d;
           font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(30px, 3.6vw, 50px);
+          font-size: clamp(31px, 7.4vw, 56px);
           font-weight: 800;
-          line-height: 0.9;
-          letter-spacing: -0.055em;
+          line-height: 0.88;
+          letter-spacing: -0.06em;
           white-space: nowrap;
+          max-width: min(72vw, 560px);
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
-        .brand span {
+        .brandDashboard span {
           display: block;
           margin-top: 6px;
           color: #7b8375;
-          font-size: clamp(10px, 1.15vw, 15px);
+          font-size: clamp(8px, 1.35vw, 13px);
           font-weight: 850;
-          letter-spacing: 0.22em;
+          letter-spacing: clamp(0.08em, 0.8vw, 0.22em);
+          text-transform: uppercase;
           white-space: nowrap;
+          max-width: min(72vw, 560px);
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .topActions {
           display: flex;
           align-items: center;
           gap: 8px;
-          flex: 0 0 auto;
           justify-content: flex-end;
+          justify-self: end;
+          min-width: 0;
         }
 
         .profileAvatarBtn {
@@ -2262,39 +2265,30 @@ export default function ClienteDashboardPage() {
           }
 
           .topbarInner {
-            gap: 8px;
+            grid-template-columns: 38px minmax(0, 1fr) 38px;
+            gap: 6px;
             align-items: center;
           }
 
-          .brand {
-            gap: 8px;
-            min-width: 0;
-            overflow: hidden;
+          .headerSpacer {
+            width: 36px;
+            height: 36px;
           }
 
-          .brand img {
-            width: 32px;
-            height: 32px;
-            max-width: 32px;
-            flex-basis: 32px;
+          .brandDashboard {
+            padding: 3px 4px 2px;
           }
 
-          .brand strong {
-            font-size: clamp(25px, 8vw, 33px);
-            line-height: 0.88;
-            letter-spacing: -0.065em;
-            max-width: calc(100vw - 96px);
-            overflow: hidden;
-            text-overflow: ellipsis;
+          .brandDashboard strong {
+            font-size: clamp(28px, 8.2vw, 36px);
+            max-width: calc(100vw - 104px);
           }
 
-          .brand span {
+          .brandDashboard span {
             font-size: 8px;
-            letter-spacing: 0.12em;
-            margin-top: 4px;
-            max-width: calc(100vw - 96px);
-            overflow: hidden;
-            text-overflow: ellipsis;
+            letter-spacing: 0.11em;
+            margin-top: 5px;
+            max-width: calc(100vw - 104px);
           }
 
           .profileAvatarBtn {
@@ -2353,18 +2347,16 @@ export default function ClienteDashboardPage() {
 
       <header className="topbar">
         <div className="topbarInner">
+          <div className="headerSpacer" aria-hidden="true" />
+
           <button
             type="button"
-            className="brand"
+            className="brandDashboard"
             onClick={() => router.push('/cliente/dashboard')}
-            aria-label="PrussikTrails"
+            aria-label="Voltar para a dashboard do cliente"
           >
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-
-            <div>
-              <strong>PrussikTrails</strong>
-              <span>Seu app de aventuras</span>
-            </div>
+            <strong>PrussikTrails</strong>
+            <span>Seu app de aventuras</span>
           </button>
 
           <div className="topActions">

@@ -7,8 +7,12 @@ import { supabase } from '@/lib/supabase/client'
 type UsuarioLocal = {
   id: string
   nome?: string | null
+  name?: string | null
   email?: string | null
   tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
 type Guia = {
@@ -27,6 +31,7 @@ type Roteiro = {
   valor?: number | null
   status?: string | null
   ativo?: boolean | null
+  excluido_admin?: boolean | null
   id_guia?: string | null
   guia_id?: string | null
   local?: string | null
@@ -76,14 +81,15 @@ export default function RoteirosPage() {
   const [mensagem, setMensagem] = useState('')
   const [busca, setBusca] = useState('')
   const [filtroDificuldade, setFiltroDificuldade] = useState('todos')
-  const [ordenacao, setOrdenacao] = useState<'quentes' | 'recentes' | 'menor_preco' | 'maior_preco'>('quentes')
+  const [ordenacao, setOrdenacao] = useState<
+    'quentes' | 'recentes' | 'menor_preco' | 'maior_preco'
+  >('quentes')
   const [roteiroSelecionado, setRoteiroSelecionado] = useState<Roteiro | null>(null)
   const [quantidadePessoas, setQuantidadePessoas] = useState(1)
 
   useEffect(() => {
     if (iniciouRef.current) return
     iniciouRef.current = true
-
     iniciar()
   }, [])
 
@@ -118,6 +124,38 @@ export default function RoteirosPage() {
       .trim()
   }
 
+  const primeiroNome = (valor?: string | null) => {
+    const nome = String(valor || '').trim()
+    if (!nome) return 'Perfil'
+    return nome.split(' ')[0] || 'Perfil'
+  }
+
+  const nomeUsuario = (usuario?: UsuarioLocal | null) => {
+    return usuario?.nome || usuario?.name || usuario?.email || 'Perfil'
+  }
+
+  const avatarUsuario = (usuario?: UsuarioLocal | null) => {
+    return usuario?.avatar_url || usuario?.foto_url || usuario?.imagem_url || ''
+  }
+
+  const inicialUsuario = (usuario?: UsuarioLocal | null) => {
+    return String(nomeUsuario(usuario)).trim().charAt(0).toUpperCase() || 'P'
+  }
+
+  const rotaPainelUsuario = (usuario?: UsuarioLocal | null) => {
+    if (!usuario) return '/login'
+    if (usuario.tipo === 'admin') return '/admin/dashboard'
+    if (usuario.tipo === 'guia') return '/guia/dashboard'
+    return '/cliente/dashboard'
+  }
+
+  const rotaPerfilUsuario = (usuario?: UsuarioLocal | null) => {
+    if (!usuario) return '/login'
+    if (usuario.tipo === 'admin') return '/admin/dashboard'
+    if (usuario.tipo === 'guia') return '/guia/perfil'
+    return '/cliente/perfil'
+  }
+
   const tituloRoteiro = (roteiro: Roteiro) => {
     return roteiro.titulo || roteiro.nome || 'Roteiro sem título'
   }
@@ -149,13 +187,7 @@ export default function RoteirosPage() {
   }
 
   const imagemRoteiro = (roteiro: Roteiro) => {
-    return (
-      roteiro.foto_capa ||
-      roteiro.foto_url ||
-      roteiro.imagem_url ||
-      roteiro.imagem ||
-      ''
-    )
+    return roteiro.foto_capa || roteiro.foto_url || roteiro.imagem_url || roteiro.imagem || ''
   }
 
   const kmRoteiro = (roteiro: Roteiro) => {
@@ -163,11 +195,7 @@ export default function RoteirosPage() {
   }
 
   const limitePessoas = (roteiro: Roteiro) => {
-    const limite =
-      roteiro.limite_pessoas ??
-      roteiro.capacidade ??
-      roteiro.max_pessoas ??
-      null
+    const limite = roteiro.limite_pessoas ?? roteiro.capacidade ?? roteiro.max_pessoas ?? null
 
     if (limite === null || limite === undefined) return 12
 
@@ -205,6 +233,8 @@ export default function RoteirosPage() {
   const statusPublicavel = (roteiro: Roteiro) => {
     const status = normalizar(roteiro.status)
 
+    if (roteiro.excluido_admin === true) return false
+    if (status === 'excluido_admin') return false
     if (status === 'reprovado') return false
     if (status === 'cancelado') return false
     if (status === 'cancelada') return false
@@ -277,7 +307,6 @@ export default function RoteirosPage() {
       }
 
       const roteiroIds = roteirosBase.map((roteiro) => roteiro.id)
-
       let reservas: any[] = []
 
       if (roteiroIds.length > 0) {
@@ -344,11 +373,7 @@ export default function RoteirosPage() {
 
         return {
           ...roteiro,
-          guia_nome:
-            guia?.nome ||
-            guia?.name ||
-            guia?.email ||
-            'Guia PrussikTrails',
+          guia_nome: guia?.nome || guia?.name || guia?.email || 'Guia PrussikTrails',
           hot_score: hot.score,
           hot_reservas: hot.total,
           hot_confirmadas: hot.confirmadas
@@ -365,7 +390,6 @@ export default function RoteirosPage() {
 
   const abrirDetalhesRoteiro = (roteiro: Roteiro) => {
     if (!roteiro?.id) return
-
     router.push(`/roteiros/${roteiro.id}`)
   }
 
@@ -436,18 +460,11 @@ export default function RoteirosPage() {
     }
   }
 
-  const sair = () => {
-    localStorage.removeItem('user')
-    setUser(null)
-    router.push('/login')
-  }
-
   const dificuldadesDisponiveis = useMemo(() => {
     const set = new Set<string>()
 
     roteiros.forEach((roteiro) => {
       const dificuldade = String(roteiro.dificuldade || '').trim()
-
       if (dificuldade) set.add(dificuldade)
     })
 
@@ -480,18 +497,12 @@ export default function RoteirosPage() {
     })
 
     return filtrados.sort((a, b) => {
-      if (ordenacao === 'menor_preco') {
-        return precoRoteiro(a) - precoRoteiro(b)
-      }
-
-      if (ordenacao === 'maior_preco') {
-        return precoRoteiro(b) - precoRoteiro(a)
-      }
+      if (ordenacao === 'menor_preco') return precoRoteiro(a) - precoRoteiro(b)
+      if (ordenacao === 'maior_preco') return precoRoteiro(b) - precoRoteiro(a)
 
       if (ordenacao === 'recentes') {
         const dataA = new Date(a.created_at || '').getTime()
         const dataB = new Date(b.created_at || '').getTime()
-
         return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
       }
 
@@ -512,7 +523,6 @@ export default function RoteirosPage() {
 
     if (total === 0) return 'Novidade'
     if (confirmadas > 0) return `${confirmadas} confirmação(ões)`
-
     return `${total} reserva(s)`
   }
 
@@ -535,14 +545,7 @@ export default function RoteirosPage() {
           body {
             margin: 0;
             background: #f6f7f1;
-            font-family:
-              Inter,
-              ui-sans-serif,
-              system-ui,
-              -apple-system,
-              BlinkMacSystemFont,
-              "Segoe UI",
-              sans-serif;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           }
 
           .loading {
@@ -567,8 +570,8 @@ export default function RoteirosPage() {
           }
 
           .loadingCard img {
-            height: 68px;
-            width: auto;
+            width: clamp(176px, 52vw, 250px);
+            height: auto;
             margin-bottom: 12px;
           }
         `}</style>
@@ -584,21 +587,12 @@ export default function RoteirosPage() {
   return (
     <main className="page">
       <style>{`
-        * {
-          box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         body {
           margin: 0;
           background: #f6f7f1;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         .page {
@@ -611,87 +605,109 @@ export default function RoteirosPage() {
           color: #172018;
         }
 
-        .header {
+        .topbar {
           position: sticky;
           top: 0;
           z-index: 40;
-          background: rgba(255, 253, 247, 0.86);
+          background: rgba(255, 253, 247, 0.88);
           border-bottom: 1px solid rgba(15, 23, 42, 0.06);
           backdrop-filter: blur(18px);
-          padding: 10px 16px;
+          padding: 8px 14px;
         }
 
-        .headerInner {
+        .topbarInner {
+          width: 100%;
           max-width: 1180px;
           margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: 46px minmax(0, 1fr) 46px;
           align-items: center;
-          gap: 12px;
+          gap: 8px;
         }
 
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          min-width: 0;
-          cursor: pointer;
-        }
-
-        .brand img {
+        .headerGhost {
+          width: 42px;
           height: 42px;
-          width: auto;
+        }
+
+        .brandCenter {
+          min-width: 0;
+          border: none;
+          background: transparent;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          padding: 0;
+          text-align: center;
+        }
+
+        .brandLogo {
+          width: clamp(178px, 54vw, 270px);
+          max-width: 100%;
+          height: auto;
           object-fit: contain;
           display: block;
         }
 
-        .brandTitle {
-          font-size: 18px;
-          font-weight: 950;
-          color: #dc2626;
+        .brandSubtitle {
+          color: #6b7280;
+          font-size: clamp(9px, 2.6vw, 11px);
           line-height: 1;
-          letter-spacing: -0.05em;
+          font-weight: 850;
+          letter-spacing: 0.08em;
+          margin-top: -3px;
+          text-transform: uppercase;
+          white-space: nowrap;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
-        .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 700;
-          margin-top: 3px;
-        }
-
-        .headerActions {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-        }
-
-        .iconBtn {
-          height: 38px;
+        .profileButton,
+        .loginButton {
+          width: 42px;
+          height: 42px;
           border: 1px solid rgba(15, 23, 42, 0.08);
           background: rgba(255,255,255,0.78);
+          color: #172018;
           border-radius: 999px;
-          padding: 0 13px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
           font-size: 12px;
-          font-weight: 900;
+          font-weight: 950;
           transition: 0.2s ease;
-          color: #172018;
-          white-space: nowrap;
+          overflow: hidden;
+          justify-self: end;
         }
 
-        .iconBtn:hover {
+        .profileButton:hover,
+        .loginButton:hover {
           transform: translateY(-1px);
           box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
         }
 
-        .iconBtn.primary {
+        .profileButton img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .profileInitial {
+          width: 100%;
+          height: 100%;
+          border-radius: 999px;
           background: #172018;
           color: #ffffff;
-          border-color: #172018;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          font-weight: 950;
         }
 
         .container {
@@ -1013,25 +1029,10 @@ export default function RoteirosPage() {
           white-space: nowrap;
         }
 
-        .badge-green {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .badge-yellow {
-          background: #fef3c7;
-          color: #92400e;
-        }
-
-        .badge-red {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-
-        .badge-neutral {
-          background: #f1f5f9;
-          color: #475569;
-        }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-yellow { background: #fef3c7; color: #92400e; }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-neutral { background: #f1f5f9; color: #475569; }
 
         .cardFooter {
           display: flex;
@@ -1188,185 +1189,153 @@ export default function RoteirosPage() {
 
         .modalActions {
           display: flex;
+          justify-content: flex-end;
           gap: 10px;
+          flex-wrap: wrap;
         }
 
         .cancelBtn,
         .confirmBtn {
-          flex: 1;
           border: none;
           border-radius: 999px;
-          padding: 14px 15px;
-          font-size: 13px;
+          padding: 12px 16px;
+          font-size: 12px;
           font-weight: 950;
           cursor: pointer;
         }
 
-        .cancelBtn {
-          background: #eef2e5;
-          color: #475569;
-        }
+        .cancelBtn { background: #e5e7eb; color: #374151; }
+        .confirmBtn { background: #172018; color: #ffffff; }
 
-        .confirmBtn {
-          background: #16a34a;
-          color: #ffffff;
-        }
-
+        .cancelBtn:disabled,
         .confirmBtn:disabled {
-          opacity: 0.65;
+          opacity: 0.6;
           cursor: not-allowed;
         }
 
-        @media (max-width: 1080px) {
+        @media (max-width: 980px) {
+          .heroContent,
+          .toolbar,
           .grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: 1fr;
           }
 
-          .toolbar {
-            grid-template-columns: 1fr;
+          .hero {
+            min-height: 0;
           }
 
           .heroContent {
-            grid-template-columns: 1fr;
+            min-height: 0;
           }
         }
 
         @media (max-width: 720px) {
-          .header {
-            padding: 9px 12px;
+          .topbar {
+            padding: 7px 10px;
           }
 
-          .brandSub {
-            display: none;
+          .topbarInner {
+            grid-template-columns: 40px minmax(0, 1fr) 40px;
           }
 
-          .headerActions .hideMobile {
-            display: none;
+          .headerGhost,
+          .profileButton,
+          .loginButton {
+            width: 38px;
+            height: 38px;
+          }
+
+          .brandLogo {
+            width: clamp(168px, 58vw, 226px);
+          }
+
+          .brandSubtitle {
+            font-size: 9px;
+            margin-top: -4px;
           }
 
           .container {
-            padding: 16px 12px 42px;
+            padding: 18px 10px 42px;
           }
 
           .hero {
-            border-radius: 28px;
+            border-radius: 30px;
             padding: 22px;
-            min-height: auto;
           }
 
-          .heroContent {
-            min-height: auto;
+          .heroTitle {
+            font-size: clamp(38px, 12.5vw, 52px);
+            letter-spacing: -0.095em;
           }
 
           .statsRow {
             grid-template-columns: 1fr;
           }
 
-          .grid {
-            grid-template-columns: 1fr;
+          .cardFooter,
+          .quantityRow,
+          .modalActions {
+            display: grid;
           }
 
-          .imageBox {
-            height: 220px;
+          .reserveBtn,
+          .cancelBtn,
+          .confirmBtn {
+            width: 100%;
           }
         }
 
-        @media (max-width: 460px) {
-          .heroTitle {
-            font-size: 40px;
+        @media (max-width: 380px) {
+          .brandLogo {
+            width: clamp(150px, 55vw, 198px);
           }
 
-          .brand img {
-            height: 38px;
-          }
-
-          .cardFooter {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .reserveBtn {
-            width: 100%;
-          }
-
-          .modalActions {
-            flex-direction: column;
+          .brandSubtitle {
+            display: none;
           }
         }
       `}</style>
 
-      <header className="header">
-        <div className="headerInner">
-          <div className="brand" onClick={() => router.push('/')}>
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+      <header className="topbar">
+        <div className="topbarInner">
+          <div className="headerGhost" aria-hidden="true" />
 
-            <div>
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Roteiros e experiências outdoor</div>
-            </div>
-          </div>
+          <button
+            type="button"
+            className="brandCenter"
+            onClick={() => router.push('/')}
+            aria-label="Ir para início"
+            title="PrussikTrails"
+          >
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
+            <span className="brandSubtitle">Roteiros e experiências outdoor</span>
+          </button>
 
-          <div className="headerActions">
+          {user ? (
             <button
               type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/')}
+              className="profileButton"
+              onClick={() => router.push(rotaPerfilUsuario(user))}
+              aria-label={`Abrir ${primeiroNome(nomeUsuario(user))}`}
+              title="Perfil"
             >
-              Início
+              {avatarUsuario(user) ? (
+                <img src={avatarUsuario(user)} alt={nomeUsuario(user)} />
+              ) : (
+                <span className="profileInitial">{inicialUsuario(user)}</span>
+              )}
             </button>
-
-            {user?.tipo === 'cliente' && (
-              <button
-                type="button"
-                className="iconBtn hideMobile"
-                onClick={() => router.push('/cliente/minhas-reservas')}
-              >
-                Reservas
-              </button>
-            )}
-
-            {user ? (
-              <>
-                <button
-                  type="button"
-                  className="iconBtn primary"
-                  onClick={() => {
-                    if (user.tipo === 'admin') router.push('/admin/dashboard')
-                    else if (user.tipo === 'guia') router.push('/guia/dashboard')
-                    else router.push('/cliente/dashboard')
-                  }}
-                >
-                  Meu painel
-                </button>
-
-                <button
-                  type="button"
-                  className="iconBtn"
-                  onClick={sair}
-                >
-                  Sair
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="iconBtn"
-                  onClick={() => router.push('/login')}
-                >
-                  Entrar
-                </button>
-
-                <button
-                  type="button"
-                  className="iconBtn primary"
-                  onClick={() => router.push('/cadastro')}
-                >
-                  Criar conta
-                </button>
-              </>
-            )}
-          </div>
+          ) : (
+            <button
+              type="button"
+              className="loginButton"
+              onClick={() => router.push('/login')}
+              aria-label="Entrar"
+              title="Entrar"
+            >
+              Entrar
+            </button>
+          )}
         </div>
       </header>
 
@@ -1398,11 +1367,7 @@ export default function RoteirosPage() {
           </div>
         </section>
 
-        {mensagem && (
-          <div className="message">
-            {mensagem}
-          </div>
-        )}
+        {mensagem && <div className="message">{mensagem}</div>}
 
         <section className="toolbar">
           <input
@@ -1418,7 +1383,6 @@ export default function RoteirosPage() {
             onChange={(event) => setFiltroDificuldade(event.target.value)}
           >
             <option value="todos">Todas as dificuldades</option>
-
             {dificuldadesDisponiveis.map((dificuldade) => (
               <option value={dificuldade} key={dificuldade}>
                 {dificuldade}
@@ -1468,9 +1432,7 @@ export default function RoteirosPage() {
         </section>
 
         {roteirosFiltrados.length === 0 ? (
-          <div className="empty">
-            Nenhum roteiro encontrado com esses filtros.
-          </div>
+          <div className="empty">Nenhum roteiro encontrado com os filtros atuais.</div>
         ) : (
           <section className="grid">
             {roteirosFiltrados.map((roteiro) => {
@@ -1482,9 +1444,6 @@ export default function RoteirosPage() {
                 <article
                   className="card"
                   key={roteiro.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Ver detalhes do roteiro ${tituloRoteiro(roteiro)}`}
                   onClick={() => abrirDetalhesRoteiro(roteiro)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -1492,68 +1451,49 @@ export default function RoteirosPage() {
                       abrirDetalhesRoteiro(roteiro)
                     }
                   }}
+                  role="button"
+                  tabIndex={0}
                 >
                   <div className="imageBox">
-                    {imagem && (
-                      <img src={imagem} alt={tituloRoteiro(roteiro)} />
-                    )}
-
+                    {imagem && <img src={imagem} alt={tituloRoteiro(roteiro)} />}
                     <div className="imageOverlay" />
-
-                    <div className="hotPill">
-                      🔥 {hotLabel(roteiro)}
-                    </div>
-
+                    <div className="hotPill">🔥 {hotLabel(roteiro)}</div>
                     <div className="datePill">
                       {formatarData(dataRoteiro(roteiro))}
-                      {horaRoteiro(roteiro) && (
-                        <div style={{ fontSize: 10, marginTop: 2 }}>
-                          {horaRoteiro(roteiro)}
-                        </div>
-                      )}
+                      {horaRoteiro(roteiro) ? <br /> : null}
+                      {horaRoteiro(roteiro)}
                     </div>
                   </div>
 
                   <div className="cardBody">
-                    <h2 className="cardTitle">
-                      {tituloRoteiro(roteiro)}
-                    </h2>
+                    <h2 className="cardTitle">{tituloRoteiro(roteiro)}</h2>
 
                     <div className="meta">
                       {localRoteiro(roteiro)}
-                      <br />
-                      Guia: {roteiro.guia_nome || 'Guia PrussikTrails'}
+                      {roteiro.guia_nome ? ` · ${roteiro.guia_nome}` : ''}
                     </div>
 
-                    {roteiro.descricao && (
-                      <p className="desc">
-                        {String(roteiro.descricao).slice(0, 150)}
-                        {String(roteiro.descricao).length > 150 ? '...' : ''}
-                      </p>
-                    )}
+                    <p className="desc">
+                      {roteiro.descricao ||
+                        'Experiência outdoor guiada para viver a trilha com presença, orientação e comunidade.'}
+                    </p>
 
                     <div className="badgeRow">
-                      <span className={`badge ${dificuldadeClass(roteiro.dificuldade)}`}>
-                        {roteiro.dificuldade || 'Nível livre'}
-                      </span>
-
-                      {(roteiro.duracao_horas || roteiro.duracao) && (
-                        <span className="badge badge-neutral">
-                          {roteiro.duracao_horas
-                            ? `${roteiro.duracao_horas}h`
-                            : roteiro.duracao}
+                      {roteiro.dificuldade && (
+                        <span className={`badge ${dificuldadeClass(roteiro.dificuldade)}`}>
+                          {roteiro.dificuldade}
                         </span>
                       )}
 
-                      {km > 0 && (
-                        <span className="badge badge-green">
-                          {km} km
-                        </span>
-                      )}
+                      {km > 0 && <span className="badge badge-neutral">{km} km</span>}
 
-                      <span className="badge badge-neutral">
-                        {recorrenciaRoteiro(roteiro)}
-                      </span>
+                      {roteiro.duracao_horas ? (
+                        <span className="badge badge-neutral">{roteiro.duracao_horas}h</span>
+                      ) : roteiro.duracao ? (
+                        <span className="badge badge-neutral">{roteiro.duracao}</span>
+                      ) : null}
+
+                      <span className="badge badge-neutral">{recorrenciaRoteiro(roteiro)}</span>
                     </div>
 
                     <div className="cardFooter">
@@ -1586,13 +1526,8 @@ export default function RoteirosPage() {
         <div className="modalOverlay">
           <div className="modal">
             <div className="modalHeader">
-              <h2 className="modalTitle">
-                Confirmar reserva
-              </h2>
-
-              <p className="modalText">
-                {tituloRoteiro(roteiroSelecionado)}
-              </p>
+              <h2 className="modalTitle">Confirmar reserva</h2>
+              <p className="modalText">{tituloRoteiro(roteiroSelecionado)}</p>
             </div>
 
             <div className="modalBody">
@@ -1618,9 +1553,7 @@ export default function RoteirosPage() {
                   <button
                     type="button"
                     className="quantityBtn"
-                    onClick={() =>
-                      setQuantidadePessoas((prev) => Math.max(1, prev - 1))
-                    }
+                    onClick={() => setQuantidadePessoas((prev) => Math.max(1, prev - 1))}
                   >
                     −
                   </button>

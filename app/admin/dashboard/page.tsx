@@ -224,6 +224,32 @@ const saldosInicial: SaldosResumo = {
   debitosTotal: 0
 }
 
+type ReembolsosResumo = {
+  total: number
+  pendentes: number
+  emAnalise: number
+  aprovados: number
+  pagos: number
+  recusados: number
+  cancelados: number
+  aguardandoPagamento: number
+  valorAberto: number
+  valorPago: number
+}
+
+const reembolsosInicial: ReembolsosResumo = {
+  total: 0,
+  pendentes: 0,
+  emAnalise: 0,
+  aprovados: 0,
+  pagos: 0,
+  recusados: 0,
+  cancelados: 0,
+  aguardandoPagamento: 0,
+  valorAberto: 0,
+  valorPago: 0
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
@@ -239,6 +265,7 @@ export default function AdminDashboardPage() {
   const [suporteResumo, setSuporteResumo] = useState<SuporteResumo>(suporteInicial)
   const [cancelamentosResumo, setCancelamentosResumo] = useState<CancelamentosResumo>(cancelamentosInicial)
   const [saldosResumo, setSaldosResumo] = useState<SaldosResumo>(saldosInicial)
+  const [reembolsosResumo, setReembolsosResumo] = useState<ReembolsosResumo>(reembolsosInicial)
 
   const [carregando, setCarregando] = useState(true)
   const [atualizando, setAtualizando] = useState(false)
@@ -658,6 +685,150 @@ export default function AdminDashboardPage() {
     }
   }
 
+  const carregarReembolsos = async () => {
+    try {
+      const response = await fetch('/api/admin/saldos/reembolsos?status=todos&limite=200')
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        console.warn('Aviso ao carregar reembolsos:', data)
+        setReembolsosResumo(reembolsosInicial)
+        return reembolsosInicial
+      }
+
+      const lista = (
+        data?.reembolsos ||
+        data?.solicitacoes ||
+        data?.solicitacoes_reembolso ||
+        data?.items ||
+        []
+      ) as any[]
+
+      const resumoApi = data?.resumo || {}
+
+      const contarStatus = (status: string) =>
+        lista.filter((item) => normalizar(item.status) === status).length
+
+      const valorItem = (item: any) =>
+        Number(
+          item?.valor_solicitado ||
+            item?.valor_reembolso ||
+            item?.valor_pago ||
+            item?.valor ||
+            0
+        )
+
+      const valorAbertoCalculado = lista
+        .filter((item) => {
+          const status = normalizar(item.status)
+          return (
+            status === 'pendente' ||
+            status === 'em_analise' ||
+            status === 'aprovado' ||
+            status === 'aguardando_pagamento'
+          )
+        })
+        .reduce((total, item) => total + valorItem(item), 0)
+
+      const valorPagoCalculado = lista
+        .filter((item) => {
+          const status = normalizar(item.status)
+          return (
+            status === 'pago' ||
+            status === 'pagamento_registrado' ||
+            status === 'concluido'
+          )
+        })
+        .reduce((total, item) => total + valorItem(item), 0)
+
+      const pendentes = Number(
+        resumoApi.pendentes ||
+          resumoApi.pendente ||
+          resumoApi.porStatus?.pendente ||
+          contarStatus('pendente') ||
+          0
+      )
+
+      const emAnalise = Number(
+        resumoApi.emAnalise ||
+          resumoApi.em_analise ||
+          resumoApi.porStatus?.em_analise ||
+          contarStatus('em_analise') ||
+          0
+      )
+
+      const aprovados = Number(
+        resumoApi.aprovados ||
+          resumoApi.aprovado ||
+          resumoApi.porStatus?.aprovado ||
+          contarStatus('aprovado') ||
+          0
+      )
+
+      const aguardandoPagamento = Number(
+        resumoApi.aguardandoPagamento ||
+          resumoApi.aguardando_pagamento ||
+          resumoApi.porStatus?.aguardando_pagamento ||
+          contarStatus('aguardando_pagamento') ||
+          aprovados ||
+          0
+      )
+
+      const resumo: ReembolsosResumo = {
+        total: Number(resumoApi.total || lista.length || 0),
+        pendentes,
+        emAnalise,
+        aprovados,
+        pagos: Number(
+          resumoApi.pagos ||
+            resumoApi.pago ||
+            resumoApi.porStatus?.pago ||
+            contarStatus('pago') ||
+            contarStatus('pagamento_registrado') ||
+            0
+        ),
+        recusados: Number(
+          resumoApi.recusados ||
+            resumoApi.recusado ||
+            resumoApi.porStatus?.recusado ||
+            contarStatus('recusado') ||
+            0
+        ),
+        cancelados: Number(
+          resumoApi.cancelados ||
+            resumoApi.cancelado ||
+            resumoApi.porStatus?.cancelado ||
+            contarStatus('cancelado') ||
+            0
+        ),
+        aguardandoPagamento,
+        valorAberto: Number(
+          resumoApi.valorAberto ||
+            resumoApi.valor_aberto ||
+            resumoApi.valorPendente ||
+            resumoApi.valor_pendente ||
+            valorAbertoCalculado ||
+            0
+        ),
+        valorPago: Number(
+          resumoApi.valorPago ||
+            resumoApi.valor_pago ||
+            resumoApi.totalPago ||
+            resumoApi.total_pago ||
+            valorPagoCalculado ||
+            0
+        )
+      }
+
+      setReembolsosResumo(resumo)
+      return resumo
+    } catch (error) {
+      console.warn('Erro ao carregar reembolsos:', error)
+      setReembolsosResumo(reembolsosInicial)
+      return reembolsosInicial
+    }
+  }
+
   const carregarTudo = async () => {
     setErro('')
 
@@ -666,6 +837,7 @@ export default function AdminDashboardPage() {
     const suporteResumoAtual = await carregarSuporte()
     const cancelamentosResumoAtual = await carregarCancelamentos()
     const saldosResumoAtual = await carregarSaldos()
+    const reembolsosResumoAtual = await carregarReembolsos()
 
     const [
       usuariosResult,
@@ -796,6 +968,7 @@ export default function AdminDashboardPage() {
     setSuporteResumo(suporteResumoAtual)
     setCancelamentosResumo(cancelamentosResumoAtual)
     setSaldosResumo(saldosResumoAtual)
+    setReembolsosResumo(reembolsosResumoAtual)
     setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
   }
 
@@ -979,6 +1152,17 @@ export default function AdminDashboardPage() {
         destaque: saldosResumo.clientesComSaldo > 0,
       },
       {
+        titulo: 'Reembolsos de clientes',
+        valor: reembolsosResumo.pendentes + reembolsosResumo.emAnalise + reembolsosResumo.aguardandoPagamento,
+        texto: `${formatarMoeda(reembolsosResumo.valorAberto)} em solicitações abertas para análise ou pagamento.`,
+        rota: '/admin/saldos',
+        icone: '💸',
+        destaque:
+          reembolsosResumo.pendentes > 0 ||
+          reembolsosResumo.emAnalise > 0 ||
+          reembolsosResumo.aguardandoPagamento > 0,
+      },
+      {
         titulo: 'Cancelamentos registrados',
         valor: cancelamentosResumo.total,
         texto: `${formatarMoeda(cancelamentosResumo.totalCreditado)} creditado aos clientes.`,
@@ -993,6 +1177,7 @@ export default function AdminDashboardPage() {
     stats.reservasPendentes,
     stats.roteirosPendentes,
     saldosResumo,
+    reembolsosResumo,
     cancelamentosResumo,
   ])
 
@@ -2067,7 +2252,7 @@ export default function AdminDashboardPage() {
               </h1>
 
               <p className="heroText">
-                Receita, repasses, roteiros, reservas, usuários, grupos, avaliações, suporte, saldos e CADASTUR em uma central administrativa objetiva.
+                Receita, repasses, saques, reembolsos, roteiros, reservas, usuários, grupos, avaliações, suporte, saldos e CADASTUR em uma central administrativa objetiva.
                 {ultimaAtualizacao && (
                   <>
                     <br />
@@ -2269,6 +2454,20 @@ export default function AdminDashboardPage() {
 
           <article
             className="statCard"
+            onClick={() => router.push('/admin/saldos')}
+          >
+            <div className="statIcon">💸</div>
+            <div className="statValue">
+              {reembolsosResumo.pendentes + reembolsosResumo.emAnalise + reembolsosResumo.aguardandoPagamento}
+            </div>
+            <div className="statLabel">
+              reembolsos · {reembolsosResumo.total} solicitação(ões) · {formatarMoeda(reembolsosResumo.valorAberto)} em aberto · {reembolsosResumo.pagos} pago(s)
+            </div>
+            <div className="statHint">Analisar reembolsos</div>
+          </article>
+
+          <article
+            className="statCard"
             onClick={() => router.push('/admin/cancelamentos')}
           >
             <div className="statIcon">↩️</div>
@@ -2340,7 +2539,7 @@ export default function AdminDashboardPage() {
                   >
                     <div className="quickIcon">💳</div>
                     <div className="quickTitle">Saldos</div>
-                    <div className="quickText">Saldo de Jornada, créditos, débitos e extrato.</div>
+                    <div className="quickText">Saldo de Jornada, créditos, débitos, reembolsos e comprovantes.</div>
                   </button>
 
                   <button
