@@ -239,6 +239,26 @@ function obterFallbackSvgMedalhaBeta(svg: string) {
 }
 
 const ALTURA_TARGET = 200
+const LIMITE_INICIAL_FOTOS_LAYOUT = 24
+
+function agendarTarefaLeve(callback: () => void) {
+  if (typeof window === 'undefined') return
+
+  const win = window as Window & {
+    requestIdleCallback?: (
+      callback: () => void,
+      options?: { timeout?: number }
+    ) => number
+  }
+
+  if (typeof win.requestIdleCallback === 'function') {
+    win.requestIdleCallback(callback, { timeout: 900 })
+    return
+  }
+
+  window.setTimeout(callback, 80)
+}
+
 
 function normalizar(valor?: string | null) {
   return String(valor || '')
@@ -385,6 +405,12 @@ export default function PerfilCliente() {
   const medalhasKmConquistadas = METAS_JORNADA.filter((meta) => totalKm >= meta.km).length
 
   useEffect(() => {
+    router.prefetch('/cliente/dashboard')
+    router.prefetch('/cliente/minhas-reservas')
+    router.prefetch('/roteiros')
+  }, [router])
+
+  useEffect(() => {
     const userData = localStorage.getItem('user')
 
     if (!userData) {
@@ -402,18 +428,58 @@ export default function PerfilCliente() {
     setUser(parsedUser)
     setNome(parsedUser.nome || '')
     setAvatarPreview(parsedUser.avatar_url || parsedUser.foto_url || parsedUser.imagem_url || null)
-    carregarDados(parsedUser.id)
+
+    void carregarDados(parsedUser.id)
   }, [router])
 
   async function carregarDados(userId: string) {
-    await Promise.all([
-      carregarFotos(userId),
-      carregarAvatar(userId),
-      carregarEstatisticas(userId),
-      carregarBio(userId),
-      carregarMedalhas(userId),
-      carregarNome(userId)
+    setCarregandoFotos(true)
+    setCarregandoMedalhas(true)
+
+    await Promise.allSettled([
+      carregarPerfilBasico(userId),
+      carregarEstatisticas(userId)
     ])
+
+    agendarTarefaLeve(() => {
+      void carregarMedalhas(userId)
+    })
+
+    agendarTarefaLeve(() => {
+      void carregarFotos(userId)
+    })
+  }
+
+  async function carregarPerfilBasico(userId: string) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('nome, bio, avatar_url, foto_url, imagem_url')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('Não foi possível carregar dados básicos do cliente:', error)
+      return
+    }
+
+    if (!data) return
+
+    const avatar =
+      data.avatar_url ||
+      data.foto_url ||
+      data.imagem_url ||
+      ''
+
+    if (data.nome) setNome(data.nome)
+    if (data.bio) setBio(data.bio)
+    if (avatar) setAvatarPreview(avatar)
+
+    atualizarLocalStorage({
+      nome: data.nome || undefined,
+      avatar_url: avatar || undefined,
+      foto_url: avatar || undefined,
+      imagem_url: avatar || undefined,
+    })
   }
 
   async function atualizarUsuarioComFallback(
@@ -532,14 +598,17 @@ export default function PerfilCliente() {
       .from('users')
       .select('fotos_aventuras')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
 
     if (data?.fotos_aventuras) {
       const lista = Array.isArray(data.fotos_aventuras) ? data.fotos_aventuras : []
       setFotos(lista)
-      await carregarLayoutJustificado(lista)
+
+      const listaInicial = lista.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT)
+      await carregarLayoutJustificado(listaInicial)
     } else {
       setFotos([])
+      setLinhas([])
       setCarregandoFotos(false)
     }
   }
@@ -598,38 +667,17 @@ export default function PerfilCliente() {
   }
 
   async function carregarAvatar(userId: string) {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('users')
-      .select('*')
+      .select('avatar_url, foto_url, imagem_url')
       .eq('id', userId)
-      .maybeSingle()
+      .single()
 
-    if (error) {
-      console.warn('Não foi possível carregar avatar do cliente:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-      })
-      return
-    }
-
-    const registro = (data || {}) as Record<string, any>
-    const avatar =
-      registro.avatar_url ||
-      registro.foto_url ||
-      registro.imagem_url ||
-      registro.foto ||
-      registro.avatar ||
-      ''
+    const avatar = data?.avatar_url || data?.foto_url || data?.imagem_url || ''
 
     if (avatar) {
       setAvatarPreview(avatar)
-      atualizarLocalStorage({
-        avatar_url: avatar,
-        foto_url: avatar,
-        imagem_url: avatar,
-      })
+      atualizarLocalStorage({ avatar_url: avatar, foto_url: avatar, imagem_url: avatar })
     }
   }
 
@@ -714,67 +762,39 @@ export default function PerfilCliente() {
     setMensagem('')
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('userId', user.id)
-      formData.append('usuarioId', user.id)
-      formData.append('tipoUsuario', 'cliente')
+      const caminho = `clientes/${user.id}/avatar/avatar-${Date.now()}.webp`
 
-      const response = await fetch('/api/usuario/avatar', {
-        method: 'POST',
-        body: formData,
-      })
+      const { error: uploadError } = await supabase.storage
+        .from('fotos-aventuras')
+        .upload(caminho, file, {
+          upsert: true,
+          contentType: file.type || 'image/webp'
+        })
 
-      const data = await response.json().catch(() => null)
+      if (uploadError) throw uploadError
 
-      if (!response.ok || data?.sucesso === false) {
-        throw new Error(
-          data?.erro ||
-            data?.message ||
-            'Não foi possível salvar a foto do perfil.'
-        )
-      }
+      const { data } = supabase.storage.from('fotos-aventuras').getPublicUrl(caminho)
+      const publicUrl = data?.publicUrl || ''
 
-      const publicUrl =
-        data?.avatarUrl ||
-        data?.avatar_url ||
-        data?.foto_url ||
-        data?.imagem_url ||
-        data?.url ||
-        ''
+      if (!publicUrl) throw new Error('Não foi possível gerar a URL pública da foto.')
 
-      if (!publicUrl) {
-        throw new Error('A foto foi enviada, mas a URL pública não retornou.')
-      }
-
-      setAvatarPreview(publicUrl)
-      atualizarLocalStorage({
+      await atualizarUsuarioComFallback(user.id, {
         avatar_url: publicUrl,
         foto_url: publicUrl,
         imagem_url: publicUrl,
+        updated_at: new Date().toISOString()
       })
 
+      setAvatarPreview(publicUrl)
+      atualizarLocalStorage({ avatar_url: publicUrl, foto_url: publicUrl, imagem_url: publicUrl })
       setCropAberto(false)
       setCropImageSrc('')
       setMensagem('✅ Foto de perfil atualizada!')
-
-      await carregarAvatar(user.id)
     } catch (error) {
-      console.error('Erro ao enviar avatar do cliente:', {
-        erroComoTexto: String(error),
-        message: error instanceof Error ? error.message : undefined,
-        name: error instanceof Error ? error.name : undefined,
-        stack: error instanceof Error ? error.stack : undefined,
-      })
-
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Não foi possível atualizar a foto.'
-
+      console.error('Erro ao enviar avatar:', error)
+      const message = error instanceof Error ? error.message : 'Não foi possível atualizar a foto.'
       setErro(message)
       setMensagem('❌ Não foi possível atualizar a foto.')
-      throw error
     } finally {
       setEnviandoAvatar(false)
       setTimeout(() => setMensagem(''), 3000)
@@ -816,7 +836,7 @@ export default function PerfilCliente() {
     const novasFotos = [...fotos, ...novasUrls]
     await atualizarUsuarioComFallback(user.id, { fotos_aventuras: novasFotos })
     setFotos(novasFotos)
-    await carregarLayoutJustificado(novasFotos)
+    await carregarLayoutJustificado(novasFotos.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
     setMensagem(`✅ ${novasUrls.length} foto(s) adicionada(s)!`)
     setUploading(false)
     setTimeout(() => setMensagem(''), 3000)
@@ -829,7 +849,7 @@ export default function PerfilCliente() {
     const novasFotos = fotos.filter((_, i) => i !== index)
     await atualizarUsuarioComFallback(user.id, { fotos_aventuras: novasFotos })
     setFotos(novasFotos)
-    await carregarLayoutJustificado(novasFotos)
+    await carregarLayoutJustificado(novasFotos.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
     setMensagem('✅ Foto removida!')
     setTimeout(() => setMensagem(''), 3000)
   }
@@ -1113,7 +1133,7 @@ export default function PerfilCliente() {
 
           <aside className="rankCard">
             <div className="rankMedal rankSvgMedal" style={{ borderColor: nivelAtual.cor }}>
-              <img src={nivelAtual.svg} alt={nivelAtual.titulo} />
+              <img src={nivelAtual.svg} alt={nivelAtual.titulo} loading="eager" decoding="async" />
             </div>
             <strong>{nivelAtual.titulo}</strong>
             <p>{nivelAtual.descricao}</p>
@@ -1199,6 +1219,8 @@ export default function PerfilCliente() {
                             src={meta.svg}
                             alt={meta.titulo}
                             className={desbloqueado ? 'medalSvg' : 'medalSvg lockedSvg'}
+                            loading="lazy"
+                            decoding="async"
                           />
                         </div>
                         <strong>{meta.titulo}</strong>
@@ -1223,6 +1245,8 @@ export default function PerfilCliente() {
                               src={svgBeta}
                               alt={medalha?.nome || 'Medalha Beta'}
                               className="medalSvg betaMedalSvg"
+                              loading="lazy"
+                              decoding="async"
                               data-fallback={fallbackSvgBeta}
                               onError={(event) => {
                                 const fallback = event.currentTarget.dataset.fallback
@@ -1281,37 +1305,45 @@ export default function PerfilCliente() {
                 ) : fotos.length === 0 ? (
                   <div className="emptyBox">Envie registros das suas aventuras para montar sua galeria.</div>
                 ) : (
-                  <div ref={containerRef} className="justifiedGrid">
-                    {linhas.map((linha, linhaIndex) => {
-                      const somaProporcoes = linha.reduce((acc, img) => acc + img.proporcao, 0)
-                      return (
-                        <div className="photoRow" key={linhaIndex}>
-                          {linha.map((img) => {
-                            const largura = (img.proporcao / somaProporcoes) * 100
-                            return (
-                              <div
-                                key={`${img.url}-${img.index}`}
-                                className="photoCell"
-                                onClick={() => abrirLightbox(img.index)}
-                                style={{ width: `${largura}%` }}
-                              >
-                                <img src={img.url} alt={`Foto ${img.index + 1}`} />
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    removerFoto(img.index)
-                                  }}
+                  <>
+                    {fotos.length > LIMITE_INICIAL_FOTOS_LAYOUT && (
+                      <div className="galleryHint">
+                        Exibindo as primeiras {LIMITE_INICIAL_FOTOS_LAYOUT} fotos para manter o perfil mais leve. As demais seguem salvas no seu Passaporte.
+                      </div>
+                    )}
+
+                    <div ref={containerRef} className="justifiedGrid">
+                      {linhas.map((linha, linhaIndex) => {
+                        const somaProporcoes = linha.reduce((acc, img) => acc + img.proporcao, 0)
+                        return (
+                          <div className="photoRow" key={linhaIndex}>
+                            {linha.map((img) => {
+                              const largura = (img.proporcao / somaProporcoes) * 100
+                              return (
+                                <div
+                                  key={`${img.url}-${img.index}`}
+                                  className="photoCell"
+                                  onClick={() => abrirLightbox(img.index)}
+                                  style={{ width: `${largura}%` }}
                                 >
-                                  ×
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    })}
-                  </div>
+                                  <img src={img.url} alt={`Foto ${img.index + 1}`} loading="lazy" decoding="async" />
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      removerFoto(img.index)
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             </section>
@@ -1349,7 +1381,7 @@ export default function PerfilCliente() {
               <div className="cardBody">
                 <div className="nextMedal">
                   <div className="hexMedal nextSvgMedal" style={{ borderColor: proximoNivel.cor }}>
-                    <img src={proximoNivel.svg} alt={proximoNivel.titulo} className="medalSvg" />
+                    <img src={proximoNivel.svg} alt={proximoNivel.titulo} className="medalSvg" loading="lazy" decoding="async" />
                   </div>
                   <strong>{proximoNivel.titulo}</strong>
                   <p>{proximoNivel.descricao}</p>
@@ -2311,6 +2343,18 @@ const styles = `
     font-weight: 750;
   }
 
+  .galleryHint {
+    border-radius: 18px;
+    background: rgba(22,163,74,0.08);
+    border: 1px solid rgba(22,163,74,0.14);
+    color: #166534;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 850;
+  }
+
   .justifiedGrid { width: 100%; }
 
   .photoRow {
@@ -2823,5 +2867,7 @@ const styles = `
     .passwordActions button {
       width: 100%;
     }
+  }
+
   }
 `
