@@ -598,17 +598,38 @@ export default function PerfilCliente() {
   }
 
   async function carregarAvatar(userId: string) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('users')
-      .select('avatar_url, foto_url, imagem_url')
+      .select('*')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
 
-    const avatar = data?.avatar_url || data?.foto_url || data?.imagem_url || ''
+    if (error) {
+      console.warn('Não foi possível carregar avatar do cliente:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      })
+      return
+    }
+
+    const registro = (data || {}) as Record<string, any>
+    const avatar =
+      registro.avatar_url ||
+      registro.foto_url ||
+      registro.imagem_url ||
+      registro.foto ||
+      registro.avatar ||
+      ''
 
     if (avatar) {
       setAvatarPreview(avatar)
-      atualizarLocalStorage({ avatar_url: avatar, foto_url: avatar, imagem_url: avatar })
+      atualizarLocalStorage({
+        avatar_url: avatar,
+        foto_url: avatar,
+        imagem_url: avatar,
+      })
     }
   }
 
@@ -693,39 +714,67 @@ export default function PerfilCliente() {
     setMensagem('')
 
     try {
-      const caminho = `clientes/${user.id}/avatar/avatar-${Date.now()}.webp`
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('userId', user.id)
+      formData.append('usuarioId', user.id)
+      formData.append('tipoUsuario', 'cliente')
 
-      const { error: uploadError } = await supabase.storage
-        .from('fotos-aventuras')
-        .upload(caminho, file, {
-          upsert: true,
-          contentType: file.type || 'image/webp'
-        })
+      const response = await fetch('/api/usuario/avatar', {
+        method: 'POST',
+        body: formData,
+      })
 
-      if (uploadError) throw uploadError
+      const data = await response.json().catch(() => null)
 
-      const { data } = supabase.storage.from('fotos-aventuras').getPublicUrl(caminho)
-      const publicUrl = data?.publicUrl || ''
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(
+          data?.erro ||
+            data?.message ||
+            'Não foi possível salvar a foto do perfil.'
+        )
+      }
 
-      if (!publicUrl) throw new Error('Não foi possível gerar a URL pública da foto.')
+      const publicUrl =
+        data?.avatarUrl ||
+        data?.avatar_url ||
+        data?.foto_url ||
+        data?.imagem_url ||
+        data?.url ||
+        ''
 
-      await atualizarUsuarioComFallback(user.id, {
+      if (!publicUrl) {
+        throw new Error('A foto foi enviada, mas a URL pública não retornou.')
+      }
+
+      setAvatarPreview(publicUrl)
+      atualizarLocalStorage({
         avatar_url: publicUrl,
         foto_url: publicUrl,
         imagem_url: publicUrl,
-        updated_at: new Date().toISOString()
       })
 
-      setAvatarPreview(publicUrl)
-      atualizarLocalStorage({ avatar_url: publicUrl, foto_url: publicUrl, imagem_url: publicUrl })
       setCropAberto(false)
       setCropImageSrc('')
       setMensagem('✅ Foto de perfil atualizada!')
+
+      await carregarAvatar(user.id)
     } catch (error) {
-      console.error('Erro ao enviar avatar:', error)
-      const message = error instanceof Error ? error.message : 'Não foi possível atualizar a foto.'
+      console.error('Erro ao enviar avatar do cliente:', {
+        erroComoTexto: String(error),
+        message: error instanceof Error ? error.message : undefined,
+        name: error instanceof Error ? error.name : undefined,
+        stack: error instanceof Error ? error.stack : undefined,
+      })
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível atualizar a foto.'
+
       setErro(message)
       setMensagem('❌ Não foi possível atualizar a foto.')
+      throw error
     } finally {
       setEnviandoAvatar(false)
       setTimeout(() => setMensagem(''), 3000)

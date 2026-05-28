@@ -1,50 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { Buffer } from 'node:buffer'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const BUCKET = 'fotos-aventuras'
-
 type AnyRecord = Record<string, any>
 
-function texto(valor: unknown) {
-  return String(valor || '').trim()
-}
+const BUCKET_AVATARES = 'fotos-aventuras'
+const MAX_FILE_SIZE_MB = 8
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
-function getSupabaseAdmin() {
+const MIME_PERMITIDOS = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+]
+
+function getSupabaseAdmin(): any {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 
   const serviceRoleKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE
 
-  if (!supabaseUrl) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL não configurada.')
-  }
-
-  if (!serviceRoleKey) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada.')
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Variáveis de ambiente do Supabase não configuradas.')
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
-      autoRefreshToken: false,
       persistSession: false,
+      autoRefreshToken: false,
     },
   })
 }
 
-function limparNomeArquivo(nome: string) {
-  return String(nome || 'arquivo')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9._-]/g, '-')
-    .replace(/-+/g, '-')
+function texto(valor: unknown) {
+  return String(valor || '').trim()
 }
 
-function erroColunaAusente(error: any) {
+function limparNomeArquivo(nome: string) {
+  return texto(nome)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase()
+}
+
+function extensaoPorMime(mime: string) {
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/webp') return 'webp'
+  if (mime === 'image/jpeg' || mime === 'image/jpg') return 'jpg'
+  return 'webp'
+}
+
+function erroDeColunaAusente(error: any) {
   const mensagem = String(
     error?.message ||
       error?.details ||
@@ -55,9 +69,9 @@ function erroColunaAusente(error: any) {
   return (
     error?.code === '42703' ||
     error?.code === 'PGRST204' ||
-    mensagem.includes('column') ||
+    mensagem.includes('could not find') ||
     mensagem.includes('schema cache') ||
-    mensagem.includes('could not find')
+    mensagem.includes('column')
   )
 }
 
@@ -75,18 +89,15 @@ function extrairColunaAusente(error: any) {
   return ''
 }
 
-async function atualizarUsuarioComFallback(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  userId: string,
+async function atualizarUsuarioComFallback(params: {
+  supabase: any
+  userId: string
   payloadOriginal: AnyRecord
-) {
-  let payload = { ...payloadOriginal }
+}) {
+  const { supabase, userId } = params
+  let payload: AnyRecord = { ...params.payloadOriginal }
 
-  for (let tentativa = 0; tentativa < 12; tentativa++) {
-    if (Object.keys(payload).length === 0) {
-      throw new Error('Nenhuma coluna disponível para atualizar o usuário.')
-    }
-
+  for (let tentativa = 0; tentativa < 14; tentativa++) {
     const { data, error } = await supabase
       .from('users')
       .update(payload)
@@ -94,158 +105,261 @@ async function atualizarUsuarioComFallback(
       .select('*')
       .maybeSingle()
 
-    if (!error) return data
+    if (!error) return (data || {}) as AnyRecord
 
-    if (!erroColunaAusente(error)) {
-      throw new Error(error.message || 'Erro ao atualizar usuário.')
-    }
+    if (!erroDeColunaAusente(error)) throw error
 
     const coluna = extrairColunaAusente(error)
 
     if (!coluna || !(coluna in payload)) {
-      throw new Error(error.message || 'Erro ao ajustar coluna ausente.')
+      throw error
     }
 
     delete payload[coluna]
   }
 
-  throw new Error('Não foi possível atualizar o usuário após ajustar colunas.')
+  throw new Error('Não foi possível atualizar o avatar após ajustar colunas.')
+}
+
+async function garantirBucketPublico(supabase: any) {
+  const { data: buckets, error: listError } = await supabase.storage.listBuckets()
+
+  if (listError) {
+    console.warn('[usuario/avatar] Não foi possível listar buckets:', listError)
+    return
+  }
+
+  const bucket = (buckets || []).find((item: AnyRecord) => item.name === BUCKET_AVATARES)
+
+  if (!bucket) {
+    const { error: createError } = await supabase.storage.createBucket(BUCKET_AVATARES, {
+      public: true,
+      fileSizeLimit: MAX_FILE_SIZE_BYTES,
+      allowedMimeTypes: MIME_PERMITIDOS,
+    })
+
+    if (createError) {
+      console.warn('[usuario/avatar] Não foi possível criar bucket:', createError)
+    }
+
+    return
+  }
+
+  if (bucket.public !== true) {
+    const { error: updateError } = await supabase.storage.updateBucket(BUCKET_AVATARES, {
+      public: true,
+      fileSizeLimit: MAX_FILE_SIZE_BYTES,
+      allowedMimeTypes: MIME_PERMITIDOS,
+    })
+
+    if (updateError) {
+      console.warn('[usuario/avatar] Não foi possível tornar bucket público:', updateError)
+    }
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    sucesso: true,
+    rota: '/api/usuario/avatar',
+    mensagem: 'Rota ativa. Use POST com multipart/form-data para salvar avatar.',
+    bucket: BUCKET_AVATARES,
+  })
 }
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin()
-
     const formData = await request.formData()
 
-    const file = formData.get('file') as File | null
-    const userId = texto(formData.get('userId'))
-    const pasta = limparNomeArquivo(texto(formData.get('pasta')) || 'usuarios')
+    const arquivo = formData.get('file')
+
+    const userId = texto(
+      formData.get('userId') ||
+        formData.get('user_id') ||
+        formData.get('usuarioId') ||
+        formData.get('usuario_id')
+    )
+
+    const tipoUsuario = texto(
+      formData.get('tipoUsuario') ||
+        formData.get('tipo_usuario') ||
+        'cliente'
+    )
 
     if (!userId) {
       return NextResponse.json(
         {
           sucesso: false,
-          success: false,
           erro: 'userId é obrigatório.',
         },
         { status: 400 }
       )
     }
 
-    if (!file) {
+    if (!(arquivo instanceof File)) {
       return NextResponse.json(
         {
           sucesso: false,
-          success: false,
-          erro: 'Arquivo não enviado.',
+          erro: 'Nenhum arquivo de avatar foi enviado.',
         },
         { status: 400 }
       )
     }
 
-    if (!file.type.startsWith('image/')) {
+    if (arquivo.size <= 0) {
       return NextResponse.json(
         {
           sucesso: false,
-          success: false,
-          erro: 'O arquivo enviado não é uma imagem.',
+          erro: 'O arquivo enviado está vazio.',
         },
         { status: 400 }
       )
     }
 
-    if (file.size > 8 * 1024 * 1024) {
+    if (arquivo.size > MAX_FILE_SIZE_BYTES) {
       return NextResponse.json(
         {
           sucesso: false,
-          success: false,
-          erro: 'A imagem ultrapassa o limite de 8MB.',
+          erro: `A imagem deve ter no máximo ${MAX_FILE_SIZE_MB} MB.`,
         },
         { status: 400 }
       )
     }
 
-    const extensao =
-      file.type === 'image/webp'
-        ? 'webp'
-        : file.type === 'image/png'
-          ? 'png'
-          : file.type === 'image/gif'
-            ? 'gif'
-            : 'jpg'
+    const mime = arquivo.type || 'application/octet-stream'
 
-    const caminho = `${pasta}/${userId}/avatar-${Date.now()}.${extensao}`
+    if (!MIME_PERMITIDOS.includes(mime)) {
+      return NextResponse.json(
+        {
+          sucesso: false,
+          erro: 'Formato não permitido. Envie JPG, PNG ou WEBP.',
+        },
+        { status: 400 }
+      )
+    }
 
-    const arrayBuffer = await file.arrayBuffer()
+    const { data: usuario, error: usuarioError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle()
 
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(caminho, arrayBuffer, {
+    if (usuarioError) throw usuarioError
+
+    if (!usuario) {
+      return NextResponse.json(
+        {
+          sucesso: false,
+          erro: 'Usuário não encontrado.',
+        },
+        { status: 404 }
+      )
+    }
+
+    await garantirBucketPublico(supabase)
+
+    const extensao = extensaoPorMime(mime)
+    const nomeOriginal = limparNomeArquivo(arquivo.name || `avatar.${extensao}`)
+    const nomeFinal = nomeOriginal.includes('.')
+      ? nomeOriginal
+      : `${nomeOriginal}.${extensao}`
+
+    const pastaTipo =
+      tipoUsuario === 'guia'
+        ? 'guias'
+        : tipoUsuario === 'admin'
+          ? 'admins'
+          : 'clientes'
+
+    const caminho = [
+      pastaTipo,
+      userId,
+      'avatar',
+      `${Date.now()}-${nomeFinal}`,
+    ].join('/')
+
+    const arrayBuffer = await arquivo.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
+    let upload = await supabase.storage
+      .from(BUCKET_AVATARES)
+      .upload(caminho, buffer, {
+        contentType: mime,
         upsert: true,
-        contentType: file.type || 'image/jpeg',
       })
 
-    if (uploadError) {
-      return NextResponse.json(
-        {
-          sucesso: false,
-          success: false,
-          etapa: 'upload_storage',
-          erro: uploadError.message,
-        },
-        { status: 500 }
-      )
+    if (
+      upload.error &&
+      String(upload.error.message || '').toLowerCase().includes('bucket')
+    ) {
+      await garantirBucketPublico(supabase)
+
+      upload = await supabase.storage
+        .from(BUCKET_AVATARES)
+        .upload(caminho, buffer, {
+          contentType: mime,
+          upsert: true,
+        })
     }
 
+    if (upload.error) throw upload.error
+
     const { data: publicData } = supabase.storage
-      .from(BUCKET)
+      .from(BUCKET_AVATARES)
       .getPublicUrl(caminho)
 
     const publicUrl = publicData?.publicUrl || ''
 
     if (!publicUrl) {
-      return NextResponse.json(
-        {
-          sucesso: false,
-          success: false,
-          etapa: 'public_url',
-          erro: 'Não foi possível gerar URL pública.',
-        },
-        { status: 500 }
-      )
+      throw new Error('Não foi possível gerar a URL pública do avatar.')
     }
 
-    const usuarioAtualizado = await atualizarUsuarioComFallback(
+    const agora = new Date().toISOString()
+
+    const usuarioAtualizado = await atualizarUsuarioComFallback({
       supabase,
       userId,
-      {
+      payloadOriginal: {
         avatar_url: publicUrl,
         foto_url: publicUrl,
         imagem_url: publicUrl,
-        updated_at: new Date().toISOString(),
-      }
-    )
+        updated_at: agora,
+      },
+    })
 
     return NextResponse.json({
       sucesso: true,
-      success: true,
-      message: 'Foto salva com sucesso.',
-      publicUrl,
-      url: publicUrl,
-      caminho,
+      avatarUrl: publicUrl,
+      avatar_url: publicUrl,
+      foto_url: publicUrl,
+      imagem_url: publicUrl,
+      path: caminho,
+      bucket: BUCKET_AVATARES,
       usuario: usuarioAtualizado,
-      data: usuarioAtualizado,
     })
   } catch (error: any) {
-    console.error('Erro em POST /api/usuario/avatar:', error)
+    console.error('Erro em POST /api/usuario/avatar:', {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      stack: error?.stack,
+      raw: error,
+    })
 
     return NextResponse.json(
       {
         sucesso: false,
-        success: false,
-        etapa: 'catch_final',
-        erro: error?.message || 'Erro interno ao salvar avatar.',
+        erro:
+          error?.message ||
+          'Erro ao salvar avatar do usuário.',
+        detalhe: {
+          code: error?.code,
+          details: error?.details,
+          hint: error?.hint,
+          message: error?.message,
+        },
       },
       { status: 500 }
     )

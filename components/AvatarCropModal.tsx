@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Cropper, { Area } from 'react-easy-crop'
 
 type AvatarCropModalProps = {
@@ -15,8 +15,12 @@ function createImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image()
     image.addEventListener('load', () => resolve(image))
-    image.addEventListener('error', (error) => reject(error))
-    image.setAttribute('crossOrigin', 'anonymous')
+    image.addEventListener('error', () => reject(new Error('Não foi possível carregar a imagem.')))
+
+    if (!url.startsWith('data:')) {
+      image.setAttribute('crossOrigin', 'anonymous')
+    }
+
     image.src = url
   })
 }
@@ -82,6 +86,15 @@ export default function AvatarCropModal({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+
+    setCrop({ x: 0, y: 0 })
+    setZoom(1.15)
+    setCroppedAreaPixels(null)
+    setErro('')
+  }, [open, imageSrc])
 
   const onCropComplete = useCallback((_croppedArea: Area, pixels: Area) => {
     setCroppedAreaPixels(pixels)
