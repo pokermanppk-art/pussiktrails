@@ -651,19 +651,51 @@ export default function PerfilGuiaPage() {
     setMensagem('')
 
     try {
-      const atualizado = await atualizarUsuarioComFallback(user.id, {
-        bio_guia: bio,
-        bio,
-        updated_at: new Date().toISOString()
+      const response = await fetch('/api/usuario/bio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          guiaId: user.id,
+          tipoUsuario: 'guia',
+          tipo: 'guia',
+          bio
+        })
       })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        throw new Error(
+          data?.erro ||
+            data?.error ||
+            data?.message ||
+            `Erro HTTP ${response.status} ao salvar biografia.`
+        )
+      }
+
+      const bioSalva = String(data?.bio ?? bio)
+      const usuarioAtualizado = data?.usuario || data?.user || data?.data || {}
 
       setGuia((prev: any) => ({
         ...prev,
-        ...(atualizado || {}),
-        bio_guia: bio,
-        bio
+        ...usuarioAtualizado,
+        bio_guia: bioSalva,
+        bio: bioSalva
       }))
 
+      const localUserAtualizado: UsuarioLocal = {
+        ...(user || {}),
+        ...usuarioAtualizado,
+        id: user.id,
+        tipo: 'guia'
+      }
+
+      localStorage.setItem('user', JSON.stringify(localUserAtualizado))
+      setUser(localUserAtualizado)
+      setBio(bioSalva)
       setEditandoBio(false)
       setMensagem('Biografia atualizada com sucesso.')
     } catch (error: any) {
