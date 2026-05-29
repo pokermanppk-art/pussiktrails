@@ -8,8 +8,11 @@ const inter = Inter({
   display: 'swap'
 })
 
+const APP_URL = 'https://prussiktrails.com.br'
+const ICON_VERSION = '20260529'
+
 export const metadata: Metadata = {
-  metadataBase: new URL('https://prussiktrails.vercel.app'),
+  metadataBase: new URL(APP_URL),
 
   title: {
     default: 'PrussikTrails - Sua Aventura Começa Aqui',
@@ -28,7 +31,9 @@ export const metadata: Metadata = {
     'trekking',
     'natureza',
     'roteiros',
-    'outdoor'
+    'outdoor',
+    'experiências outdoor',
+    'turismo de aventura'
   ],
 
   authors: [{ name: 'PrussikTrails' }],
@@ -37,34 +42,50 @@ export const metadata: Metadata = {
 
   applicationName: 'PrussikTrails',
 
-  manifest: '/manifest.webmanifest',
+  manifest: `/manifest.webmanifest?v=${ICON_VERSION}`,
+
+  alternates: {
+    canonical: APP_URL
+  },
 
   icons: {
     icon: [
       {
-        url: '/favicon.ico',
+        url: `/favicon.ico?v=${ICON_VERSION}`,
         sizes: 'any'
       },
       {
-        url: '/icon-192.png',
+        url: `/favicon-16.png?v=${ICON_VERSION}`,
+        sizes: '16x16',
+        type: 'image/png'
+      },
+      {
+        url: `/favicon-32.png?v=${ICON_VERSION}`,
+        sizes: '32x32',
+        type: 'image/png'
+      },
+      {
+        url: `/icon-192.png?v=${ICON_VERSION}`,
         sizes: '192x192',
         type: 'image/png'
       },
       {
-        url: '/icon-512.png',
+        url: `/icon-512.png?v=${ICON_VERSION}`,
         sizes: '512x512',
         type: 'image/png'
       }
     ],
+
     shortcut: [
       {
-        url: '/favicon.ico',
+        url: `/favicon.ico?v=${ICON_VERSION}`,
         sizes: 'any'
       }
     ],
+
     apple: [
       {
-        url: '/apple-touch-icon.png',
+        url: `/apple-touch-icon.png?v=${ICON_VERSION}`,
         sizes: '180x180',
         type: 'image/png'
       }
@@ -88,14 +109,14 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'PrussikTrails - Sua Aventura Começa Aqui',
     description:
-      'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros.',
-    url: 'https://prussiktrails.vercel.app',
+      'Plataforma de aventuras e trilhas. Conectamos guias especializados com aventureiros em busca de experiências únicas na natureza.',
+    url: APP_URL,
     siteName: 'PrussikTrails',
     locale: 'pt_BR',
     type: 'website',
     images: [
       {
-        url: '/icon-512.png',
+        url: `/icon-512.png?v=${ICON_VERSION}`,
         width: 512,
         height: 512,
         alt: 'PrussikTrails'
@@ -106,8 +127,9 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary',
     title: 'PrussikTrails - Sua Aventura Começa Aqui',
-    description: 'Plataforma de aventuras e trilhas',
-    images: ['/icon-512.png']
+    description:
+      'Plataforma de aventuras e trilhas conectando guias especializados e aventureiros.',
+    images: [`/icon-512.png?v=${ICON_VERSION}`]
   },
 
   robots: {
@@ -124,8 +146,11 @@ export const metadata: Metadata = {
 
   other: {
     'mobile-web-app-capable': 'yes',
-    'msapplication-TileColor': '#dc2626',
-    'msapplication-TileImage': '/icon-192.png'
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-title': 'PrussikTrails',
+    'application-name': 'PrussikTrails',
+    'msapplication-TileColor': '#203c2e',
+    'msapplication-TileImage': `/icon-192.png?v=${ICON_VERSION}`
   }
 }
 
@@ -135,7 +160,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: true,
   viewportFit: 'cover',
-  themeColor: '#dc2626',
+  themeColor: '#203c2e',
   colorScheme: 'light'
 }
 
@@ -152,7 +177,7 @@ export default function RootLayout({
           margin: 0,
           padding: 0,
           minHeight: '100vh',
-          background: '#ffffff'
+          background: '#fffdf7'
         }}
       >
         {children}
