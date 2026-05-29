@@ -834,28 +834,27 @@ ${link}`
           <button
             type="button"
             className="brand"
-            onClick={() => router.push(rotaPrincipalUsuario())}
-            aria-label="Voltar ao início"
+            onClick={() => router.push('/')}
+            aria-label="PrussikTrails - página inicial"
+            title="PrussikTrails"
           >
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <span>Roteiros públicos</span>
+            <span className="brandLogoWrap">
+              <img src="/logo-prussik-display.png" alt="" aria-hidden="true" />
+            </span>
+
+            <span className="brandText">
+              <span className="brandName">PrussikTrails</span>
+            </span>
           </button>
 
           <nav className="navActions" aria-label="Ações principais">
-            <button
-              type="button"
-              className="navLink desktopOnly"
-              onClick={() => router.push('/')}
-            >
-              Início
-            </button>
-
             {usuarioLogado ? (
               <button
                 type="button"
                 className="profileButton"
                 onClick={() => router.push(rotaPerfilUsuario(usuarioLogado))}
                 aria-label={`Abrir perfil de ${primeiroNome(nomeUsuario(usuarioLogado))}`}
+                title="Perfil"
               >
                 {avatarUsuario(usuarioLogado) ? (
                   <img src={avatarUsuario(usuarioLogado)} alt={nomeUsuario(usuarioLogado)} />
@@ -869,7 +868,7 @@ ${link}`
                 className="loginButton"
                 onClick={() => router.push('/login')}
               >
-                Entrar
+                Login
               </button>
             )}
           </nav>
@@ -1162,51 +1161,78 @@ const styles = `
     position: sticky;
     top: 0;
     z-index: 60;
-    background: rgba(255, 253, 247, 0.92);
+    background: rgba(255, 253, 247, 0.90);
     border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     backdrop-filter: blur(18px);
-    padding: 8px 16px;
+    padding: 10px 16px;
   }
 
   .topbarInner {
     width: 100%;
     max-width: 1180px;
     margin: 0 auto;
-    min-height: 56px;
-    display: flex;
+    min-height: 76px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
   }
 
   .brand {
-    border: none;
+    border: 0;
     background: transparent;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: clamp(12px, 2.2vw, 18px);
+    min-width: 0;
+    width: fit-content;
+    max-width: 100%;
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+  }
+
+  .brandLogoWrap {
+    width: clamp(72px, 10vw, 96px);
+    height: clamp(72px, 10vw, 96px);
     display: flex;
     align-items: center;
-    gap: 12px;
-    cursor: pointer;
-    padding: 0;
-    min-width: 0;
+    justify-content: center;
+    background: transparent;
+    flex: 0 0 auto;
+    overflow: visible;
   }
 
-  .brand img {
-    width: 122px;
-    height: 48px;
+  .brandLogoWrap img {
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     display: block;
+    transform: scale(1.22);
+    transform-origin: center;
   }
 
-  .brand span {
-    color: #6b7280;
-    font-size: 10px;
-    line-height: 1.1;
-    font-weight: 900;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
+  .brandText {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+
+  .brandName {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(34px, 5.8vw, 56px);
+    font-weight: 800;
+    color: #1f3f2d;
+    line-height: 1.04;
+    letter-spacing: -0.045em;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: unset;
+    padding-right: 6px;
+    max-width: calc(100vw - 190px);
   }
 
   .navActions {
@@ -1992,14 +2018,13 @@ const styles = `
 
   @media (min-width: 941px) {
     .page {
-      padding-top: 74px;
+      padding-top: 106px;
     }
 
     .topbar {
       position: fixed;
       left: 0;
       right: 0;
-      height: 74px;
       display: flex;
       align-items: center;
       box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
@@ -2035,11 +2060,11 @@ const styles = `
 
   @media (max-width: 700px) {
     .topbar {
-      padding: 7px 10px;
+      padding: 8px 10px;
     }
 
     .topbarInner {
-      min-height: 52px;
+      min-height: 58px;
       gap: 8px;
     }
 
@@ -2047,13 +2072,21 @@ const styles = `
       gap: 8px;
     }
 
-    .brand img {
-      width: 112px;
-      height: 42px;
+    .brandLogoWrap {
+      width: 58px;
+      height: 58px;
     }
 
-    .brand span {
-      display: none;
+    .brandLogoWrap img {
+      transform: scale(1.18);
+    }
+
+    .brandName {
+      font-size: clamp(28px, 7.2vw, 36px);
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+      max-width: calc(100vw - 132px);
+      padding-right: 5px;
     }
 
     .desktopOnly {
@@ -2170,4 +2203,6 @@ const styles = `
       grid-column: auto;
     }
   }
+
+
 `

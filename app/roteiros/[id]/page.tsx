@@ -821,21 +821,24 @@ ${linkPublicoRoteiro}`
     }
   }
 
-  function HeaderRoteiro({ subtitle }: { subtitle: string }) {
+  function HeaderRoteiro() {
     return (
       <header className="topbar">
         <div className="topbarInner">
-          <div className="headerGhost" aria-hidden="true" />
-
           <button
             type="button"
-            className="brandCenter"
-            onClick={() => router.push(roteiro ? rotaPrincipalUsuario() : '/roteiros')}
-            aria-label="Voltar para o início"
+            className="brand"
+            onClick={() => router.push('/')}
+            aria-label="PrussikTrails - página inicial"
             title="PrussikTrails"
           >
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
-            <span className="brandSubtitle">{subtitle}</span>
+            <span className="brandLogoWrap">
+              <img src="/logo-prussik-display.png" alt="" aria-hidden="true" />
+            </span>
+
+            <span className="brandText">
+              <span className="brandName">PrussikTrails</span>
+            </span>
           </button>
 
           {usuarioLogado ? (
@@ -854,7 +857,7 @@ ${linkPublicoRoteiro}`
             </button>
           ) : (
             <button type="button" className="loginButton" onClick={() => router.push('/login')} aria-label="Entrar" title="Entrar">
-              Entrar
+              Login
             </button>
           )}
         </div>
@@ -865,7 +868,7 @@ ${linkPublicoRoteiro}`
   if (carregando) {
     return (
       <main className="page">
-        <HeaderRoteiro subtitle="Carregando roteiro outdoor" />
+        <HeaderRoteiro />
         <section className="loadingCard"><div className="spinner" /><p>Carregando roteiro...</p></section>
         <style jsx>{styles}</style>
       </main>
@@ -875,7 +878,7 @@ ${linkPublicoRoteiro}`
   if (!roteiro) {
     return (
       <main className="page">
-        <HeaderRoteiro subtitle="Roteiro não encontrado" />
+        <HeaderRoteiro />
         <section className="emptyCard">
           <span>🧭</span>
           <h1>Roteiro não encontrado</h1>
@@ -898,7 +901,7 @@ ${linkPublicoRoteiro}`
 
   return (
     <main className="page">
-      <HeaderRoteiro subtitle="Detalhes do passaporte outdoor" />
+      <HeaderRoteiro />
 
       <section className="hero">
         <div className="heroMedia">
@@ -1096,61 +1099,79 @@ const styles = `
   .topbar {
     position: sticky;
     top: 0;
-    z-index: 40;
-    background: rgba(255, 253, 247, 0.88);
+    z-index: 60;
+    background: rgba(255, 253, 247, 0.90);
     border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     backdrop-filter: blur(18px);
-    padding: 8px 14px;
+    padding: 10px 16px;
   }
 
   .topbarInner {
     width: 100%;
     max-width: 1180px;
     margin: 0 auto;
+    min-height: 76px;
     display: grid;
-    grid-template-columns: 46px minmax(0, 1fr) 46px;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
   }
 
-  .headerGhost {
-    width: 42px;
-    height: 42px;
-  }
-
-  .brandCenter {
-    min-width: 0;
-    border: none;
+  .brand {
+    border: 0;
     background: transparent;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: clamp(12px, 2.2vw, 18px);
+    min-width: 0;
+    width: fit-content;
+    max-width: 100%;
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+  }
+
+  .brandLogoWrap {
+    width: clamp(72px, 10vw, 96px);
+    height: clamp(72px, 10vw, 96px);
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    padding: 0;
-    text-align: center;
+    background: transparent;
+    flex: 0 0 auto;
+    overflow: visible;
   }
 
-  .brandLogo {
-    width: clamp(178px, 54vw, 270px);
-    max-width: 100%;
-    height: auto;
+  .brandLogoWrap img {
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     display: block;
+    transform: scale(1.22);
+    transform-origin: center;
   }
 
-  .brandSubtitle {
-    color: #6b7280;
-    font-size: clamp(9px, 2.6vw, 11px);
-    line-height: 1;
-    font-weight: 850;
-    letter-spacing: 0.08em;
-    margin-top: -3px;
-    text-transform: uppercase;
+  .brandText {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+
+  .brandName {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(34px, 5.8vw, 56px);
+    font-weight: 800;
+    color: #1f3f2d;
+    line-height: 1.04;
+    letter-spacing: -0.045em;
     white-space: nowrap;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: unset;
+    padding-right: 6px;
+    max-width: calc(100vw - 190px);
   }
 
   .profileButton,
@@ -1624,16 +1645,11 @@ const styles = `
   .modalCancel:disabled, .modalConfirm:disabled { opacity: 0.62; cursor: not-allowed; }
 
   @media (min-width: 941px) {
-    .page { padding-top: 84px; }
-    .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 80; height: 84px; padding: 8px 26px; display: flex; align-items: center; background: rgba(255, 253, 247, 0.94); border-bottom: 1px solid rgba(15, 23, 42, 0.06); backdrop-filter: blur(18px); box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045); }
-    .topbarInner { width: 100%; max-width: 1180px; height: 68px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
-    .headerGhost { display: none; }
-    .brandCenter { grid-column: 1; justify-self: start; width: fit-content; max-width: 100%; min-width: 0; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px; padding: 0; text-align: left; }
-    .brandLogo { width: 128px; max-width: 128px; height: 58px; object-fit: contain; display: block; flex: 0 0 auto; }
-    .brandSubtitle { margin-top: 0; max-width: 460px; color: #6b7280; font-size: 10px; line-height: 1.1; font-weight: 900; letter-spacing: 0.11em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .profileButton, .loginButton { grid-column: 2; justify-self: end; width: 44px; height: 44px; flex: 0 0 auto; }
+    .page { padding-top: 106px; }
+    .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 80; display: flex; align-items: center; background: rgba(255, 253, 247, 0.94); border-bottom: 1px solid rgba(15, 23, 42, 0.06); backdrop-filter: blur(18px); box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045); }
+    .profileButton, .loginButton { justify-self: end; width: 44px; height: 44px; flex: 0 0 auto; }
     .hero { margin-top: 18px; }
-    .sideColumn { top: 104px; }
+    .sideColumn { top: 126px; }
   }
 
   @media (max-width: 940px) {
@@ -1657,11 +1673,13 @@ const styles = `
     .modalInfoGrid { grid-template-columns: 1fr; }
     .modalQuantity { align-items: stretch; flex-direction: column; }
     .modalQuantity select, .modalCancel, .modalConfirm { width: 100%; }
-    .topbar { padding: 7px 10px; }
-    .topbarInner { grid-template-columns: 38px minmax(0, 1fr) 38px; }
-    .headerGhost, .profileButton, .loginButton { width: 36px; height: 36px; box-shadow: none; }
-    .brandLogo { width: clamp(154px, 58vw, 218px); }
-    .brandSubtitle { font-size: 8.5px; letter-spacing: 0.06em; margin-top: -2px; }
+    .topbar { padding: 8px 10px; }
+    .topbarInner { min-height: 58px; gap: 8px; }
+    .profileButton, .loginButton { width: 36px; height: 36px; box-shadow: none; }
+    .brand { gap: 8px; }
+    .brandLogoWrap { width: 58px; height: 58px; }
+    .brandLogoWrap img { transform: scale(1.18); }
+    .brandName { font-size: clamp(28px, 7.2vw, 36px); line-height: 1.04; letter-spacing: -0.04em; max-width: calc(100vw - 132px); padding-right: 5px; }
     .hero { margin-top: 8px; padding: 0 12px; gap: 12px; }
     .heroMedia { min-height: 270px; border-radius: 26px; }
     .fallbackHero { min-height: 270px; }
@@ -1688,4 +1706,6 @@ const styles = `
     .questionActions button, .answerEditor button { width: 100%; justify-self: stretch; }
     .questionHeader { flex-direction: column; gap: 4px; }
   }
+
+
 `
