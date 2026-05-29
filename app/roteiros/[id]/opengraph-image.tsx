@@ -8,10 +8,22 @@ export const size = {
 }
 export const contentType = 'image/png'
 
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL || 'https://prussiktrails.com.br'
+
 type AnyRecord = Record<string, any>
 
 function texto(valor: unknown) {
   return String(valor || '').trim()
+}
+
+function limparTexto(valor: unknown) {
+  return texto(valor)
+    .replace(/^#{1,6}\s?/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/^[-]{3,}$/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 async function resolverParams(params: any) {
@@ -52,11 +64,12 @@ async function buscarRoteiro(id: string): Promise<AnyRecord | null> {
 }
 
 function tituloRoteiro(roteiro: AnyRecord | null) {
-  return (
+  const titulo =
     texto(roteiro?.titulo) ||
     texto(roteiro?.nome) ||
     'Roteiro PrussikTrails'
-  )
+
+  return titulo.length > 68 ? `${titulo.slice(0, 65).trim()}...` : titulo
 }
 
 function localRoteiro(roteiro: AnyRecord | null) {
@@ -67,6 +80,7 @@ function localRoteiro(roteiro: AnyRecord | null) {
     texto(roteiro?.destino) ||
     texto(roteiro?.embarque_local) ||
     texto(roteiro?.local_encontro) ||
+    texto(roteiro?.ponto_encontro) ||
     'Experiência outdoor'
   )
 }
@@ -78,6 +92,15 @@ function imagemRoteiro(roteiro: AnyRecord | null) {
     texto(roteiro?.imagem_url) ||
     texto(roteiro?.image_url) ||
     texto(roteiro?.capa_url)
+  )
+}
+
+function dificuldadeRoteiro(roteiro: AnyRecord | null) {
+  return (
+    texto(roteiro?.dificuldade) ||
+    texto(roteiro?.nivel) ||
+    texto(roteiro?.intensidade) ||
+    'Nível informado no app'
   )
 }
 
@@ -98,6 +121,16 @@ function precoRoteiro(roteiro: AnyRecord | null) {
   })
 }
 
+function descricaoCurta(roteiro: AnyRecord | null) {
+  const descricao =
+    limparTexto(roteiro?.descricao) ||
+    limparTexto(roteiro?.roteiro_detalhado) ||
+    limparTexto(roteiro?.detalhes) ||
+    'Veja detalhes, informações e reserva no PrussikTrails.'
+
+  return descricao.length > 145 ? `${descricao.slice(0, 142).trim()}...` : descricao
+}
+
 export default async function Image({ params }: { params: any }) {
   const resolvedParams = await resolverParams(params)
   const id = texto(resolvedParams?.id)
@@ -108,6 +141,8 @@ export default async function Image({ params }: { params: any }) {
   const local = localRoteiro(roteiro)
   const imagem = imagemRoteiro(roteiro)
   const preco = precoRoteiro(roteiro)
+  const dificuldade = dificuldadeRoteiro(roteiro)
+  const descricao = descricaoCurta(roteiro)
 
   return new ImageResponse(
     (
@@ -135,24 +170,42 @@ export default async function Image({ params }: { params: any }) {
               objectFit: 'cover'
             }}
           />
-        ) : null}
+        ) : (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background:
+                'radial-gradient(circle at 15% 10%, rgba(190,242,100,0.22), transparent 30%), radial-gradient(circle at 90% 20%, rgba(251,146,60,0.18), transparent 34%), linear-gradient(135deg, #203c2e 0%, #5f7547 52%, #d7c6a1 100%)'
+            }}
+          />
+        )}
 
         <div
           style={{
             position: 'absolute',
             inset: 0,
             background:
-              'linear-gradient(90deg, rgba(23,32,24,0.92) 0%, rgba(23,32,24,0.74) 46%, rgba(23,32,24,0.28) 100%)'
+              'linear-gradient(90deg, rgba(23,32,24,0.94) 0%, rgba(23,32,24,0.82) 42%, rgba(23,32,24,0.40) 100%)'
           }}
         />
 
         <div
           style={{
             position: 'absolute',
-            left: 64,
-            top: 56,
-            right: 64,
-            bottom: 56,
+            inset: 34,
+            border: '1px solid rgba(255,253,247,0.20)',
+            borderRadius: 34
+          }}
+        />
+
+        <div
+          style={{
+            position: 'absolute',
+            left: 72,
+            top: 54,
+            right: 72,
+            bottom: 54,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between'
@@ -162,46 +215,70 @@ export default async function Image({ params }: { params: any }) {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 18
+              justifyContent: 'space-between',
+              gap: 24
             }}
           >
-            <img
-              src="https://prussiktrails.com.br/logo-prussik-display.png"
-              alt=""
+            <div
               style={{
-                width: 116,
-                height: 76,
-                objectFit: 'contain'
+                display: 'flex',
+                alignItems: 'center',
+                gap: 18
               }}
-            />
+            >
+              <img
+                src={`${APP_URL}/logo-prussik-display.png`}
+                alt=""
+                style={{
+                  width: 112,
+                  height: 74,
+                  objectFit: 'contain'
+                }}
+              />
+
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 34,
+                    fontWeight: 900,
+                    letterSpacing: '-0.045em'
+                  }}
+                >
+                  PrussikTrails
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 14,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: '#d9f99d',
+                    fontWeight: 800
+                  }}
+                >
+                  Roteiro outdoor
+                </div>
+              </div>
+            </div>
 
             <div
               style={{
                 display: 'flex',
-                flexDirection: 'column'
+                borderRadius: 999,
+                padding: '12px 18px',
+                background: 'rgba(190,242,100,0.17)',
+                border: '1px solid rgba(190,242,100,0.26)',
+                color: '#d9f99d',
+                fontSize: 22,
+                fontWeight: 900
               }}
             >
-              <div
-                style={{
-                  fontSize: 34,
-                  fontWeight: 800,
-                  letterSpacing: '-0.04em'
-                }}
-              >
-                PrussikTrails
-              </div>
-
-              <div
-                style={{
-                  fontSize: 15,
-                  letterSpacing: '0.16em',
-                  textTransform: 'uppercase',
-                  color: '#d9f99d',
-                  fontWeight: 700
-                }}
-              >
-                Roteiro outdoor
-              </div>
+              {preco}
             </div>
           </div>
 
@@ -209,7 +286,7 @@ export default async function Image({ params }: { params: any }) {
             style={{
               display: 'flex',
               flexDirection: 'column',
-              maxWidth: 760
+              maxWidth: 770
             }}
           >
             <div
@@ -217,23 +294,24 @@ export default async function Image({ params }: { params: any }) {
                 display: 'flex',
                 width: 'fit-content',
                 borderRadius: 999,
-                padding: '10px 16px',
-                background: 'rgba(190,242,100,0.16)',
-                color: '#d9f99d',
-                fontSize: 20,
-                fontWeight: 800,
-                marginBottom: 20
+                padding: '10px 15px',
+                background: 'rgba(255,253,247,0.16)',
+                border: '1px solid rgba(255,253,247,0.20)',
+                color: '#fffdf7',
+                fontSize: 18,
+                fontWeight: 850,
+                marginBottom: 18
               }}
             >
-              {preco}
+              {dificuldade}
             </div>
 
             <div
               style={{
-                fontSize: 70,
-                lineHeight: 0.92,
-                fontWeight: 900,
-                letterSpacing: '-0.075em'
+                fontSize: 68,
+                lineHeight: 0.93,
+                fontWeight: 950,
+                letterSpacing: '-0.078em'
               }}
             >
               {titulo}
@@ -241,25 +319,42 @@ export default async function Image({ params }: { params: any }) {
 
             <div
               style={{
-                marginTop: 24,
-                fontSize: 28,
-                color: 'rgba(255,253,247,0.86)',
-                fontWeight: 700
+                marginTop: 22,
+                fontSize: 27,
+                color: '#d9f99d',
+                fontWeight: 850
               }}
             >
               {local}
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+                maxWidth: 720,
+                fontSize: 20,
+                lineHeight: 1.35,
+                color: 'rgba(255,253,247,0.80)',
+                fontWeight: 650
+              }}
+            >
+              {descricao}
             </div>
           </div>
 
           <div
             style={{
               display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 24,
               fontSize: 22,
-              color: 'rgba(255,253,247,0.80)',
-              fontWeight: 700
+              color: 'rgba(255,253,247,0.84)',
+              fontWeight: 800
             }}
           >
-            Veja detalhes e reserve em prussiktrails.com.br
+            <div>Veja detalhes e reserve pelo app</div>
+            <div>prussiktrails.com.br</div>
           </div>
         </div>
       </div>

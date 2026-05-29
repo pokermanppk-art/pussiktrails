@@ -10,6 +10,15 @@ function texto(valor: unknown) {
   return String(valor || '').trim()
 }
 
+function limparTexto(valor: unknown) {
+  return texto(valor)
+    .replace(/^#{1,6}\s?/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/^[-]{3,}$/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 async function resolverParams(params: any) {
   if (params && typeof params.then === 'function') {
     return await params
@@ -55,33 +64,33 @@ function tituloRoteiro(roteiro: AnyRecord | null) {
   )
 }
 
-function descricaoRoteiro(roteiro: AnyRecord | null) {
-  const descricao =
-    texto(roteiro?.descricao) ||
-    texto(roteiro?.roteiro_detalhado) ||
-    texto(roteiro?.detalhes) ||
-    'Conheça este roteiro outdoor no PrussikTrails.'
-
-  return descricao
-    .replace(/^#{1,6}\s?/gm, '')
-    .replace(/\*\*/g, '')
-    .replace(/^[-]{3,}$/gm, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 190)
+function localRoteiro(roteiro: AnyRecord | null) {
+  return (
+    texto(roteiro?.local) ||
+    texto(roteiro?.localizacao) ||
+    texto(roteiro?.cidade) ||
+    texto(roteiro?.destino) ||
+    texto(roteiro?.embarque_local) ||
+    texto(roteiro?.local_encontro) ||
+    texto(roteiro?.ponto_encontro) ||
+    'Experiência outdoor'
+  )
 }
 
-function imagemRoteiro(roteiro: AnyRecord | null, id: string) {
-  const imagem =
-    texto(roteiro?.foto_capa) ||
-    texto(roteiro?.foto_url) ||
-    texto(roteiro?.imagem_url) ||
-    texto(roteiro?.image_url) ||
-    texto(roteiro?.capa_url)
+function descricaoRoteiro(roteiro: AnyRecord | null) {
+  const descricao =
+    limparTexto(roteiro?.descricao) ||
+    limparTexto(roteiro?.roteiro_detalhado) ||
+    limparTexto(roteiro?.detalhes) ||
+    'Conheça este roteiro outdoor no PrussikTrails.'
 
-  if (imagem) return imagem
+  const local = localRoteiro(roteiro)
 
-  return `${APP_URL}/roteiros/${id}/opengraph-image`
+  const frase = local
+    ? `${descricao} Local: ${local}. Veja detalhes e reserve pelo app.`
+    : `${descricao} Veja detalhes e reserve pelo app.`
+
+  return frase.slice(0, 210)
 }
 
 export async function generateMetadata({
@@ -97,7 +106,7 @@ export async function generateMetadata({
   const titulo = tituloRoteiro(roteiro)
   const descricao = descricaoRoteiro(roteiro)
   const url = `${APP_URL}/roteiros/${id}`
-  const imagem = imagemRoteiro(roteiro, id)
+  const imagem = `${APP_URL}/roteiros/${id}/opengraph-image?v=20260529`
 
   return {
     title: `${titulo} | PrussikTrails`,
@@ -126,6 +135,12 @@ export async function generateMetadata({
       title: titulo,
       description: descricao,
       images: [imagem]
+    },
+    other: {
+      'og:image:secure_url': imagem,
+      'og:image:type': 'image/png',
+      'og:image:width': '1200',
+      'og:image:height': '630'
     }
   }
 }

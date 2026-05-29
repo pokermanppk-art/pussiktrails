@@ -211,6 +211,7 @@ export default function DetalhesRoteiroPage() {
   const [carregando, setCarregando] = useState(true)
   const [reservando, setReservando] = useState(false)
   const [modalReservaAberto, setModalReservaAberto] = useState(false)
+  const [linkCopiado, setLinkCopiado] = useState(false)
   const [quantidadePessoas, setQuantidadePessoas] = useState(1)
   const [mensagem, setMensagem] = useState('')
   const [fotoSelecionada, setFotoSelecionada] = useState(0)
@@ -433,6 +434,16 @@ export default function DetalhesRoteiroPage() {
     return precoRoteiro(roteiro) * quantidade
   }, [roteiro, quantidadePessoas])
 
+  const linkPublicoRoteiro = useMemo(() => {
+    if (!id) return 'https://prussiktrails.com.br/roteiros'
+
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/roteiros/${id}`
+    }
+
+    return `https://prussiktrails.com.br/roteiros/${id}`
+  }, [id])
+
   const idUsuarioLogado = extrairUsuarioId(usuarioLogado)
 
   const ehGuiaDono = Boolean(
@@ -446,6 +457,48 @@ export default function DetalhesRoteiroPage() {
     const guiaId = guia?.id || guiaIdRoteiro(roteiro)
     if (!guiaId) return
     router.push(`/guia/publico/${guiaId}`)
+  }
+
+  async function copiarLinkRoteiro() {
+    try {
+      await navigator.clipboard.writeText(linkPublicoRoteiro)
+      setLinkCopiado(true)
+      window.setTimeout(() => setLinkCopiado(false), 2200)
+    } catch {
+      window.prompt('Copie o link do roteiro:', linkPublicoRoteiro)
+    }
+  }
+
+  async function compartilharRoteiro() {
+    const titulo = tituloRoteiro(roteiro)
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: titulo,
+          text: 'Veja este roteiro no PrussikTrails.',
+          url: linkPublicoRoteiro
+        })
+        return
+      }
+
+      await copiarLinkRoteiro()
+    } catch {
+      // O usuário pode cancelar o compartilhamento nativo. Não precisa exibir erro.
+    }
+  }
+
+  function enviarWhatsAppRoteiro() {
+    const titulo = tituloRoteiro(roteiro)
+    const mensagemWhatsApp = `Olha esse roteiro no PrussikTrails: ${titulo}
+${linkPublicoRoteiro}`
+    const url = `https://wa.me/?text=${encodeURIComponent(mensagemWhatsApp)}`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  async function prepararInstagramRoteiro() {
+    await copiarLinkRoteiro()
+    window.alert('Link copiado. Para Instagram, use o sticker de link no Story e cole o link deste roteiro.')
   }
 
   async function carregarOcupacao(roteiroId: string, roteiroData: Roteiro) {
@@ -866,6 +919,26 @@ export default function DetalhesRoteiroPage() {
           <h1>{tituloRoteiro(roteiro)}</h1>
           <p className="description">{roteiro.descricao || 'Uma experiência outdoor conduzida por guia, com reserva segura e acompanhamento dentro do app.'}</p>
 
+          <div className="shareBox" aria-label="Compartilhar roteiro">
+            <button type="button" className="shareButton primary" onClick={compartilharRoteiro}>
+              Compartilhar
+            </button>
+
+            <button type="button" className="shareButton whatsapp" onClick={enviarWhatsAppRoteiro}>
+              WhatsApp
+            </button>
+
+            <button type="button" className="shareButton instagram" onClick={prepararInstagramRoteiro}>
+              Instagram
+            </button>
+
+            <button type="button" className="shareButton" onClick={copiarLinkRoteiro}>
+              Copiar link
+            </button>
+
+            {linkCopiado && <span className="shareFeedback">Link copiado.</span>}
+          </div>
+
           {guiaAtual && (
             <button type="button" className="guideHeroCard" onClick={abrirPerfilGuia}>
               <div className="guideMiniAvatar">
@@ -1252,6 +1325,56 @@ const styles = `
     overflow-wrap: anywhere;
   }
 
+  .shareBox {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 16px;
+  }
+
+  .shareButton {
+    border: 1px solid rgba(32, 60, 46, 0.12);
+    background: rgba(255, 253, 247, 0.86);
+    color: #203c2e;
+    border-radius: 999px;
+    padding: 11px 14px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
+    transition: 0.18s ease;
+    white-space: nowrap;
+  }
+
+  .shareButton:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
+  }
+
+  .shareButton.primary {
+    background: #203c2e;
+    color: #fffdf7;
+    border-color: #203c2e;
+  }
+
+  .shareButton.whatsapp {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
+  }
+
+  .shareButton.instagram {
+    background: #fff7ed;
+    color: #9a3412;
+    border-color: #fed7aa;
+  }
+
+  .shareFeedback {
+    color: #166534;
+    font-size: 12px;
+    font-weight: 850;
+  }
+
   .guideHeroCard {
     width: 100%;
     margin-top: 18px;
@@ -1545,6 +1668,9 @@ const styles = `
     .heroContent { border-radius: 26px; padding: 20px; }
     .heroContent h1 { font-size: 40px; }
     .description { font-size: 14px; line-height: 1.5; }
+    .shareBox { display: grid; grid-template-columns: 1fr 1fr; }
+    .shareButton { width: 100%; padding: 10px 12px; }
+    .shareFeedback { grid-column: 1 / -1; }
     .guideHeroCard { grid-template-columns: 42px minmax(0, 1fr); border-radius: 20px; padding: 10px; }
     .guideMiniAvatar { width: 42px; height: 42px; border-radius: 16px; }
     .guideHeroArrow { grid-column: 2; font-size: 11px; }
