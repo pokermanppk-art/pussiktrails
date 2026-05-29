@@ -31,6 +31,7 @@ type Roteiro = {
   foto_capa?: string | null
   foto_url?: string | null
   imagem_url?: string | null
+  imagem?: string | null
   status?: string | null
   ativo?: boolean | null
   limite_pessoas?: number | string | null
@@ -73,17 +74,20 @@ const MOTIVOS_CANCELAMENTO = [
   {
     codigo: 'clima_inseguro',
     titulo: 'Condição climática insegura',
-    descricao: 'Chuva intensa, tempestade, vento, visibilidade ou outra condição climática que comprometa a segurança.',
+    descricao:
+      'Chuva intensa, tempestade, vento, visibilidade ou outra condição climática que comprometa a segurança.',
   },
   {
     codigo: 'risco_operacional',
     titulo: 'Risco operacional / segurança',
-    descricao: 'Alteração no terreno, bloqueio, risco de acesso, resgate ou segurança da atividade.',
+    descricao:
+      'Alteração no terreno, bloqueio, risco de acesso, resgate ou segurança da atividade.',
   },
   {
     codigo: 'saude_guia',
     titulo: 'Problema de saúde do guia',
-    descricao: 'Impossibilidade temporária do guia conduzir a experiência com segurança.',
+    descricao:
+      'Impossibilidade temporária do guia conduzir a experiência com segurança.',
   },
   {
     codigo: 'minimo_participantes',
@@ -98,7 +102,7 @@ const MOTIVOS_CANCELAMENTO = [
   {
     codigo: 'outro',
     titulo: 'Outro motivo justificado',
-    descricao: 'Usar quando houver outro motivo relevante. Descreva com clareza.',
+    descricao: 'Use quando houver outro motivo relevante. Descreva com clareza.',
   },
 ]
 
@@ -145,6 +149,7 @@ function fotoRoteiro(roteiro: Roteiro) {
     roteiro.foto_capa ||
       roteiro.foto_url ||
       roteiro.imagem_url ||
+      roteiro.imagem ||
       ''
   ).trim()
 }
@@ -177,9 +182,17 @@ function statusRoteiro(roteiro: Roteiro) {
   if (status === 'pausado' || status === 'pausada') return 'pausado'
   if (status === 'rascunho') return 'rascunho'
   if (status === 'reprovado' || status === 'reprovada') return 'reprovado'
-  if (status === 'encerrado' || status === 'finalizado' || status === 'realizado') {
+
+  if (
+    status === 'encerrado' ||
+    status === 'finalizado' ||
+    status === 'finalizada' ||
+    status === 'realizado' ||
+    status === 'realizada'
+  ) {
     return 'encerrado'
   }
+
   if (roteiro.ativo === false) return 'pausado'
 
   return 'ativo'
@@ -222,13 +235,13 @@ function dataPrincipal(roteiro: Roteiro) {
 function formatarData(valor?: string | null) {
   if (!valor) return 'Data a definir'
 
-  const data = new Date(String(valor))
-  if (Number.isNaN(data.getTime())) {
-    const dataCurta = String(valor).slice(0, 10)
-    const tentativa = new Date(`${dataCurta}T12:00:00`)
-    if (Number.isNaN(tentativa.getTime())) return 'Data a definir'
-    return tentativa.toLocaleDateString('pt-BR')
-  }
+  const texto = String(valor)
+  const data =
+    texto.length <= 10
+      ? new Date(`${texto.slice(0, 10)}T12:00:00`)
+      : new Date(texto)
+
+  if (Number.isNaN(data.getTime())) return 'Data a definir'
 
   return data.toLocaleDateString('pt-BR', {
     day: '2-digit',
@@ -281,7 +294,9 @@ export default function GuiaRoteirosPage() {
   const [removendoId, setRemovendoId] = useState('')
   const [roteiroCancelamento, setRoteiroCancelamento] = useState<Roteiro | null>(null)
   const [motivoCodigo, setMotivoCodigo] = useState(MOTIVOS_CANCELAMENTO[0].codigo)
-  const [motivoDescricao, setMotivoDescricao] = useState(MOTIVOS_CANCELAMENTO[0].descricao)
+  const [motivoDescricao, setMotivoDescricao] = useState(
+    MOTIVOS_CANCELAMENTO[0].descricao
+  )
   const [observacaoGuia, setObservacaoGuia] = useState('')
 
   useEffect(() => {
@@ -298,7 +313,7 @@ export default function GuiaRoteirosPage() {
       const salvo = localStorage.getItem('user')
       const parsedUser = salvo ? (JSON.parse(salvo) as UsuarioLocal) : null
 
-      if (!parsedUser || parsedUser.tipo !== 'guia') {
+      if (!parsedUser || normalizar(parsedUser.tipo) !== 'guia') {
         router.replace('/login')
         return
       }
@@ -332,12 +347,16 @@ export default function GuiaRoteirosPage() {
     for (const coluna of tentativas) {
       const { data, error } = await supabase
         .from('reservas')
-        .select('id, roteiro_id, id_roteiro, status, pagamento_status, quantidade_pessoas, valor_total')
+        .select(
+          'id, roteiro_id, id_roteiro, status, pagamento_status, quantidade_pessoas, valor_total'
+        )
         .in(coluna, roteiroIds)
 
       if (error) {
         const textoErro = String(error.message || error.details || '').toLowerCase()
+
         if (textoErro.includes('column') || error.code === '42703') continue
+
         console.warn('Erro ao buscar reservas dos roteiros:', error)
         continue
       }
@@ -348,6 +367,7 @@ export default function GuiaRoteirosPage() {
     }
 
     const mapa = new Map<string, ReservaResumo>()
+
     acumuladas.forEach((reserva) => {
       if (reserva.id) mapa.set(reserva.id, reserva)
     })
@@ -386,7 +406,9 @@ export default function GuiaRoteirosPage() {
       })
 
       const pagas = reservasRoteiro.filter(pagamentoReservaConfirmado)
-      const pendentes = reservasRoteiro.filter((reserva) => !pagamentoReservaConfirmado(reserva))
+      const pendentes = reservasRoteiro.filter(
+        (reserva) => !pagamentoReservaConfirmado(reserva)
+      )
 
       return {
         ...roteiro,
@@ -439,9 +461,17 @@ export default function GuiaRoteirosPage() {
 
   const resumo = useMemo(() => {
     const ativos = roteiros.filter((roteiro) => statusRoteiro(roteiro) === 'ativo').length
-    const cancelados = roteiros.filter((roteiro) => statusRoteiro(roteiro) === 'cancelado').length
-    const reservas = roteiros.reduce((acc, roteiro) => acc + Number(roteiro.reservas_total || 0), 0)
-    const reservasPagas = roteiros.reduce((acc, roteiro) => acc + Number(roteiro.reservas_pagas || 0), 0)
+    const cancelados = roteiros.filter(
+      (roteiro) => statusRoteiro(roteiro) === 'cancelado'
+    ).length
+    const reservas = roteiros.reduce(
+      (acc, roteiro) => acc + Number(roteiro.reservas_total || 0),
+      0
+    )
+    const reservasPagas = roteiros.reduce(
+      (acc, roteiro) => acc + Number(roteiro.reservas_pagas || 0),
+      0
+    )
 
     return {
       total: roteiros.length,
@@ -581,6 +611,7 @@ export default function GuiaRoteirosPage() {
             font-weight: 900;
           }
         `}</style>
+
         Carregando seus roteiros...
       </div>
     )
@@ -786,15 +817,29 @@ export default function GuiaRoteirosPage() {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 16px;
+          align-items: start;
         }
 
         .card {
           overflow: hidden;
           min-width: 0;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          position: relative;
+          isolation: isolate;
         }
 
+        /*
+          Ajuste principal:
+          a imagem fica confinada dentro da área .photo e nunca passa por cima
+          dos botões no PWA/mobile. A área do conteúdo fica em camada própria.
+        */
         .photo {
+          width: 100%;
           height: 184px;
+          min-height: 184px;
+          flex: 0 0 184px;
           background:
             radial-gradient(circle at 30% 20%, rgba(250, 204, 21, 0.22), transparent 32%),
             linear-gradient(135deg, #294735, #172018);
@@ -803,18 +848,31 @@ export default function GuiaRoteirosPage() {
           color: #fffdf7;
           font-size: 46px;
           position: relative;
+          overflow: hidden;
+          z-index: 1;
         }
 
         .photo img {
+          position: absolute;
+          inset: 0;
           width: 100%;
           height: 100%;
+          max-width: 100%;
           object-fit: cover;
+          display: block;
+          z-index: 1;
+        }
+
+        .photo > span:not(.statusPill) {
+          position: relative;
+          z-index: 2;
         }
 
         .statusPill {
           position: absolute;
           left: 12px;
           top: 12px;
+          z-index: 3;
           border-radius: 999px;
           padding: 7px 10px;
           background: rgba(255, 253, 247, 0.88);
@@ -836,6 +894,12 @@ export default function GuiaRoteirosPage() {
         .body {
           padding: 16px;
           min-width: 0;
+          position: relative;
+          z-index: 2;
+          background: rgba(255, 255, 255, 0.78);
+          display: flex;
+          flex-direction: column;
+          flex: 1 1 auto;
         }
 
         .title {
@@ -913,10 +977,18 @@ export default function GuiaRoteirosPage() {
         }
 
         .actions {
-          display: flex;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 8px;
-          margin-top: 14px;
-          flex-wrap: wrap;
+          margin-top: auto;
+          padding-top: 14px;
+          position: relative;
+          z-index: 4;
+          clear: both;
+        }
+
+        .actions .btn {
+          width: 100%;
         }
 
         .btn {
@@ -929,6 +1001,8 @@ export default function GuiaRoteirosPage() {
           transition: 0.16s ease;
           white-space: nowrap;
           min-height: 40px;
+          position: relative;
+          z-index: 5;
         }
 
         .btn:hover {
@@ -1137,8 +1211,22 @@ export default function GuiaRoteirosPage() {
             gap: 14px;
           }
 
+          .card {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 26px;
+          }
+
           .photo {
-            height: 170px;
+            height: 158px;
+            min-height: 158px;
+            flex-basis: 158px;
+          }
+
+          .body {
+            padding: 14px;
+            background: rgba(255, 255, 255, 0.86);
           }
 
           .statsLine {
@@ -1148,10 +1236,13 @@ export default function GuiaRoteirosPage() {
           .actions {
             display: grid;
             grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            width: 100%;
           }
 
           .actions .btn {
             width: 100%;
+            min-width: 0;
           }
 
           .modalOverlay {
@@ -1167,6 +1258,22 @@ export default function GuiaRoteirosPage() {
           .modalActions {
             display: grid;
             grid-template-columns: 1fr;
+          }
+
+          .modalActions .btn {
+            width: 100%;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .actions {
+            grid-template-columns: 1fr;
+          }
+
+          .photo {
+            height: 148px;
+            min-height: 148px;
+            flex-basis: 148px;
           }
         }
       `}</style>
@@ -1216,7 +1323,10 @@ export default function GuiaRoteirosPage() {
               <p className="heroKicker">Gestão de experiências</p>
               <h1 className="heroTitle">Meus roteiros</h1>
               <p className="heroText">
-                Administre suas jornadas, acompanhe reservas e cancele roteiros com motivo obrigatório quando houver risco, indisponibilidade ou necessidade operacional. Quando o guia cancela, os clientes recebem crédito em Saldo de Jornada.
+                Administre suas jornadas, acompanhe reservas e cancele roteiros com
+                motivo obrigatório quando houver risco, indisponibilidade ou necessidade
+                operacional. Quando o guia cancela, os clientes recebem crédito em Saldo
+                de Jornada.
               </p>
             </div>
 
@@ -1225,14 +1335,17 @@ export default function GuiaRoteirosPage() {
                 <div className="summaryValue">{resumo.total}</div>
                 <div className="summaryLabel">total</div>
               </div>
+
               <div className="summaryItem">
                 <div className="summaryValue">{resumo.ativos}</div>
                 <div className="summaryLabel">ativos</div>
               </div>
+
               <div className="summaryItem">
                 <div className="summaryValue">{resumo.reservasPagas}</div>
                 <div className="summaryLabel">pagas</div>
               </div>
+
               <div className="summaryItem">
                 <div className="summaryValue">{resumo.cancelados}</div>
                 <div className="summaryLabel">cancelados</div>
@@ -1271,7 +1384,7 @@ export default function GuiaRoteirosPage() {
             >
               <option value="todas">Todas dificuldades</option>
               {dificuldadesDisponiveis.map((dificuldade) => (
-                <option value={dificuldade} key={dificuldade}>
+                <option key={dificuldade} value={dificuldade}>
                   {dificuldade}
                 </option>
               ))}
@@ -1282,6 +1395,7 @@ export default function GuiaRoteirosPage() {
             <section className="empty">
               <div style={{ fontSize: 44, marginBottom: 10 }}>🧭</div>
               Nenhum roteiro encontrado com esses filtros.
+
               <div style={{ marginTop: 16 }}>
                 <button
                   type="button"
@@ -1329,6 +1443,7 @@ export default function GuiaRoteirosPage() {
 
                     <div className="body">
                       <h2 className="title">{tituloRoteiro(roteiro)}</h2>
+
                       <div className="meta">
                         {localRoteiro(roteiro)}
                         <br />
@@ -1336,14 +1451,36 @@ export default function GuiaRoteirosPage() {
                       </div>
 
                       <div className="chips">
+                        <span className="chip">{formatarMoeda(valorRoteiro(roteiro))}</span>
+
                         <span className="chip">{labelRecorrencia(roteiro.recorrencia)}</span>
-                        <span className="chip">{roteiro.dificuldade || 'Nível livre'}</span>
-                        <span className="chip">{kmRoteiro(roteiro).toFixed(1)} km</span>
-                        <span className="chip">{duracaoRoteiro(roteiro).toFixed(0)} h</span>
-                        <span className="chip gold">{formatarMoeda(valorRoteiro(roteiro))}</span>
-                        {status === 'cancelado' && roteiro.cancelamento_motivo ? (
-                          <span className="chip red">{roteiro.cancelamento_motivo}</span>
+
+                        {roteiro.renovar_automaticamente ? (
+                          <span className="chip gold">renovação automática</span>
                         ) : null}
+
+                        {status === 'cancelado' && roteiro.cancelamento_motivo_codigo ? (
+                          <span className="chip red">
+                            {roteiro.cancelamento_motivo_codigo}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="statsLine">
+                        <div className="miniStat">
+                          <div className="miniValue">{kmRoteiro(roteiro) || '-'}</div>
+                          <div className="miniLabel">km</div>
+                        </div>
+
+                        <div className="miniStat">
+                          <div className="miniValue">{duracaoRoteiro(roteiro) || '-'}</div>
+                          <div className="miniLabel">horas</div>
+                        </div>
+
+                        <div className="miniStat">
+                          <div className="miniValue">{limiteRoteiro(roteiro) || '-'}</div>
+                          <div className="miniLabel">vagas</div>
+                        </div>
                       </div>
 
                       <div className="statsLine">
@@ -1351,13 +1488,17 @@ export default function GuiaRoteirosPage() {
                           <div className="miniValue">{totalReservas}</div>
                           <div className="miniLabel">reservas</div>
                         </div>
+
                         <div className="miniStat">
                           <div className="miniValue">{reservasPagas}</div>
                           <div className="miniLabel">pagas</div>
                         </div>
+
                         <div className="miniStat">
-                          <div className="miniValue">{limiteRoteiro(roteiro) || '∞'}</div>
-                          <div className="miniLabel">limite</div>
+                          <div className="miniValue">
+                            {Number(roteiro.reservas_pendentes || 0)}
+                          </div>
+                          <div className="miniLabel">pendentes</div>
                         </div>
                       </div>
 
@@ -1412,12 +1553,16 @@ export default function GuiaRoteirosPage() {
           <div className="modalOverlay" role="dialog" aria-modal="true">
             <section className="modal">
               <h2 className="modalTitle">Cancelar roteiro</h2>
+
               <p className="modalSub">
-                Você está cancelando <strong>{tituloRoteiro(roteiroCancelamento)}</strong>. O motivo ficará registrado e as reservas vinculadas receberão crédito em Saldo de Jornada quando aplicável.
+                Você está cancelando <strong>{tituloRoteiro(roteiroCancelamento)}</strong>.
+                O motivo ficará registrado e as reservas vinculadas receberão crédito em
+                Saldo de Jornada quando aplicável.
               </p>
 
               <div className="modalNotice">
-                Cancelamento pelo guia gera crédito integral ao cliente e preserva o histórico financeiro, reservas e extrato.
+                Cancelamento pelo guia gera crédito integral ao cliente e preserva o
+                histórico financeiro, reservas e extrato.
               </div>
 
               <div className="field">
