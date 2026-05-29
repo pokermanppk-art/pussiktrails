@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { CSSProperties, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+
+type AnyRecord = Record<string, any>
 
 type UsuarioLocal = {
   id?: string | null
@@ -77,6 +79,12 @@ type Roteiro = {
   usuario_id?: string | null
   criador_id?: string | null
   created_by?: string | null
+  nome_agencia?: string | null
+  agencia_nome?: string | null
+  empresa_nome?: string | null
+  nome_empresa?: string | null
+  nome_fantasia?: string | null
+  razao_social?: string | null
 }
 
 type Guia = {
@@ -91,6 +99,12 @@ type Guia = {
   instagram?: string | null
   cadastur?: string | null
   cadastro_turismo?: string | null
+  nome_agencia?: string | null
+  agencia_nome?: string | null
+  empresa_nome?: string | null
+  nome_empresa?: string | null
+  nome_fantasia?: string | null
+  razao_social?: string | null
 }
 
 type ReservaCriada = {
@@ -119,20 +133,23 @@ function normalizar(valor: unknown) {
     .trim()
 }
 
+function texto(valor: unknown) {
+  return String(valor || '').trim()
+}
+
 function extrairUsuarioId(usuario: UsuarioLocal | null): string {
-  return String(
+  return texto(
     usuario?.id ||
       usuario?.user_id ||
       usuario?.usuario_id ||
       usuario?.cliente_id ||
-      usuario?.guia_id ||
-      ''
-  ).trim()
+      usuario?.guia_id
+  )
 }
 
 function textoSeguro(valor: unknown, fallback = '') {
-  const texto = String(valor || '').trim()
-  return texto || fallback
+  const valorTexto = texto(valor)
+  return valorTexto || fallback
 }
 
 function quebrarTexto(valor?: string | null) {
@@ -148,32 +165,21 @@ function parseGaleria(valor: unknown) {
   if (!valor) return []
 
   if (Array.isArray(valor)) {
-    return valor
-      .map((item) => String(item || '').trim())
-      .filter(Boolean)
+    return valor.map((item) => texto(item)).filter(Boolean)
   }
 
   if (typeof valor === 'string') {
-    const texto = valor.trim()
-
-    if (!texto) return []
+    const textoValor = valor.trim()
+    if (!textoValor) return []
 
     try {
-      const parsed = JSON.parse(texto)
-
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map((item) => String(item || '').trim())
-          .filter(Boolean)
-      }
+      const parsed = JSON.parse(textoValor)
+      if (Array.isArray(parsed)) return parsed.map((item) => texto(item)).filter(Boolean)
     } catch {
-      // mantém fallback abaixo
+      // fallback abaixo
     }
 
-    return texto
-      .split(/,|\n|\|/g)
-      .map((item) => item.trim())
-      .filter(Boolean)
+    return textoValor.split(/,|\n|\|/g).map((item) => item.trim()).filter(Boolean)
   }
 
   return []
@@ -206,18 +212,15 @@ export default function DetalhesRoteiroPage() {
     const usuario = salvo ? (JSON.parse(salvo) as UsuarioLocal) : null
     setUsuarioLogado(usuario)
 
-    if (usuario) {
-      sincronizarUsuarioCabecalho(usuario)
-    }
+    if (usuario) sincronizarUsuarioCabecalho(usuario)
 
     carregarRoteiro()
     carregarPerguntas()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
-  const sincronizarUsuarioCabecalho = async (usuarioAtual: UsuarioLocal) => {
+  async function sincronizarUsuarioCabecalho(usuarioAtual: UsuarioLocal) {
     const usuarioId = extrairUsuarioId(usuarioAtual)
-
     if (!usuarioId) return
 
     try {
@@ -238,7 +241,7 @@ export default function DetalhesRoteiroPage() {
         tipo: data.tipo || usuarioAtual.tipo || null,
         avatar_url: data.avatar_url || usuarioAtual.avatar_url || null,
         foto_url: data.foto_url || usuarioAtual.foto_url || null,
-        imagem_url: data.imagem_url || usuarioAtual.imagem_url || null,
+        imagem_url: data.imagem_url || usuarioAtual.imagem_url || null
       }
 
       setUsuarioLogado(atualizado)
@@ -248,127 +251,129 @@ export default function DetalhesRoteiroPage() {
     }
   }
 
-  const nomeUsuario = (usuario?: UsuarioLocal | null) => {
+  function nomeUsuario(usuario?: UsuarioLocal | null) {
     return usuario?.nome || usuario?.name || usuario?.email || 'Usuário'
   }
 
-  const primeiroNome = (valor?: string | null) => {
+  function primeiroNome(valor?: string | null) {
     const nome = String(valor || 'Usuário').trim()
     return nome.split(' ')[0] || 'Usuário'
   }
 
-  const avatarUsuario = (usuario?: UsuarioLocal | null) => {
+  function avatarUsuario(usuario?: UsuarioLocal | null) {
     return usuario?.avatar_url || usuario?.foto_url || usuario?.imagem_url || ''
   }
 
-  const inicialUsuario = (usuario?: UsuarioLocal | null) => {
+  function inicialUsuario(usuario?: UsuarioLocal | null) {
     return primeiroNome(nomeUsuario(usuario)).slice(0, 1).toUpperCase()
   }
 
-  const rotaPerfilUsuario = (usuario?: UsuarioLocal | null) => {
+  function rotaPerfilUsuario(usuario?: UsuarioLocal | null) {
     const tipo = normalizar(usuario?.tipo)
-
     if (tipo === 'guia') return '/guia/perfil'
     if (tipo === 'admin') return '/admin/dashboard'
-
     return '/cliente/perfil'
   }
 
-  const rotaPrincipalUsuario = () => {
+  function rotaPrincipalUsuario() {
     const tipo = normalizar(usuarioLogado?.tipo)
-
     if (tipo === 'cliente') return '/cliente/dashboard'
     if (tipo === 'guia') return '/guia/dashboard'
     if (tipo === 'admin') return '/admin/dashboard'
-
     return '/roteiros'
   }
 
-  const tituloRoteiro = (item?: Roteiro | null) => {
+  function tituloRoteiro(item?: Roteiro | null) {
     return textoSeguro(item?.titulo || item?.nome, 'Roteiro PrussikTrails')
   }
 
-  const guiaIdRoteiro = (item?: Roteiro | null) => {
-    return String(
+  function guiaIdRoteiro(item?: Roteiro | null) {
+    return texto(
       item?.id_guia ||
         item?.guia_id ||
         item?.id_user ||
         item?.usuario_id ||
         item?.criador_id ||
         item?.created_by ||
-        item?.user_id ||
-        ''
-    ).trim()
+        item?.user_id
+    )
   }
 
-  const guiaFallbackDoRoteiro = (item?: Roteiro | null): Guia | null => {
-    const guiaId = guiaIdRoteiro(item)
+  function nomePublicoGuia(item?: Guia | null) {
+    return textoSeguro(
+      item?.nome_agencia ||
+        item?.agencia_nome ||
+        item?.empresa_nome ||
+        item?.nome_empresa ||
+        item?.nome_fantasia ||
+        item?.razao_social ||
+        item?.nome ||
+        item?.name ||
+        item?.email,
+      'Guia/Agência PrussikTrails'
+    )
+  }
 
+  function guiaFallbackDoRoteiro(item?: Roteiro | null): Guia | null {
+    const guiaId = guiaIdRoteiro(item)
     if (!item || !guiaId) return null
 
     return {
       id: guiaId,
       nome:
+        item.nome_agencia ||
+        item.agencia_nome ||
+        item.empresa_nome ||
+        item.nome_empresa ||
+        item.nome_fantasia ||
+        item.razao_social ||
         item.guia_nome ||
         item.nome_guia ||
         item.guia_name ||
         item.guia_email ||
-        'Guia PrussikTrails',
+        'Guia/Agência PrussikTrails',
       email: item.guia_email || null,
       avatar_url: item.guia_avatar_url || item.guia_foto_url || null
     }
   }
 
-  const nomeGuia = (item?: Guia | null) => {
-    return textoSeguro(item?.nome || item?.name || item?.email, 'Guia PrussikTrails')
+  function avatarGuia(item?: Guia | null) {
+    return texto(item?.avatar_url || item?.foto_url || item?.imagem_url)
   }
 
-  const avatarGuia = (item?: Guia | null) => {
-    return String(item?.avatar_url || item?.foto_url || item?.imagem_url || '').trim()
-  }
-
-  const localRoteiro = (item?: Roteiro | null) => {
+  function localRoteiro(item?: Roteiro | null) {
     const local = textoSeguro(item?.localizacao || item?.local)
-
     if (local) return local
 
     const cidadeEstado = [item?.cidade, item?.estado]
-      .map((parte) => String(parte || '').trim())
+      .map((parte) => texto(parte))
       .filter(Boolean)
       .join(' / ')
 
     return cidadeEstado || 'Local a definir'
   }
 
-  const precoRoteiro = (item?: Roteiro | null) => {
+  function precoRoteiro(item?: Roteiro | null) {
     return Number(item?.preco ?? item?.valor ?? 0) || 0
   }
 
-  const kmRoteiro = (item?: Roteiro | null) => {
+  function kmRoteiro(item?: Roteiro | null) {
     return Number(item?.km ?? item?.distancia_km ?? 0) || 0
   }
 
-  const duracaoRoteiro = (item?: Roteiro | null) => {
+  function duracaoRoteiro(item?: Roteiro | null) {
     return Number(item?.duracao_horas ?? item?.duracao ?? 0) || 0
   }
 
-  const limitePessoas = (item?: Roteiro | null) => {
-    const valor =
-      item?.limite_pessoas ??
-      item?.capacidade ??
-      item?.max_pessoas ??
-      null
-
+  function limitePessoas(item?: Roteiro | null) {
+    const valor = item?.limite_pessoas ?? item?.capacidade ?? item?.max_pessoas ?? null
     if (valor === null || valor === undefined || valor === '') return null
-
     const numero = Number(valor)
-
     if (!Number.isFinite(numero) || numero <= 0) return null
-
     return numero
   }
 
-  const dataPrincipal = (item?: Roteiro | null) => {
+  function dataPrincipal(item?: Roteiro | null) {
     return (
       item?.proxima_data ||
       item?.embarque_data_hora ||
@@ -379,39 +384,20 @@ export default function DetalhesRoteiroPage() {
     )
   }
 
-  const dataRetorno = (item?: Roteiro | null) => {
-    return item?.retorno_data_hora || item?.retorno_data || ''
-  }
-
-  const fotoCapa = (item?: Roteiro | null) => {
-    return String(
-      item?.foto_capa ||
-        item?.imagem_url ||
-        item?.imagem ||
-        item?.foto_url ||
-        ''
-    ).trim()
+  function fotoCapa(item?: Roteiro | null) {
+    return texto(item?.foto_capa || item?.imagem_url || item?.imagem || item?.foto_url)
   }
 
   const fotosRoteiro = useMemo(() => {
     if (!roteiro) return []
-
     const capa = fotoCapa(roteiro)
-    const galeria = [
-      ...parseGaleria(roteiro.galeria_fotos),
-      ...parseGaleria(roteiro.fotos)
-    ]
-
-    const unicas = Array.from(new Set([capa, ...galeria].filter(Boolean)))
-
-    return unicas
+    const galeria = [...parseGaleria(roteiro.galeria_fotos), ...parseGaleria(roteiro.fotos)]
+    return Array.from(new Set([capa, ...galeria].filter(Boolean)))
   }, [roteiro])
 
   const vagasRestantes = useMemo(() => {
     const limite = limitePessoas(roteiro)
-
     if (limite === null) return null
-
     return Math.max(limite - vagasOcupadas, 0)
   }, [roteiro, vagasOcupadas])
 
@@ -433,9 +419,7 @@ export default function DetalhesRoteiroPage() {
 
   function abrirPerfilGuia() {
     const guiaId = guia?.id || guiaIdRoteiro(roteiro)
-
     if (!guiaId) return
-
     router.push(`/guia/publico/${guiaId}`)
   }
 
@@ -453,23 +437,15 @@ export default function DetalhesRoteiroPage() {
 
     const dataReferencia = String(dataPrincipal(roteiroData) || '').slice(0, 10)
 
-    const ocupadas = (data || [])
+    const ocupadas = ((data || []) as AnyRecord[])
       .filter((reserva) => {
         if (normalizar(reserva.status) === 'cancelada') return false
-
         if (!dataReferencia) return true
-
-        const dataReserva = String(
-          reserva.data_trilha || reserva.data_reserva || ''
-        ).slice(0, 10)
-
+        const dataReserva = String(reserva.data_trilha || reserva.data_reserva || '').slice(0, 10)
         if (!dataReserva) return true
-
         return dataReserva === dataReferencia
       })
-      .reduce((total, reserva) => {
-        return total + Number(reserva.quantidade_pessoas || reserva.quantidade || 1)
-      }, 0)
+      .reduce((total, reserva) => total + Number(reserva.quantidade_pessoas || reserva.quantidade || 1), 0)
 
     setVagasOcupadas(ocupadas)
   }
@@ -501,19 +477,10 @@ export default function DetalhesRoteiroPage() {
 
       const roteiroData = data as Roteiro
 
-      if (roteiroData.ativo === false) {
-        setMensagem('Este roteiro não está disponível no momento.')
-      }
+      if (roteiroData.ativo === false) setMensagem('Este roteiro não está disponível no momento.')
 
       const status = normalizar(roteiroData.status)
-
-      if (
-        status === 'cancelado' ||
-        status === 'cancelada' ||
-        status === 'reprovado' ||
-        status === 'pausado' ||
-        status === 'excluido'
-      ) {
+      if (['cancelado', 'cancelada', 'reprovado', 'pausado', 'excluido', 'rascunho'].includes(status)) {
         setMensagem('Este roteiro não está disponível no momento.')
       }
 
@@ -534,9 +501,7 @@ export default function DetalhesRoteiroPage() {
           .eq('id', guiaId)
           .maybeSingle()
 
-        if (!guiaError && guiaData) {
-          setGuia(guiaData as Guia)
-        }
+        if (!guiaError && guiaData) setGuia(guiaData as Guia)
       }
     } catch (error) {
       console.error('Erro ao carregar roteiro:', error)
@@ -562,7 +527,6 @@ export default function DetalhesRoteiroPage() {
       const data = await response.json().catch(() => null)
 
       if (!response.ok || data?.sucesso === false) {
-        console.warn('Perguntas públicas ainda não disponíveis:', data)
         setPerguntas([])
         setPerguntasAviso(data?.erro || 'A caixa de perguntas ainda precisa ser ativada no banco de dados.')
         return
@@ -578,9 +542,9 @@ export default function DetalhesRoteiroPage() {
   async function enviarPerguntaPublica() {
     if (!roteiro) return
 
-    const texto = novaPergunta.trim()
+    const textoPergunta = novaPergunta.trim()
 
-    if (!texto) {
+    if (!textoPergunta) {
       setPerguntasAviso('Escreva sua pergunta antes de enviar.')
       return
     }
@@ -602,25 +566,20 @@ export default function DetalhesRoteiroPage() {
 
       const response = await fetch('/api/roteiros/perguntas', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           roteiroId: roteiro.id,
           clienteId: idUsuarioLogado,
-          pergunta: texto,
+          pergunta: textoPergunta,
           paginaOrigem: `/roteiros/${id}`
         })
       })
 
       const data = await response.json().catch(() => null)
-
-      if (!response.ok || data?.sucesso === false) {
-        throw new Error(data?.erro || 'Não foi possível publicar a pergunta agora.')
-      }
+      if (!response.ok || data?.sucesso === false) throw new Error(data?.erro || 'Não foi possível publicar a pergunta agora.')
 
       setNovaPergunta('')
-      setPerguntasAviso('Pergunta enviada. O guia verá esta pendência na dashboard e poderá responder aqui no roteiro.')
+      setPerguntasAviso('Pergunta enviada. O guia verá esta pendência e poderá responder aqui no roteiro.')
       await carregarPerguntas()
     } catch (error) {
       console.error('Erro ao enviar pergunta pública:', error)
@@ -646,22 +605,12 @@ export default function DetalhesRoteiroPage() {
 
       const response = await fetch('/api/roteiros/perguntas/responder', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          perguntaId,
-          roteiroId: id,
-          guiaId: idUsuarioLogado,
-          resposta
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ perguntaId, roteiroId: id, guiaId: idUsuarioLogado, resposta })
       })
 
       const data = await response.json().catch(() => null)
-
-      if (!response.ok || data?.sucesso === false) {
-        throw new Error(data?.erro || 'Não foi possível publicar a resposta agora.')
-      }
+      if (!response.ok || data?.sucesso === false) throw new Error(data?.erro || 'Não foi possível publicar a resposta agora.')
 
       setRespostasGuia((prev) => ({ ...prev, [perguntaId]: '' }))
       await carregarPerguntas()
@@ -673,61 +622,43 @@ export default function DetalhesRoteiroPage() {
     }
   }
 
-  const formatarMoeda = (valor: unknown) => {
-    return Number(valor || 0).toLocaleString('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    })
+  function formatarMoeda(valor: unknown) {
+    return Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
   }
 
-  const formatarData = (valor?: string | null) => {
+  function formatarData(valor?: string | null) {
     if (!valor) return 'Data a combinar'
-
-    const texto = String(valor)
-    const normalizada = texto.length <= 10 ? `${texto.slice(0, 10)}T12:00:00` : texto
+    const textoData = String(valor)
+    const normalizada = textoData.length <= 10 ? `${textoData.slice(0, 10)}T12:00:00` : textoData
     const data = new Date(normalizada)
-
     if (Number.isNaN(data.getTime())) return 'Data a combinar'
 
-    return data.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric'
-    })
+    return data.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
   }
 
-  const formatarHora = (valor?: string | null) => {
+  function formatarHora(valor?: string | null) {
     if (!valor) return ''
-
     const data = new Date(String(valor))
-
     if (Number.isNaN(data.getTime())) return ''
-
-    return data.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    return data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   }
 
-  const labelDificuldade = (valor?: string | null) => {
-    const texto = String(valor || '').trim()
-    if (!texto) return 'Nível livre'
-
-    return texto.charAt(0).toUpperCase() + texto.slice(1)
+  function labelDificuldade(valor?: string | null) {
+    const textoValor = texto(valor)
+    if (!textoValor) return 'Nível livre'
+    return textoValor.charAt(0).toUpperCase() + textoValor.slice(1)
   }
 
   function abrirModalReserva() {
     if (!roteiro) return
 
-    const idLogado = extrairUsuarioId(usuarioLogado)
-
-    if (!idLogado) {
+    if (!idUsuarioLogado) {
       localStorage.setItem('redirectAfterLogin', `/roteiros/${id}`)
       router.push('/login')
       return
     }
 
-    if (usuarioLogado?.tipo !== 'cliente') {
+    if (normalizar(usuarioLogado?.tipo) !== 'cliente') {
       setMensagem('Entre como cliente para reservar este roteiro.')
       return
     }
@@ -744,15 +675,13 @@ export default function DetalhesRoteiroPage() {
   async function handleReservar() {
     if (!roteiro) return
 
-    const idLogado = extrairUsuarioId(usuarioLogado)
-
-    if (!idLogado) {
+    if (!idUsuarioLogado) {
       localStorage.setItem('redirectAfterLogin', `/roteiros/${id}`)
       router.push('/login')
       return
     }
 
-    if (usuarioLogado?.tipo !== 'cliente') {
+    if (normalizar(usuarioLogado?.tipo) !== 'cliente') {
       setMensagem('Entre como cliente para reservar este roteiro.')
       return
     }
@@ -767,52 +696,34 @@ export default function DetalhesRoteiroPage() {
 
     try {
       const quantidade = Math.max(1, Number(quantidadePessoas || 1))
-
-      const payload = {
-        clienteId: idLogado,
-        roteiroId: roteiro.id,
-        dataTrilha: String(dataPrincipal(roteiro) || '').slice(0, 10) || null,
-        quantidadePessoas: quantidade,
-        valorUnitario: precoRoteiro(roteiro),
-        valorTotal: precoRoteiro(roteiro) * quantidade,
-        origem: 'roteiro_detalhe'
-      }
+      const valorUnitario = precoRoteiro(roteiro)
+      const valorReserva = valorUnitario * quantidade
 
       const response = await fetch('/api/reservas/criar', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clienteId: idUsuarioLogado,
+          roteiroId: roteiro.id,
+          dataTrilha: String(dataPrincipal(roteiro) || '').slice(0, 10) || null,
+          quantidadePessoas: quantidade,
+          valorUnitario,
+          valorTotal: valorReserva,
+          origem: 'roteiro_detalhe'
+        })
       })
 
       const respostaTexto = await response.text()
-      let data: any = null
+      let data: AnyRecord | null = null
 
       try {
         data = respostaTexto ? JSON.parse(respostaTexto) : null
       } catch {
-        data = {
-          sucesso: false,
-          erro: respostaTexto || 'Resposta não JSON da API.',
-          raw: respostaTexto,
-        }
+        data = { sucesso: false, erro: respostaTexto || 'Resposta não JSON da API.', raw: respostaTexto }
       }
 
       if (!response.ok || data?.sucesso === false) {
-        console.error('Erro detalhado ao criar reserva pela API:', {
-          status: response.status,
-          erro: data?.erro,
-          detalhe: data?.detalhe,
-          resposta: data,
-          payload
-        })
-
-        throw new Error(
-          data?.erro ||
-            data?.message ||
-            'Não foi possível criar a reserva agora.'
-        )
+        throw new Error(data?.erro || data?.message || 'Não foi possível criar a reserva agora.')
       }
 
       const reserva = (data?.reserva || data) as ReservaCriada | null
@@ -825,101 +736,15 @@ export default function DetalhesRoteiroPage() {
       setModalReservaAberto(false)
       router.push(`/cliente/pagamento/${reserva.id}`)
     } catch (error: any) {
-      console.error('Erro ao reservar roteiro:', {
-        message: error?.message,
-        code: error?.code,
-        details: error?.details,
-        hint: error?.hint,
-        raw: error
-      })
-      setMensagem(
-        error?.message ||
-          'Não foi possível criar a reserva agora. Confira os dados e tente novamente.'
-      )
+      console.error('Erro ao reservar roteiro:', error)
+      setMensagem(error?.message || 'Não foi possível criar a reserva agora. Confira os dados e tente novamente.')
     } finally {
       setReservando(false)
     }
   }
 
-  if (carregando) {
+  function HeaderRoteiro({ subtitle }: { subtitle: string }) {
     return (
-      <main className="page">
-        <header className="topbar">
-          <div className="topbarInner">
-            <div className="headerGhost" aria-hidden="true" />
-
-            <button
-              type="button"
-              className="brandCenter"
-              onClick={() => router.push('/roteiros')}
-              aria-label="Ir para roteiros"
-              title="PrussikTrails"
-            >
-              <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
-              <span className="brandSubtitle">Carregando roteiro outdoor</span>
-            </button>
-
-            <div className="headerGhost" aria-hidden="true" />
-          </div>
-        </header>
-
-        <section className="loadingCard">
-          <div className="spinner" />
-          <p>Carregando roteiro...</p>
-        </section>
-
-        <style jsx>{styles}</style>
-      </main>
-    )
-  }
-
-  if (!roteiro) {
-    return (
-      <main className="page">
-        <header className="topbar">
-          <div className="topbarInner">
-            <div className="headerGhost" aria-hidden="true" />
-
-            <button
-              type="button"
-              className="brandCenter"
-              onClick={() => router.push('/roteiros')}
-              aria-label="Ir para roteiros"
-              title="PrussikTrails"
-            >
-              <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
-              <span className="brandSubtitle">Roteiro não encontrado</span>
-            </button>
-
-            <div className="headerGhost" aria-hidden="true" />
-          </div>
-        </header>
-
-        <section className="emptyCard">
-          <span>🧭</span>
-          <h1>Roteiro não encontrado</h1>
-          <p>{mensagem || 'Não conseguimos localizar este roteiro.'}</p>
-          <button type="button" onClick={() => router.push('/roteiros')}>
-            Ver outros roteiros
-          </button>
-        </section>
-
-        <style jsx>{styles}</style>
-      </main>
-    )
-  }
-
-  const fotoAtual = fotosRoteiro[fotoSelecionada] || fotoCapa(roteiro)
-  const dataTexto = formatarData(dataPrincipal(roteiro))
-  const horaTexto = formatarHora(dataPrincipal(roteiro))
-  const detalhes = quebrarTexto(roteiro.roteiro_detalhado || roteiro.detalhes)
-  const inclui = quebrarTexto(roteiro.inclui)
-  const naoInclui = quebrarTexto(roteiro.nao_inclui)
-  const orientacoes = quebrarTexto(roteiro.orientacoes)
-  const guiaAtual = guia || guiaFallbackDoRoteiro(roteiro)
-
-  return (
-    <main className="page">
       <header className="topbar">
         <div className="topbarInner">
           <div className="headerGhost" aria-hidden="true" />
@@ -927,12 +752,12 @@ export default function DetalhesRoteiroPage() {
           <button
             type="button"
             className="brandCenter"
-            onClick={() => router.push(rotaPrincipalUsuario())}
+            onClick={() => router.push(roteiro ? rotaPrincipalUsuario() : '/roteiros')}
             aria-label="Voltar para o início"
             title="PrussikTrails"
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
-            <span className="brandSubtitle">Detalhes do passaporte outdoor</span>
+            <span className="brandSubtitle">{subtitle}</span>
           </button>
 
           {usuarioLogado ? (
@@ -950,28 +775,59 @@ export default function DetalhesRoteiroPage() {
               )}
             </button>
           ) : (
-            <button
-              type="button"
-              className="loginButton"
-              onClick={() => router.push('/login')}
-              aria-label="Entrar"
-              title="Entrar"
-            >
+            <button type="button" className="loginButton" onClick={() => router.push('/login')} aria-label="Entrar" title="Entrar">
               Entrar
             </button>
           )}
         </div>
       </header>
+    )
+  }
+
+  if (carregando) {
+    return (
+      <main className="page">
+        <HeaderRoteiro subtitle="Carregando roteiro outdoor" />
+        <section className="loadingCard"><div className="spinner" /><p>Carregando roteiro...</p></section>
+        <style jsx>{styles}</style>
+      </main>
+    )
+  }
+
+  if (!roteiro) {
+    return (
+      <main className="page">
+        <HeaderRoteiro subtitle="Roteiro não encontrado" />
+        <section className="emptyCard">
+          <span>🧭</span>
+          <h1>Roteiro não encontrado</h1>
+          <p>{mensagem || 'Não conseguimos localizar este roteiro.'}</p>
+          <button type="button" onClick={() => router.push('/roteiros')}>Ver outros roteiros</button>
+        </section>
+        <style jsx>{styles}</style>
+      </main>
+    )
+  }
+
+  const fotoAtual = fotosRoteiro[fotoSelecionada] || fotoCapa(roteiro)
+  const dataTexto = formatarData(dataPrincipal(roteiro))
+  const horaTexto = formatarHora(dataPrincipal(roteiro))
+  const detalhes = quebrarTexto(roteiro.roteiro_detalhado || roteiro.detalhes)
+  const inclui = quebrarTexto(roteiro.inclui)
+  const naoInclui = quebrarTexto(roteiro.nao_inclui)
+  const orientacoes = quebrarTexto(roteiro.orientacoes)
+  const guiaAtual = guia || guiaFallbackDoRoteiro(roteiro)
+
+  return (
+    <main className="page">
+      <HeaderRoteiro subtitle="Detalhes do passaporte outdoor" />
 
       <section className="hero">
         <div className="heroMedia">
           {fotoAtual ? (
             <img src={fotoAtual} alt={tituloRoteiro(roteiro)} />
           ) : (
-            <div className="fallbackHero">
-              <img src="/logo-prussik-display.png" alt="" />
-              <span>A jornada começa quando o conforto termina</span>
-            </div>
+            <div className="fallbackHero"><img src="/logo-prussik-display.png" alt="" /><span>A jornada começa quando o conforto termina</span></div>
           )}
 
           <div className="heroBadges">
@@ -983,28 +839,18 @@ export default function DetalhesRoteiroPage() {
         <div className="heroContent">
           <p className="eyebrow">Experiência PrussikTrails</p>
           <h1>{tituloRoteiro(roteiro)}</h1>
-
-          <p className="description">
-            {roteiro.descricao ||
-              'Uma experiência outdoor conduzida por guia, com reserva segura e acompanhamento dentro do app.'}
-          </p>
+          <p className="description">{roteiro.descricao || 'Uma experiência outdoor conduzida por guia, com reserva segura e acompanhamento dentro do app.'}</p>
 
           {guiaAtual && (
             <button type="button" className="guideHeroCard" onClick={abrirPerfilGuia}>
               <div className="guideMiniAvatar">
-                {avatarGuia(guiaAtual) ? (
-                  <img src={avatarGuia(guiaAtual)} alt={nomeGuia(guiaAtual)} />
-                ) : (
-                  <span>{nomeGuia(guiaAtual).charAt(0).toUpperCase()}</span>
-                )}
+                {avatarGuia(guiaAtual) ? <img src={avatarGuia(guiaAtual)} alt={nomePublicoGuia(guiaAtual)} /> : <span>{nomePublicoGuia(guiaAtual).charAt(0).toUpperCase()}</span>}
               </div>
 
               <div>
                 <small>Experiência conduzida por</small>
-                <strong>{nomeGuia(guiaAtual)}</strong>
-                {(guiaAtual.cadastur || guiaAtual.cadastro_turismo) && (
-                  <em>CADASTUR {guiaAtual.cadastur || guiaAtual.cadastro_turismo}</em>
-                )}
+                <strong>{nomePublicoGuia(guiaAtual)}</strong>
+                {(guiaAtual.cadastur || guiaAtual.cadastro_turismo) && <em>CADASTUR {guiaAtual.cadastur || guiaAtual.cadastro_turismo}</em>}
               </div>
 
               <span className="guideHeroArrow">Ver perfil →</span>
@@ -1012,34 +858,16 @@ export default function DetalhesRoteiroPage() {
           )}
 
           <div className="heroFacts">
-            <div>
-              <span>Data</span>
-              <strong>{dataTexto}</strong>
-              {horaTexto && <small>{horaTexto}</small>}
-            </div>
-
-            <div>
-              <span>Local</span>
-              <strong>{localRoteiro(roteiro)}</strong>
-            </div>
-
-            <div>
-              <span>Duração</span>
-              <strong>{duracaoRoteiro(roteiro) || 'A combinar'} h</strong>
-            </div>
+            <div><span>Data</span><strong>{dataTexto}</strong>{horaTexto && <small>{horaTexto}</small>}</div>
+            <div><span>Local</span><strong>{localRoteiro(roteiro)}</strong></div>
+            <div><span>Duração</span><strong>{duracaoRoteiro(roteiro) || 'A combinar'} h</strong></div>
           </div>
 
           {mensagem && <div className="alert">{mensagem}</div>}
 
           <div className="mobileBooking">
             <strong>{formatarMoeda(precoRoteiro(roteiro))}</strong>
-            <button
-              type="button"
-              onClick={abrirModalReserva}
-              disabled={reservando || esgotado}
-            >
-              {esgotado ? 'Esgotado' : reservando ? 'Reservando...' : 'Reservar'}
-            </button>
+            <button type="button" onClick={abrirModalReserva} disabled={reservando || esgotado}>{esgotado ? 'Esgotado' : reservando ? 'Reservando...' : 'Reservar'}</button>
           </div>
         </div>
       </section>
@@ -1047,13 +875,7 @@ export default function DetalhesRoteiroPage() {
       {fotosRoteiro.length > 1 && (
         <section className="galleryStrip">
           {fotosRoteiro.map((foto, index) => (
-            <button
-              type="button"
-              key={`${foto}-${index}`}
-              className={fotoSelecionada === index ? 'active' : ''}
-              onClick={() => setFotoSelecionada(index)}
-              aria-label={`Ver foto ${index + 1}`}
-            >
+            <button type="button" key={`${foto}-${index}`} className={fotoSelecionada === index ? 'active' : ''} onClick={() => setFotoSelecionada(index)} aria-label={`Ver foto ${index + 1}`}>
               <img src={foto} alt="" />
             </button>
           ))}
@@ -1063,152 +885,37 @@ export default function DetalhesRoteiroPage() {
       <section className="contentGrid">
         <div className="mainColumn">
           <section className="card">
-            <div className="sectionTitle">
-              <span>01</span>
-              <div>
-                <h2>Sobre a experiência</h2>
-                <p>O essencial para entender o roteiro antes da reserva.</p>
-              </div>
-            </div>
-
+            <div className="sectionTitle"><span>01</span><div><h2>Sobre a experiência</h2><p>O essencial para entender o roteiro antes da reserva.</p></div></div>
             <div className="infoGrid">
-              <div>
-                <span>Embarque</span>
-                <strong>{roteiro.embarque_local || roteiro.local_encontro || roteiro.ponto_encontro || 'A combinar'}</strong>
-              </div>
-
-              <div>
-                <span>Retorno</span>
-                <strong>{roteiro.retorno_local || 'A combinar'}</strong>
-              </div>
-
-              <div>
-                <span>Vagas</span>
-                <strong>
-                  {vagasRestantes === null
-                    ? 'Sem limite informado'
-                    : vagasRestantes > 0
-                      ? `${vagasRestantes} disponível(is)`
-                      : 'Esgotado'}
-                </strong>
-              </div>
-
-              <div>
-                <span>Recorrência</span>
-                <strong>{roteiro.recorrencia || 'Experiência única'}</strong>
-              </div>
+              <div><span>Embarque</span><strong>{roteiro.embarque_local || roteiro.local_encontro || roteiro.ponto_encontro || 'A combinar'}</strong></div>
+              <div><span>Retorno</span><strong>{roteiro.retorno_local || 'A combinar'}</strong></div>
+              <div><span>Vagas</span><strong>{vagasRestantes === null ? 'Sem limite informado' : vagasRestantes > 0 ? `${vagasRestantes} disponível(is)` : 'Esgotado'}</strong></div>
+              <div><span>Recorrência</span><strong>{roteiro.recorrencia || 'Experiência única'}</strong></div>
             </div>
           </section>
 
           {detalhes.length > 0 && (
-            <section className="card">
-              <div className="sectionTitle">
-                <span>02</span>
-                <div>
-                  <h2>Roteiro detalhado</h2>
-                  <p>Como a aventura deve acontecer.</p>
-                </div>
-              </div>
-
-              <div className="textList">
-                {detalhes.map((item) => (
-                  <p key={item}>{item}</p>
-                ))}
-              </div>
-            </section>
+            <section className="card"><div className="sectionTitle"><span>02</span><div><h2>Roteiro detalhado</h2><p>Como a aventura deve acontecer.</p></div></div><div className="textList">{detalhes.map((item) => <p key={item}>{item}</p>)}</div></section>
           )}
 
           {(inclui.length > 0 || naoInclui.length > 0) && (
             <section className="splitCards">
-              {inclui.length > 0 && (
-                <div className="card">
-                  <div className="sectionTitle compact">
-                    <span>✓</span>
-                    <div>
-                      <h2>Inclui</h2>
-                      <p>Itens informados pelo guia.</p>
-                    </div>
-                  </div>
-
-                  <ul className="bulletList">
-                    {inclui.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {naoInclui.length > 0 && (
-                <div className="card">
-                  <div className="sectionTitle compact">
-                    <span>!</span>
-                    <div>
-                      <h2>Não inclui</h2>
-                      <p>Planeje-se antes de sair.</p>
-                    </div>
-                  </div>
-
-                  <ul className="bulletList">
-                    {naoInclui.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {inclui.length > 0 && <div className="card"><div className="sectionTitle compact"><span>✓</span><div><h2>Inclui</h2><p>Itens informados pelo guia.</p></div></div><ul className="bulletList">{inclui.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+              {naoInclui.length > 0 && <div className="card"><div className="sectionTitle compact"><span>!</span><div><h2>Não inclui</h2><p>Planeje-se antes de sair.</p></div></div><ul className="bulletList">{naoInclui.map((item) => <li key={item}>{item}</li>)}</ul></div>}
             </section>
           )}
 
           {orientacoes.length > 0 && (
-            <section className="card">
-              <div className="sectionTitle">
-                <span>03</span>
-                <div>
-                  <h2>Orientações importantes</h2>
-                  <p>Leia antes de reservar.</p>
-                </div>
-              </div>
-
-              <ul className="bulletList">
-                {orientacoes.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </section>
+            <section className="card"><div className="sectionTitle"><span>03</span><div><h2>Orientações importantes</h2><p>Leia antes de reservar.</p></div></div><ul className="bulletList">{orientacoes.map((item) => <li key={item}>{item}</li>)}</ul></section>
           )}
 
           <section className="card questionsCard">
-            <div className="sectionTitle">
-              <span>?</span>
-              <div>
-                <h2>Perguntas públicas</h2>
-                <p>Clientes perguntam no roteiro e o guia responde de forma transparente.</p>
-              </div>
-            </div>
+            <div className="sectionTitle"><span>?</span><div><h2>Perguntas públicas</h2><p>Clientes perguntam no roteiro e o guia responde de forma transparente.</p></div></div>
 
             {!ehGuiaDono && (
               <div className="questionBox">
-                <textarea
-                  value={novaPergunta}
-                  onChange={(event) => setNovaPergunta(event.target.value)}
-                  placeholder={idUsuarioLogado ? 'Pergunte sobre ponto de encontro, preparo físico, equipamentos ou qualquer detalhe do roteiro.' : 'Faça login para enviar uma pergunta pública ao guia.'}
-                  maxLength={700}
-                  disabled={!idUsuarioLogado || enviandoPergunta}
-                />
-
-                <div className="questionActions">
-                  <span>{novaPergunta.length}/700</span>
-                  <button
-                    type="button"
-                    onClick={idUsuarioLogado ? enviarPerguntaPublica : () => router.push('/login')}
-                    disabled={enviandoPergunta}
-                  >
-                    {idUsuarioLogado
-                      ? enviandoPergunta
-                        ? 'Publicando...'
-                        : 'Enviar pergunta'
-                      : 'Entrar para perguntar'}
-                  </button>
-                </div>
+                <textarea value={novaPergunta} onChange={(event) => setNovaPergunta(event.target.value)} placeholder={idUsuarioLogado ? 'Pergunte sobre ponto de encontro, preparo físico, equipamentos ou qualquer detalhe do roteiro.' : 'Faça login para enviar uma pergunta pública ao guia.'} maxLength={700} disabled={!idUsuarioLogado || enviandoPergunta} />
+                <div className="questionActions"><span>{novaPergunta.length}/700</span><button type="button" onClick={idUsuarioLogado ? enviarPerguntaPublica : () => router.push('/login')} disabled={enviandoPergunta}>{idUsuarioLogado ? enviandoPergunta ? 'Publicando...' : 'Enviar pergunta' : 'Entrar para perguntar'}</button></div>
               </div>
             )}
 
@@ -1216,54 +923,16 @@ export default function DetalhesRoteiroPage() {
 
             <div className="questionsList">
               {perguntas.length === 0 ? (
-                <div className="emptyQuestions">
-                  <strong>Ainda não há perguntas públicas.</strong>
-                  <p>Seja o primeiro a perguntar algo útil para outros aventureiros.</p>
-                </div>
+                <div className="emptyQuestions"><strong>Ainda não há perguntas públicas.</strong><p>Seja o primeiro a perguntar algo útil para outros aventureiros.</p></div>
               ) : (
                 perguntas.map((pergunta) => (
                   <article key={pergunta.id} className="questionItem">
-                    <div className="questionHeader">
-                      <div>
-                        <strong>{pergunta.cliente_nome || 'Aventureiro PrussikTrails'}</strong>
-                        <span>perguntou</span>
-                      </div>
-
-                      {pergunta.created_at && (
-                        <time>{formatarData(pergunta.created_at)}</time>
-                      )}
-                    </div>
-
+                    <div className="questionHeader"><div><strong>{pergunta.cliente_nome || 'Aventureiro PrussikTrails'}</strong><span>perguntou</span></div>{pergunta.created_at && <time>{formatarData(pergunta.created_at)}</time>}</div>
                     <p className="questionText">{pergunta.pergunta}</p>
-
                     {pergunta.resposta ? (
-                      <div className="answerBox">
-                        <span>Resposta do guia</span>
-                        <p>{pergunta.resposta}</p>
-                      </div>
+                      <div className="answerBox"><span>Resposta do guia</span><p>{pergunta.resposta}</p></div>
                     ) : ehGuiaDono ? (
-                      <div className="answerEditor">
-                        <textarea
-                          value={respostasGuia[pergunta.id] || ''}
-                          onChange={(event) =>
-                            setRespostasGuia((prev) => ({
-                              ...prev,
-                              [pergunta.id]: event.target.value
-                            }))
-                          }
-                          placeholder="Responder publicamente esta pergunta..."
-                          maxLength={900}
-                          disabled={respondendoPerguntaId === pergunta.id}
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => responderPerguntaPublica(pergunta.id)}
-                          disabled={respondendoPerguntaId === pergunta.id}
-                        >
-                          {respondendoPerguntaId === pergunta.id ? 'Publicando...' : 'Responder como guia'}
-                        </button>
-                      </div>
+                      <div className="answerEditor"><textarea value={respostasGuia[pergunta.id] || ''} onChange={(event) => setRespostasGuia((prev) => ({ ...prev, [pergunta.id]: event.target.value }))} placeholder="Responder publicamente esta pergunta..." maxLength={900} disabled={respondendoPerguntaId === pergunta.id} /><button type="button" onClick={() => responderPerguntaPublica(pergunta.id)} disabled={respondendoPerguntaId === pergunta.id}>{respondendoPerguntaId === pergunta.id ? 'Publicando...' : 'Responder como guia'}</button></div>
                     ) : (
                       <div className="pendingAnswer">Aguardando resposta do guia.</div>
                     )}
@@ -1278,74 +947,16 @@ export default function DetalhesRoteiroPage() {
           <section className="bookingCard">
             <p className="bookingLabel">Valor por pessoa</p>
             <strong className="bookingPrice">{formatarMoeda(precoRoteiro(roteiro))}</strong>
-
-            <label>
-              Pessoas
-              <select
-                value={quantidadePessoas}
-                onChange={(event) => setQuantidadePessoas(Number(event.target.value))}
-                disabled={esgotado}
-              >
-                {Array.from({ length: Math.max(1, Math.min(12, vagasRestantes || 12)) }).map((_, index) => (
-                  <option key={index + 1} value={index + 1}>
-                    {index + 1}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="bookingTotal">
-              <span>Total</span>
-              <strong>{formatarMoeda(valorTotal)}</strong>
-            </div>
-
-            <button
-              type="button"
-              className="reserveBtn"
-              onClick={abrirModalReserva}
-              disabled={reservando || esgotado}
-            >
-              {esgotado ? 'Roteiro esgotado' : reservando ? 'Criando reserva...' : 'Reservar agora'}
-            </button>
-
-            <p className="bookingNote">
-              O pagamento será feito na próxima etapa com confirmação automática quando disponível.
-            </p>
+            <label>Pessoas<select value={quantidadePessoas} onChange={(event) => setQuantidadePessoas(Number(event.target.value))} disabled={esgotado}>{Array.from({ length: Math.max(1, Math.min(12, vagasRestantes || 12)) }).map((_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
+            <div className="bookingTotal"><span>Total</span><strong>{formatarMoeda(valorTotal)}</strong></div>
+            <button type="button" className="reserveBtn" onClick={abrirModalReserva} disabled={reservando || esgotado}>{esgotado ? 'Roteiro esgotado' : reservando ? 'Criando reserva...' : 'Reservar agora'}</button>
+            <p className="bookingNote">O pagamento será feito na próxima etapa com confirmação automática quando disponível.</p>
           </section>
 
           {guiaAtual && (
-            <section
-              className="guideCard guideCardClickable"
-              role="button"
-              tabIndex={0}
-              onClick={abrirPerfilGuia}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  abrirPerfilGuia()
-                }
-              }}
-            >
-              <div className="guideTop">
-                <div className="guideAvatar">
-                  {avatarGuia(guiaAtual) ? (
-                    <img src={avatarGuia(guiaAtual)} alt={nomeGuia(guiaAtual)} />
-                  ) : (
-                    <span>{nomeGuia(guiaAtual).charAt(0).toUpperCase()}</span>
-                  )}
-                </div>
-
-                <div>
-                  <span>Guia responsável</span>
-                  <strong>{nomeGuia(guiaAtual)}</strong>
-                  {(guiaAtual.cadastur || guiaAtual.cadastro_turismo) && (
-                    <small>CADASTUR {guiaAtual.cadastur || guiaAtual.cadastro_turismo}</small>
-                  )}
-                </div>
-              </div>
-
+            <section className="guideCard guideCardClickable" role="button" tabIndex={0} onClick={abrirPerfilGuia} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrirPerfilGuia() } }}>
+              <div className="guideTop"><div className="guideAvatar">{avatarGuia(guiaAtual) ? <img src={avatarGuia(guiaAtual)} alt={nomePublicoGuia(guiaAtual)} /> : <span>{nomePublicoGuia(guiaAtual).charAt(0).toUpperCase()}</span>}</div><div><span>Guia responsável</span><strong>{nomePublicoGuia(guiaAtual)}</strong>{(guiaAtual.cadastur || guiaAtual.cadastro_turismo) && <small>CADASTUR {guiaAtual.cadastur || guiaAtual.cadastro_turismo}</small>}</div></div>
               {guiaAtual.bio && <p>{guiaAtual.bio}</p>}
-
               <div className="guideBtn fakeGuideBtn">Ver perfil do guia</div>
             </section>
           )}
@@ -1355,96 +966,13 @@ export default function DetalhesRoteiroPage() {
       {modalReservaAberto && roteiro && (
         <div className="modalOverlay" role="dialog" aria-modal="true" aria-label="Revisar reserva">
           <div className="modalCard">
-            <div className="modalHead">
-              <div>
-                <span>Reserva PrussikTrails</span>
-                <h2>Revise sua jornada</h2>
-                <p>Confira os dados antes de gerar o QR Code PIX da sua reserva.</p>
-              </div>
-
-              <button
-                type="button"
-                className="modalClose"
-                onClick={() => setModalReservaAberto(false)}
-                disabled={reservando}
-                aria-label="Fechar"
-              >
-                ×
-              </button>
-            </div>
-
+            <div className="modalHead"><div><span>Reserva PrussikTrails</span><h2>Revise sua jornada</h2><p>Confira os dados antes de gerar o QR Code PIX da sua reserva.</p></div><button type="button" className="modalClose" onClick={() => setModalReservaAberto(false)} disabled={reservando} aria-label="Fechar">×</button></div>
             <div className="modalBody">
-              <div className="modalRoute">
-                <div className="modalThumb">
-                  {fotoAtual ? (
-                    <img src={fotoAtual} alt={tituloRoteiro(roteiro)} />
-                  ) : (
-                    <span>RT</span>
-                  )}
-                </div>
-
-                <div>
-                  <strong>{tituloRoteiro(roteiro)}</strong>
-                  <small>{localRoteiro(roteiro)}</small>
-                  <small>{dataTexto}{horaTexto ? ` · ${horaTexto}` : ''}</small>
-                </div>
-              </div>
-
-              <div className="modalInfoGrid">
-                <div>
-                  <span>Valor por pessoa</span>
-                  <strong>{formatarMoeda(precoRoteiro(roteiro))}</strong>
-                </div>
-
-                <div>
-                  <span>Pessoas</span>
-                  <strong>{quantidadePessoas}</strong>
-                </div>
-
-                <div>
-                  <span>Total da reserva</span>
-                  <strong>{formatarMoeda(valorTotal)}</strong>
-                </div>
-              </div>
-
-              <label className="modalQuantity">
-                <span>Quantidade de pessoas</span>
-                <select
-                  value={quantidadePessoas}
-                  onChange={(event) => setQuantidadePessoas(Number(event.target.value))}
-                  disabled={reservando || esgotado}
-                >
-                  {Array.from({ length: Math.max(1, Math.min(12, vagasRestantes || 12)) }).map((_, index) => (
-                    <option key={index + 1} value={index + 1}>
-                      {index + 1}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <p className="modalNote">
-                Ao confirmar, criaremos a reserva e abriremos a tela de pagamento para gerar o QR Code PIX.
-              </p>
-
-              <div className="modalActions">
-                <button
-                  type="button"
-                  className="modalCancel"
-                  onClick={() => setModalReservaAberto(false)}
-                  disabled={reservando}
-                >
-                  Voltar
-                </button>
-
-                <button
-                  type="button"
-                  className="modalConfirm"
-                  onClick={handleReservar}
-                  disabled={reservando || esgotado}
-                >
-                  {reservando ? 'Criando reserva...' : 'Confirmar e gerar QR Code PIX'}
-                </button>
-              </div>
+              <div className="modalRoute"><div className="modalThumb">{fotoAtual ? <img src={fotoAtual} alt={tituloRoteiro(roteiro)} /> : <span>RT</span>}</div><div><strong>{tituloRoteiro(roteiro)}</strong><small>{localRoteiro(roteiro)}</small><small>{dataTexto}{horaTexto ? ` · ${horaTexto}` : ''}</small></div></div>
+              <div className="modalInfoGrid"><div><span>Valor por pessoa</span><strong>{formatarMoeda(precoRoteiro(roteiro))}</strong></div><div><span>Pessoas</span><strong>{quantidadePessoas}</strong></div><div><span>Total da reserva</span><strong>{formatarMoeda(valorTotal)}</strong></div></div>
+              <label className="modalQuantity"><span>Quantidade de pessoas</span><select value={quantidadePessoas} onChange={(event) => setQuantidadePessoas(Number(event.target.value))} disabled={reservando || esgotado}>{Array.from({ length: Math.max(1, Math.min(12, vagasRestantes || 12)) }).map((_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
+              <p className="modalNote">Ao confirmar, criaremos a reserva e abriremos a tela de pagamento para gerar o QR Code PIX.</p>
+              <div className="modalActions"><button type="button" className="modalCancel" onClick={() => setModalReservaAberto(false)} disabled={reservando}>Voltar</button><button type="button" className="modalConfirm" onClick={handleReservar} disabled={reservando || esgotado}>{reservando ? 'Criando reserva...' : 'Confirmar e gerar QR Code PIX'}</button></div>
             </div>
           </div>
         </div>
@@ -1573,18 +1101,6 @@ const styles = `
     font-weight: 950;
   }
 
-  .ghostBtn,
-  .backButton {
-    border: 1px solid rgba(32, 60, 46, 0.14);
-    background: rgba(255, 253, 247, 0.74);
-    color: #203c2e;
-    border-radius: 999px;
-    padding: 10px 14px;
-    font-size: 13px;
-    font-weight: 900;
-    cursor: pointer;
-  }
-
   .hero {
     max-width: 1180px;
     margin: 18px auto 0;
@@ -1660,11 +1176,24 @@ const styles = `
     backdrop-filter: blur(12px);
   }
 
-  .heroContent {
+  .heroContent,
+  .card,
+  .bookingCard,
+  .guideCard,
+  .loadingCard,
+  .emptyCard {
     border: 1px solid rgba(32, 60, 46, 0.08);
+    border-radius: 30px;
+    background: rgba(255, 253, 247, 0.82);
+    box-shadow: 0 20px 56px rgba(32, 60, 46, 0.09);
+    padding: 22px;
+    min-width: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  .heroContent {
     border-radius: 36px;
-    background: rgba(255, 253, 247, 0.78);
-    box-shadow: 0 24px 70px rgba(32, 60, 46, 0.1);
     padding: clamp(24px, 4vw, 44px);
     display: flex;
     flex-direction: column;
@@ -1714,48 +1243,54 @@ const styles = `
     cursor: pointer;
   }
 
-  .guideHeroCard:hover {
-    border-color: rgba(32, 60, 46, 0.22);
-    background: rgba(32, 60, 46, 0.08);
+  .guideMiniAvatar,
+  .guideAvatar {
+    overflow: hidden;
+    background: #203c2e;
+    color: #fffdf7;
+    display: grid;
+    place-items: center;
+    font-weight: 950;
+    flex: 0 0 auto;
   }
 
   .guideMiniAvatar {
     width: 48px;
     height: 48px;
     border-radius: 18px;
-    overflow: hidden;
-    background: #203c2e;
-    color: #fffdf7;
-    display: grid;
-    place-items: center;
     font-size: 20px;
-    font-weight: 950;
   }
 
-  .guideMiniAvatar img {
+  .guideMiniAvatar img,
+  .guideAvatar img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
   }
 
-  .guideHeroCard small {
+  .guideHeroCard small,
+  .heroFacts span,
+  .infoGrid span,
+  .bookingLabel,
+  .guideTop span {
     display: block;
     color: rgba(23, 32, 24, 0.52);
-    font-size: 10px;
-    font-weight: 950;
+    font-size: 11px;
+    font-weight: 900;
     text-transform: uppercase;
     letter-spacing: 0.12em;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
 
-  .guideHeroCard strong {
+  .guideHeroCard strong,
+  .heroFacts strong,
+  .infoGrid strong {
     display: block;
     color: #203c2e;
     font-size: 15px;
-    line-height: 1.2;
-    font-weight: 950;
-    overflow-wrap: anywhere;
+    line-height: 1.35;
+    font-weight: 900;
   }
 
   .guideHeroCard em {
@@ -1781,32 +1316,11 @@ const styles = `
     gap: 10px;
   }
 
-  .heroFacts div {
+  .heroFacts div,
+  .infoGrid div {
     border-radius: 22px;
     background: rgba(32, 60, 46, 0.05);
     padding: 14px 16px;
-  }
-
-  .heroFacts span,
-  .infoGrid span,
-  .bookingLabel,
-  .guideTop span {
-    display: block;
-    color: rgba(23, 32, 24, 0.52);
-    font-size: 11px;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    margin-bottom: 6px;
-  }
-
-  .heroFacts strong,
-  .infoGrid strong {
-    display: block;
-    color: #203c2e;
-    font-size: 15px;
-    line-height: 1.35;
-    font-weight: 900;
   }
 
   .heroFacts small {
@@ -1817,7 +1331,8 @@ const styles = `
     font-weight: 850;
   }
 
-  .alert {
+  .alert,
+  .questionNotice {
     margin-top: 18px;
     border-radius: 18px;
     background: rgba(153, 27, 27, 0.08);
@@ -1828,9 +1343,7 @@ const styles = `
     font-weight: 850;
   }
 
-  .mobileBooking {
-    display: none;
-  }
+  .mobileBooking { display: none; }
 
   .galleryStrip {
     max-width: 1180px;
@@ -1853,16 +1366,8 @@ const styles = `
     cursor: pointer;
   }
 
-  .galleryStrip button.active {
-    border-color: #991b1b;
-  }
-
-  .galleryStrip img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
+  .galleryStrip button.active { border-color: #991b1b; }
+  .galleryStrip img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
   .contentGrid {
     max-width: 1180px;
@@ -1874,1004 +1379,163 @@ const styles = `
     align-items: start;
   }
 
-  .mainColumn {
-    display: grid;
-    gap: 18px;
-  }
-
-  .sideColumn {
-    position: sticky;
-    top: 92px;
-    display: grid;
-    gap: 18px;
-  }
-
-  .card,
-  .bookingCard,
-  .guideCard,
-  .loadingCard,
-  .emptyCard {
-    border: 1px solid rgba(32, 60, 46, 0.08);
-    border-radius: 30px;
-    background: rgba(255, 253, 247, 0.82);
-    box-shadow: 0 20px 56px rgba(32, 60, 46, 0.09);
-    padding: 22px;
-    min-width: 0;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-  }
-
-  .heroContent,
-  .heroFacts div,
-  .infoGrid div,
-  .textList p,
-  .bulletList li,
-  .guideTop div,
-  .bookingTotal,
-  .questionItem,
-  .answerBox {
-    min-width: 0;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
+  .mainColumn { display: grid; gap: 18px; }
+  .sideColumn { position: sticky; top: 92px; display: grid; gap: 18px; }
 
   .loadingCard,
-  .emptyCard {
-    max-width: 520px;
-    margin: 80px auto;
-    text-align: center;
+  .emptyCard { max-width: 520px; margin: 80px auto; text-align: center; }
+  .emptyCard span { font-size: 54px; }
+  .emptyCard h1 { margin: 10px 0 0; font-size: 34px; letter-spacing: -0.05em; }
+  .emptyCard p { color: #64748b; font-weight: 700; }
+  .emptyCard button { border: 0; border-radius: 999px; padding: 12px 16px; background: #991b1b; color: #fffdf7; font-weight: 950; cursor: pointer; }
+
+  .spinner { width: 34px; height: 34px; border: 4px solid rgba(32, 60, 46, 0.12); border-top-color: #991b1b; border-radius: 999px; margin: 0 auto 12px; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .sectionTitle { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; }
+  .sectionTitle.compact { margin-bottom: 14px; }
+  .sectionTitle > span { width: 38px; height: 38px; border-radius: 14px; background: rgba(153, 27, 27, 0.1); color: #991b1b; display: grid; place-items: center; font-size: 13px; font-weight: 950; flex: 0 0 auto; }
+  .sectionTitle h2 { margin: 0; font-size: 24px; line-height: 1; letter-spacing: -0.045em; color: #172018; }
+  .sectionTitle p { margin: 6px 0 0; color: rgba(23, 32, 24, 0.58); font-size: 13px; font-weight: 750; }
+
+  .infoGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .textList { display: grid; gap: 10px; }
+  .textList p { margin: 0; border-radius: 18px; background: rgba(32, 60, 46, 0.045); color: rgba(23, 32, 24, 0.72); padding: 13px 14px; line-height: 1.55; font-size: 14px; font-weight: 700; }
+  .splitCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .bulletList { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  .bulletList li { position: relative; padding-left: 22px; color: rgba(23, 32, 24, 0.72); font-size: 14px; line-height: 1.45; font-weight: 750; }
+  .bulletList li::before { content: ''; position: absolute; left: 0; top: 7px; width: 8px; height: 8px; border-radius: 999px; background: #991b1b; }
+
+  .questionsCard { display: grid; gap: 16px; }
+  .questionBox { border-radius: 24px; background: rgba(32, 60, 46, 0.045); padding: 12px; display: grid; gap: 10px; }
+  .questionBox textarea, .answerEditor textarea { width: 100%; min-height: 104px; resize: vertical; border: 1px solid rgba(32, 60, 46, 0.12); border-radius: 20px; background: rgba(255, 255, 255, 0.78); color: #172018; padding: 14px; font: inherit; font-size: 14px; line-height: 1.5; font-weight: 750; outline: none; }
+  .questionActions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .questionActions span { color: rgba(23, 32, 24, 0.5); font-size: 12px; font-weight: 850; }
+  .questionActions button, .answerEditor button { border: 0; border-radius: 999px; background: #203c2e; color: #fffdf7; padding: 11px 14px; font-size: 12px; font-weight: 950; cursor: pointer; }
+  .questionActions button:disabled, .answerEditor button:disabled { opacity: 0.58; cursor: not-allowed; }
+  .questionsList { display: grid; gap: 12px; }
+  .emptyQuestions { border-radius: 22px; background: rgba(32, 60, 46, 0.045); padding: 16px; }
+  .emptyQuestions strong { display: block; color: #203c2e; font-size: 14px; font-weight: 950; }
+  .emptyQuestions p { margin: 6px 0 0; color: rgba(23, 32, 24, 0.58); font-size: 13px; line-height: 1.4; font-weight: 750; }
+  .questionItem { border-radius: 24px; background: rgba(255, 255, 255, 0.66); border: 1px solid rgba(32, 60, 46, 0.08); padding: 15px; display: grid; gap: 10px; }
+  .questionHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .questionHeader strong { display: block; color: #203c2e; font-size: 13px; font-weight: 950; }
+  .questionHeader span, .questionHeader time { color: rgba(23, 32, 24, 0.48); font-size: 11px; font-weight: 850; }
+  .questionText { margin: 0; color: rgba(23, 32, 24, 0.74); font-size: 14px; line-height: 1.55; font-weight: 760; }
+  .answerBox { border-left: 4px solid #203c2e; border-radius: 18px; background: rgba(32, 60, 46, 0.06); padding: 12px; }
+  .answerBox span { display: block; color: #203c2e; font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 7px; }
+  .answerBox p { margin: 0; color: rgba(23, 32, 24, 0.72); font-size: 13px; line-height: 1.5; font-weight: 750; }
+  .answerEditor { display: grid; gap: 10px; }
+  .answerEditor textarea { min-height: 92px; }
+  .answerEditor button { justify-self: end; }
+  .pendingAnswer { border-radius: 999px; background: rgba(123, 131, 114, 0.1); color: #64705b; padding: 9px 12px; font-size: 12px; font-weight: 850; width: fit-content; }
+
+  .bookingCard { display: grid; gap: 14px; }
+  .bookingPrice { color: #203c2e; font-size: 34px; line-height: 1; letter-spacing: -0.06em; }
+  .bookingCard label { display: grid; gap: 7px; color: rgba(23, 32, 24, 0.58); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; }
+  .bookingCard select { width: 100%; border: 1px solid rgba(32, 60, 46, 0.12); border-radius: 18px; background: rgba(255, 255, 255, 0.72); color: #172018; padding: 12px 13px; font-size: 14px; font-weight: 850; outline: none; }
+  .bookingTotal { border-radius: 20px; background: rgba(153, 27, 27, 0.08); padding: 14px; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .bookingTotal span { color: #7f1d1d; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; }
+  .bookingTotal strong { color: #7f1d1d; font-size: 20px; letter-spacing: -0.04em; }
+  .reserveBtn, .guideBtn { width: 100%; border: 0; border-radius: 999px; background: #991b1b; color: #fffdf7; padding: 14px 16px; font-size: 14px; font-weight: 950; cursor: pointer; box-shadow: 0 18px 36px rgba(153, 27, 27, 0.18); }
+  .reserveBtn:disabled { opacity: 0.58; cursor: not-allowed; box-shadow: none; }
+  .bookingNote { margin: 0; color: rgba(23, 32, 24, 0.52); font-size: 12px; line-height: 1.45; font-weight: 750; }
+
+  .guideTop { display: flex; gap: 12px; align-items: center; }
+  .guideAvatar { width: 58px; height: 58px; border-radius: 22px; font-size: 22px; }
+  .guideTop strong { display: block; color: #172018; font-size: 16px; font-weight: 950; }
+  .guideTop small { display: block; margin-top: 4px; color: #7b8372; font-size: 11px; font-weight: 850; }
+  .guideCard p { margin: 14px 0; color: rgba(23, 32, 24, 0.64); font-size: 13px; line-height: 1.5; font-weight: 700; }
+  .guideCardClickable { cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+  .guideCardClickable:hover, .guideCardClickable:focus { transform: translateY(-2px); border-color: rgba(32, 60, 46, 0.18); box-shadow: 0 24px 64px rgba(32, 60, 46, 0.13); outline: none; }
+  .guideBtn { background: #203c2e; box-shadow: 0 18px 36px rgba(32, 60, 46, 0.14); }
+
+  .modalOverlay { position: fixed; inset: 0; z-index: 1000; background: rgba(23, 32, 24, 0.58); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; padding: 18px; }
+  .modalCard { width: min(560px, 100%); max-height: calc(100vh - 36px); overflow: auto; border-radius: 34px; background: #fffdf7; border: 1px solid rgba(255,255,255,0.28); box-shadow: 0 30px 90px rgba(15, 23, 42, 0.34); }
+  .modalHead { display: flex; justify-content: space-between; gap: 16px; padding: 24px; color: #ffffff; background: radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 36%), linear-gradient(135deg, #172018, #203c2e); }
+  .modalHead span { display: inline-flex; color: #bef264; font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; }
+  .modalHead h2 { margin: 0; font-size: 31px; line-height: 0.95; font-weight: 950; letter-spacing: -0.07em; }
+  .modalHead p { margin: 9px 0 0; color: rgba(255,255,255,0.78); font-size: 13px; line-height: 1.45; font-weight: 750; }
+  .modalClose { width: 38px; height: 38px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.10); color: #ffffff; border-radius: 999px; font-size: 24px; font-weight: 850; line-height: 1; cursor: pointer; flex: 0 0 auto; }
+  .modalBody { padding: 20px; }
+  .modalRoute { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 13px; align-items: center; padding: 12px; border-radius: 24px; background: #f6f7f1; border: 1px solid rgba(15, 23, 42, 0.06); margin-bottom: 13px; }
+  .modalThumb { width: 86px; height: 86px; border-radius: 22px; overflow: hidden; background: #e8eadf; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: 950; }
+  .modalThumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .modalRoute strong { display: block; color: #172018; font-size: 16px; line-height: 1.25; font-weight: 950; }
+  .modalRoute small { display: block; color: #64748b; font-size: 12px; line-height: 1.35; font-weight: 750; margin-top: 4px; }
+  .modalInfoGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-bottom: 13px; }
+  .modalInfoGrid div { background: #fffdf7; border: 1px solid rgba(15, 23, 42, 0.06); border-radius: 19px; padding: 12px; }
+  .modalInfoGrid span { display: block; color: #7b8372; font-size: 10px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.06em; }
+  .modalInfoGrid strong { display: block; margin-top: 5px; color: #172018; font-size: 15px; font-weight: 950; }
+  .modalQuantity { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #f6f7f1; border: 1px solid rgba(15, 23, 42, 0.06); border-radius: 22px; padding: 13px 14px; color: #172018; font-size: 13px; font-weight: 950; margin-bottom: 13px; }
+  .modalQuantity select { border: 1px solid rgba(15,23,42,0.10); background: #ffffff; color: #172018; border-radius: 999px; padding: 10px 13px; font-weight: 950; outline: none; }
+  .modalNote { margin: 0 0 15px; color: #64748b; font-size: 12px; line-height: 1.45; font-weight: 750; }
+  .modalActions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+  .modalCancel, .modalConfirm { border: none; border-radius: 999px; padding: 13px 16px; font-size: 12px; font-weight: 950; cursor: pointer; }
+  .modalCancel { background: #e5e7eb; color: #374151; }
+  .modalConfirm { background: #172018; color: #ffffff; }
+  .modalCancel:disabled, .modalConfirm:disabled { opacity: 0.62; cursor: not-allowed; }
+
+  @media (min-width: 941px) {
+    .page { padding-top: 84px; }
+    .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 80; height: 84px; padding: 8px 26px; display: flex; align-items: center; background: rgba(255, 253, 247, 0.94); border-bottom: 1px solid rgba(15, 23, 42, 0.06); backdrop-filter: blur(18px); box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045); }
+    .topbarInner { width: 100%; max-width: 1180px; height: 68px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
+    .headerGhost { display: none; }
+    .brandCenter { grid-column: 1; justify-self: start; width: fit-content; max-width: 100%; min-width: 0; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px; padding: 0; text-align: left; }
+    .brandLogo { width: 128px; max-width: 128px; height: 58px; object-fit: contain; display: block; flex: 0 0 auto; }
+    .brandSubtitle { margin-top: 0; max-width: 460px; color: #6b7280; font-size: 10px; line-height: 1.1; font-weight: 900; letter-spacing: 0.11em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .profileButton, .loginButton { grid-column: 2; justify-self: end; width: 44px; height: 44px; flex: 0 0 auto; }
+    .hero { margin-top: 18px; }
+    .sideColumn { top: 104px; }
   }
-
-  .emptyCard span {
-    font-size: 54px;
-  }
-
-  .emptyCard h1 {
-    margin: 10px 0 0;
-    font-size: 34px;
-    letter-spacing: -0.05em;
-  }
-
-  .emptyCard p {
-    color: #64748b;
-    font-weight: 700;
-  }
-
-  .emptyCard button {
-    border: 0;
-    border-radius: 999px;
-    padding: 12px 16px;
-    background: #991b1b;
-    color: #fffdf7;
-    font-weight: 950;
-    cursor: pointer;
-  }
-
-  .spinner {
-    width: 34px;
-    height: 34px;
-    border: 4px solid rgba(32, 60, 46, 0.12);
-    border-top-color: #991b1b;
-    border-radius: 999px;
-    margin: 0 auto 12px;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .sectionTitle {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    margin-bottom: 18px;
-  }
-
-  .sectionTitle.compact {
-    margin-bottom: 14px;
-  }
-
-  .sectionTitle > span {
-    width: 38px;
-    height: 38px;
-    border-radius: 14px;
-    background: rgba(153, 27, 27, 0.1);
-    color: #991b1b;
-    display: grid;
-    place-items: center;
-    font-size: 13px;
-    font-weight: 950;
-    flex: 0 0 auto;
-  }
-
-  .sectionTitle h2 {
-    margin: 0;
-    font-size: 24px;
-    line-height: 1;
-    letter-spacing: -0.045em;
-    color: #172018;
-  }
-
-  .sectionTitle p {
-    margin: 6px 0 0;
-    color: rgba(23, 32, 24, 0.58);
-    font-size: 13px;
-    font-weight: 750;
-  }
-
-  .infoGrid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .infoGrid div {
-    border-radius: 20px;
-    background: rgba(32, 60, 46, 0.045);
-    padding: 14px;
-  }
-
-  .textList {
-    display: grid;
-    gap: 10px;
-  }
-
-  .textList p {
-    margin: 0;
-    border-radius: 18px;
-    background: rgba(32, 60, 46, 0.045);
-    color: rgba(23, 32, 24, 0.72);
-    padding: 13px 14px;
-    line-height: 1.55;
-    font-size: 14px;
-    font-weight: 700;
-  }
-
-  .splitCards {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
-  }
-
-  .bulletList {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    gap: 10px;
-  }
-
-  .bulletList li {
-    position: relative;
-    padding-left: 22px;
-    color: rgba(23, 32, 24, 0.72);
-    font-size: 14px;
-    line-height: 1.45;
-    font-weight: 750;
-  }
-
-  .bulletList li::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 7px;
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: #991b1b;
-  }
-
-  .questionsCard {
-    display: grid;
-    gap: 16px;
-  }
-
-  .questionBox {
-    border-radius: 24px;
-    background: rgba(32, 60, 46, 0.045);
-    padding: 12px;
-    display: grid;
-    gap: 10px;
-  }
-
-  .questionBox textarea,
-  .answerEditor textarea {
-    width: 100%;
-    min-height: 104px;
-    resize: vertical;
-    border: 1px solid rgba(32, 60, 46, 0.12);
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.78);
-    color: #172018;
-    padding: 14px;
-    font: inherit;
-    font-size: 14px;
-    line-height: 1.5;
-    font-weight: 750;
-    outline: none;
-  }
-
-  .questionBox textarea:focus,
-  .answerEditor textarea:focus {
-    border-color: rgba(153, 27, 27, 0.34);
-    box-shadow: 0 0 0 4px rgba(153, 27, 27, 0.08);
-  }
-
-  .questionActions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .questionActions span {
-    color: rgba(23, 32, 24, 0.5);
-    font-size: 12px;
-    font-weight: 850;
-  }
-
-  .questionActions button,
-  .answerEditor button {
-    border: 0;
-    border-radius: 999px;
-    background: #203c2e;
-    color: #fffdf7;
-    padding: 11px 14px;
-    font-size: 12px;
-    font-weight: 950;
-    cursor: pointer;
-  }
-
-  .questionActions button:disabled,
-  .answerEditor button:disabled {
-    opacity: 0.58;
-    cursor: not-allowed;
-  }
-
-  .questionNotice {
-    border-radius: 18px;
-    background: rgba(153, 27, 27, 0.08);
-    border: 1px solid rgba(153, 27, 27, 0.14);
-    color: #7f1d1d;
-    padding: 11px 12px;
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 850;
-  }
-
-  .questionsList {
-    display: grid;
-    gap: 12px;
-  }
-
-  .emptyQuestions {
-    border-radius: 22px;
-    background: rgba(32, 60, 46, 0.045);
-    padding: 16px;
-  }
-
-  .emptyQuestions strong {
-    display: block;
-    color: #203c2e;
-    font-size: 14px;
-    font-weight: 950;
-  }
-
-  .emptyQuestions p {
-    margin: 6px 0 0;
-    color: rgba(23, 32, 24, 0.58);
-    font-size: 13px;
-    line-height: 1.4;
-    font-weight: 750;
-  }
-
-  .questionItem {
-    border-radius: 24px;
-    background: rgba(255, 255, 255, 0.66);
-    border: 1px solid rgba(32, 60, 46, 0.08);
-    padding: 15px;
-    display: grid;
-    gap: 10px;
-  }
-
-  .questionHeader {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .questionHeader strong {
-    display: block;
-    color: #203c2e;
-    font-size: 13px;
-    font-weight: 950;
-  }
-
-  .questionHeader span,
-  .questionHeader time {
-    color: rgba(23, 32, 24, 0.48);
-    font-size: 11px;
-    font-weight: 850;
-  }
-
-  .questionText {
-    margin: 0;
-    color: rgba(23, 32, 24, 0.74);
-    font-size: 14px;
-    line-height: 1.55;
-    font-weight: 760;
-  }
-
-  .answerBox {
-    border-left: 4px solid #203c2e;
-    border-radius: 18px;
-    background: rgba(32, 60, 46, 0.06);
-    padding: 12px;
-  }
-
-  .answerBox span {
-    display: block;
-    color: #203c2e;
-    font-size: 11px;
-    font-weight: 950;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 7px;
-  }
-
-  .answerBox p {
-    margin: 0;
-    color: rgba(23, 32, 24, 0.72);
-    font-size: 13px;
-    line-height: 1.5;
-    font-weight: 750;
-  }
-
-  .answerEditor {
-    display: grid;
-    gap: 10px;
-  }
-
-  .answerEditor textarea {
-    min-height: 92px;
-  }
-
-  .answerEditor button {
-    justify-self: end;
-  }
-
-  .pendingAnswer {
-    border-radius: 999px;
-    background: rgba(123, 131, 114, 0.1);
-    color: #64705b;
-    padding: 9px 12px;
-    font-size: 12px;
-    font-weight: 850;
-    width: fit-content;
-  }
-
-  .bookingCard {
-    display: grid;
-    gap: 14px;
-  }
-
-  .bookingPrice {
-    color: #203c2e;
-    font-size: 34px;
-    line-height: 1;
-    letter-spacing: -0.06em;
-  }
-
-  .bookingCard label {
-    display: grid;
-    gap: 7px;
-    color: rgba(23, 32, 24, 0.58);
-    font-size: 12px;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-  }
-
-  .bookingCard select {
-    width: 100%;
-    border: 1px solid rgba(32, 60, 46, 0.12);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.72);
-    color: #172018;
-    padding: 12px 13px;
-    font-size: 14px;
-    font-weight: 850;
-    outline: none;
-  }
-
-  .bookingTotal {
-    border-radius: 20px;
-    background: rgba(153, 27, 27, 0.08);
-    padding: 14px;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .bookingTotal span {
-    color: #7f1d1d;
-    font-size: 12px;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-  }
-
-  .bookingTotal strong {
-    color: #7f1d1d;
-    font-size: 20px;
-    letter-spacing: -0.04em;
-  }
-
-  .reserveBtn,
-  .guideBtn {
-    width: 100%;
-    border: 0;
-    border-radius: 999px;
-    background: #991b1b;
-    color: #fffdf7;
-    padding: 14px 16px;
-    font-size: 14px;
-    font-weight: 950;
-    cursor: pointer;
-    box-shadow: 0 18px 36px rgba(153, 27, 27, 0.18);
-  }
-
-  .reserveBtn:disabled {
-    opacity: 0.58;
-    cursor: not-allowed;
-    box-shadow: none;
-  }
-
-  .bookingNote {
-    margin: 0;
-    color: rgba(23, 32, 24, 0.52);
-    font-size: 12px;
-    line-height: 1.45;
-    font-weight: 750;
-  }
-
-  .guideTop {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .guideAvatar {
-    width: 58px;
-    height: 58px;
-    border-radius: 22px;
-    overflow: hidden;
-    background: #203c2e;
-    color: #fffdf7;
-    display: grid;
-    place-items: center;
-    font-size: 22px;
-    font-weight: 950;
-    flex: 0 0 auto;
-  }
-
-  .guideAvatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .guideTop strong {
-    display: block;
-    color: #172018;
-    font-size: 16px;
-    font-weight: 950;
-  }
-
-  .guideTop small {
-    display: block;
-    margin-top: 4px;
-    color: #7b8372;
-    font-size: 11px;
-    font-weight: 850;
-  }
-
-  .guideCard p {
-    margin: 14px 0;
-    color: rgba(23, 32, 24, 0.64);
-    font-size: 13px;
-    line-height: 1.5;
-    font-weight: 700;
-  }
-
-  .guideCardClickable {
-    cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-  }
-
-  .guideCardClickable:hover,
-  .guideCardClickable:focus {
-    transform: translateY(-2px);
-    border-color: rgba(32, 60, 46, 0.18);
-    box-shadow: 0 24px 64px rgba(32, 60, 46, 0.13);
-    outline: none;
-  }
-
-  .guideBtn {
-    background: #203c2e;
-    box-shadow: 0 18px 36px rgba(32, 60, 46, 0.14);
-  }
-
-
-  .modalOverlay {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    background: rgba(23, 32, 24, 0.58);
-    backdrop-filter: blur(12px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-  }
-
-  .modalCard {
-    width: min(560px, 100%);
-    max-height: calc(100vh - 36px);
-    overflow: auto;
-    border-radius: 34px;
-    background: #fffdf7;
-    border: 1px solid rgba(255,255,255,0.28);
-    box-shadow: 0 30px 90px rgba(15, 23, 42, 0.34);
-  }
-
-  .modalHead {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 24px;
-    color: #ffffff;
-    background:
-      radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 36%),
-      linear-gradient(135deg, #172018, #203c2e);
-  }
-
-  .modalHead span {
-    display: inline-flex;
-    color: #bef264;
-    font-size: 11px;
-    font-weight: 950;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    margin-bottom: 8px;
-  }
-
-  .modalHead h2 {
-    margin: 0;
-    font-size: 31px;
-    line-height: 0.95;
-    font-weight: 950;
-    letter-spacing: -0.07em;
-  }
-
-  .modalHead p {
-    margin: 9px 0 0;
-    color: rgba(255,255,255,0.78);
-    font-size: 13px;
-    line-height: 1.45;
-    font-weight: 750;
-  }
-
-  .modalClose {
-    width: 38px;
-    height: 38px;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.10);
-    color: #ffffff;
-    border-radius: 999px;
-    font-size: 24px;
-    font-weight: 850;
-    line-height: 1;
-    cursor: pointer;
-    flex: 0 0 auto;
-  }
-
-  .modalBody {
-    padding: 20px;
-  }
-
-  .modalRoute {
-    display: grid;
-    grid-template-columns: 86px minmax(0, 1fr);
-    gap: 13px;
-    align-items: center;
-    padding: 12px;
-    border-radius: 24px;
-    background: #f6f7f1;
-    border: 1px solid rgba(15, 23, 42, 0.06);
-    margin-bottom: 13px;
-  }
-
-  .modalThumb {
-    width: 86px;
-    height: 86px;
-    border-radius: 22px;
-    overflow: hidden;
-    background: #e8eadf;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #64748b;
-    font-weight: 950;
-  }
-
-  .modalThumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .modalRoute strong {
-    display: block;
-    color: #172018;
-    font-size: 16px;
-    line-height: 1.25;
-    font-weight: 950;
-  }
-
-  .modalRoute small {
-    display: block;
-    color: #64748b;
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 750;
-    margin-top: 4px;
-  }
-
-  .modalInfoGrid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 9px;
-    margin-bottom: 13px;
-  }
-
-  .modalInfoGrid div {
-    background: #fffdf7;
-    border: 1px solid rgba(15, 23, 42, 0.06);
-    border-radius: 19px;
-    padding: 12px;
-  }
-
-  .modalInfoGrid span {
-    display: block;
-    color: #7b8372;
-    font-size: 10px;
-    font-weight: 950;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
-  .modalInfoGrid strong {
-    display: block;
-    margin-top: 5px;
-    color: #172018;
-    font-size: 15px;
-    font-weight: 950;
-  }
-
-  .modalQuantity {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    background: #f6f7f1;
-    border: 1px solid rgba(15, 23, 42, 0.06);
-    border-radius: 22px;
-    padding: 13px 14px;
-    color: #172018;
-    font-size: 13px;
-    font-weight: 950;
-    margin-bottom: 13px;
-  }
-
-  .modalQuantity select {
-    border: 1px solid rgba(15,23,42,0.10);
-    background: #ffffff;
-    color: #172018;
-    border-radius: 999px;
-    padding: 10px 13px;
-    font-weight: 950;
-    outline: none;
-  }
-
-  .modalNote {
-    margin: 0 0 15px;
-    color: #64748b;
-    font-size: 12px;
-    line-height: 1.45;
-    font-weight: 750;
-  }
-
-  .modalActions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-
-  .modalCancel,
-  .modalConfirm {
-    border: none;
-    border-radius: 999px;
-    padding: 13px 16px;
-    font-size: 12px;
-    font-weight: 950;
-    cursor: pointer;
-  }
-
-  .modalCancel {
-    background: #e5e7eb;
-    color: #374151;
-  }
-
-  .modalConfirm {
-    background: #172018;
-    color: #ffffff;
-  }
-
-  .modalCancel:disabled,
-  .modalConfirm:disabled {
-    opacity: 0.62;
-    cursor: not-allowed;
-  }
-
 
   @media (max-width: 940px) {
-    .hero,
-    .contentGrid {
-      grid-template-columns: 1fr;
-    }
-
-    .heroMedia {
-      min-height: 380px;
-    }
-
-    .sideColumn {
-      position: static;
-    }
-
-    .bookingCard {
-      display: none;
-    }
-
-    .mobileBooking {
-      margin-top: 18px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      border-radius: 22px;
-      background: rgba(153, 27, 27, 0.08);
-      padding: 12px;
-    }
-
-    .mobileBooking strong {
-      color: #7f1d1d;
-      font-size: 20px;
-      letter-spacing: -0.04em;
-    }
-
-    .mobileBooking button {
-      border: 0;
-      border-radius: 999px;
-      background: #991b1b;
-      color: #fffdf7;
-      padding: 12px 15px;
-      font-size: 13px;
-      font-weight: 950;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-
-    .mobileBooking button:disabled {
-      opacity: 0.58;
-      cursor: not-allowed;
-    }
+    .hero, .contentGrid { grid-template-columns: 1fr; }
+    .heroMedia { min-height: 380px; }
+    .sideColumn { position: static; }
+    .bookingCard { display: none; }
+    .mobileBooking { margin-top: 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border-radius: 22px; background: rgba(153, 27, 27, 0.08); padding: 12px; }
+    .mobileBooking strong { color: #7f1d1d; font-size: 20px; letter-spacing: -0.04em; }
+    .mobileBooking button { border: 0; border-radius: 999px; background: #991b1b; color: #fffdf7; padding: 12px 15px; font-size: 13px; font-weight: 950; cursor: pointer; white-space: nowrap; }
+    .mobileBooking button:disabled { opacity: 0.58; cursor: not-allowed; }
   }
 
   @media (max-width: 640px) {
-
-    .modalOverlay {
-      padding: 10px;
-      align-items: flex-end;
-    }
-
-    .modalCard {
-      border-radius: 28px 28px 22px 22px;
-      max-height: calc(100vh - 20px);
-    }
-
-    .modalHead {
-      padding: 20px;
-    }
-
-    .modalHead h2 {
-      font-size: 27px;
-    }
-
-    .modalRoute {
-      grid-template-columns: 72px minmax(0, 1fr);
-    }
-
-    .modalThumb {
-      width: 72px;
-      height: 72px;
-      border-radius: 18px;
-    }
-
-    .modalInfoGrid {
-      grid-template-columns: 1fr;
-    }
-
-    .modalQuantity {
-      align-items: stretch;
-      flex-direction: column;
-    }
-
-    .modalQuantity select,
-    .modalCancel,
-    .modalConfirm {
-      width: 100%;
-    }
-
-    .topbar {
-      padding: 7px 10px;
-    }
-
-    .topbarInner {
-      grid-template-columns: 38px minmax(0, 1fr) 38px;
-    }
-
-    .headerGhost,
-    .profileButton,
-    .loginButton {
-      width: 36px;
-      height: 36px;
-      box-shadow: none;
-    }
-
-    .brandLogo {
-      width: clamp(154px, 58vw, 218px);
-    }
-
-    .brandSubtitle {
-      font-size: 8.5px;
-      letter-spacing: 0.06em;
-      margin-top: -2px;
-    }
-
-    .ghostBtn {
-      padding: 9px 11px;
-      font-size: 12px;
-    }
-
-    .hero {
-      margin-top: 8px;
-      padding: 0 12px;
-      gap: 12px;
-    }
-
-    .heroMedia {
-      min-height: 270px;
-      border-radius: 26px;
-    }
-
-    .fallbackHero {
-      min-height: 270px;
-    }
-
-    .heroContent {
-      border-radius: 26px;
-      padding: 20px;
-    }
-
-    .heroContent h1 {
-      font-size: 40px;
-    }
-
-    .description {
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .guideHeroCard {
-      grid-template-columns: 42px minmax(0, 1fr);
-      border-radius: 20px;
-      padding: 10px;
-    }
-
-    .guideMiniAvatar {
-      width: 42px;
-      height: 42px;
-      border-radius: 16px;
-    }
-
-    .guideHeroArrow {
-      grid-column: 2;
-      font-size: 11px;
-    }
-
-    .heroFacts {
-      gap: 8px;
-      margin-top: 16px;
-    }
-
-    .heroFacts div {
-      border-radius: 18px;
-      padding: 12px;
-    }
-
-    .galleryStrip {
-      padding: 0 12px;
-      margin-top: 12px;
-    }
-
-    .galleryStrip button {
-      width: 76px;
-      height: 62px;
-      border-radius: 15px;
-    }
-
-    .contentGrid {
-      padding: 0 12px;
-      margin-top: 12px;
-      gap: 12px;
-    }
-
-    .card,
-    .guideCard {
-      border-radius: 24px;
-      padding: 18px;
-    }
-
-    .sectionTitle h2 {
-      font-size: 21px;
-    }
-
-    .infoGrid,
-    .splitCards {
-      grid-template-columns: 1fr;
-    }
-
-    .mobileBooking {
-      align-items: stretch;
-      flex-direction: column;
-    }
-
-    .mobileBooking button {
-      width: 100%;
-    }
-
-    .questionActions {
-      align-items: stretch;
-      flex-direction: column;
-    }
-
-    .questionActions button,
-    .answerEditor button {
-      width: 100%;
-      justify-self: stretch;
-    }
-
-    .questionHeader {
-      flex-direction: column;
-      gap: 4px;
-    }
+    .modalOverlay { padding: 10px; align-items: flex-end; }
+    .modalCard { border-radius: 28px 28px 22px 22px; max-height: calc(100vh - 20px); }
+    .modalHead { padding: 20px; }
+    .modalHead h2 { font-size: 27px; }
+    .modalRoute { grid-template-columns: 72px minmax(0, 1fr); }
+    .modalThumb { width: 72px; height: 72px; border-radius: 18px; }
+    .modalInfoGrid { grid-template-columns: 1fr; }
+    .modalQuantity { align-items: stretch; flex-direction: column; }
+    .modalQuantity select, .modalCancel, .modalConfirm { width: 100%; }
+    .topbar { padding: 7px 10px; }
+    .topbarInner { grid-template-columns: 38px minmax(0, 1fr) 38px; }
+    .headerGhost, .profileButton, .loginButton { width: 36px; height: 36px; box-shadow: none; }
+    .brandLogo { width: clamp(154px, 58vw, 218px); }
+    .brandSubtitle { font-size: 8.5px; letter-spacing: 0.06em; margin-top: -2px; }
+    .hero { margin-top: 8px; padding: 0 12px; gap: 12px; }
+    .heroMedia { min-height: 270px; border-radius: 26px; }
+    .fallbackHero { min-height: 270px; }
+    .heroContent { border-radius: 26px; padding: 20px; }
+    .heroContent h1 { font-size: 40px; }
+    .description { font-size: 14px; line-height: 1.5; }
+    .guideHeroCard { grid-template-columns: 42px minmax(0, 1fr); border-radius: 20px; padding: 10px; }
+    .guideMiniAvatar { width: 42px; height: 42px; border-radius: 16px; }
+    .guideHeroArrow { grid-column: 2; font-size: 11px; }
+    .heroFacts { gap: 8px; margin-top: 16px; }
+    .heroFacts div { border-radius: 18px; padding: 12px; }
+    .galleryStrip { padding: 0 12px; margin-top: 12px; }
+    .galleryStrip button { width: 76px; height: 62px; border-radius: 15px; }
+    .contentGrid { padding: 0 12px; margin-top: 12px; gap: 12px; }
+    .card, .guideCard { border-radius: 24px; padding: 18px; }
+    .sectionTitle h2 { font-size: 21px; }
+    .infoGrid, .splitCards { grid-template-columns: 1fr; }
+    .mobileBooking { align-items: stretch; flex-direction: column; }
+    .mobileBooking button { width: 100%; }
+    .questionActions { align-items: stretch; flex-direction: column; }
+    .questionActions button, .answerEditor button { width: 100%; justify-self: stretch; }
+    .questionHeader { flex-direction: column; gap: 4px; }
   }
 `
