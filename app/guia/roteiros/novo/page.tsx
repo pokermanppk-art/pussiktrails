@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
@@ -10,17 +10,24 @@ type UsuarioLocal = {
   name?: string | null
   email?: string | null
   tipo?: string | null
+  avatar_url?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
 }
 
-type RoteiroCriado = {
-  id: string
-  titulo?: string | null
-  nome?: string | null
-  [key: string]: any
-}
+type AnyRecord = Record<string, any>
 
 type DificuldadeValue = 'facil' | 'medio' | 'dificil'
 type RecorrenciaValue = 'unica' | 'semanal' | 'mensal' | 'anual'
+
+type ImagemInfo = {
+  nome: string
+  width: number
+  height: number
+  aviso: string
+}
+
+const BUCKET_ROTEIROS = 'fotos-aventuras'
 
 const DIFICULDADES: Array<{
   value: DificuldadeValue
@@ -66,9 +73,199 @@ const RECORRENCIAS: Array<{
   }
 ]
 
+function texto(valor: unknown) {
+  return String(valor || '').trim()
+}
+
+function normalizar(valor: unknown) {
+  return texto(valor)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function numeroDecimal(valor: string) {
+  const limpo = texto(valor)
+    .replace(/[^\d,.-]/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+
+  const n = Number(limpo)
+  return Number.isFinite(n) ? n : 0
+}
+
+function slugify(valor: string) {
+  return texto(valor)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'roteiro'
+}
+
+function gerarIdCurto() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function erroDeColunaAusente(error: any) {
+  const mensagem = String(
+    error?.message ||
+      error?.details ||
+      error?.hint ||
+      ''
+  ).toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    mensagem.includes('schema cache') ||
+    mensagem.includes('could not find') ||
+    mensagem.includes('column') ||
+    mensagem.includes('does not exist')
+  )
+}
+
+function extrairColunaAusente(error: any) {
+  const textoErro = [
+    error?.message,
+    error?.details,
+    error?.hint
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const matchRoteiros = textoErro.match(/roteiros\.([a-zA-Z0-9_]+)/)
+  if (matchRoteiros?.[1]) return matchRoteiros[1]
+
+  const matchAspas = textoErro.match(/'([^']+)'/)
+  if (matchAspas?.[1]) return matchAspas[1]
+
+  const matchColumn = textoErro.match(/column\s+["']?([a-zA-Z0-9_]+)["']?/i)
+  if (matchColumn?.[1]) return matchColumn[1]
+
+  return ''
+}
+
+function montarDataHoraBrasil(data: string, hora: string) {
+  const dataLimpa = texto(data)
+  const horaLimpa = texto(hora)
+
+  if (!dataLimpa || !horaLimpa) return ''
+
+  return `${dataLimpa}T${horaLimpa}:00-03:00`
+}
+
+function carregarDimensoesImagem(file: File) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const imagem = new Image()
+
+    imagem.onload = () => {
+      const width = imagem.naturalWidth || 0
+      const height = imagem.naturalHeight || 0
+      URL.revokeObjectURL(url)
+      resolve({ width, height })
+    }
+
+    imagem.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Não foi possível ler as dimensões da imagem.'))
+    }
+
+    imagem.src = url
+  })
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error('Não foi possível gerar a imagem compactada.'))
+          return
+        }
+
+        resolve(blob)
+      },
+      type,
+      quality
+    )
+  })
+}
+
+async function normalizarImagemRoteiro(file: File) {
+  const imagemUrl = URL.createObjectURL(file)
+
+  try {
+    const imagem = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = () => reject(new Error('Não foi possível carregar a imagem.'))
+      img.src = imagemUrl
+    })
+
+    const origemW = imagem.naturalWidth || imagem.width
+    const origemH = imagem.naturalHeight || imagem.height
+
+    if (!origemW || !origemH) {
+      throw new Error('Imagem inválida.')
+    }
+
+    const alvoW = 1200
+    const alvoH = 900
+    const alvoRatio = alvoW / alvoH
+    const origemRatio = origemW / origemH
+
+    let sx = 0
+    let sy = 0
+    let sw = origemW
+    let sh = origemH
+
+    if (origemRatio > alvoRatio) {
+      sw = origemH * alvoRatio
+      sx = (origemW - sw) / 2
+    } else if (origemRatio < alvoRatio) {
+      sh = origemW / alvoRatio
+      sy = (origemH - sh) / 2
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = alvoW
+    canvas.height = alvoH
+
+    const ctx = canvas.getContext('2d')
+
+    if (!ctx) {
+      throw new Error('Não foi possível preparar a imagem.')
+    }
+
+    ctx.drawImage(imagem, sx, sy, sw, sh, 0, 0, alvoW, alvoH)
+
+    const blob = await canvasToBlob(canvas, 'image/webp', 0.86)
+
+    return new File(
+      [blob],
+      `${slugify(file.name.replace(/\.[^.]+$/, '')) || 'roteiro'}-1200x900.webp`,
+      {
+        type: 'image/webp',
+        lastModified: Date.now()
+      }
+    )
+  } finally {
+    URL.revokeObjectURL(imagemUrl)
+  }
+}
+
 export default function GuiaNovoRoteiroPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -82,402 +279,242 @@ export default function GuiaNovoRoteiroPage() {
   const [dataRoteiro, setDataRoteiro] = useState('')
   const [horaRoteiro, setHoraRoteiro] = useState('')
   const [preco, setPreco] = useState('')
-  const [duracaoHoras, setDuracaoHoras] = useState('1')
+  const [duracao, setDuracao] = useState('1')
   const [km, setKm] = useState('')
   const [limitePessoas, setLimitePessoas] = useState('10')
   const [dificuldade, setDificuldade] = useState<DificuldadeValue>('facil')
   const [recorrencia, setRecorrencia] = useState<RecorrenciaValue>('unica')
-  const [fotoFile, setFotoFile] = useState<File | null>(null)
-  const [fotoPreview, setFotoPreview] = useState('')
+  const [roteiroDetalhado, setRoteiroDetalhado] = useState('')
+  const [inclui, setInclui] = useState('')
+  const [naoInclui, setNaoInclui] = useState('')
+  const [orientacoes, setOrientacoes] = useState('')
+
+  const [imagemFile, setImagemFile] = useState<File | null>(null)
+  const [imagemPreview, setImagemPreview] = useState('')
+  const [imagemInfo, setImagemInfo] = useState<ImagemInfo | null>(null)
+  const [preparandoImagem, setPreparandoImagem] = useState(false)
 
   useEffect(() => {
     if (iniciouRef.current) return
-
     iniciouRef.current = true
+
     iniciar()
+
+    return () => {
+      if (imagemPreview) URL.revokeObjectURL(imagemPreview)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const iniciar = async () => {
+  const avatarGuia = user?.avatar_url || user?.foto_url || user?.imagem_url || ''
+  const nomeGuia = user?.nome || user?.name || user?.email || 'Guia'
+
+  const podeSalvar = useMemo(() => {
+    return (
+      texto(titulo).length >= 4 &&
+      texto(descricao).length >= 12 &&
+      texto(local).length >= 3 &&
+      texto(dataRoteiro).length > 0 &&
+      texto(horaRoteiro).length > 0 &&
+      numeroDecimal(preco) > 0 &&
+      Boolean(imagemFile) &&
+      !salvando &&
+      !preparandoImagem
+    )
+  }, [
+    titulo,
+    descricao,
+    local,
+    dataRoteiro,
+    horaRoteiro,
+    preco,
+    imagemFile,
+    salvando,
+    preparandoImagem
+  ])
+
+  async function iniciar() {
     setCarregando(true)
     setErro('')
+    setMensagem('')
 
     try {
-      const userData = localStorage.getItem('user')
+      const salvo = localStorage.getItem('user')
 
-      if (!userData) {
+      if (!salvo) {
         router.replace('/login')
         return
       }
 
-      const parsedUser = JSON.parse(userData) as UsuarioLocal
+      const usuario = JSON.parse(salvo) as UsuarioLocal
 
-      if (parsedUser.tipo !== 'guia') {
+      if (normalizar(usuario.tipo) !== 'guia') {
         router.replace('/login')
         return
       }
 
-      setUser(parsedUser)
+      setUser(usuario)
     } catch (error) {
       console.error('Erro ao iniciar criação de roteiro:', error)
-      setErro('Não foi possível carregar sua sessão.')
+      setErro('Não foi possível carregar seus dados de guia.')
     } finally {
       setCarregando(false)
     }
   }
 
-  const normalizarNumero = (valor: string, fallback = 0) => {
-    const limpo = String(valor || '')
-      .replace(/\./g, '')
-      .replace(',', '.')
-      .replace(/[^\d.]/g, '')
-
-    const numero = Number(limpo)
-
-    if (!Number.isFinite(numero)) return fallback
-
-    return numero
-  }
-
-  const tituloUsuario = (usuario?: UsuarioLocal | null) => {
-    return usuario?.nome || usuario?.name || usuario?.email || 'Guia'
-  }
-
-  const limparTexto = (valor: any) => {
-    return String(valor || '').trim()
-  }
-
-  const normalizarRecorrencia = (valor: any): RecorrenciaValue => {
-    const texto = String(valor || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-
-    if (texto === 'semanal') return 'semanal'
-    if (texto === 'mensal') return 'mensal'
-    if (texto === 'anual') return 'anual'
-
-    return 'unica'
-  }
-
-  const labelRecorrencia = (valor: any) => {
-    const normalizada = normalizarRecorrencia(valor)
-
-    return (
-      RECORRENCIAS.find((item) => item.value === normalizada)?.label ||
-      'Experiência única'
-    )
-  }
-
-  const extrairColunaAusente = (error: any) => {
-    const texto = [error?.message, error?.details, error?.hint]
-      .filter(Boolean)
-      .join(' ')
-
-    const matchAspas = texto.match(/'([^']+)'/)
-
-    if (matchAspas?.[1]) return matchAspas[1]
-
-    const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
-
-    if (matchColumn?.[1]) return matchColumn[1]
-
-    return ''
-  }
-
-  const erroDeColunaAusente = (error: any) => {
-    const texto = String(
-      error?.message ||
-        error?.details ||
-        error?.hint ||
-        ''
-    ).toLowerCase()
-
-    return (
-      error?.code === '42703' ||
-      error?.code === 'PGRST204' ||
-      texto.includes('could not find') ||
-      texto.includes('schema cache') ||
-      texto.includes('column')
-    )
-  }
-
-  const erroDeConstraintDificuldade = (error: any) => {
-    const texto = String(
-      error?.message ||
-        error?.details ||
-        error?.hint ||
-        ''
-    ).toLowerCase()
-
-    return (
-      error?.code === '23514' &&
-      (
-        texto.includes('dificuldade') ||
-        texto.includes('roteiros_dificuldade_check')
-      )
-    )
-  }
-
-  const erroDeConstraintRecorrencia = (error: any) => {
-    const texto = String(
-      error?.message ||
-        error?.details ||
-        error?.hint ||
-        ''
-    ).toLowerCase()
-
-    return (
-      error?.code === '23514' &&
-      (
-        texto.includes('recorrencia') ||
-        texto.includes('roteiros_recorrencia_check')
-      )
-    )
-  }
-
-  const variantesDificuldade = (valor: DificuldadeValue) => {
-    if (valor === 'facil') {
-      return ['facil', 'Fácil', 'Facil', 'fácil']
+  function limparImagem() {
+    if (imagemPreview) {
+      URL.revokeObjectURL(imagemPreview)
     }
 
-    if (valor === 'medio') {
-      return ['medio', 'Médio', 'Medio', 'médio', 'media', 'Média', 'moderado', 'Moderado']
-    }
+    setImagemFile(null)
+    setImagemPreview('')
+    setImagemInfo(null)
 
-    return ['dificil', 'Difícil', 'Dificil', 'difícil', 'avancado', 'Avançado', 'avancada', 'Avançada']
-  }
-
-  const inserirRoteiroComFallbackDeColunas = async (
-    payloadOriginal: Record<string, any>
-  ) => {
-    let payloadAtual = { ...payloadOriginal }
-    const colunasIgnoradas: string[] = []
-
-    for (let tentativa = 0; tentativa < 20; tentativa++) {
-      const { data, error } = await supabase
-        .from('roteiros')
-        .insert(payloadAtual)
-        .select('*')
-        .maybeSingle()
-
-      if (!error) {
-        return {
-          data: data as RoteiroCriado | null,
-          colunasIgnoradas
-        }
-      }
-
-      if (!erroDeColunaAusente(error)) {
-        throw error
-      }
-
-      const coluna = extrairColunaAusente(error)
-
-      if (!coluna || !(coluna in payloadAtual)) {
-        throw error
-      }
-
-      delete payloadAtual[coluna]
-      colunasIgnoradas.push(coluna)
-    }
-
-    throw new Error('Não foi possível criar o roteiro após ajustar as colunas.')
-  }
-
-  const inserirRoteiroComFallbackDificuldade = async (
-    payloadBase: Record<string, any>
-  ) => {
-    const variantes = variantesDificuldade(dificuldade)
-    let ultimoErro: any = null
-
-    for (const dificuldadeTentativa of variantes) {
-      try {
-        const resultado = await inserirRoteiroComFallbackDeColunas({
-          ...payloadBase,
-          dificuldade: dificuldadeTentativa
-        })
-
-        return {
-          ...resultado,
-          dificuldadeUsada: dificuldadeTentativa
-        }
-      } catch (error: any) {
-        ultimoErro = error
-
-        if (!erroDeConstraintDificuldade(error)) {
-          throw error
-        }
-
-        console.warn(
-          `Dificuldade "${dificuldadeTentativa}" recusada pelo check constraint. Tentando próxima...`,
-          error
-        )
-      }
-    }
-
-    throw ultimoErro || new Error('Dificuldade não aceita pela tabela roteiros.')
-  }
-
-  const atualizarRoteiroComFallback = async (
-    roteiroId: string,
-    payloadOriginal: Record<string, any>
-  ) => {
-    let payloadAtual = { ...payloadOriginal }
-
-    for (let tentativa = 0; tentativa < 15; tentativa++) {
-      const { error } = await supabase
-        .from('roteiros')
-        .update(payloadAtual)
-        .eq('id', roteiroId)
-
-      if (!error) return true
-
-      if (!erroDeColunaAusente(error)) {
-        console.warn('Erro ao atualizar roteiro:', error)
-        return false
-      }
-
-      const coluna = extrairColunaAusente(error)
-
-      if (!coluna || !(coluna in payloadAtual)) {
-        console.warn('Erro ao atualizar roteiro sem coluna identificada:', error)
-        return false
-      }
-
-      delete payloadAtual[coluna]
-    }
-
-    return false
-  }
-
-  const uploadFotoRoteiro = async (roteiroId: string) => {
-    if (!fotoFile || !user?.id) return ''
-
-    try {
-      const extensao =
-        fotoFile.name.split('.').pop()?.toLowerCase() ||
-        'jpg'
-
-      const caminho = `roteiros/${user.id}/${roteiroId}-${Date.now()}.${extensao}`
-
-      const { error } = await supabase.storage
-        .from('roteiros')
-        .upload(caminho, fotoFile, {
-          upsert: true,
-          contentType: fotoFile.type || 'image/jpeg'
-        })
-
-      if (error) {
-        console.warn('Erro ao enviar foto para o bucket roteiros:', error)
-        return ''
-      }
-
-      const { data } = supabase.storage
-        .from('roteiros')
-        .getPublicUrl(caminho)
-
-      return data?.publicUrl || ''
-    } catch (error) {
-      console.warn('Erro inesperado no upload da foto:', error)
-      return ''
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
   }
 
-  const garantirGrupoDoRoteiro = async (roteiroId: string) => {
-    if (!roteiroId) return null
+  async function handleImagemChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
 
-    try {
-      const response = await fetch('/api/grupos/garantir-grupo-roteiro', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          roteiroId
-        })
-      })
+    if (!file) return
 
-      const data = await response.json().catch(() => null)
+    setErro('')
+    setMensagem('')
 
-      if (!response.ok || !data?.sucesso) {
-        console.warn('Grupo do roteiro não foi criado automaticamente:', data)
-        return null
-      }
-
-      return data?.grupo || null
-    } catch (error) {
-      console.warn('Erro ao garantir grupo do roteiro:', error)
-      return null
-    }
-  }
-
-  const handleFotoChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] || null
-
-    setFotoFile(file)
-
-    if (!file) {
-      setFotoPreview('')
+    if (!file.type.startsWith('image/')) {
+      setErro('Selecione uma imagem válida em JPG, PNG ou WebP.')
+      event.target.value = ''
       return
     }
 
-    const url = URL.createObjectURL(file)
-    setFotoPreview(url)
+    if (file.size > 12 * 1024 * 1024) {
+      setErro('A imagem está muito grande. Use uma foto com até 12 MB.')
+      event.target.value = ''
+      return
+    }
+
+    try {
+      setPreparandoImagem(true)
+
+      const dimensoes = await carregarDimensoesImagem(file)
+      const preview = URL.createObjectURL(file)
+
+      if (imagemPreview) {
+        URL.revokeObjectURL(imagemPreview)
+      }
+
+      let aviso = ''
+
+      if (dimensoes.width < 900 || dimensoes.height < 675) {
+        aviso = 'A imagem é menor que o ideal. O recomendado é 1200 x 900 px para melhor qualidade.'
+      } else if (dimensoes.width < dimensoes.height) {
+        aviso = 'A foto está na vertical. Ela será recortada em 4:3 nos cards; prefira foto horizontal quando possível.'
+      } else if (Math.abs(dimensoes.width / dimensoes.height - 4 / 3) > 0.35) {
+        aviso = 'A proporção está diferente de 4:3. O sistema fará um corte central para padronizar o card.'
+      }
+
+      setImagemFile(file)
+      setImagemPreview(preview)
+      setImagemInfo({
+        nome: file.name,
+        width: dimensoes.width,
+        height: dimensoes.height,
+        aviso
+      })
+    } catch (error) {
+      console.error('Erro ao carregar imagem:', error)
+      setErro('Não foi possível ler a imagem selecionada.')
+      event.target.value = ''
+    } finally {
+      setPreparandoImagem(false)
+    }
   }
 
-  const validarFormulario = () => {
-    const tituloLimpo = limparTexto(titulo)
-    const descricaoLimpa = limparTexto(descricao)
-    const localLimpo = limparTexto(local)
-    const precoNumero = normalizarNumero(preco, 0)
-    const duracaoNumero = Math.max(1, Math.round(normalizarNumero(duracaoHoras, 1)))
-    const limiteNumero = Math.max(1, Math.round(normalizarNumero(limitePessoas, 10)))
+  async function inserirRoteiroComFallback(payloadOriginal: AnyRecord) {
+    let payload: AnyRecord = { ...payloadOriginal }
 
-    if (!tituloLimpo) {
-      return 'Informe o título do roteiro.'
+    for (let tentativa = 0; tentativa < 24; tentativa++) {
+      const { data, error } = await supabase
+        .from('roteiros')
+        .insert(payload)
+        .select('*')
+        .maybeSingle()
+
+      if (!error) return data as AnyRecord | null
+
+      if (!erroDeColunaAusente(error)) throw error
+
+      const coluna = extrairColunaAusente(error)
+
+      if (!coluna || !(coluna in payload)) {
+        console.error('Coluna ausente não mapeada ao criar roteiro:', error)
+        throw error
+      }
+
+      delete payload[coluna]
+
+      if (Object.keys(payload).length === 0) {
+        throw new Error('Nenhuma coluna disponível para criar o roteiro.')
+      }
     }
 
-    if (!descricaoLimpa) {
-      return 'Informe uma descrição para o roteiro.'
-    }
-
-    if (!localLimpo) {
-      return 'Informe o local ou ponto de encontro.'
-    }
-
-    if (precoNumero <= 0) {
-      return 'Informe um valor por pessoa maior que zero.'
-    }
-
-    if (duracaoNumero <= 0) {
-      return 'Informe uma duração válida.'
-    }
-
-    if (limiteNumero <= 0) {
-      return 'Informe o limite de pessoas.'
-    }
-
-    return ''
+    throw new Error('Não foi possível criar o roteiro após ajustar colunas.')
   }
 
-  const limparFormulario = () => {
-    setTitulo('')
-    setDescricao('')
-    setLocal('')
-    setDataRoteiro('')
-    setHoraRoteiro('')
-    setPreco('')
-    setDuracaoHoras('1')
-    setKm('')
-    setLimitePessoas('10')
-    setDificuldade('facil')
-    setRecorrencia('unica')
-    setFotoFile(null)
-    setFotoPreview('')
+  async function uploadFotoRoteiro(guiaId: string) {
+    if (!imagemFile) {
+      throw new Error('Selecione uma foto de capa para o roteiro.')
+    }
+
+    const arquivoNormalizado = await normalizarImagemRoteiro(imagemFile)
+    const filePath = `roteiros/${guiaId}/${Date.now()}-${slugify(titulo)}-${gerarIdCurto()}.webp`
+
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET_ROTEIROS)
+      .upload(filePath, arquivoNormalizado, {
+        cacheControl: '3600',
+        contentType: 'image/webp',
+        upsert: true
+      })
+
+    if (uploadError) {
+      throw new Error(uploadError.message || 'Não foi possível enviar a foto do roteiro.')
+    }
+
+    const { data } = supabase.storage
+      .from(BUCKET_ROTEIROS)
+      .getPublicUrl(filePath)
+
+    const publicUrl = data?.publicUrl || ''
+
+    if (!publicUrl) {
+      throw new Error('Não foi possível obter a URL pública da foto.')
+    }
+
+    return publicUrl
   }
 
-  const criarRoteiro = async (event: FormEvent) => {
+  async function garantirGrupoDoRoteiro(roteiroId: string, guiaId: string) {
+    try {
+      await fetch('/api/grupos/garantir-grupo-roteiro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roteiroId,
+          roteiro_id: roteiroId,
+          guiaId,
+          guia_id: guiaId
+        })
+      })
+    } catch (error) {
+      console.warn('Grupo do roteiro não foi criado agora. O fluxo poderá sincronizar depois:', error)
+    }
+  }
+
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault()
 
     if (!user?.id) {
@@ -488,125 +525,141 @@ export default function GuiaNovoRoteiroPage() {
     setErro('')
     setMensagem('')
 
-    const erroValidacao = validarFormulario()
+    const tituloLimpo = texto(titulo)
+    const descricaoLimpa = texto(descricao)
+    const localLimpo = texto(local)
+    const dataLimpa = texto(dataRoteiro)
+    const horaLimpa = texto(horaRoteiro)
+    const precoNumero = numeroDecimal(preco)
+    const kmNumero = numeroDecimal(km)
+    const duracaoValor = texto(duracao)
+    const limiteNumero = Math.max(1, Math.floor(Number(limitePessoas || 1)))
+    const dataHoraBrasil = montarDataHoraBrasil(dataLimpa, horaLimpa)
 
-    if (erroValidacao) {
-      setErro(erroValidacao)
+    if (tituloLimpo.length < 4) {
+      setErro('Informe um título claro para o roteiro.')
+      return
+    }
+
+    if (descricaoLimpa.length < 12) {
+      setErro('Escreva uma descrição curta para apresentar o roteiro.')
+      return
+    }
+
+    if (!localLimpo) {
+      setErro('Informe o local principal do roteiro.')
+      return
+    }
+
+    if (!dataLimpa || !horaLimpa) {
+      setErro('Informe data e horário da experiência.')
+      return
+    }
+
+    if (precoNumero <= 0) {
+      setErro('Informe um valor válido para o roteiro.')
+      return
+    }
+
+    if (!imagemFile) {
+      setErro('Selecione uma foto de capa para o roteiro. O padrão recomendado é 1200 x 900 px.')
       return
     }
 
     setSalvando(true)
 
     try {
-      const tituloLimpo = limparTexto(titulo)
-      const descricaoLimpa = limparTexto(descricao)
-      const localLimpo = limparTexto(local)
-      const dataLimpa = limparTexto(dataRoteiro)
-      const horaLimpa = limparTexto(horaRoteiro)
-      const precoNumero = normalizarNumero(preco, 0)
-      const duracaoNumero = Math.max(1, Math.round(normalizarNumero(duracaoHoras, 1)))
-      const kmNumero = normalizarNumero(km, 0)
-      const limiteNumero = Math.max(1, Math.round(normalizarNumero(limitePessoas, 10)))
-      const recorrenciaNormalizada = normalizarRecorrencia(recorrencia)
+      const fotoUrl = await uploadFotoRoteiro(user.id)
 
-      const agora = new Date().toISOString()
-
-      const payloadBase: Record<string, any> = {
+      const payload: AnyRecord = {
         titulo: tituloLimpo,
         nome: tituloLimpo,
-
         descricao: descricaoLimpa,
-
-        preco: precoNumero,
-        valor: precoNumero,
-
-        id_guia: user.id,
-        guia_id: user.id,
+        roteiro_detalhado: texto(roteiroDetalhado) || null,
+        detalhes: texto(roteiroDetalhado) || null,
 
         local: localLimpo,
         localizacao: localLimpo,
+        cidade: localLimpo,
+
+        embarque_local: localLimpo,
         local_encontro: localLimpo,
         ponto_encontro: localLimpo,
 
-        data_roteiro: dataLimpa || null,
-        data_saida: dataLimpa || null,
-        data: dataLimpa || null,
+        embarque_data: dataLimpa,
+        hora_trilha: horaLimpa,
+        proxima_data: dataHoraBrasil || dataLimpa,
+        data_trilha: dataHoraBrasil || dataLimpa,
+        data_roteiro: dataHoraBrasil || dataLimpa,
+        embarque_data_hora: dataHoraBrasil || dataLimpa,
 
-        hora_roteiro: horaLimpa || null,
-        hora_saida: horaLimpa || null,
-        hora: horaLimpa || null,
-
-        duracao_horas: duracaoNumero,
-        duracao: `${duracaoNumero}h`,
+        preco: precoNumero,
+        valor: precoNumero,
+        preco_total: precoNumero,
+        preco_por_pessoa: precoNumero,
 
         km: kmNumero,
         distancia_km: kmNumero,
+        duracao: duracaoValor,
+
+        dificuldade,
+        nivel: dificuldade,
+        intensidade: dificuldade,
+        recorrencia,
 
         limite_pessoas: limiteNumero,
         capacidade: limiteNumero,
         max_pessoas: limiteNumero,
 
-        recorrencia: recorrenciaNormalizada,
-        frequencia: recorrenciaNormalizada,
+        inclui: texto(inclui) || null,
+        nao_inclui: texto(naoInclui) || null,
+        orientacoes: texto(orientacoes) || null,
 
-        status: 'pendente',
+        foto_capa: fotoUrl,
+        foto_url: fotoUrl,
+        imagem_url: fotoUrl,
+        image_url: fotoUrl,
+        capa_url: fotoUrl,
+
+        id_guia: user.id,
+        guia_id: user.id,
+        user_id: user.id,
+        usuario_id: user.id,
+        criado_por: user.id,
+        created_by: user.id,
+        owner_id: user.id,
+
+        guia_nome: user.nome || user.name || user.email || 'Guia PrussikTrails',
+        nome_guia: user.nome || user.name || user.email || 'Guia PrussikTrails',
+
         ativo: false,
+        status: 'pendente_aprovacao',
+        situacao: 'pendente_aprovacao',
+        publicacao: 'em_analise',
 
-        created_at: agora,
-        updated_at: agora
+        observacao_guia: 'Roteiro criado pelo guia e enviado para aprovação.',
+        solicitacao_ativacao_em: new Date().toISOString(),
+        solicitado_ativacao_em: new Date().toISOString(),
+        revisao_solicitada_em: new Date().toISOString(),
+        enviado_para_aprovacao_em: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }
 
-      const resultado = await inserirRoteiroComFallbackDificuldade(payloadBase)
-      const roteiroCriado = resultado.data
+      const roteiroCriado = await inserirRoteiroComFallback(payload)
 
       if (!roteiroCriado?.id) {
-        setErro('O roteiro foi criado, mas não foi possível localizar o ID.')
-        return
+        throw new Error('O roteiro foi salvo, mas o ID não foi retornado.')
       }
 
-      let fotoUrl = ''
+      await garantirGrupoDoRoteiro(String(roteiroCriado.id), user.id)
 
-      if (fotoFile) {
-        fotoUrl = await uploadFotoRoteiro(roteiroCriado.id)
-
-        if (fotoUrl) {
-          await atualizarRoteiroComFallback(roteiroCriado.id, {
-            foto_url: fotoUrl,
-            foto_capa: fotoUrl,
-            imagem_url: fotoUrl,
-            imagem: fotoUrl,
-            updated_at: new Date().toISOString()
-          })
-        }
-      }
-
-      const grupo = await garantirGrupoDoRoteiro(roteiroCriado.id)
-
-      setMensagem(
-        grupo?.id
-          ? 'Roteiro criado com sucesso. O grupo interno foi preparado automaticamente.'
-          : 'Roteiro criado com sucesso. O grupo interno poderá ser preparado depois.'
-      )
-
-      limparFormulario()
-
-      setTimeout(() => {
+      setMensagem('Roteiro criado e enviado para aprovação do Admin.')
+      window.setTimeout(() => {
         router.push('/guia/roteiros')
       }, 900)
     } catch (error: any) {
       console.error('Erro ao criar roteiro:', error)
-
-      const texto = String(error?.message || '').toLowerCase()
-
-      if (texto.includes('duracao_horas')) {
-        setErro('O campo duração é obrigatório. Informe a duração em horas.')
-      } else if (erroDeConstraintRecorrencia(error) || texto.includes('recorrencia') || texto.includes('roteiros_recorrencia_check')) {
-        setErro('A recorrência escolhida não foi aceita pelo banco. Use Experiência única, Semanal, Mensal ou Anual.')
-      } else if (texto.includes('dificuldade') || texto.includes('roteiros_dificuldade_check')) {
-        setErro('A dificuldade escolhida não foi aceita pelo banco. Use Fácil, Médio ou Difícil.')
-      } else {
-        setErro(error?.message || 'Não foi possível criar o roteiro.')
-      }
+      setErro(error?.message || 'Não foi possível criar o roteiro agora.')
     } finally {
       setSalvando(false)
     }
@@ -614,1039 +667,961 @@ export default function GuiaNovoRoteiroPage() {
 
   if (carregando) {
     return (
-      <main className="loading">
-        <style>{`
-          * { box-sizing: border-box; }
+      <main className="page">
+        <style>{styles}</style>
 
-          body {
-            margin: 0;
-            background: #f6f7f1;
-            font-family:
-              Inter,
-              ui-sans-serif,
-              system-ui,
-              -apple-system,
-              BlinkMacSystemFont,
-              "Segoe UI",
-              sans-serif;
-          }
-
-          .loading {
-            min-height: 100vh;
-            min-height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background:
-              radial-gradient(circle at top left, rgba(132, 204, 22, 0.18), transparent 30%),
-              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
-            color: #374151;
-          }
-
-          .loadingCard {
-            background: #ffffff;
-            border: 1px solid rgba(15, 23, 42, 0.06);
-            border-radius: 30px;
-            padding: 28px;
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-            text-align: center;
-          }
-
-          .loadingCard img {
-            height: 68px;
-            width: auto;
-            margin-bottom: 12px;
-          }
-        `}</style>
-
-        <div className="loadingCard">
+        <section className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <div>Preparando criação de roteiro...</div>
-        </div>
+          <p>Carregando criação de roteiro...</p>
+        </section>
       </main>
     )
   }
 
   return (
     <main className="page">
-      <style>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        body {
-          margin: 0;
-          background: #f6f7f1;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        .page {
-          min-height: 100vh;
-          min-height: 100dvh;
-          background:
-            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
-            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
-          color: #172018;
-        }
-
-        .header {
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          background: rgba(255, 253, 247, 0.86);
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-          backdrop-filter: blur(18px);
-          padding: 10px 16px;
-        }
-
-        .headerInner {
-          max-width: 1180px;
-          margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          cursor: pointer;
-          min-width: 0;
-        }
-
-        .brand img {
-          height: 42px;
-          width: auto;
-          object-fit: contain;
-          display: block;
-        }
-
-        .brandTitle {
-          font-size: 18px;
-          font-weight: 950;
-          color: #dc2626;
-          line-height: 1;
-          letter-spacing: -0.05em;
-        }
-
-        .brandSub {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 700;
-          margin-top: 3px;
-        }
-
-        .headerActions {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-        }
-
-        .iconBtn {
-          height: 38px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          background: rgba(255,255,255,0.78);
-          border-radius: 999px;
-          padding: 0 13px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 900;
-          transition: 0.2s ease;
-          color: #172018;
-          white-space: nowrap;
-        }
-
-        .iconBtn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
-        }
-
-        .iconBtn.primary {
-          background: #172018;
-          color: #ffffff;
-          border-color: #172018;
-        }
-
-        .iconBtn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .container {
-          max-width: 1180px;
-          margin: 0 auto;
-          padding: 22px 16px 48px;
-        }
-
-        .hero {
-          position: relative;
-          overflow: hidden;
-          border-radius: 38px;
-          padding: 30px;
-          min-height: 315px;
-          background:
-            linear-gradient(135deg, rgba(23, 32, 24, 0.76), rgba(23, 32, 24, 0.34)),
-            radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 34%),
-            linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
-          color: #ffffff;
-          box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
-          margin-bottom: 16px;
-        }
-
-        .hero::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background:
-            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-          background-size: 46px 46px;
-          mask-image: linear-gradient(to bottom, black, transparent);
-          pointer-events: none;
-        }
-
-        .heroContent {
-          position: relative;
-          z-index: 2;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 280px;
-          gap: 24px;
-          align-items: end;
-          min-height: 255px;
-        }
-
-        .eyebrow {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.26);
-          background: rgba(255, 255, 255, 0.12);
-          color: #f7fee7;
-          padding: 8px 12px;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin-bottom: 14px;
-        }
-
-        .heroTitle {
-          margin: 0;
-          max-width: 760px;
-          font-size: clamp(40px, 6vw, 70px);
-          line-height: 0.92;
-          font-weight: 950;
-          letter-spacing: -0.085em;
-        }
-
-        .heroTitle span {
-          color: #bef264;
-          text-shadow: 0 0 28px rgba(190, 242, 100, 0.32);
-        }
-
-        .heroText {
-          max-width: 650px;
-          color: rgba(255,255,255,0.82);
-          line-height: 1.62;
-          margin: 16px 0 0;
-          font-size: 14px;
-        }
-
-        .heroCard {
-          background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          border-radius: 30px;
-          padding: 20px;
-          backdrop-filter: blur(16px);
-        }
-
-        .heroCardLabel {
-          color: rgba(255,255,255,0.76);
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-        }
-
-        .heroCardValue {
-          margin-top: 9px;
-          color: #ffffff;
-          font-size: 28px;
-          line-height: 1.05;
-          font-weight: 950;
-          letter-spacing: -0.06em;
-        }
-
-        .heroCardText {
-          margin-top: 8px;
-          color: rgba(255,255,255,0.78);
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-        }
-
-        .alert {
-          border-radius: 18px;
-          padding: 13px 15px;
-          margin-bottom: 16px;
-          font-size: 13px;
-          font-weight: 800;
-          line-height: 1.45;
-        }
-
-        .alert.success {
-          background: #ecfdf5;
-          color: #166534;
-          border: 1px solid #bbf7d0;
-        }
-
-        .alert.error {
-          background: #fee2e2;
-          color: #991b1b;
-          border: 1px solid #fecaca;
-        }
-
-        .mainGrid {
-          display: grid;
-          grid-template-columns: minmax(0, 1.1fr) minmax(330px, 0.9fr);
-          gap: 16px;
-          align-items: start;
-        }
-
-        .panel {
-          background: rgba(255,255,255,0.88);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 32px;
-          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
-          overflow: hidden;
-        }
-
-        .panelHeader {
-          padding: 18px 20px;
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-        }
-
-        .panelTitle {
-          margin: 0;
-          font-size: 19px;
-          font-weight: 950;
-          color: #172018;
-          letter-spacing: -0.04em;
-        }
-
-        .panelSub {
-          margin-top: 3px;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 700;
-          line-height: 1.45;
-        }
-
-        .panelBody {
-          padding: 18px;
-        }
-
-        .formGrid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 14px;
-        }
-
-        .field {
-          display: grid;
-          gap: 7px;
-        }
-
-        .field.full {
-          grid-column: 1 / -1;
-        }
-
-        .label {
-          color: #475569;
-          font-size: 12px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-        }
-
-        .input,
-        .textarea,
-        .select {
-          width: 100%;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          background: #fffdf7;
-          border-radius: 18px;
-          padding: 14px 15px;
-          font-size: 14px;
-          color: #172018;
-          outline: none;
-          font-weight: 750;
-        }
-
-        .textarea {
-          min-height: 130px;
-          resize: vertical;
-          line-height: 1.55;
-        }
-
-        .input:focus,
-        .textarea:focus,
-        .select:focus {
-          border-color: #84cc16;
-          box-shadow: 0 0 0 4px rgba(132, 204, 22, 0.12);
-        }
-
-        .helper {
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 700;
-          line-height: 1.45;
-        }
-
-        .difficultyGrid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 10px;
-        }
-
-        .difficultyCard {
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          background: #fffdf7;
-          border-radius: 22px;
-          padding: 14px;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .difficultyCard.active {
-          border-color: #16a34a;
-          background: #f0fdf4;
-          box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.08);
-        }
-
-        .difficultyTitle {
-          color: #172018;
-          font-size: 14px;
-          font-weight: 950;
-        }
-
-        .difficultyText {
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 700;
-          line-height: 1.4;
-          margin-top: 4px;
-        }
-
-        .photoBox {
-          border: 1px dashed rgba(15, 23, 42, 0.18);
-          background: #fffdf7;
-          border-radius: 28px;
-          min-height: 260px;
-          padding: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          overflow: hidden;
-          position: relative;
-        }
-
-        .photoBox img {
-          width: 100%;
-          height: 100%;
-          max-height: 330px;
-          object-fit: cover;
-          border-radius: 22px;
-          display: block;
-        }
-
-        .photoEmpty {
-          max-width: 260px;
-          color: #64748b;
-          font-size: 13px;
-          font-weight: 750;
-          line-height: 1.5;
-        }
-
-        .photoIcon {
-          width: 58px;
-          height: 58px;
-          border-radius: 22px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: #f0fdf4;
-          color: #16a34a;
-          font-size: 26px;
-          margin: 0 auto 12px;
-        }
-
-        .fileInput {
-          display: none;
-        }
-
-        .photoButton {
-          border: none;
-          background: #172018;
-          color: #ffffff;
-          border-radius: 999px;
-          padding: 12px 15px;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          margin-top: 13px;
-          display: inline-flex;
-        }
-
-        .summaryCard {
-          background:
-            radial-gradient(circle at top right, rgba(190, 242, 100, 0.22), transparent 38%),
-            #172018;
-          color: #ffffff;
-          border-radius: 30px;
-          padding: 22px;
-          margin-bottom: 16px;
-        }
-
-        .summaryLabel {
-          color: rgba(255,255,255,0.68);
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.10em;
-        }
-
-        .summaryTitle {
-          margin-top: 8px;
-          color: #ffffff;
-          font-size: 28px;
-          line-height: 1.02;
-          font-weight: 950;
-          letter-spacing: -0.06em;
-          word-break: break-word;
-        }
-
-        .summaryText {
-          margin-top: 10px;
-          color: rgba(255,255,255,0.74);
-          font-size: 13px;
-          line-height: 1.55;
-          font-weight: 700;
-        }
-
-        .summaryRows {
-          display: grid;
-          gap: 9px;
-          margin-top: 16px;
-        }
-
-        .summaryRow {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          color: rgba(255,255,255,0.82);
-          font-size: 12px;
-          font-weight: 800;
-        }
-
-        .infoCard {
-          background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 26px;
-          padding: 16px;
-        }
-
-        .infoTitle {
-          color: #172018;
-          font-size: 15px;
-          font-weight: 950;
-          line-height: 1.25;
-        }
-
-        .infoText {
-          margin-top: 6px;
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.5;
-          font-weight: 700;
-        }
-
-        .actions {
-          display: flex;
-          gap: 10px;
-          margin-top: 18px;
-          flex-wrap: wrap;
-        }
-
-        .btn {
-          border: none;
-          border-radius: 999px;
-          padding: 14px 18px;
-          font-size: 13px;
-          font-weight: 950;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .btn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.10);
-        }
-
-        .btn:disabled {
-          opacity: 0.65;
-          cursor: not-allowed;
-        }
-
-        .btn.primary {
-          background: #16a34a;
-          color: #ffffff;
-        }
-
-        .btn.secondary {
-          background: #eef2e5;
-          color: #475569;
-        }
-
-        @media (max-width: 1040px) {
-          .mainGrid,
-          .heroContent {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 720px) {
-          .header {
-            padding: 9px 12px;
-          }
-
-          .brandTitle,
-          .brandSub {
-            display: none;
-          }
-
-          .headerActions .hideMobile {
-            display: none;
-          }
-
-          .container {
-            padding: 16px 12px 42px;
-          }
-
-          .hero,
-          .panel {
-            border-radius: 28px;
-          }
-
-          .hero {
-            padding: 22px;
-            min-height: auto;
-          }
-
-          .heroContent {
-            min-height: auto;
-          }
-
-          .formGrid,
-          .difficultyGrid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .heroTitle {
-            font-size: 40px;
-          }
-
-          .brand img {
-            height: 38px;
-          }
-
-          .actions {
-            display: grid;
-          }
-
-          .btn {
-            width: 100%;
-          }
-        }
-      `}</style>
+      <style>{styles}</style>
 
       <header className="header">
-        <div className="headerInner">
-          <div
-            className="brand"
-            onClick={() => router.push('/guia/dashboard')}
-          >
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+        <button
+          type="button"
+          className="brand"
+          onClick={() => router.push('/guia/dashboard')}
+          aria-label="Voltar para dashboard do guia"
+        >
+          <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          <span>Novo roteiro outdoor</span>
+        </button>
 
-            <div>
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Novo roteiro</div>
-            </div>
-          </div>
-
-          <div className="headerActions">
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/guia/dashboard')}
-            >
-              Dashboard
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/guia/roteiros')}
-            >
-              Meus roteiros
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn primary"
-              onClick={() => router.push('/guia/perfil')}
-            >
-              Perfil
-            </button>
-          </div>
-        </div>
+        <button
+          type="button"
+          className="profileButton"
+          onClick={() => router.push('/guia/perfil')}
+          aria-label="Abrir perfil do guia"
+        >
+          {avatarGuia ? (
+            <img src={avatarGuia} alt={nomeGuia} />
+          ) : (
+            <span>{nomeGuia.slice(0, 1).toUpperCase()}</span>
+          )}
+        </button>
       </header>
 
       <div className="container">
         <section className="hero">
-          <div className="heroContent">
-            <div>
-              <div className="eyebrow">Criação do guia</div>
+          <div>
+            <p className="eyebrow">Guia PrussikTrails</p>
+            <h1>Crie uma nova experiência.</h1>
+            <p>
+              Cadastre o roteiro com informações claras, foto padronizada e dados operacionais para o Admin revisar antes de publicar.
+            </p>
+          </div>
 
-              <h1 className="heroTitle">
-                Crie uma experiência que faça alguém <span>sair da rotina.</span>
-              </h1>
-
-              <p className="heroText">
-                Cadastre o roteiro com foto, local, data, hora, valor e informações
-                simples. O grupo interno será criado automaticamente para você administrar
-                a experiência quando as reservas forem confirmadas.
-              </p>
-            </div>
-
-            <aside className="heroCard">
-              <div className="heroCardLabel">Guia responsável</div>
-              <div className="heroCardValue">{tituloUsuario(user)}</div>
-              <div className="heroCardText">
-                O grupo do roteiro será criado automaticamente e você entrará como administrador.
-              </div>
-            </aside>
+          <div className="heroTip">
+            <strong>Padrão da foto</strong>
+            <span>Imagem recomendada: 1200 x 900 px, formato horizontal, boa iluminação e ponto principal centralizado.</span>
           </div>
         </section>
 
-        {mensagem && (
-          <div className="alert success">{mensagem}</div>
-        )}
+        {erro && <div className="alert error">{erro}</div>}
+        {mensagem && <div className="alert success">{mensagem}</div>}
 
-        {erro && (
-          <div className="alert error">{erro}</div>
-        )}
-
-        <section className="mainGrid">
-          <form className="panel" onSubmit={criarRoteiro}>
-            <div className="panelHeader">
-              <h2 className="panelTitle">Informações do roteiro</h2>
-              <div className="panelSub">
-                Use campos simples e objetivos. O admin poderá acompanhar e aprovar o roteiro depois.
+        <form className="formGrid" onSubmit={handleSubmit}>
+          <section className="card mainCard">
+            <div className="cardHeader">
+              <span>01</span>
+              <div>
+                <h2>Informações principais</h2>
+                <p>Esses dados aparecem nos cards públicos e na página de detalhe.</p>
               </div>
             </div>
 
-            <div className="panelBody">
-              <div className="formGrid">
-                <div className="field full">
-                  <label className="label">Título do roteiro</label>
-                  <input
-                    className="input"
-                    value={titulo}
-                    onChange={(event) => setTitulo(event.target.value)}
-                    placeholder="Ex.: Trilha ao nascer do sol"
-                    maxLength={120}
-                  />
-                </div>
+            <div className="fieldsGrid">
+              <label className="field full">
+                <span>Título do roteiro *</span>
+                <input
+                  value={titulo}
+                  onChange={(event) => setTitulo(event.target.value)}
+                  placeholder="Ex.: Rapel Pedra do Elefante"
+                  maxLength={90}
+                />
+              </label>
 
-                <div className="field full">
-                  <label className="label">Descrição</label>
-                  <textarea
-                    className="textarea"
-                    value={descricao}
-                    onChange={(event) => setDescricao(event.target.value)}
-                    placeholder="Conte o que torna essa experiência especial, o que está incluso e o que o aventureiro precisa saber."
-                  />
-                </div>
+              <label className="field full">
+                <span>Descrição curta *</span>
+                <textarea
+                  value={descricao}
+                  onChange={(event) => setDescricao(event.target.value)}
+                  placeholder="Resumo atrativo para o aventureiro entender a experiência."
+                  maxLength={420}
+                />
+              </label>
 
-                <div className="field full">
-                  <label className="label">Local / ponto de encontro</label>
-                  <input
-                    className="input"
-                    value={local}
-                    onChange={(event) => setLocal(event.target.value)}
-                    placeholder="Ex.: Estacionamento principal do parque"
-                  />
-                  <div className="helper">
-                    Campo simples para escrever o local como o guia deseja informar.
-                  </div>
-                </div>
+              <label className="field">
+                <span>Local principal *</span>
+                <input
+                  value={local}
+                  onChange={(event) => setLocal(event.target.value)}
+                  placeholder="Cidade, bairro, ponto de encontro..."
+                />
+              </label>
 
-                <div className="field">
-                  <label className="label">Data</label>
-                  <input
-                    className="input"
-                    type="date"
-                    value={dataRoteiro}
-                    onChange={(event) => setDataRoteiro(event.target.value)}
-                  />
-                </div>
+              <label className="field">
+                <span>Data *</span>
+                <input
+                  type="date"
+                  value={dataRoteiro}
+                  onChange={(event) => setDataRoteiro(event.target.value)}
+                />
+              </label>
 
-                <div className="field">
-                  <label className="label">Hora</label>
-                  <input
-                    className="input"
-                    type="time"
-                    value={horaRoteiro}
-                    onChange={(event) => setHoraRoteiro(event.target.value)}
-                  />
-                </div>
+              <label className="field">
+                <span>Hora *</span>
+                <input
+                  type="time"
+                  value={horaRoteiro}
+                  onChange={(event) => setHoraRoteiro(event.target.value)}
+                />
+              </label>
 
-                <div className="field">
-                  <label className="label">Valor por pessoa</label>
-                  <input
-                    className="input"
-                    value={preco}
-                    onChange={(event) => setPreco(event.target.value)}
-                    placeholder="Ex.: 120"
-                    inputMode="decimal"
-                  />
-                </div>
+              <label className="field">
+                <span>Valor por pessoa *</span>
+                <input
+                  value={preco}
+                  onChange={(event) => setPreco(event.target.value)}
+                  placeholder="Ex.: 120,00"
+                  inputMode="decimal"
+                />
+              </label>
 
-                <div className="field">
-                  <label className="label">Duração em horas</label>
-                  <input
-                    className="input"
-                    value={duracaoHoras}
-                    onChange={(event) => setDuracaoHoras(event.target.value)}
-                    placeholder="Ex.: 4"
-                    inputMode="numeric"
-                  />
-                </div>
+              <label className="field">
+                <span>Distância em km</span>
+                <input
+                  value={km}
+                  onChange={(event) => setKm(event.target.value)}
+                  placeholder="Ex.: 8"
+                  inputMode="decimal"
+                />
+              </label>
 
-                <div className="field">
-                  <label className="label">Distância em km</label>
-                  <input
-                    className="input"
-                    value={km}
-                    onChange={(event) => setKm(event.target.value)}
-                    placeholder="Ex.: 8"
-                    inputMode="decimal"
-                  />
-                </div>
+              <label className="field">
+                <span>Duração</span>
+                <input
+                  value={duracao}
+                  onChange={(event) => setDuracao(event.target.value)}
+                  placeholder="Ex.: 4h, 1 dia, fim de semana"
+                />
+              </label>
 
-                <div className="field">
-                  <label className="label">Limite de pessoas</label>
-                  <input
-                    className="input"
-                    value={limitePessoas}
-                    onChange={(event) => setLimitePessoas(event.target.value)}
-                    placeholder="Ex.: 10"
-                    inputMode="numeric"
-                  />
-                </div>
+              <label className="field">
+                <span>Limite de pessoas</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={limitePessoas}
+                  onChange={(event) => setLimitePessoas(event.target.value)}
+                />
+              </label>
 
-                <div className="field full">
-                  <label className="label">Recorrência</label>
-                  <select
-                    className="select"
-                    value={recorrencia}
-                    onChange={(event) => setRecorrencia(normalizarRecorrencia(event.target.value))}
-                  >
-                    {RECORRENCIAS.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="helper">
-                    O banco aceita apenas: única, semanal, mensal ou anual.
-                  </div>
-                </div>
-
-                <div className="field full">
-                  <label className="label">Dificuldade</label>
-
-                  <div className="difficultyGrid">
-                    {DIFICULDADES.map((item) => (
-                      <button
-                        type="button"
-                        key={item.value}
-                        className={`difficultyCard ${dificuldade === item.value ? 'active' : ''}`}
-                        onClick={() => setDificuldade(item.value)}
-                      >
-                        <div className="difficultyTitle">{item.label}</div>
-                        <div className="difficultyText">{item.descricao}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="field full">
-                  <label className="label">Foto do roteiro</label>
-
-                  <div className="photoBox">
-                    {fotoPreview ? (
-                      <img src={fotoPreview} alt="Prévia do roteiro" />
-                    ) : (
-                      <div className="photoEmpty">
-                        <div className="photoIcon">🌄</div>
-                        Envie uma foto bonita do roteiro. Ela será usada nos cards e na vitrine da experiência.
-                        <br />
-                        <label className="photoButton">
-                          Escolher foto
-                          <input
-                            className="fileInput"
-                            type="file"
-                            accept="image/*"
-                            onChange={handleFotoChange}
-                          />
-                        </label>
-                      </div>
-                    )}
-                  </div>
-
-                  {fotoPreview && (
-                    <label className="photoButton">
-                      Trocar foto
-                      <input
-                        className="fileInput"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFotoChange}
-                      />
-                    </label>
-                  )}
-                </div>
-              </div>
-
-              <div className="actions">
-                <button
-                  type="submit"
-                  className="btn primary"
-                  disabled={salvando}
+              <label className="field">
+                <span>Recorrência</span>
+                <select
+                  value={recorrencia}
+                  onChange={(event) => setRecorrencia(event.target.value as RecorrenciaValue)}
                 >
-                  {salvando ? 'Criando roteiro...' : 'Criar roteiro'}
-                </button>
+                  {RECORRENCIAS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
 
+          <aside className="card imageCard">
+            <div className="cardHeader">
+              <span>02</span>
+              <div>
+                <h2>Foto de capa</h2>
+                <p>A imagem será usada nos cards, detalhes e compartilhamentos.</p>
+              </div>
+            </div>
+
+            <div
+              className={`uploadPreview ${imagemPreview ? 'hasImage' : ''}`}
+              onClick={() => fileInputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') fileInputRef.current?.click()
+              }}
+            >
+              {imagemPreview ? (
+                <img src={imagemPreview} alt="Prévia do roteiro" />
+              ) : (
+                <div>
+                  <strong>Selecionar foto</strong>
+                  <small>Preview em 4:3, o mesmo padrão dos cards públicos.</small>
+                </div>
+              )}
+            </div>
+
+            <input
+              ref={fileInputRef}
+              className="fileInput"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleImagemChange}
+            />
+
+            <div className="imageHelp">
+              <strong>Imagem recomendada:</strong>
+              <span>1200 x 900 px · formato horizontal · boa iluminação · ponto principal centralizado.</span>
+              <span>O sistema fará corte central em 4:3 e salvará a foto compactada em WebP.</span>
+            </div>
+
+            {imagemInfo && (
+              <div className="imageInfo">
+                <strong>{imagemInfo.nome}</strong>
+                <span>{imagemInfo.width} x {imagemInfo.height} px</span>
+                {imagemInfo.aviso && <em>{imagemInfo.aviso}</em>}
+              </div>
+            )}
+
+            {imagemPreview && (
+              <button
+                type="button"
+                className="lightButton"
+                onClick={limparImagem}
+                disabled={salvando}
+              >
+                Trocar imagem
+              </button>
+            )}
+          </aside>
+
+          <section className="card fullWidth">
+            <div className="cardHeader">
+              <span>03</span>
+              <div>
+                <h2>Nível e roteiro detalhado</h2>
+                <p>Ajude o aventureiro a entender preparo, percurso e itens importantes.</p>
+              </div>
+            </div>
+
+            <div className="difficultyGrid">
+              {DIFICULDADES.map((item) => (
                 <button
                   type="button"
-                  className="btn secondary"
-                  disabled={salvando}
-                  onClick={() => router.push('/guia/roteiros')}
+                  key={item.value}
+                  className={`difficulty ${dificuldade === item.value ? 'active' : ''}`}
+                  onClick={() => setDificuldade(item.value)}
                 >
-                  Cancelar
+                  <strong>{item.label}</strong>
+                  <span>{item.descricao}</span>
                 </button>
-              </div>
+              ))}
             </div>
-          </form>
 
-          <aside>
-            <section className="summaryCard">
-              <div className="summaryLabel">Prévia do roteiro</div>
+            <div className="fieldsGrid lowerFields">
+              <label className="field full">
+                <span>Roteiro detalhado</span>
+                <textarea
+                  className="large"
+                  value={roteiroDetalhado}
+                  onChange={(event) => setRoteiroDetalhado(event.target.value)}
+                  placeholder="Descreva como a aventura deve acontecer: encontro, acesso, percurso, paradas, cuidados, retorno..."
+                />
+              </label>
 
-              <div className="summaryTitle">
-                {titulo || 'Novo roteiro'}
-              </div>
+              <label className="field">
+                <span>Inclui</span>
+                <textarea
+                  value={inclui}
+                  onChange={(event) => setInclui(event.target.value)}
+                  placeholder="Um item por linha: guia, equipamentos, seguro..."
+                />
+              </label>
 
-              <div className="summaryText">
-                {descricao
-                  ? descricao.slice(0, 150) + (descricao.length > 150 ? '...' : '')
-                  : 'A descrição aparecerá aqui conforme você preenche.'}
-              </div>
+              <label className="field">
+                <span>Não inclui</span>
+                <textarea
+                  value={naoInclui}
+                  onChange={(event) => setNaoInclui(event.target.value)}
+                  placeholder="Transporte, alimentação, estacionamento..."
+                />
+              </label>
 
-              <div className="summaryRows">
-                <div className="summaryRow">
-                  <span>Local</span>
-                  <strong>{local || '-'}</strong>
-                </div>
+              <label className="field full">
+                <span>Orientações ao aventureiro</span>
+                <textarea
+                  value={orientacoes}
+                  onChange={(event) => setOrientacoes(event.target.value)}
+                  placeholder="O que levar, preparo físico, roupa recomendada, clima, documentos, restrições..."
+                />
+              </label>
+            </div>
+          </section>
 
-                <div className="summaryRow">
-                  <span>Data</span>
-                  <strong>{dataRoteiro || '-'}</strong>
-                </div>
+          <section className="submitBar">
+            <div>
+              <strong>Enviar para aprovação</strong>
+              <span>O roteiro ficará pendente até o Admin revisar e publicar.</span>
+            </div>
 
-                <div className="summaryRow">
-                  <span>Hora</span>
-                  <strong>{horaRoteiro || '-'}</strong>
-                </div>
+            <div className="submitActions">
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => router.push('/guia/roteiros')}
+                disabled={salvando}
+              >
+                Cancelar
+              </button>
 
-                <div className="summaryRow">
-                  <span>Valor</span>
-                  <strong>
-                    {preco
-                      ? new Intl.NumberFormat('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL'
-                        }).format(normalizarNumero(preco, 0))
-                      : '-'}
-                  </strong>
-                </div>
-
-                <div className="summaryRow">
-                  <span>Duração</span>
-                  <strong>{duracaoHoras || '1'}h</strong>
-                </div>
-
-                <div className="summaryRow">
-                  <span>Dificuldade</span>
-                  <strong>
-                    {DIFICULDADES.find((item) => item.value === dificuldade)?.label || 'Fácil'}
-                  </strong>
-                </div>
-
-                <div className="summaryRow">
-                  <span>Recorrência</span>
-                  <strong>{labelRecorrencia(recorrencia)}</strong>
-                </div>
-              </div>
-            </section>
-
-            <section className="infoCard">
-              <div className="infoTitle">Grupo criado automaticamente</div>
-              <div className="infoText">
-                Ao salvar o roteiro, o sistema cria um grupo interno para essa experiência
-                e adiciona você como administrador. Os clientes só entram depois que o pagamento
-                da reserva for confirmado pelo sistema.
-              </div>
-            </section>
-
-            <section className="infoCard" style={{ marginTop: 16 }}>
-              <div className="infoTitle">Status inicial</div>
-              <div className="infoText">
-                O roteiro será criado como pendente para controle do app. Depois ele poderá ser
-                aprovado/ativado no fluxo administrativo, conforme a estrutura atual do PrussikTrails.
-              </div>
-            </section>
-          </aside>
-        </section>
+              <button
+                type="submit"
+                className="primaryButton"
+                disabled={!podeSalvar}
+              >
+                {salvando ? 'Salvando...' : preparandoImagem ? 'Preparando imagem...' : 'Criar roteiro'}
+              </button>
+            </div>
+          </section>
+        </form>
       </div>
     </main>
   )
 }
+
+const styles = `
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: #f6f7f1;
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+  }
+
+  .page {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
+      radial-gradient(circle at 92% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
+      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
+    color: #172018;
+    padding-bottom: 54px;
+  }
+
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    min-height: 76px;
+    padding: 8px 18px;
+    background: rgba(255, 253, 247, 0.90);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(18px);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .brand {
+    width: fit-content;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+  }
+
+  .brand img {
+    width: 122px;
+    height: 54px;
+    object-fit: contain;
+    display: block;
+  }
+
+  .brand span {
+    color: #7b8372;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .profileButton {
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.78);
+    color: #172018;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    cursor: pointer;
+    font-weight: 950;
+  }
+
+  .profileButton img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .container {
+    width: min(1180px, calc(100% - 28px));
+    margin: 0 auto;
+    padding-top: 22px;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 18px;
+    align-items: stretch;
+    margin-bottom: 16px;
+  }
+
+  .hero > div:first-child {
+    border-radius: 34px;
+    padding: clamp(22px, 4vw, 38px);
+    background:
+      linear-gradient(135deg, rgba(32, 60, 46, 0.96), rgba(32, 60, 46, 0.70)),
+      radial-gradient(circle at top right, rgba(190, 242, 100, 0.25), transparent 35%);
+    color: #fffdf7;
+    box-shadow: 0 22px 58px rgba(32, 60, 46, 0.18);
+  }
+
+  .eyebrow {
+    margin: 0 0 12px;
+    color: #d9f99d;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+  }
+
+  .hero h1 {
+    margin: 0;
+    font-size: clamp(42px, 6vw, 72px);
+    line-height: 0.92;
+    letter-spacing: -0.08em;
+    font-weight: 950;
+  }
+
+  .hero p {
+    max-width: 720px;
+    margin: 16px 0 0;
+    color: rgba(255, 253, 247, 0.78);
+    font-size: 15px;
+    line-height: 1.55;
+    font-weight: 750;
+  }
+
+  .heroTip {
+    border-radius: 34px;
+    padding: 22px;
+    background: rgba(255, 253, 247, 0.84);
+    border: 1px solid rgba(32, 60, 46, 0.08);
+    box-shadow: 0 18px 44px rgba(32, 60, 46, 0.08);
+    display: grid;
+    align-content: center;
+    gap: 8px;
+  }
+
+  .heroTip strong {
+    color: #203c2e;
+    font-size: 20px;
+    font-weight: 950;
+    letter-spacing: -0.04em;
+  }
+
+  .heroTip span {
+    color: rgba(23, 32, 24, 0.66);
+    font-size: 13px;
+    line-height: 1.55;
+    font-weight: 800;
+  }
+
+  .alert {
+    border-radius: 18px;
+    padding: 13px 15px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    font-weight: 850;
+    line-height: 1.45;
+  }
+
+  .alert.error {
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+
+  .alert.success {
+    background: #ecfdf5;
+    border: 1px solid #bbf7d0;
+    color: #166534;
+  }
+
+  .formGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 390px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .card {
+    border-radius: 30px;
+    background: rgba(255, 253, 247, 0.88);
+    border: 1px solid rgba(32, 60, 46, 0.08);
+    box-shadow: 0 16px 42px rgba(32, 60, 46, 0.07);
+    padding: 20px;
+    min-width: 0;
+  }
+
+  .mainCard {
+    grid-column: 1;
+  }
+
+  .imageCard {
+    grid-column: 2;
+    position: sticky;
+    top: 96px;
+  }
+
+  .fullWidth {
+    grid-column: 1 / -1;
+  }
+
+  .cardHeader {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .cardHeader > span {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+    background: rgba(153, 27, 27, 0.10);
+    color: #991b1b;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    font-weight: 950;
+    flex: 0 0 auto;
+  }
+
+  .cardHeader h2 {
+    margin: 0;
+    color: #172018;
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: -0.045em;
+    font-weight: 950;
+  }
+
+  .cardHeader p {
+    margin: 6px 0 0;
+    color: rgba(23, 32, 24, 0.58);
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 750;
+  }
+
+  .fieldsGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .lowerFields {
+    margin-top: 16px;
+  }
+
+  .field {
+    display: grid;
+    gap: 7px;
+  }
+
+  .field.full {
+    grid-column: 1 / -1;
+  }
+
+  .field span {
+    color: #475569;
+    font-size: 11px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  input,
+  textarea,
+  select {
+    width: 100%;
+    border: 1px solid rgba(32, 60, 46, 0.10);
+    background: rgba(255, 255, 255, 0.74);
+    color: #172018;
+    border-radius: 18px;
+    padding: 13px 14px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 750;
+    outline: none;
+  }
+
+  textarea {
+    min-height: 112px;
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  textarea.large {
+    min-height: 170px;
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    border-color: rgba(132, 204, 22, 0.55);
+    box-shadow: 0 0 0 4px rgba(132, 204, 22, 0.13);
+  }
+
+  .uploadPreview {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    border-radius: 26px;
+    border: 1px dashed rgba(32, 60, 46, 0.22);
+    background:
+      radial-gradient(circle at 50% 0%, rgba(132, 204, 22, 0.12), transparent 38%),
+      #eef2e5;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    cursor: pointer;
+    text-align: center;
+    color: #203c2e;
+    transition: 0.2s ease;
+  }
+
+  .uploadPreview:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 30px rgba(32, 60, 46, 0.10);
+  }
+
+  .uploadPreview.hasImage {
+    border-style: solid;
+    border-color: rgba(32, 60, 46, 0.10);
+  }
+
+  .uploadPreview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+  }
+
+  .uploadPreview strong {
+    display: block;
+    font-size: 18px;
+    font-weight: 950;
+  }
+
+  .uploadPreview small {
+    display: block;
+    max-width: 240px;
+    margin: 7px auto 0;
+    color: rgba(23, 32, 24, 0.58);
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 750;
+  }
+
+  .fileInput {
+    display: none;
+  }
+
+  .imageHelp,
+  .imageInfo {
+    margin-top: 12px;
+    border-radius: 20px;
+    padding: 13px;
+    background: rgba(32, 60, 46, 0.05);
+    display: grid;
+    gap: 5px;
+  }
+
+  .imageHelp strong,
+  .imageInfo strong {
+    color: #203c2e;
+    font-size: 12px;
+    font-weight: 950;
+  }
+
+  .imageHelp span,
+  .imageInfo span {
+    color: rgba(23, 32, 24, 0.62);
+    font-size: 12px;
+    line-height: 1.42;
+    font-weight: 750;
+  }
+
+  .imageInfo em {
+    color: #92400e;
+    background: #fef3c7;
+    border-radius: 14px;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.35;
+    font-style: normal;
+    font-weight: 850;
+  }
+
+  .difficultyGrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .difficulty {
+    border: 1px solid rgba(32, 60, 46, 0.10);
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.68);
+    padding: 14px;
+    color: #172018;
+    text-align: left;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+
+  .difficulty:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(32, 60, 46, 0.08);
+  }
+
+  .difficulty.active {
+    background: #203c2e;
+    color: #fffdf7;
+    border-color: #203c2e;
+  }
+
+  .difficulty strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 950;
+  }
+
+  .difficulty span {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 750;
+    color: rgba(23, 32, 24, 0.62);
+  }
+
+  .difficulty.active span {
+    color: rgba(255, 253, 247, 0.74);
+  }
+
+  .submitBar {
+    grid-column: 1 / -1;
+    border-radius: 26px;
+    background: rgba(23, 32, 24, 0.94);
+    color: #fffdf7;
+    padding: 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 22px 58px rgba(23, 32, 24, 0.18);
+  }
+
+  .submitBar strong {
+    display: block;
+    font-size: 17px;
+    font-weight: 950;
+  }
+
+  .submitBar span {
+    display: block;
+    margin-top: 4px;
+    color: rgba(255, 253, 247, 0.70);
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 750;
+  }
+
+  .submitActions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .primaryButton,
+  .secondaryButton,
+  .lightButton {
+    border: none;
+    border-radius: 999px;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
+    transition: 0.18s ease;
+    white-space: nowrap;
+  }
+
+  .primaryButton {
+    background: #bef264;
+    color: #172018;
+  }
+
+  .primaryButton:disabled {
+    opacity: 0.52;
+    cursor: not-allowed;
+  }
+
+  .secondaryButton {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fffdf7;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .lightButton {
+    width: 100%;
+    margin-top: 12px;
+    background: #fffdf7;
+    color: #203c2e;
+    border: 1px solid rgba(32, 60, 46, 0.12);
+  }
+
+  .primaryButton:hover:not(:disabled),
+  .secondaryButton:hover:not(:disabled),
+  .lightButton:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .loadingCard {
+    width: min(420px, calc(100% - 32px));
+    margin: 80px auto;
+    border-radius: 30px;
+    background: rgba(255, 253, 247, 0.90);
+    border: 1px solid rgba(32, 60, 46, 0.08);
+    box-shadow: 0 18px 48px rgba(32, 60, 46, 0.10);
+    padding: 28px;
+    text-align: center;
+    color: #203c2e;
+    font-weight: 850;
+  }
+
+  .loadingCard img {
+    width: 150px;
+    height: auto;
+    object-fit: contain;
+  }
+
+  @media (max-width: 980px) {
+    .hero,
+    .formGrid {
+      grid-template-columns: 1fr;
+    }
+
+    .imageCard {
+      grid-column: 1;
+      position: static;
+    }
+  }
+
+  @media (max-width: 700px) {
+    .header {
+      min-height: 66px;
+      padding: 7px 12px;
+    }
+
+    .brand {
+      gap: 8px;
+    }
+
+    .brand img {
+      width: 96px;
+      height: 44px;
+    }
+
+    .brand span {
+      font-size: 8px;
+      letter-spacing: 0.08em;
+    }
+
+    .profileButton {
+      width: 36px;
+      height: 36px;
+    }
+
+    .container {
+      width: min(100% - 20px, 1180px);
+      padding-top: 14px;
+    }
+
+    .hero > div:first-child,
+    .heroTip,
+    .card {
+      border-radius: 24px;
+    }
+
+    .hero > div:first-child {
+      padding: 22px;
+    }
+
+    .hero h1 {
+      font-size: 40px;
+    }
+
+    .fieldsGrid,
+    .difficultyGrid {
+      grid-template-columns: 1fr;
+    }
+
+    .submitBar {
+      border-radius: 22px;
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .submitActions {
+      display: grid;
+      width: 100%;
+    }
+
+    .primaryButton,
+    .secondaryButton {
+      width: 100%;
+    }
+  }
+`
