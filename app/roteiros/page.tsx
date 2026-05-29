@@ -434,6 +434,7 @@ export default function RoteirosPage() {
   const [filtroNivel, setFiltroNivel] = useState('todos')
   const [filtroOrdenacao, setFiltroOrdenacao] = useState<'recentes' | 'data' | 'preco' | 'km'>('recentes')
   const [copiadoId, setCopiadoId] = useState('')
+  const [destaqueIndex, setDestaqueIndex] = useState(0)
 
   useEffect(() => {
     const salvo = localStorage.getItem('user')
@@ -670,7 +671,47 @@ ${link}`
     return lista
   }, [busca, filtroNivel, filtroOrdenacao, guias, roteiros])
 
-  const destaque = roteirosFiltrados[0] || roteiros[0] || null
+  const roteirosQuentes = useMemo(() => {
+    const base = roteirosFiltrados.length > 0 ? roteirosFiltrados : roteiros
+
+    return [...base]
+      .sort((a, b) => {
+        const fotoA = fotoRoteiro(a) ? 1 : 0
+        const fotoB = fotoRoteiro(b) ? 1 : 0
+
+        if (fotoA !== fotoB) return fotoB - fotoA
+
+        const updatedA = new Date(String(a.updated_at || a.created_at || '')).getTime()
+        const updatedB = new Date(String(b.updated_at || b.created_at || '')).getTime()
+
+        const aValido = Number.isFinite(updatedA) ? updatedA : 0
+        const bValido = Number.isFinite(updatedB) ? updatedB : 0
+
+        return bValido - aValido
+      })
+      .slice(0, 6)
+  }, [roteiros, roteirosFiltrados])
+
+  useEffect(() => {
+    setDestaqueIndex(0)
+  }, [busca, filtroNivel, filtroOrdenacao, roteiros.length])
+
+  useEffect(() => {
+    if (roteirosQuentes.length <= 1) return
+
+    const intervalId = window.setInterval(() => {
+      setDestaqueIndex((atual) => (atual + 1) % roteirosQuentes.length)
+    }, 5200)
+
+    return () => window.clearInterval(intervalId)
+  }, [roteirosQuentes.length])
+
+  const destaque = roteirosQuentes[destaqueIndex % Math.max(roteirosQuentes.length, 1)] || null
+
+  function irParaProximoDestaque() {
+    if (roteirosQuentes.length <= 1) return
+    setDestaqueIndex((atual) => (atual + 1) % roteirosQuentes.length)
+  }
 
   return (
     <main className="page">
@@ -728,24 +769,13 @@ ${link}`
           <p className="eyebrow">Explore com guias cadastrados</p>
           <h1>Roteiros outdoor para sua próxima jornada.</h1>
           <p>
-            Encontre experiências publicadas por guias e agências, veja detalhes,
-            tire dúvidas e reserve pelo PrussikTrails quando o roteiro estiver disponível.
+            Encontre experiências publicadas por guias e agências, descubra novas paisagens,
+            tire dúvidas com quem conduz a aventura e escolha sua próxima saída com mais segurança.
           </p>
 
-          <div className="heroStats">
-            <div>
-              <strong>{roteiros.length}</strong>
-              <span>roteiro(s) disponível(is)</span>
-            </div>
-            <div>
-              <strong>{niveisDisponiveis.length || '—'}</strong>
-              <span>níveis de experiência</span>
-            </div>
-            <div>
-              <strong>PIX</strong>
-              <span>pagamento organizado pelo app</span>
-            </div>
-          </div>
+          <p className="heroSignature">
+            Para o aventureiro, tranquilidade para reservar. Para o guia, uma vitrine funcional para divulgar roteiros e organizar a jornada.
+          </p>
         </div>
 
         <div className="heroCard">
@@ -762,13 +792,40 @@ ${link}`
               </div>
 
               <div className="heroCardBody">
-                <span className="hotTag">Roteiro em destaque</span>
+                <span className="hotTag">Roteiros mais quentes</span>
                 <h2>{tituloRoteiro(destaque)}</h2>
                 <p>{localRoteiro(destaque)}</p>
 
-                <button type="button" onClick={() => abrirRoteiro(destaque.id)}>
-                  Ver roteiro
-                </button>
+                <div className="heroCardMeta">
+                  <span>{labelDificuldade(destaque.dificuldade || destaque.nivel || destaque.intensidade)}</span>
+                  <span>{formatarMoeda(precoRoteiro(destaque))}</span>
+                </div>
+
+                <div className="heroCardActions">
+                  <button type="button" onClick={() => abrirRoteiro(destaque.id)}>
+                    Ver roteiro
+                  </button>
+
+                  {roteirosQuentes.length > 1 && (
+                    <button type="button" className="ghostHeroButton" onClick={irParaProximoDestaque}>
+                      Próximo
+                    </button>
+                  )}
+                </div>
+
+                {roteirosQuentes.length > 1 && (
+                  <div className="heroDots" aria-label="Roteiros em destaque">
+                    {roteirosQuentes.map((roteiro, index) => (
+                      <button
+                        key={roteiro.id}
+                        type="button"
+                        className={index === destaqueIndex % roteirosQuentes.length ? 'active' : ''}
+                        onClick={() => setDestaqueIndex(index)}
+                        aria-label={`Ver roteiro em destaque ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -1108,8 +1165,14 @@ const styles = `
   }
 
   .heroText {
+    position: relative;
+    overflow: hidden;
     border-radius: 36px;
-    padding: clamp(28px, 5vw, 54px);
+    padding: clamp(30px, 5vw, 58px);
+    background:
+      radial-gradient(circle at 8% 0%, rgba(132, 204, 22, 0.18), transparent 34%),
+      radial-gradient(circle at 92% 8%, rgba(251, 146, 60, 0.18), transparent 34%),
+      linear-gradient(135deg, #fffdf7 0%, #f5f0df 46%, #edf3e2 100%);
   }
 
   .eyebrow {
@@ -1140,35 +1203,15 @@ const styles = `
     font-weight: 700;
   }
 
-  .heroStats {
-    margin-top: 28px;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .heroStats div {
-    border-radius: 22px;
-    background: rgba(32, 60, 46, 0.055);
-    padding: 15px;
-  }
-
-  .heroStats strong {
-    display: block;
-    color: #203c2e;
-    font-size: 28px;
-    line-height: 1;
-    letter-spacing: -0.055em;
-    font-weight: 950;
-  }
-
-  .heroStats span {
-    display: block;
-    margin-top: 7px;
-    color: rgba(23, 32, 24, 0.58);
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 850;
+  .heroSignature {
+    margin-top: 16px !important;
+    max-width: 720px !important;
+    border-left: 4px solid rgba(153, 27, 27, 0.38);
+    padding: 10px 0 10px 14px;
+    color: rgba(32, 60, 46, 0.78) !important;
+    font-size: 14px !important;
+    line-height: 1.55 !important;
+    font-weight: 850 !important;
   }
 
   .heroCard {
@@ -1244,6 +1287,52 @@ const styles = `
     font-weight: 800;
   }
 
+  .heroCardMeta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .heroCardMeta span {
+    border-radius: 999px;
+    background: rgba(32, 60, 46, 0.055);
+    color: #203c2e;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-weight: 950;
+  }
+
+  .heroCardActions {
+    display: flex;
+    gap: 9px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 16px;
+  }
+
+  .heroDots {
+    display: flex;
+    gap: 6px;
+    margin-top: 14px;
+  }
+
+  .heroDots button {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    border-radius: 999px;
+    border: none;
+    padding: 0;
+    background: rgba(32, 60, 46, 0.22);
+    cursor: pointer;
+  }
+
+  .heroDots button.active {
+    width: 22px;
+    background: #203c2e;
+  }
+
   .heroCardBody button,
   .emptyCard button,
   .refreshBtn,
@@ -1257,11 +1346,32 @@ const styles = `
   }
 
   .heroCardBody button {
-    margin-top: 16px;
     background: #203c2e;
     color: #fffdf7;
     padding: 12px 16px;
     font-size: 13px;
+  }
+
+  .heroCardBody button.ghostHeroButton {
+    background: rgba(255, 253, 247, 0.92);
+    color: #203c2e;
+    border: 1px solid rgba(32, 60, 46, 0.14);
+  }
+
+  .heroCardBody .heroDots button {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    border-radius: 999px;
+    border: none;
+    padding: 0;
+    background: rgba(32, 60, 46, 0.22);
+    box-shadow: none;
+  }
+
+  .heroCardBody .heroDots button.active {
+    width: 22px;
+    background: #203c2e;
   }
 
   .heroEmpty {
@@ -1732,11 +1842,6 @@ const styles = `
     .heroText p {
       font-size: 14px;
       line-height: 1.5;
-    }
-
-    .heroStats {
-      grid-template-columns: 1fr;
-      gap: 8px;
     }
 
     .heroCard {
