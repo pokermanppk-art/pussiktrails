@@ -716,46 +716,67 @@ export default function PerfilGuiaPage() {
 
     try {
       const cadasturLimpo = cadastur.trim()
-      const statusAtual = normalizar(guia?.cadastur_status)
-      const jaVerificado = Boolean(
-        guia?.cadastur_verificado ||
-          guia?.guia_verificado_cadastur ||
-          statusAtual === 'verificado' ||
-          statusAtual === 'ativo'
-      )
 
-      const atualizado = await atualizarUsuarioComFallback(user.id, {
-        pix_tipo: pixTipo || null,
-        pix_chave: pixChave || null,
-
-        cadastur: cadasturLimpo || null,
-        cadastur_numero: cadasturLimpo || null,
-        cadastur_status: cadasturLimpo
-          ? jaVerificado
-            ? guia?.cadastur_status || 'verificado'
-            : 'informado'
-          : null,
-        cadastur_informado_em: cadasturLimpo
-          ? guia?.cadastur_informado_em || new Date().toISOString()
-          : null,
-
-        updated_at: new Date().toISOString()
+      const response = await fetch('/api/guia/perfil/salvar-dados', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          guiaId: user.id,
+          pixTipo,
+          pix_tipo: pixTipo,
+          pixChave,
+          pix_chave: pixChave,
+          cadastur: cadasturLimpo,
+          cadasturNumero: cadasturLimpo,
+          cadastur_numero: cadasturLimpo
+        })
       })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(
+          data?.erro ||
+            data?.message ||
+            `Erro HTTP ${response.status} ao salvar dados do guia.`
+        )
+      }
+
+      const atualizado = data?.usuario || {}
 
       setGuia((prev: any) => ({
         ...prev,
-        ...(atualizado || {}),
-        pix_tipo: pixTipo,
-        pix_chave: pixChave,
-        cadastur: cadasturLimpo,
-        cadastur_numero: cadasturLimpo
+        ...atualizado,
+        pix_tipo: atualizado.pix_tipo ?? pixTipo,
+        pix_chave: atualizado.pix_chave ?? pixChave,
+        cadastur: atualizado.cadastur ?? cadasturLimpo,
+        cadastur_numero: atualizado.cadastur_numero ?? cadasturLimpo
       }))
+
+      setPixTipo(atualizado.pix_tipo ?? pixTipo)
+      setPixChave(atualizado.pix_chave ?? pixChave)
+      setCadastur(atualizado.cadastur || atualizado.cadastur_numero || cadasturLimpo)
+
+      const localUserAtualizado: UsuarioLocal = {
+        ...(user || {}),
+        ...(atualizado || {}),
+        id: user.id,
+        tipo: 'guia'
+      }
+
+      localStorage.setItem('user', JSON.stringify(localUserAtualizado))
+      setUser(localUserAtualizado)
 
       setMensagem(
         cadasturLimpo
           ? 'Dados do guia atualizados. O CADASTUR informado ficará aguardando conferência do Admin.'
           : 'Dados do guia atualizados com sucesso.'
       )
+
+      await carregarDados(user.id)
     } catch (error: any) {
       console.error('Erro ao salvar dados privados:', error)
       setErro(error?.message || 'Não foi possível salvar os dados do guia.')

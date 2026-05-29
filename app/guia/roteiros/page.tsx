@@ -178,6 +178,15 @@ function limiteRoteiro(roteiro: Roteiro) {
 function statusRoteiro(roteiro: Roteiro) {
   const status = normalizar(roteiro.status)
 
+  if (
+    status === 'excluido' ||
+    status === 'excluida' ||
+    status === 'removido' ||
+    status === 'removida' ||
+    status === 'arquivado' ||
+    status === 'arquivada'
+  ) return 'removido'
+
   if (status === 'cancelado' || status === 'cancelada') return 'cancelado'
   if (status === 'pausado' || status === 'pausada') return 'pausado'
   if (status === 'rascunho') return 'rascunho'
@@ -269,6 +278,7 @@ function labelRecorrencia(valor?: string | null) {
 
 function labelStatus(status: string) {
   if (status === 'ativo') return 'Ativo'
+  if (status === 'removido') return 'Removido'
   if (status === 'pausado') return 'Pausado'
   if (status === 'cancelado') return 'Cancelado'
   if (status === 'encerrado') return 'Encerrado'
@@ -393,6 +403,16 @@ export default function GuiaRoteirosPage() {
 
     const base = ((data || []) as Roteiro[]).filter((roteiro) => {
       const dono = guiaIdRoteiro(roteiro)
+      const status = statusRoteiro(roteiro)
+      const removido =
+        status === 'removido' ||
+        Boolean((roteiro as any).removido_em) ||
+        Boolean((roteiro as any).excluido_em) ||
+        Boolean((roteiro as any).removido_pelo_guia) ||
+        Boolean((roteiro as any).removido_pelo_admin)
+
+      if (removido) return false
+
       return dono ? dono === idGuia : false
     })
 

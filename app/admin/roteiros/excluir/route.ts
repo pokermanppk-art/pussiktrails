@@ -70,18 +70,6 @@ function extrairColunaInexistente(error: any) {
   return ''
 }
 
-function guiaIdDoRoteiro(roteiro: AnyRecord) {
-  return texto(
-    roteiro.id_guia ||
-      roteiro.guia_id ||
-      roteiro.user_id ||
-      roteiro.usuario_id ||
-      roteiro.id_user ||
-      roteiro.criador_id ||
-      roteiro.created_by
-  )
-}
-
 async function atualizarRoteiroComFallback(params: {
   supabase: any
   roteiroId: string
@@ -153,14 +141,14 @@ export async function POST(request: Request) {
     body = await request.json().catch(() => ({}))
 
     const roteiroId = texto(body.roteiroId || body.roteiro_id || body.id)
-    const guiaId = texto(body.guiaId || body.guia_id || body.userId || body.user_id)
+    const adminId = texto(body.adminId || body.admin_id || body.userId || body.user_id)
 
     if (!roteiroId) {
       return NextResponse.json({ sucesso: false, erro: 'ID do roteiro não informado.' }, { status: 400 })
     }
 
-    if (!guiaId) {
-      return NextResponse.json({ sucesso: false, erro: 'ID do guia não informado.' }, { status: 400 })
+    if (!adminId) {
+      return NextResponse.json({ sucesso: false, erro: 'ID do admin não informado.' }, { status: 400 })
     }
 
     const { data: roteiro, error: roteiroError } = await supabase
@@ -175,12 +163,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ sucesso: false, erro: 'Roteiro não encontrado.' }, { status: 404 })
     }
 
-    const dono = guiaIdDoRoteiro(roteiro)
-
-    if (dono && dono !== guiaId) {
-      return NextResponse.json({ sucesso: false, erro: 'Este roteiro não pertence ao guia informado.' }, { status: 403 })
-    }
-
     const { data: reservas, error: reservasError } = await supabase
       .from('reservas')
       .select('id, status, pagamento_status')
@@ -188,7 +170,7 @@ export async function POST(request: Request) {
       .limit(200)
 
     if (reservasError) {
-      console.warn('[guia/roteiros/excluir] Não foi possível checar reservas:', reservasError)
+      console.warn('[admin/roteiros/excluir] Não foi possível checar reservas:', reservasError)
     }
 
     const reservasAtivas = Array.isArray(reservas)
@@ -213,9 +195,9 @@ export async function POST(request: Request) {
       roteiroId,
       payloadBase: {
         ativo: false,
-        removido_pelo_guia: true,
-        removido_por_tipo: 'guia',
-        removido_por_id: guiaId,
+        removido_pelo_admin: true,
+        removido_por_tipo: 'admin',
+        removido_por_id: adminId,
         removido_em: new Date().toISOString(),
         excluido_em: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -224,11 +206,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       sucesso: true,
-      mensagem: 'Roteiro removido da lista do guia.',
+      mensagem: 'Roteiro removido pelo admin.',
       roteiro: atualizado,
     })
   } catch (error: any) {
-    console.error('Erro em POST /api/guia/roteiros/excluir:', {
+    console.error('Erro em POST /api/admin/roteiros/excluir:', {
       message: error?.message,
       code: error?.code,
       details: error?.details,
