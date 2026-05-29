@@ -20,6 +20,8 @@ type Roteiro = {
   titulo?: string | null
   nome?: string | null
   descricao?: string | null
+  roteiro_detalhado?: string | null
+  detalhes?: string | null
   preco?: number | string | null
   valor?: number | string | null
   duracao_horas?: number | string | null
@@ -28,6 +30,8 @@ type Roteiro = {
   dificuldade?: string | null
   localizacao?: string | null
   local?: string | null
+  local_encontro?: string | null
+  ponto_encontro?: string | null
   foto_capa?: string | null
   foto_url?: string | null
   imagem_url?: string | null
@@ -140,8 +144,23 @@ function tituloRoteiro(roteiro: Roteiro) {
   return String(roteiro.titulo || roteiro.nome || 'Roteiro sem título')
 }
 
+function descricaoRoteiro(roteiro: Roteiro) {
+  return String(
+    roteiro.descricao ||
+      roteiro.roteiro_detalhado ||
+      roteiro.detalhes ||
+      ''
+  )
+}
+
 function localRoteiro(roteiro: Roteiro) {
-  return String(roteiro.localizacao || roteiro.local || 'Local a confirmar')
+  return String(
+    roteiro.localizacao ||
+      roteiro.local ||
+      roteiro.local_encontro ||
+      roteiro.ponto_encontro ||
+      'Local a confirmar'
+  )
 }
 
 function fotoRoteiro(roteiro: Roteiro) {
@@ -259,6 +278,49 @@ function formatarData(valor?: string | null) {
   })
 }
 
+
+function valorParaInputData(valor?: string | null) {
+  if (!valor) return ''
+
+  const texto = String(valor).trim()
+  const matchData = texto.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (matchData?.[1]) return matchData[1]
+
+  const data = new Date(texto)
+  if (Number.isNaN(data.getTime())) return ''
+
+  const ano = data.getFullYear()
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
+
+  return `${ano}-${mes}-${dia}`
+}
+
+function valorParaInputHora(valor?: string | null) {
+  if (!valor) return ''
+
+  const texto = String(valor).trim()
+  const matchHora = texto.match(/T(\d{2}:\d{2})/) || texto.match(/\s(\d{2}:\d{2})/)
+  if (matchHora?.[1]) return matchHora[1]
+
+  const data = new Date(texto)
+  if (Number.isNaN(data.getTime())) return ''
+
+  return `${String(data.getHours()).padStart(2, '0')}:${String(data.getMinutes()).padStart(2, '0')}`
+}
+
+function numeroParaCampo(valor: unknown) {
+  const n = numero(valor)
+  if (!n) return ''
+  return String(n).replace('.', ',')
+}
+
+function numeroCampoParaApi(valor: string) {
+  const texto = String(valor || '').replace(/\./g, '').replace(',', '.').trim()
+  const n = Number(texto)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 function formatarMoeda(valor: unknown) {
   return numero(valor).toLocaleString('pt-BR', {
     style: 'currency',
@@ -308,6 +370,16 @@ export default function GuiaRoteirosPage() {
     MOTIVOS_CANCELAMENTO[0].descricao
   )
   const [observacaoGuia, setObservacaoGuia] = useState('')
+
+const [roteiroAtualizacao, setRoteiroAtualizacao] = useState<Roteiro | null>(null)
+const [atualizacaoTitulo, setAtualizacaoTitulo] = useState('')
+const [atualizacaoDescricao, setAtualizacaoDescricao] = useState('')
+const [atualizacaoData, setAtualizacaoData] = useState('')
+const [atualizacaoHora, setAtualizacaoHora] = useState('')
+const [atualizacaoLocal, setAtualizacaoLocal] = useState('')
+const [atualizacaoPreco, setAtualizacaoPreco] = useState('')
+const [atualizacaoObservacao, setAtualizacaoObservacao] = useState('')
+const [enviandoAtualizacao, setEnviandoAtualizacao] = useState(false)
 
   useEffect(() => {
     iniciar()
@@ -501,6 +573,80 @@ export default function GuiaRoteirosPage() {
       reservasPagas,
     }
   }, [roteiros])
+
+
+function abrirModalAtualizacao(roteiro: Roteiro) {
+  const dataBase = dataPrincipal(roteiro)
+
+  setRoteiroAtualizacao(roteiro)
+  setAtualizacaoTitulo(tituloRoteiro(roteiro))
+  setAtualizacaoDescricao(descricaoRoteiro(roteiro))
+  setAtualizacaoData(valorParaInputData(dataBase))
+  setAtualizacaoHora(valorParaInputHora(dataBase))
+  setAtualizacaoLocal(localRoteiro(roteiro) === 'Local a confirmar' ? '' : localRoteiro(roteiro))
+  setAtualizacaoPreco(numeroParaCampo(valorRoteiro(roteiro)))
+  setAtualizacaoObservacao('')
+  setErro('')
+  setMensagem('')
+}
+
+function fecharModalAtualizacao() {
+  if (enviandoAtualizacao) return
+
+  setRoteiroAtualizacao(null)
+  setAtualizacaoTitulo('')
+  setAtualizacaoDescricao('')
+  setAtualizacaoData('')
+  setAtualizacaoHora('')
+  setAtualizacaoLocal('')
+  setAtualizacaoPreco('')
+  setAtualizacaoObservacao('')
+}
+
+async function confirmarSolicitacaoAtualizacao() {
+  if (!roteiroAtualizacao?.id || !guiaId) return
+
+  if (!atualizacaoData.trim() && !atualizacaoTitulo.trim() && !atualizacaoDescricao.trim() && !atualizacaoLocal.trim() && !atualizacaoPreco.trim()) {
+    setErro('Informe ao menos uma alteração para enviar ao Admin.')
+    return
+  }
+
+  try {
+    setEnviandoAtualizacao(true)
+    setErro('')
+    setMensagem('')
+
+    const resposta = await fetch('/api/guia/roteiros/solicitar-atualizacao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roteiroId: roteiroAtualizacao.id,
+        guiaId,
+        titulo: atualizacaoTitulo.trim(),
+        descricao: atualizacaoDescricao.trim(),
+        data: atualizacaoData.trim(),
+        hora: atualizacaoHora.trim(),
+        local: atualizacaoLocal.trim(),
+        preco: numeroCampoParaApi(atualizacaoPreco),
+        observacao: atualizacaoObservacao.trim(),
+      }),
+    })
+
+    const json = await resposta.json().catch(() => null)
+
+    if (!resposta.ok || !json?.sucesso) {
+      throw new Error(json?.erro || json?.message || 'Não foi possível enviar a solicitação de atualização.')
+    }
+
+    setMensagem('Solicitação enviada para análise do Admin. O roteiro público só será alterado após aprovação.')
+    fecharModalAtualizacao()
+  } catch (error) {
+    console.error('Erro ao solicitar atualização:', error)
+    setErro(error instanceof Error ? error.message : 'Erro ao solicitar atualização.')
+  } finally {
+    setEnviandoAtualizacao(false)
+  }
+}
 
   function abrirModalCancelamento(roteiro: Roteiro) {
     setRoteiroCancelamento(roteiro)
@@ -1153,6 +1299,39 @@ export default function GuiaRoteirosPage() {
           line-height: 1.45;
         }
 
+
+.modalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+}
+
+.textareaTall {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.modalCompare {
+  margin-top: 14px;
+  border-radius: 18px;
+  background: rgba(32, 60, 46, 0.06);
+  border: 1px solid rgba(32, 60, 46, 0.10);
+  padding: 12px;
+  color: rgba(23, 32, 24, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 750;
+}
+
+.modalCompare strong {
+  color: #203c2e;
+}
+
         .modalActions {
           display: flex;
           justify-content: flex-end;
@@ -1260,6 +1439,11 @@ export default function GuiaRoteirosPage() {
             width: 100%;
           }
 
+.modalGrid {
+  grid-template-columns: 1fr;
+}
+
+
           .actions .btn {
             width: 100%;
             min-width: 0;
@@ -1275,7 +1459,40 @@ export default function GuiaRoteirosPage() {
             max-height: 90dvh;
           }
 
-          .modalActions {
+  
+.modalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+}
+
+.textareaTall {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.modalCompare {
+  margin-top: 14px;
+  border-radius: 18px;
+  background: rgba(32, 60, 46, 0.06);
+  border: 1px solid rgba(32, 60, 46, 0.10);
+  padding: 12px;
+  color: rgba(23, 32, 24, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 750;
+}
+
+.modalCompare strong {
+  color: #203c2e;
+}
+
+        .modalActions {
             display: grid;
             grid-template-columns: 1fr;
           }
@@ -1540,6 +1757,16 @@ export default function GuiaRoteirosPage() {
                           Editar
                         </button>
 
+                        {status !== 'cancelado' && status !== 'encerrado' && status !== 'removido' ? (
+                          <button
+                            type="button"
+                            className="btn btnLight"
+                            onClick={() => abrirModalAtualizacao(roteiro)}
+                          >
+                            Solicitar att
+                          </button>
+                        ) : null}
+
                         {podeCancelar ? (
                           <button
                             type="button"
@@ -1642,6 +1869,122 @@ export default function GuiaRoteirosPage() {
             </section>
           </div>
         )}
+
+        {roteiroAtualizacao && (
+  <div className="modalOverlay" role="dialog" aria-modal="true">
+    <section className="modal">
+      <h2 className="modalTitle">Solicitar atualização</h2>
+
+      <p className="modalSub">
+        Informe a mudança necessária em <strong>{tituloRoteiro(roteiroAtualizacao)}</strong>.
+        O Admin poderá revisar, ajustar e aplicar a nova data, horário, local, preço ou descrição.
+      </p>
+
+      <div className="modalNotice">
+        O roteiro público não muda imediatamente. A alteração entra como solicitação pendente e só será aplicada depois da aprovação administrativa.
+      </div>
+
+      <div className="modalCompare">
+        <strong>Dados atuais:</strong>
+        <br />
+        Data: {formatarData(dataPrincipal(roteiroAtualizacao))} · Local: {localRoteiro(roteiroAtualizacao)} · Valor: {formatarMoeda(valorRoteiro(roteiroAtualizacao))}
+      </div>
+
+      <div className="modalGrid">
+        <div className="field fieldFull">
+          <label className="label">Título sugerido</label>
+          <input
+            className="input"
+            value={atualizacaoTitulo}
+            onChange={(event) => setAtualizacaoTitulo(event.target.value)}
+            placeholder="Título do roteiro"
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Nova data</label>
+          <input
+            className="input"
+            type="date"
+            value={atualizacaoData}
+            onChange={(event) => setAtualizacaoData(event.target.value)}
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Novo horário</label>
+          <input
+            className="input"
+            type="time"
+            value={atualizacaoHora}
+            onChange={(event) => setAtualizacaoHora(event.target.value)}
+          />
+        </div>
+
+        <div className="field fieldFull">
+          <label className="label">Local de encontro / embarque</label>
+          <input
+            className="input"
+            value={atualizacaoLocal}
+            onChange={(event) => setAtualizacaoLocal(event.target.value)}
+            placeholder="Informe o novo local, se necessário"
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Preço sugerido</label>
+          <input
+            className="input"
+            value={atualizacaoPreco}
+            onChange={(event) => setAtualizacaoPreco(event.target.value)}
+            inputMode="decimal"
+            placeholder="Ex.: 120,00"
+          />
+        </div>
+
+        <div className="field fieldFull">
+          <label className="label">Descrição sugerida</label>
+          <textarea
+            className="textarea textareaTall"
+            value={atualizacaoDescricao}
+            onChange={(event) => setAtualizacaoDescricao(event.target.value)}
+            placeholder="Atualize o descritivo do roteiro, se necessário"
+          />
+        </div>
+
+        <div className="field fieldFull">
+          <label className="label">Observação para o Admin</label>
+          <textarea
+            className="textarea textareaTall"
+            value={atualizacaoObservacao}
+            onChange={(event) => setAtualizacaoObservacao(event.target.value)}
+            placeholder="Explique o motivo da atualização: clima, logística, ajuste de horário, mudança no ponto de encontro etc."
+          />
+        </div>
+      </div>
+
+      <div className="modalActions">
+        <button
+          type="button"
+          className="btn btnLight"
+          onClick={fecharModalAtualizacao}
+          disabled={enviandoAtualizacao}
+        >
+          Voltar
+        </button>
+
+        <button
+          type="button"
+          className="btn btnDark"
+          onClick={confirmarSolicitacaoAtualizacao}
+          disabled={enviandoAtualizacao}
+        >
+          {enviandoAtualizacao ? 'Enviando...' : 'Enviar para aprovação'}
+        </button>
+      </div>
+    </section>
+  </div>
+)}
       </div>
     </>
   )

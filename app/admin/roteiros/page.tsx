@@ -120,6 +120,41 @@ type Stats = {
   mediaAvaliacoes: number
 }
 
+
+
+type SolicitacaoAtualizacao = {
+  id: string
+  roteiro_id?: string | null
+  guia_id?: string | null
+  status?: string | null
+  tipo_solicitacao?: string | null
+  titulo_atual?: string | null
+  titulo_solicitado?: string | null
+  descricao_atual?: string | null
+  descricao_solicitada?: string | null
+  data_atual?: string | null
+  data_solicitada?: string | null
+  hora_atual?: string | null
+  hora_solicitada?: string | null
+  local_atual?: string | null
+  local_solicitado?: string | null
+  preco_atual?: number | null
+  preco_solicitado?: number | null
+  observacao_guia?: string | null
+  observacao_admin?: string | null
+  dados_atuais?: Record<string, any> | null
+  dados_solicitados?: Record<string, any> | null
+  guia_nome?: string | null
+  guia_avatar?: string | null
+  roteiro_titulo?: string | null
+  roteiro_foto?: string | null
+  roteiro_status?: string | null
+  roteiro_ativo?: boolean | null
+  created_at?: string | null
+  updated_at?: string | null
+  [key: string]: any
+}
+
 const statsInicial: Stats = {
   total: 0,
   ativos: 0,
@@ -164,6 +199,18 @@ export default function AdminRoteirosPage() {
   const [erro, setErro] = useState('')
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
 
+const [solicitacoesAtualizacao, setSolicitacoesAtualizacao] = useState<SolicitacaoAtualizacao[]>([])
+const [carregandoSolicitacoes, setCarregandoSolicitacoes] = useState(false)
+const [solicitacaoSelecionada, setSolicitacaoSelecionada] = useState<SolicitacaoAtualizacao | null>(null)
+const [analisandoSolicitacaoId, setAnalisandoSolicitacaoId] = useState('')
+const [tituloAprovacao, setTituloAprovacao] = useState('')
+const [descricaoAprovacao, setDescricaoAprovacao] = useState('')
+const [dataAprovacao, setDataAprovacao] = useState('')
+const [horaAprovacao, setHoraAprovacao] = useState('')
+const [localAprovacao, setLocalAprovacao] = useState('')
+const [precoAprovacao, setPrecoAprovacao] = useState('')
+const [observacaoAdminSolicitacao, setObservacaoAdminSolicitacao] = useState('')
+
   useEffect(() => {
     if (iniciouRef.current) return
 
@@ -193,6 +240,7 @@ export default function AdminRoteirosPage() {
 
       setUser(parsedUser)
       await carregarRoteiros()
+      await carregarSolicitacoesAtualizacao()
     } catch (error) {
       console.error('Erro ao iniciar roteiros admin:', error)
       setErro('Não foi possível carregar os roteiros agora.')
@@ -431,6 +479,160 @@ export default function AdminRoteirosPage() {
     )
   }
 
+
+const valorParaInputData = (valor?: string | null) => {
+  if (!valor) return ''
+
+  const texto = String(valor).trim()
+  const matchData = texto.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (matchData?.[1]) return matchData[1]
+
+  const data = new Date(texto)
+  if (Number.isNaN(data.getTime())) return ''
+
+  const ano = data.getFullYear()
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
+
+  return `${ano}-${mes}-${dia}`
+}
+
+const valorParaInputHora = (valor?: string | null) => {
+  if (!valor) return ''
+
+  const texto = String(valor).trim()
+  const matchHora = texto.match(/T(\d{2}:\d{2})/) || texto.match(/\s(\d{2}:\d{2})/)
+  if (matchHora?.[1]) return matchHora[1]
+
+  const data = new Date(texto)
+  if (Number.isNaN(data.getTime())) return ''
+
+  return `${String(data.getHours()).padStart(2, '0')}:${String(data.getMinutes()).padStart(2, '0')}`
+}
+
+const numeroParaCampo = (valor: any) => {
+  const n = Number(valor || 0)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return String(n).replace('.', ',')
+}
+
+const numeroCampoParaApi = (valor: string) => {
+  const texto = String(valor || '').replace(/\./g, '').replace(',', '.').trim()
+  const n = Number(texto)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+const valorSolicitado = (solicitacao: SolicitacaoAtualizacao, campo: string) => {
+  const dados = solicitacao.dados_solicitados || {}
+  return dados[campo] ?? solicitacao[`${campo}_solicitado`] ?? ''
+}
+
+const carregarSolicitacoesAtualizacao = async () => {
+  setCarregandoSolicitacoes(true)
+
+  try {
+    const response = await fetch('/api/admin/roteiros/solicitacoes-atualizacao?status=pendente&limite=80')
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok || data?.sucesso === false) {
+      throw new Error(data?.erro || data?.message || 'Não foi possível carregar solicitações de atualização.')
+    }
+
+    setSolicitacoesAtualizacao(Array.isArray(data?.solicitacoes) ? data.solicitacoes : [])
+  } catch (error) {
+    console.error('Erro ao carregar solicitações de atualização:', error)
+    setSolicitacoesAtualizacao([])
+  } finally {
+    setCarregandoSolicitacoes(false)
+  }
+}
+
+const abrirSolicitacaoAtualizacao = (solicitacao: SolicitacaoAtualizacao) => {
+  const dados = solicitacao.dados_solicitados || {}
+  const dataAtual = String(dados.data || solicitacao.data_solicitada || '').trim()
+  const horaAtual = String(dados.hora || solicitacao.hora_solicitada || '').trim()
+
+  setSolicitacaoSelecionada(solicitacao)
+  setTituloAprovacao(String(dados.titulo || solicitacao.titulo_solicitado || solicitacao.titulo_atual || solicitacao.roteiro_titulo || ''))
+  setDescricaoAprovacao(String(dados.descricao || solicitacao.descricao_solicitada || solicitacao.descricao_atual || ''))
+  setDataAprovacao(valorParaInputData(dataAtual || solicitacao.data_atual))
+  setHoraAprovacao(horaAtual || valorParaInputHora(dataAtual || solicitacao.data_atual))
+  setLocalAprovacao(String(dados.local || solicitacao.local_solicitado || solicitacao.local_atual || ''))
+  setPrecoAprovacao(numeroParaCampo(dados.preco ?? solicitacao.preco_solicitado ?? solicitacao.preco_atual))
+  setObservacaoAdminSolicitacao('')
+  setErro('')
+  setMensagem('')
+}
+
+const fecharSolicitacaoAtualizacao = () => {
+  if (analisandoSolicitacaoId) return
+
+  setSolicitacaoSelecionada(null)
+  setTituloAprovacao('')
+  setDescricaoAprovacao('')
+  setDataAprovacao('')
+  setHoraAprovacao('')
+  setLocalAprovacao('')
+  setPrecoAprovacao('')
+  setObservacaoAdminSolicitacao('')
+}
+
+const processarSolicitacaoAtualizacao = async (acao: 'aprovar' | 'rejeitar') => {
+  if (!solicitacaoSelecionada?.id || !user?.id) return
+
+  const confirmar = window.confirm(
+    acao === 'aprovar'
+      ? 'Confirma aprovar e aplicar esta atualização no roteiro?'
+      : 'Confirma rejeitar esta solicitação de atualização?'
+  )
+
+  if (!confirmar) return
+
+  setAnalisandoSolicitacaoId(solicitacaoSelecionada.id)
+  setErro('')
+  setMensagem('')
+
+  try {
+    const response = await fetch('/api/admin/roteiros/solicitacoes-atualizacao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        solicitacaoId: solicitacaoSelecionada.id,
+        adminId: user.id,
+        acao,
+        titulo: tituloAprovacao.trim(),
+        descricao: descricaoAprovacao.trim(),
+        data: dataAprovacao.trim(),
+        hora: horaAprovacao.trim(),
+        local: localAprovacao.trim(),
+        preco: numeroCampoParaApi(precoAprovacao),
+        observacaoAdmin: observacaoAdminSolicitacao.trim(),
+      })
+    })
+
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok || data?.sucesso === false) {
+      throw new Error(data?.erro || data?.message || 'Não foi possível processar a solicitação.')
+    }
+
+    setMensagem(
+      acao === 'aprovar'
+        ? 'Solicitação aprovada e roteiro atualizado.'
+        : 'Solicitação rejeitada.'
+    )
+
+    fecharSolicitacaoAtualizacao()
+    await carregarRoteiros()
+    await carregarSolicitacoesAtualizacao()
+  } catch (error: any) {
+    console.error('Erro ao processar solicitação de atualização:', error)
+    setErro(error?.message || 'Erro ao processar solicitação de atualização.')
+  } finally {
+    setAnalisandoSolicitacaoId('')
+  }
+}
+
   const carregarRoteiros = async () => {
     setErro('')
 
@@ -609,6 +811,7 @@ export default function AdminRoteirosPage() {
 
     try {
       await carregarRoteiros()
+      await carregarSolicitacoesAtualizacao()
       setMensagem('Roteiros atualizados.')
     } catch (error) {
       console.error('Erro ao atualizar roteiros:', error)
@@ -1710,6 +1913,93 @@ export default function AdminRoteirosPage() {
           font-weight: 750;
         }
 
+
+.requestList {
+  display: grid;
+  gap: 10px;
+}
+
+.requestCard {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 22px;
+  padding: 13px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.requestTitle {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.requestMeta {
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 750;
+}
+
+.requestChanges {
+  margin-top: 9px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.requestChip {
+  display: inline-flex;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.requestActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.compareGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.compareBox {
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #f8fafc;
+  padding: 12px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 750;
+}
+
+.compareBox strong {
+  display: block;
+  color: #0f172a;
+  margin-bottom: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.modalInput.textareaLarge {
+  min-height: 104px;
+  resize: vertical;
+}
+
         .modalOverlay {
           position: fixed;
           inset: 0;
@@ -1921,6 +2211,23 @@ export default function AdminRoteirosPage() {
             display: grid;
             grid-template-columns: 1fr 1fr;
           }
+
+.requestCard {
+  grid-template-columns: 1fr;
+}
+
+.requestActions {
+  justify-content: stretch;
+}
+
+.requestActions .actionBtn {
+  width: 100%;
+}
+
+.compareGrid {
+  grid-template-columns: 1fr;
+}
+
 
           .filterBtn {
             width: 100%;
@@ -2178,6 +2485,81 @@ export default function AdminRoteirosPage() {
             </button>
           </div>
         </section>
+
+
+<section className="panel" style={{ marginBottom: 18 }}>
+  <div className="panelHeader">
+    <div>
+      <h2 className="panelTitle">Solicitações de atualização</h2>
+      <div className="panelSub">
+        Pedidos dos guias para alterar data, horário, local, preço, título ou descrição de roteiros já cadastrados.
+      </div>
+    </div>
+
+    <button
+      type="button"
+      className="textLink"
+      onClick={carregarSolicitacoesAtualizacao}
+      disabled={carregandoSolicitacoes}
+    >
+      {carregandoSolicitacoes ? 'Atualizando...' : 'Atualizar solicitações'}
+    </button>
+  </div>
+
+  <div className="panelBody">
+    {solicitacoesAtualizacao.length === 0 ? (
+      <div className="empty">
+        Nenhuma solicitação pendente de atualização de roteiro.
+      </div>
+    ) : (
+      <div className="requestList">
+        {solicitacoesAtualizacao.map((solicitacao) => {
+          const mudouTitulo = Boolean(valorSolicitado(solicitacao, 'titulo'))
+          const mudouDescricao = Boolean(valorSolicitado(solicitacao, 'descricao'))
+          const mudouData = Boolean(valorSolicitado(solicitacao, 'data') || solicitacao.data_solicitada)
+          const mudouHora = Boolean(valorSolicitado(solicitacao, 'hora') || solicitacao.hora_solicitada)
+          const mudouLocal = Boolean(valorSolicitado(solicitacao, 'local') || solicitacao.local_solicitado)
+          const mudouPreco = Boolean(valorSolicitado(solicitacao, 'preco') || solicitacao.preco_solicitado)
+
+          return (
+            <article className="requestCard" key={solicitacao.id}>
+              <div>
+                <div className="requestTitle">
+                  {solicitacao.roteiro_titulo || solicitacao.titulo_atual || 'Roteiro'}
+                </div>
+
+                <div className="requestMeta">
+                  Guia: {solicitacao.guia_nome || 'Guia'} · Solicitado em {formatarDataHora(solicitacao.created_at)}
+                  <br />
+                  Observação do guia: {solicitacao.observacao_guia || 'Sem observação.'}
+                </div>
+
+                <div className="requestChanges">
+                  {mudouTitulo && <span className="requestChip">Título</span>}
+                  {mudouDescricao && <span className="requestChip">Descrição</span>}
+                  {mudouData && <span className="requestChip">Data</span>}
+                  {mudouHora && <span className="requestChip">Hora</span>}
+                  {mudouLocal && <span className="requestChip">Local</span>}
+                  {mudouPreco && <span className="requestChip">Preço</span>}
+                </div>
+              </div>
+
+              <div className="requestActions">
+                <button
+                  type="button"
+                  className="actionBtn primary"
+                  onClick={() => abrirSolicitacaoAtualizacao(solicitacao)}
+                >
+                  Revisar
+                </button>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    )}
+  </div>
+</section>
 
         <section className="panel">
           <div className="panelHeader">
@@ -2491,6 +2873,154 @@ export default function AdminRoteirosPage() {
           </div>
         </div>
       )}
+
+
+{solicitacaoSelecionada && (
+  <div className="modalOverlay">
+    <div className="modal">
+      <div className="modalHeader">
+        <h2 className="modalTitle">Revisar atualização do roteiro</h2>
+        <div className="modalSub">
+          Confira o pedido do guia, ajuste os campos se necessário e aprove para aplicar no roteiro público.
+        </div>
+      </div>
+
+      <div className="modalBody">
+        <div className="compareGrid">
+          <div className="compareBox">
+            <strong>Dados atuais</strong>
+            Título: {solicitacaoSelecionada.titulo_atual || solicitacaoSelecionada.roteiro_titulo || '-'}
+            <br />
+            Data: {solicitacaoSelecionada.data_atual || '-'}
+            <br />
+            Local: {solicitacaoSelecionada.local_atual || '-'}
+            <br />
+            Preço: {solicitacaoSelecionada.preco_atual ? formatarMoeda(solicitacaoSelecionada.preco_atual) : '-'}
+          </div>
+
+          <div className="compareBox">
+            <strong>Pedido do guia</strong>
+            Título: {solicitacaoSelecionada.titulo_solicitado || valorSolicitado(solicitacaoSelecionada, 'titulo') || '-'}
+            <br />
+            Data: {solicitacaoSelecionada.data_solicitada || valorSolicitado(solicitacaoSelecionada, 'data') || '-'}
+            <br />
+            Hora: {solicitacaoSelecionada.hora_solicitada || valorSolicitado(solicitacaoSelecionada, 'hora') || '-'}
+            <br />
+            Local: {solicitacaoSelecionada.local_solicitado || valorSolicitado(solicitacaoSelecionada, 'local') || '-'}
+            <br />
+            Preço: {solicitacaoSelecionada.preco_solicitado ? formatarMoeda(solicitacaoSelecionada.preco_solicitado) : valorSolicitado(solicitacaoSelecionada, 'preco') || '-'}
+          </div>
+        </div>
+
+        <div className="descriptionBox">
+          <strong>Observação do guia:</strong>
+          <br />
+          {solicitacaoSelecionada.observacao_guia || 'Sem observação.'}
+        </div>
+
+        <div className="field">
+          <label className="label">Título aprovado</label>
+          <input
+            className="modalInput"
+            value={tituloAprovacao}
+            onChange={(event) => setTituloAprovacao(event.target.value)}
+            placeholder="Título do roteiro"
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Nova data</label>
+          <input
+            className="modalInput"
+            type="date"
+            value={dataAprovacao}
+            onChange={(event) => setDataAprovacao(event.target.value)}
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Novo horário</label>
+          <input
+            className="modalInput"
+            type="time"
+            value={horaAprovacao}
+            onChange={(event) => setHoraAprovacao(event.target.value)}
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Local aprovado</label>
+          <input
+            className="modalInput"
+            value={localAprovacao}
+            onChange={(event) => setLocalAprovacao(event.target.value)}
+            placeholder="Local de encontro / embarque"
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Preço aprovado</label>
+          <input
+            className="modalInput"
+            value={precoAprovacao}
+            onChange={(event) => setPrecoAprovacao(event.target.value)}
+            inputMode="decimal"
+            placeholder="Ex.: 120,00"
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Descrição aprovada</label>
+          <textarea
+            className="modalInput textareaLarge"
+            value={descricaoAprovacao}
+            onChange={(event) => setDescricaoAprovacao(event.target.value)}
+            placeholder="Descrição do roteiro"
+          />
+        </div>
+
+        <div className="field">
+          <label className="label">Observação do Admin</label>
+          <textarea
+            className="modalInput textareaLarge"
+            value={observacaoAdminSolicitacao}
+            onChange={(event) => setObservacaoAdminSolicitacao(event.target.value)}
+            placeholder="Opcional. Explique ao guia o ajuste aprovado ou o motivo da rejeição."
+          />
+        </div>
+
+        <div className="modalActions">
+          <button
+            type="button"
+            className="btn primary"
+            disabled={analisandoSolicitacaoId === solicitacaoSelecionada.id}
+            onClick={() => processarSolicitacaoAtualizacao('aprovar')}
+          >
+            {analisandoSolicitacaoId === solicitacaoSelecionada.id ? 'Aplicando...' : 'Aprovar e aplicar'}
+          </button>
+
+          <button
+            type="button"
+            className="btn danger"
+            disabled={analisandoSolicitacaoId === solicitacaoSelecionada.id}
+            onClick={() => processarSolicitacaoAtualizacao('rejeitar')}
+          >
+            Rejeitar
+          </button>
+
+          <button
+            type="button"
+            className="btn light"
+            disabled={analisandoSolicitacaoId === solicitacaoSelecionada.id}
+            onClick={fecharSolicitacaoAtualizacao}
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
       {modalSenhaAberto && (
         <div className="modalOverlay">
