@@ -1,7 +1,7 @@
 'use client'
 
-import { CSSProperties, useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
 type AnyRecord = Record<string, any>
@@ -13,9 +13,9 @@ type UsuarioLocal = {
   cliente_id?: string | null
   guia_id?: string | null
   nome?: string | null
+  name?: string | null
   email?: string | null
   tipo?: string | null
-  name?: string | null
   avatar_url?: string | null
   foto_url?: string | null
   imagem_url?: string | null
@@ -26,23 +26,33 @@ type Roteiro = {
   titulo?: string | null
   nome?: string | null
   descricao?: string | null
+  roteiro_detalhado?: string | null
+  detalhes?: string | null
   preco?: number | string | null
   valor?: number | string | null
+  preco_total?: number | string | null
+  preco_por_pessoa?: number | string | null
   duracao_horas?: number | string | null
   duracao?: number | string | null
   km?: number | string | null
   distancia_km?: number | string | null
   dificuldade?: string | null
+  nivel?: string | null
+  intensidade?: string | null
+  categoria?: string | null
+  tipo?: string | null
+  modalidade?: string | null
   localizacao?: string | null
   local?: string | null
   cidade?: string | null
   estado?: string | null
+  destino?: string | null
   foto_capa?: string | null
   imagem_url?: string | null
+  image_url?: string | null
   imagem?: string | null
   foto_url?: string | null
-  galeria_fotos?: string[] | string | null
-  fotos?: string[] | string | null
+  capa_url?: string | null
   embarque_local?: string | null
   local_encontro?: string | null
   ponto_encontro?: string | null
@@ -55,40 +65,46 @@ type Roteiro = {
   retorno_local?: string | null
   retorno_data?: string | null
   retorno_data_hora?: string | null
-  roteiro_detalhado?: string | null
-  detalhes?: string | null
-  inclui?: string | null
-  nao_inclui?: string | null
-  orientacoes?: string | null
   status?: string | null
+  situacao?: string | null
+  publicacao?: string | null
+  estado_publicacao?: string | null
   ativo?: boolean | null
+  removido_em?: string | null
+  excluido_em?: string | null
+  removido_pelo_guia?: boolean | null
+  removido_pelo_admin?: boolean | null
   id_guia?: string | null
   guia_id?: string | null
   user_id?: string | null
+  id_user?: string | null
+  usuario_id?: string | null
+  criador_id?: string | null
+  created_by?: string | null
+  criado_por?: string | null
+  owner_id?: string | null
   limite_pessoas?: number | string | null
   capacidade?: number | string | null
   max_pessoas?: number | string | null
   recorrencia?: string | null
   created_at?: string | null
+  updated_at?: string | null
   guia_nome?: string | null
   nome_guia?: string | null
   guia_name?: string | null
   guia_email?: string | null
   guia_avatar_url?: string | null
   guia_foto_url?: string | null
-  id_user?: string | null
-  usuario_id?: string | null
-  criador_id?: string | null
-  created_by?: string | null
   nome_agencia?: string | null
   agencia_nome?: string | null
   empresa_nome?: string | null
   nome_empresa?: string | null
   nome_fantasia?: string | null
   razao_social?: string | null
+  agencia?: string | null
 }
 
-type Guia = {
+type GuiaResumo = {
   id: string
   nome?: string | null
   name?: string | null
@@ -96,46 +112,67 @@ type Guia = {
   avatar_url?: string | null
   foto_url?: string | null
   imagem_url?: string | null
-  bio?: string | null
-  instagram?: string | null
-  cadastur?: string | null
-  cadastro_turismo?: string | null
   nome_agencia?: string | null
   agencia_nome?: string | null
   empresa_nome?: string | null
   nome_empresa?: string | null
   nome_fantasia?: string | null
   razao_social?: string | null
+  cadastur?: string | null
+  cadastur_numero?: string | null
 }
 
-type ReservaCriada = {
-  id: string
-}
+const STATUS_OCULTOS = new Set([
+  'rascunho',
+  'pendente',
+  'pendente_aprovacao',
+  'aguardando_aprovacao',
+  'em_analise',
+  'analise',
+  'reprovado',
+  'reprovada',
+  'cancelado',
+  'cancelada',
+  'pausado',
+  'pausada',
+  'inativo',
+  'inativa',
+  'excluido',
+  'excluida',
+  'removido',
+  'removida',
+  'arquivado',
+  'arquivada'
+])
 
-type PerguntaPublica = {
-  id: string
-  roteiro_id: string
-  cliente_id?: string | null
-  cliente_nome?: string | null
-  pergunta: string
-  resposta?: string | null
-  respondido_por?: string | null
-  status?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-  respondido_em?: string | null
+const STATUS_PUBLICOS = new Set([
+  'ativo',
+  'ativa',
+  'aprovado',
+  'aprovada',
+  'publicado',
+  'publicada',
+  'disponivel',
+  'disponível',
+  'confirmado',
+  'confirmada'
+])
+
+function texto(valor: unknown) {
+  return String(valor || '').trim()
 }
 
 function normalizar(valor: unknown) {
-  return String(valor || '')
+  return texto(valor)
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
 }
 
-function texto(valor: unknown) {
-  return String(valor || '').trim()
+function numero(valor: unknown) {
+  const n = Number(valor || 0)
+  return Number.isFinite(n) ? n : 0
 }
 
 function extrairUsuarioId(usuario: UsuarioLocal | null): string {
@@ -148,80 +185,255 @@ function extrairUsuarioId(usuario: UsuarioLocal | null): string {
   )
 }
 
-function textoSeguro(valor: unknown, fallback = '') {
-  const valorTexto = texto(valor)
-  return valorTexto || fallback
+function tituloRoteiro(roteiro: Roteiro) {
+  return texto(roteiro.titulo || roteiro.nome) || 'Roteiro PrussikTrails'
 }
 
-function quebrarTexto(valor?: string | null) {
-  if (!valor) return []
+function descricaoCurta(roteiro: Roteiro) {
+  const base =
+    texto(roteiro.descricao) ||
+    texto(roteiro.roteiro_detalhado) ||
+    texto(roteiro.detalhes) ||
+    'Experiência outdoor conduzida por guia, com reserva organizada pelo PrussikTrails.'
 
-  return String(valor)
-    .split(/\n|;|\|/g)
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
-function limparTextoLongo(valor?: string | null) {
-  if (!valor) return ''
-
-  return String(valor)
+  return base
     .replace(/\r\n/g, '\n')
     .replace(/^\s{0,3}#{1,6}\s*/gm, '')
     .replace(/^\s*[-*_]{3,}\s*$/gm, '')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/__(.*?)__/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s+/g, ' ')
     .trim()
+    .slice(0, 150)
 }
 
-function parseGaleria(valor: unknown) {
-  if (!valor) return []
-
-  if (Array.isArray(valor)) {
-    return valor.map((item) => texto(item)).filter(Boolean)
-  }
-
-  if (typeof valor === 'string') {
-    const textoValor = valor.trim()
-    if (!textoValor) return []
-
-    try {
-      const parsed = JSON.parse(textoValor)
-      if (Array.isArray(parsed)) return parsed.map((item) => texto(item)).filter(Boolean)
-    } catch {
-      // fallback abaixo
-    }
-
-    return textoValor.split(/,|\n|\|/g).map((item) => item.trim()).filter(Boolean)
-  }
-
-  return []
+function guiaIdRoteiro(roteiro: Roteiro) {
+  return texto(
+    roteiro.id_guia ||
+      roteiro.guia_id ||
+      roteiro.id_user ||
+      roteiro.usuario_id ||
+      roteiro.criador_id ||
+      roteiro.created_by ||
+      roteiro.criado_por ||
+      roteiro.owner_id ||
+      roteiro.user_id
+  )
 }
 
-export default function DetalhesRoteiroPage() {
-  const params = useParams()
+function fotoRoteiro(roteiro: Roteiro) {
+  return texto(
+    roteiro.foto_capa ||
+      roteiro.imagem_url ||
+      roteiro.image_url ||
+      roteiro.imagem ||
+      roteiro.foto_url ||
+      roteiro.capa_url
+  )
+}
+
+function localRoteiro(roteiro: Roteiro) {
+  const local =
+    texto(roteiro.localizacao) ||
+    texto(roteiro.local) ||
+    texto(roteiro.destino) ||
+    texto(roteiro.embarque_local) ||
+    texto(roteiro.local_encontro) ||
+    texto(roteiro.ponto_encontro)
+
+  if (local) return local
+
+  const cidadeEstado = [roteiro.cidade, roteiro.estado]
+    .map((parte) => texto(parte))
+    .filter(Boolean)
+    .join(' / ')
+
+  return cidadeEstado || 'Local a definir'
+}
+
+function precoRoteiro(roteiro: Roteiro) {
+  return numero(
+    roteiro.preco ||
+      roteiro.valor ||
+      roteiro.preco_por_pessoa ||
+      roteiro.preco_total ||
+      0
+  )
+}
+
+function kmRoteiro(roteiro: Roteiro) {
+  return numero(roteiro.km ?? roteiro.distancia_km)
+}
+
+function duracaoRoteiro(roteiro: Roteiro) {
+  const duracao = roteiro.duracao_horas ?? roteiro.duracao ?? ''
+  const n = Number(duracao)
+
+  if (Number.isFinite(n) && n > 0) {
+    return `${n}h`
+  }
+
+  return texto(duracao) || 'A combinar'
+}
+
+function dataPrincipal(roteiro: Roteiro) {
+  return (
+    texto(roteiro.embarque_data) ||
+    texto(roteiro.proxima_data) ||
+    texto(roteiro.embarque_data_hora) ||
+    texto(roteiro.data_trilha) ||
+    texto(roteiro.data_roteiro) ||
+    ''
+  )
+}
+
+function horaPrincipal(roteiro: Roteiro) {
+  const horaInformada = texto(roteiro.hora_trilha)
+
+  if (horaInformada) {
+    return horaInformada.length >= 5 ? horaInformada.slice(0, 5) : horaInformada
+  }
+
+  const dataHora =
+    texto(roteiro.proxima_data) ||
+    texto(roteiro.embarque_data_hora) ||
+    texto(roteiro.data_trilha) ||
+    texto(roteiro.data_roteiro)
+
+  if (!dataHora || !dataHora.includes('T')) return ''
+
+  const match = dataHora.match(/T(\d{2}:\d{2})/)
+  if (match?.[1]) return match[1]
+
+  return ''
+}
+
+function formatarData(valor?: string | null) {
+  if (!valor) return 'Data a combinar'
+
+  const textoData = String(valor)
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(textoData)) {
+    const [ano, mes, dia] = textoData.split('-').map(Number)
+    const dataLocal = new Date(ano, mes - 1, dia, 12, 0, 0)
+
+    return dataLocal.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+  }
+
+  const data = new Date(textoData)
+  if (Number.isNaN(data.getTime())) return 'Data a combinar'
+
+  return data.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  })
+}
+
+function formatarMoeda(valor: unknown) {
+  return numero(valor).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  })
+}
+
+function labelDificuldade(valor?: string | null) {
+  const dificuldade = texto(valor)
+
+  if (!dificuldade) return 'Nível livre'
+
+  return dificuldade.charAt(0).toUpperCase() + dificuldade.slice(1)
+}
+
+function nomePublicoGuia(guia?: GuiaResumo | null, roteiro?: Roteiro | null) {
+  const nomeGuiaBanco =
+    texto(guia?.nome_agencia) ||
+    texto(guia?.agencia_nome) ||
+    texto(guia?.empresa_nome) ||
+    texto(guia?.nome_empresa) ||
+    texto(guia?.nome_fantasia) ||
+    texto(guia?.razao_social) ||
+    texto(guia?.nome) ||
+    texto(guia?.name) ||
+    texto(guia?.email)
+
+  if (nomeGuiaBanco) return nomeGuiaBanco
+
+  const nomeGuiaRoteiro =
+    texto(roteiro?.nome_agencia) ||
+    texto(roteiro?.agencia_nome) ||
+    texto(roteiro?.empresa_nome) ||
+    texto(roteiro?.nome_empresa) ||
+    texto(roteiro?.nome_fantasia) ||
+    texto(roteiro?.razao_social) ||
+    texto(roteiro?.agencia) ||
+    texto(roteiro?.guia_nome) ||
+    texto(roteiro?.nome_guia) ||
+    texto(roteiro?.guia_name) ||
+    texto(roteiro?.guia_email)
+
+  return nomeGuiaRoteiro || 'Guia/Agência PrussikTrails'
+}
+
+function avatarGuia(guia?: GuiaResumo | null, roteiro?: Roteiro | null) {
+  return texto(
+    guia?.avatar_url ||
+      guia?.foto_url ||
+      guia?.imagem_url ||
+      roteiro?.guia_avatar_url ||
+      roteiro?.guia_foto_url
+  )
+}
+
+function roteiroEstaDisponivel(roteiro: Roteiro) {
+  if (!roteiro?.id) return false
+  if (roteiro.removido_em || roteiro.excluido_em) return false
+  if (roteiro.removido_pelo_admin || roteiro.removido_pelo_guia) return false
+
+  const status = normalizar(roteiro.status)
+  const situacao = normalizar(roteiro.situacao)
+  const publicacao = normalizar(roteiro.publicacao || roteiro.estado_publicacao)
+
+  if (STATUS_OCULTOS.has(status) || STATUS_OCULTOS.has(situacao) || STATUS_OCULTOS.has(publicacao)) {
+    return false
+  }
+
+  if (roteiro.ativo === true) return true
+  if (STATUS_PUBLICOS.has(status) || STATUS_PUBLICOS.has(situacao) || STATUS_PUBLICOS.has(publicacao)) return true
+
+  return false
+}
+
+function ordenarPorData(a: Roteiro, b: Roteiro) {
+  const dataA = dataPrincipal(a)
+  const dataB = dataPrincipal(b)
+
+  const timeA = dataA ? new Date(dataA.length <= 10 ? `${dataA}T12:00:00` : dataA).getTime() : Number.POSITIVE_INFINITY
+  const timeB = dataB ? new Date(dataB.length <= 10 ? `${dataB}T12:00:00` : dataB).getTime() : Number.POSITIVE_INFINITY
+
+  const aValido = Number.isFinite(timeA) ? timeA : Number.POSITIVE_INFINITY
+  const bValido = Number.isFinite(timeB) ? timeB : Number.POSITIVE_INFINITY
+
+  return aValido - bValido
+}
+
+export default function RoteirosPage() {
   const router = useRouter()
-  const id = String(params?.id || '').trim()
 
-  const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
-  const [guia, setGuia] = useState<Guia | null>(null)
   const [usuarioLogado, setUsuarioLogado] = useState<UsuarioLocal | null>(null)
+  const [roteiros, setRoteiros] = useState<Roteiro[]>([])
+  const [guias, setGuias] = useState<Record<string, GuiaResumo>>({})
   const [carregando, setCarregando] = useState(true)
-  const [reservando, setReservando] = useState(false)
-  const [modalReservaAberto, setModalReservaAberto] = useState(false)
-  const [linkCopiado, setLinkCopiado] = useState(false)
-  const [quantidadePessoas, setQuantidadePessoas] = useState(1)
-  const [mensagem, setMensagem] = useState('')
-  const [fotoSelecionada, setFotoSelecionada] = useState(0)
-  const [vagasOcupadas, setVagasOcupadas] = useState(0)
-  const [perguntas, setPerguntas] = useState<PerguntaPublica[]>([])
-  const [novaPergunta, setNovaPergunta] = useState('')
-  const [respostasGuia, setRespostasGuia] = useState<Record<string, string>>({})
-  const [enviandoPergunta, setEnviandoPergunta] = useState(false)
-  const [respondendoPerguntaId, setRespondendoPerguntaId] = useState('')
-  const [perguntasAviso, setPerguntasAviso] = useState('')
+  const [erro, setErro] = useState('')
+  const [busca, setBusca] = useState('')
+  const [filtroNivel, setFiltroNivel] = useState('todos')
+  const [filtroOrdenacao, setFiltroOrdenacao] = useState<'recentes' | 'data' | 'preco' | 'km'>('recentes')
+  const [copiadoId, setCopiadoId] = useState('')
 
   useEffect(() => {
     const salvo = localStorage.getItem('user')
@@ -230,10 +442,9 @@ export default function DetalhesRoteiroPage() {
 
     if (usuario) sincronizarUsuarioCabecalho(usuario)
 
-    carregarRoteiro()
-    carregarPerguntas()
+    carregarRoteiros()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [])
 
   async function sincronizarUsuarioCabecalho(usuarioAtual: UsuarioLocal) {
     const usuarioId = extrairUsuarioId(usuarioAtual)
@@ -267,6 +478,74 @@ export default function DetalhesRoteiroPage() {
     }
   }
 
+  async function carregarRoteiros() {
+    setCarregando(true)
+    setErro('')
+
+    try {
+      let roteirosData: Roteiro[] = []
+
+      const consultaPrincipal = await supabase
+        .from('roteiros')
+        .select('*')
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+
+      if (consultaPrincipal.error) {
+        console.warn('Erro ao ordenar roteiros por data. Tentando consulta simples:', consultaPrincipal.error)
+
+        const consultaFallback = await supabase
+          .from('roteiros')
+          .select('*')
+
+        if (consultaFallback.error) throw consultaFallback.error
+
+        roteirosData = (consultaFallback.data || []) as Roteiro[]
+      } else {
+        roteirosData = (consultaPrincipal.data || []) as Roteiro[]
+      }
+
+      const disponiveis = roteirosData.filter(roteiroEstaDisponivel)
+
+      setRoteiros(disponiveis)
+
+      const guiaIds = Array.from(
+        new Set(
+          disponiveis
+            .map((roteiro) => guiaIdRoteiro(roteiro))
+            .filter(Boolean)
+        )
+      )
+
+      if (guiaIds.length > 0) {
+        const { data: guiasData, error: guiasError } = await supabase
+          .from('users')
+          .select('id, nome, name, email, avatar_url, foto_url, imagem_url, nome_agencia, agencia_nome, empresa_nome, nome_empresa, nome_fantasia, razao_social, cadastur, cadastur_numero')
+          .in('id', guiaIds)
+
+        if (!guiasError && Array.isArray(guiasData)) {
+          const mapa: Record<string, GuiaResumo> = {}
+
+          ;(guiasData as GuiaResumo[]).forEach((guia) => {
+            if (guia?.id) mapa[guia.id] = guia
+          })
+
+          setGuias(mapa)
+        } else if (guiasError) {
+          console.warn('Não foi possível carregar nomes dos guias:', guiasError)
+        }
+      } else {
+        setGuias({})
+      }
+    } catch (error: any) {
+      console.error('Erro ao carregar roteiros:', error)
+      setErro(error?.message || 'Não foi possível carregar os roteiros agora.')
+      setRoteiros([])
+    } finally {
+      setCarregando(false)
+    }
+  }
+
   function nomeUsuario(usuario?: UsuarioLocal | null) {
     return usuario?.nome || usuario?.name || usuario?.email || 'Usuário'
   }
@@ -296,787 +575,395 @@ export default function DetalhesRoteiroPage() {
     if (tipo === 'cliente') return '/cliente/dashboard'
     if (tipo === 'guia') return '/guia/dashboard'
     if (tipo === 'admin') return '/admin/dashboard'
-    return '/roteiros'
+    return '/'
   }
 
-  function tituloRoteiro(item?: Roteiro | null) {
-    return textoSeguro(item?.titulo || item?.nome, 'Roteiro PrussikTrails')
+  function abrirRoteiro(id: string) {
+    router.push(`/roteiros/${id}`)
   }
 
-  function guiaIdRoteiro(item?: Roteiro | null) {
-    return texto(
-      item?.id_guia ||
-        item?.guia_id ||
-        item?.id_user ||
-        item?.usuario_id ||
-        item?.criador_id ||
-        item?.created_by ||
-        item?.user_id
-    )
-  }
-
-  function nomePublicoGuia(item?: Guia | null) {
-    return textoSeguro(
-      item?.nome_agencia ||
-        item?.agencia_nome ||
-        item?.empresa_nome ||
-        item?.nome_empresa ||
-        item?.nome_fantasia ||
-        item?.razao_social ||
-        item?.nome ||
-        item?.name ||
-        item?.email,
-      'Guia/Agência PrussikTrails'
-    )
-  }
-
-  function guiaFallbackDoRoteiro(item?: Roteiro | null): Guia | null {
-    const guiaId = guiaIdRoteiro(item)
-    if (!item || !guiaId) return null
-
-    return {
-      id: guiaId,
-      nome:
-        item.nome_agencia ||
-        item.agencia_nome ||
-        item.empresa_nome ||
-        item.nome_empresa ||
-        item.nome_fantasia ||
-        item.razao_social ||
-        item.guia_nome ||
-        item.nome_guia ||
-        item.guia_name ||
-        item.guia_email ||
-        'Guia/Agência PrussikTrails',
-      email: item.guia_email || null,
-      avatar_url: item.guia_avatar_url || item.guia_foto_url || null
-    }
-  }
-
-  function avatarGuia(item?: Guia | null) {
-    return texto(item?.avatar_url || item?.foto_url || item?.imagem_url)
-  }
-
-  function localRoteiro(item?: Roteiro | null) {
-    const local = textoSeguro(item?.localizacao || item?.local)
-    if (local) return local
-
-    const cidadeEstado = [item?.cidade, item?.estado]
-      .map((parte) => texto(parte))
-      .filter(Boolean)
-      .join(' / ')
-
-    return cidadeEstado || 'Local a definir'
-  }
-
-  function precoRoteiro(item?: Roteiro | null) {
-    return Number(item?.preco ?? item?.valor ?? 0) || 0
-  }
-
-  function kmRoteiro(item?: Roteiro | null) {
-    return Number(item?.km ?? item?.distancia_km ?? 0) || 0
-  }
-
-  function duracaoRoteiro(item?: Roteiro | null) {
-    return Number(item?.duracao_horas ?? item?.duracao ?? 0) || 0
-  }
-
-  function limitePessoas(item?: Roteiro | null) {
-    const valor = item?.limite_pessoas ?? item?.capacidade ?? item?.max_pessoas ?? null
-    if (valor === null || valor === undefined || valor === '') return null
-    const numero = Number(valor)
-    if (!Number.isFinite(numero) || numero <= 0) return null
-    return numero
-  }
-
-  function dataPrincipal(item?: Roteiro | null) {
-    return (
-      item?.embarque_data ||
-      item?.proxima_data ||
-      item?.embarque_data_hora ||
-      item?.data_trilha ||
-      item?.data_roteiro ||
-      ''
-    )
-  }
-
-  function horaPrincipal(item?: Roteiro | null) {
-    const horaInformada = texto(item?.hora_trilha)
-
-    if (horaInformada) {
-      return horaInformada.length >= 5 ? horaInformada.slice(0, 5) : horaInformada
-    }
-
-    return formatarHora(item?.proxima_data || item?.embarque_data_hora || item?.data_trilha || item?.data_roteiro || '')
-  }
-
-  function fotoCapa(item?: Roteiro | null) {
-    return texto(item?.foto_capa || item?.imagem_url || item?.imagem || item?.foto_url)
-  }
-
-  const fotosRoteiro = useMemo(() => {
-    if (!roteiro) return []
-    const capa = fotoCapa(roteiro)
-    const galeria = [...parseGaleria(roteiro.galeria_fotos), ...parseGaleria(roteiro.fotos)]
-    return Array.from(new Set([capa, ...galeria].filter(Boolean)))
-  }, [roteiro])
-
-  const vagasRestantes = useMemo(() => {
-    const limite = limitePessoas(roteiro)
-    if (limite === null) return null
-    return Math.max(limite - vagasOcupadas, 0)
-  }, [roteiro, vagasOcupadas])
-
-  const esgotado = vagasRestantes !== null && vagasRestantes <= 0
-
-  const valorTotal = useMemo(() => {
-    const quantidade = Math.max(1, Number(quantidadePessoas || 1))
-    return precoRoteiro(roteiro) * quantidade
-  }, [roteiro, quantidadePessoas])
-
-  const linkPublicoRoteiro = useMemo(() => {
-    if (!id) return 'https://prussiktrails.com.br/roteiros'
-
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}/roteiros/${id}`
-    }
-
-    return `https://prussiktrails.com.br/roteiros/${id}`
-  }, [id])
-
-  const idUsuarioLogado = extrairUsuarioId(usuarioLogado)
-
-  const ehGuiaDono = Boolean(
-    roteiro &&
-      idUsuarioLogado &&
-      idUsuarioLogado === guiaIdRoteiro(roteiro) &&
-      normalizar(usuarioLogado?.tipo) === 'guia'
-  )
-
-  function abrirPerfilGuia() {
-    const guiaId = guia?.id || guiaIdRoteiro(roteiro)
+  function abrirPerfilGuia(roteiro: Roteiro) {
+    const guiaId = guiaIdRoteiro(roteiro)
     if (!guiaId) return
     router.push(`/guia/publico/${guiaId}`)
   }
 
-  async function copiarLinkRoteiro() {
+  async function copiarLink(roteiro: Roteiro) {
+    const link =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/roteiros/${roteiro.id}`
+        : `https://prussiktrails.com.br/roteiros/${roteiro.id}`
+
     try {
-      await navigator.clipboard.writeText(linkPublicoRoteiro)
-      setLinkCopiado(true)
-      window.setTimeout(() => setLinkCopiado(false), 2200)
+      await navigator.clipboard.writeText(link)
+      setCopiadoId(roteiro.id)
+      window.setTimeout(() => setCopiadoId(''), 2200)
     } catch {
-      window.prompt('Copie o link do roteiro:', linkPublicoRoteiro)
+      window.prompt('Copie o link do roteiro:', link)
     }
   }
 
-  async function compartilharRoteiro() {
-    const titulo = tituloRoteiro(roteiro)
+  function enviarWhatsApp(roteiro: Roteiro) {
+    const link =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/roteiros/${roteiro.id}`
+        : `https://prussiktrails.com.br/roteiros/${roteiro.id}`
 
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: titulo,
-          text: 'Veja este roteiro no PrussikTrails.',
-          url: linkPublicoRoteiro
-        })
-        return
-      }
+    const mensagem = `Olha esse roteiro no PrussikTrails: ${tituloRoteiro(roteiro)}
+${link}`
 
-      await copiarLinkRoteiro()
-    } catch {
-      // O usuário pode cancelar o compartilhamento nativo. Não precisa exibir erro.
-    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank', 'noopener,noreferrer')
   }
 
-  function enviarWhatsAppRoteiro() {
-    const titulo = tituloRoteiro(roteiro)
-    const mensagemWhatsApp = `Olha esse roteiro no PrussikTrails: ${titulo}
-${linkPublicoRoteiro}`
-    const url = `https://wa.me/?text=${encodeURIComponent(mensagemWhatsApp)}`
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
+  const niveisDisponiveis = useMemo(() => {
+    const niveis = roteiros
+      .map((roteiro) => labelDificuldade(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade))
+      .filter(Boolean)
 
-  async function prepararInstagramRoteiro() {
-    await copiarLinkRoteiro()
-    window.alert('Link copiado. Para Instagram, use o sticker de link no Story e cole o link deste roteiro.')
-  }
+    return Array.from(new Set(niveis)).sort((a, b) => a.localeCompare(b))
+  }, [roteiros])
 
-  async function carregarOcupacao(roteiroId: string, roteiroData: Roteiro) {
-    const { data, error } = await supabase
-      .from('reservas')
-      .select('quantidade_pessoas, quantidade, status, data_trilha, data_reserva')
-      .eq('roteiro_id', roteiroId)
+  const roteirosFiltrados = useMemo(() => {
+    const buscaNormalizada = normalizar(busca)
 
-    if (error) {
-      console.warn('Não foi possível carregar ocupação do roteiro:', error)
-      setVagasOcupadas(0)
-      return
-    }
+    let lista = roteiros.filter((roteiro) => {
+      const guia = guias[guiaIdRoteiro(roteiro)]
 
-    const dataReferencia = String(dataPrincipal(roteiroData) || '').slice(0, 10)
+      const textoBusca = normalizar(
+        [
+          tituloRoteiro(roteiro),
+          descricaoCurta(roteiro),
+          localRoteiro(roteiro),
+          labelDificuldade(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade),
+          nomePublicoGuia(guia, roteiro),
+          roteiro.categoria,
+          roteiro.tipo,
+          roteiro.modalidade
+        ].join(' ')
+      )
 
-    const ocupadas = ((data || []) as AnyRecord[])
-      .filter((reserva) => {
-        if (normalizar(reserva.status) === 'cancelada') return false
-        if (!dataReferencia) return true
-        const dataReserva = String(reserva.data_trilha || reserva.data_reserva || '').slice(0, 10)
-        if (!dataReserva) return true
-        return dataReserva === dataReferencia
+      const passaBusca = !buscaNormalizada || textoBusca.includes(buscaNormalizada)
+      const nivelAtual = labelDificuldade(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade)
+      const passaNivel = filtroNivel === 'todos' || nivelAtual === filtroNivel
+
+      return passaBusca && passaNivel
+    })
+
+    if (filtroOrdenacao === 'data') {
+      lista = [...lista].sort(ordenarPorData)
+    } else if (filtroOrdenacao === 'preco') {
+      lista = [...lista].sort((a, b) => precoRoteiro(a) - precoRoteiro(b))
+    } else if (filtroOrdenacao === 'km') {
+      lista = [...lista].sort((a, b) => kmRoteiro(a) - kmRoteiro(b))
+    } else {
+      lista = [...lista].sort((a, b) => {
+        const updatedA = new Date(String(a.updated_at || a.created_at || '')).getTime()
+        const updatedB = new Date(String(b.updated_at || b.created_at || '')).getTime()
+
+        const aValido = Number.isFinite(updatedA) ? updatedA : 0
+        const bValido = Number.isFinite(updatedB) ? updatedB : 0
+
+        return bValido - aValido
       })
-      .reduce((total, reserva) => total + Number(reserva.quantidade_pessoas || reserva.quantidade || 1), 0)
-
-    setVagasOcupadas(ocupadas)
-  }
-
-  async function carregarRoteiro() {
-    if (!id) {
-      setMensagem('Roteiro não encontrado.')
-      setCarregando(false)
-      return
     }
 
-    setCarregando(true)
-    setMensagem('')
+    return lista
+  }, [busca, filtroNivel, filtroOrdenacao, guias, roteiros])
 
-    try {
-      const { data, error } = await supabase
-        .from('roteiros')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle()
-
-      if (error) throw error
-
-      if (!data) {
-        setMensagem('Roteiro não encontrado.')
-        setRoteiro(null)
-        return
-      }
-
-      const roteiroData = data as Roteiro
-
-      if (roteiroData.ativo === false) setMensagem('Este roteiro não está disponível no momento.')
-
-      const status = normalizar(roteiroData.status)
-      if (['cancelado', 'cancelada', 'reprovado', 'pausado', 'excluido', 'rascunho'].includes(status)) {
-        setMensagem('Este roteiro não está disponível no momento.')
-      }
-
-      setRoteiro(roteiroData)
-      setFotoSelecionada(0)
-
-      const guiaFallback = guiaFallbackDoRoteiro(roteiroData)
-      setGuia(guiaFallback)
-
-      await carregarOcupacao(roteiroData.id, roteiroData)
-
-      const guiaId = guiaIdRoteiro(roteiroData)
-
-      if (guiaId) {
-        const { data: guiaData, error: guiaError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', guiaId)
-          .maybeSingle()
-
-        if (!guiaError && guiaData) setGuia(guiaData as Guia)
-      }
-    } catch (error) {
-      console.error('Erro ao carregar roteiro:', error)
-      setMensagem('Erro ao carregar roteiro.')
-    } finally {
-      setCarregando(false)
-    }
-  }
-
-  async function carregarPerguntas() {
-    if (!id) return
-
-    try {
-      setPerguntasAviso('')
-
-      const response = await fetch(`/api/roteiros/perguntas?roteiroId=${encodeURIComponent(id)}`, {
-        headers: {
-          'Cache-Control': 'no-store',
-          Pragma: 'no-cache'
-        }
-      })
-
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || data?.sucesso === false) {
-        setPerguntas([])
-        setPerguntasAviso(data?.erro || 'A caixa de perguntas ainda precisa ser ativada no banco de dados.')
-        return
-      }
-
-      setPerguntas(Array.isArray(data?.perguntas) ? data.perguntas : [])
-    } catch (error) {
-      console.warn('Erro ao carregar perguntas públicas:', error)
-      setPerguntas([])
-    }
-  }
-
-  async function enviarPerguntaPublica() {
-    if (!roteiro) return
-
-    const textoPergunta = novaPergunta.trim()
-
-    if (!textoPergunta) {
-      setPerguntasAviso('Escreva sua pergunta antes de enviar.')
-      return
-    }
-
-    if (!idUsuarioLogado) {
-      localStorage.setItem('redirectAfterLogin', `/roteiros/${id}`)
-      router.push('/login')
-      return
-    }
-
-    if (ehGuiaDono) {
-      setPerguntasAviso('Como guia responsável, você pode responder as perguntas recebidas.')
-      return
-    }
-
-    try {
-      setPerguntasAviso('')
-      setEnviandoPergunta(true)
-
-      const response = await fetch('/api/roteiros/perguntas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roteiroId: roteiro.id,
-          clienteId: idUsuarioLogado,
-          pergunta: textoPergunta,
-          paginaOrigem: `/roteiros/${id}`
-        })
-      })
-
-      const data = await response.json().catch(() => null)
-      if (!response.ok || data?.sucesso === false) throw new Error(data?.erro || 'Não foi possível publicar a pergunta agora.')
-
-      setNovaPergunta('')
-      setPerguntasAviso('Pergunta enviada. O guia verá esta pendência e poderá responder aqui no roteiro.')
-      await carregarPerguntas()
-    } catch (error) {
-      console.error('Erro ao enviar pergunta pública:', error)
-      setPerguntasAviso(error instanceof Error ? error.message : 'Não foi possível publicar a pergunta agora.')
-    } finally {
-      setEnviandoPergunta(false)
-    }
-  }
-
-  async function responderPerguntaPublica(perguntaId: string) {
-    if (!ehGuiaDono) return
-
-    const resposta = String(respostasGuia[perguntaId] || '').trim()
-
-    if (!resposta) {
-      setPerguntasAviso('Escreva uma resposta antes de publicar.')
-      return
-    }
-
-    try {
-      setPerguntasAviso('')
-      setRespondendoPerguntaId(perguntaId)
-
-      const response = await fetch('/api/roteiros/perguntas/responder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ perguntaId, roteiroId: id, guiaId: idUsuarioLogado, resposta })
-      })
-
-      const data = await response.json().catch(() => null)
-      if (!response.ok || data?.sucesso === false) throw new Error(data?.erro || 'Não foi possível publicar a resposta agora.')
-
-      setRespostasGuia((prev) => ({ ...prev, [perguntaId]: '' }))
-      await carregarPerguntas()
-    } catch (error) {
-      console.error('Erro ao responder pergunta pública:', error)
-      setPerguntasAviso(error instanceof Error ? error.message : 'Não foi possível publicar a resposta agora.')
-    } finally {
-      setRespondendoPerguntaId('')
-    }
-  }
-
-  function formatarMoeda(valor: unknown) {
-    return Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-  }
-
-  function formatarData(valor?: string | null) {
-    if (!valor) return 'Data a combinar'
-    const textoData = String(valor)
-    const normalizada = textoData.length <= 10 ? `${textoData.slice(0, 10)}T12:00:00` : textoData
-    const data = new Date(normalizada)
-    if (Number.isNaN(data.getTime())) return 'Data a combinar'
-
-    return data.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
-  }
-
-  function formatarHora(valor?: string | null) {
-    if (!valor) return ''
-    const data = new Date(String(valor))
-    if (Number.isNaN(data.getTime())) return ''
-    return data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-  }
-
-  function labelDificuldade(valor?: string | null) {
-    const textoValor = texto(valor)
-    if (!textoValor) return 'Nível livre'
-    return textoValor.charAt(0).toUpperCase() + textoValor.slice(1)
-  }
-
-  function abrirModalReserva() {
-    if (!roteiro) return
-
-    if (!idUsuarioLogado) {
-      localStorage.setItem('redirectAfterLogin', `/roteiros/${id}`)
-      router.push('/login')
-      return
-    }
-
-    if (normalizar(usuarioLogado?.tipo) !== 'cliente') {
-      setMensagem('Entre como cliente para reservar este roteiro.')
-      return
-    }
-
-    if (esgotado) {
-      setMensagem('Este roteiro está esgotado para a data disponível.')
-      return
-    }
-
-    setMensagem('')
-    setModalReservaAberto(true)
-  }
-
-  async function handleReservar() {
-    if (!roteiro) return
-
-    if (!idUsuarioLogado) {
-      localStorage.setItem('redirectAfterLogin', `/roteiros/${id}`)
-      router.push('/login')
-      return
-    }
-
-    if (normalizar(usuarioLogado?.tipo) !== 'cliente') {
-      setMensagem('Entre como cliente para reservar este roteiro.')
-      return
-    }
-
-    if (esgotado) {
-      setMensagem('Este roteiro está esgotado para a data disponível.')
-      return
-    }
-
-    setReservando(true)
-    setMensagem('')
-
-    try {
-      const quantidade = Math.max(1, Number(quantidadePessoas || 1))
-      const valorUnitario = precoRoteiro(roteiro)
-      const valorReserva = valorUnitario * quantidade
-
-      const response = await fetch('/api/reservas/criar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clienteId: idUsuarioLogado,
-          roteiroId: roteiro.id,
-          dataTrilha: String(dataPrincipal(roteiro) || '').slice(0, 10) || null,
-          quantidadePessoas: quantidade,
-          valorUnitario,
-          valorTotal: valorReserva,
-          origem: 'roteiro_detalhe'
-        })
-      })
-
-      const respostaTexto = await response.text()
-      let data: AnyRecord | null = null
-
-      try {
-        data = respostaTexto ? JSON.parse(respostaTexto) : null
-      } catch {
-        data = { sucesso: false, erro: respostaTexto || 'Resposta não JSON da API.', raw: respostaTexto }
-      }
-
-      if (!response.ok || data?.sucesso === false) {
-        throw new Error(data?.erro || data?.message || 'Não foi possível criar a reserva agora.')
-      }
-
-      const reserva = (data?.reserva || data) as ReservaCriada | null
-
-      if (!reserva?.id) {
-        router.push('/cliente/minhas-reservas')
-        return
-      }
-
-      setModalReservaAberto(false)
-      router.push(`/cliente/pagamento/${reserva.id}`)
-    } catch (error: any) {
-      console.error('Erro ao reservar roteiro:', error)
-      setMensagem(error?.message || 'Não foi possível criar a reserva agora. Confira os dados e tente novamente.')
-    } finally {
-      setReservando(false)
-    }
-  }
-
-  function HeaderRoteiro({ subtitle }: { subtitle: string }) {
-    return (
-      <header className="topbar">
-        <div className="topbarInner">
-          <div className="headerGhost" aria-hidden="true" />
-
-          <button
-            type="button"
-            className="brandCenter"
-            onClick={() => router.push(roteiro ? rotaPrincipalUsuario() : '/roteiros')}
-            aria-label="Voltar para o início"
-            title="PrussikTrails"
-          >
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
-            <span className="brandSubtitle">{subtitle}</span>
-          </button>
-
-          {usuarioLogado ? (
-            <button
-              type="button"
-              className="profileButton"
-              onClick={() => router.push(rotaPerfilUsuario(usuarioLogado))}
-              aria-label={`Abrir ${primeiroNome(nomeUsuario(usuarioLogado))}`}
-              title="Perfil"
-            >
-              {avatarUsuario(usuarioLogado) ? (
-                <img src={avatarUsuario(usuarioLogado)} alt={nomeUsuario(usuarioLogado)} />
-              ) : (
-                <span className="profileInitial">{inicialUsuario(usuarioLogado)}</span>
-              )}
-            </button>
-          ) : (
-            <button type="button" className="loginButton" onClick={() => router.push('/login')} aria-label="Entrar" title="Entrar">
-              Entrar
-            </button>
-          )}
-        </div>
-      </header>
-    )
-  }
-
-  if (carregando) {
-    return (
-      <main className="page">
-        <HeaderRoteiro subtitle="Carregando roteiro outdoor" />
-        <section className="loadingCard"><div className="spinner" /><p>Carregando roteiro...</p></section>
-        <style jsx>{styles}</style>
-      </main>
-    )
-  }
-
-  if (!roteiro) {
-    return (
-      <main className="page">
-        <HeaderRoteiro subtitle="Roteiro não encontrado" />
-        <section className="emptyCard">
-          <span>🧭</span>
-          <h1>Roteiro não encontrado</h1>
-          <p>{mensagem || 'Não conseguimos localizar este roteiro.'}</p>
-          <button type="button" onClick={() => router.push('/roteiros')}>Ver outros roteiros</button>
-        </section>
-        <style jsx>{styles}</style>
-      </main>
-    )
-  }
-
-  const fotoAtual = fotosRoteiro[fotoSelecionada] || fotoCapa(roteiro)
-  const dataTexto = formatarData(dataPrincipal(roteiro))
-  const horaTexto = horaPrincipal(roteiro)
-  const detalhesTexto = limparTextoLongo(roteiro.roteiro_detalhado || roteiro.detalhes)
-  const inclui = quebrarTexto(roteiro.inclui)
-  const naoInclui = quebrarTexto(roteiro.nao_inclui)
-  const orientacoes = quebrarTexto(roteiro.orientacoes)
-  const guiaAtual = guia || guiaFallbackDoRoteiro(roteiro)
+  const destaque = roteirosFiltrados[0] || roteiros[0] || null
 
   return (
     <main className="page">
-      <HeaderRoteiro subtitle="Detalhes do passaporte outdoor" />
+      <style jsx>{styles}</style>
+
+      <header className="topbar">
+        <div className="topbarInner">
+          <button
+            type="button"
+            className="brand"
+            onClick={() => router.push(rotaPrincipalUsuario())}
+            aria-label="Voltar ao início"
+          >
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+            <span>Roteiros públicos</span>
+          </button>
+
+          <nav className="navActions" aria-label="Ações principais">
+            <button
+              type="button"
+              className="navLink desktopOnly"
+              onClick={() => router.push('/')}
+            >
+              Início
+            </button>
+
+            {usuarioLogado ? (
+              <button
+                type="button"
+                className="profileButton"
+                onClick={() => router.push(rotaPerfilUsuario(usuarioLogado))}
+                aria-label={`Abrir perfil de ${primeiroNome(nomeUsuario(usuarioLogado))}`}
+              >
+                {avatarUsuario(usuarioLogado) ? (
+                  <img src={avatarUsuario(usuarioLogado)} alt={nomeUsuario(usuarioLogado)} />
+                ) : (
+                  <span>{inicialUsuario(usuarioLogado)}</span>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="loginButton"
+                onClick={() => router.push('/login')}
+              >
+                Entrar
+              </button>
+            )}
+          </nav>
+        </div>
+      </header>
 
       <section className="hero">
-        <div className="heroMedia">
-          {fotoAtual ? (
-            <img src={fotoAtual} alt={tituloRoteiro(roteiro)} />
+        <div className="heroText">
+          <p className="eyebrow">Explore com guias cadastrados</p>
+          <h1>Roteiros outdoor para sua próxima jornada.</h1>
+          <p>
+            Encontre experiências publicadas por guias e agências, veja detalhes,
+            tire dúvidas e reserve pelo PrussikTrails quando o roteiro estiver disponível.
+          </p>
+
+          <div className="heroStats">
+            <div>
+              <strong>{roteiros.length}</strong>
+              <span>roteiro(s) disponível(is)</span>
+            </div>
+            <div>
+              <strong>{niveisDisponiveis.length || '—'}</strong>
+              <span>níveis de experiência</span>
+            </div>
+            <div>
+              <strong>PIX</strong>
+              <span>pagamento organizado pelo app</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="heroCard">
+          {destaque ? (
+            <>
+              <div className="heroCardPhoto">
+                {fotoRoteiro(destaque) ? (
+                  <img src={fotoRoteiro(destaque)} alt={tituloRoteiro(destaque)} />
+                ) : (
+                  <div className="photoFallback">
+                    <img src="/logo-prussik-display.png" alt="" />
+                  </div>
+                )}
+              </div>
+
+              <div className="heroCardBody">
+                <span className="hotTag">Roteiro em destaque</span>
+                <h2>{tituloRoteiro(destaque)}</h2>
+                <p>{localRoteiro(destaque)}</p>
+
+                <button type="button" onClick={() => abrirRoteiro(destaque.id)}>
+                  Ver roteiro
+                </button>
+              </div>
+            </>
           ) : (
-            <div className="fallbackHero"><img src="/logo-prussik-display.png" alt="" /><span>A jornada começa quando o conforto termina</span></div>
+            <div className="heroEmpty">
+              <span>🧭</span>
+              <strong>Nenhum roteiro disponível agora</strong>
+              <p>Assim que os guias publicarem novas experiências, elas aparecerão aqui.</p>
+            </div>
           )}
-
-          <div className="heroBadges">
-            <span>{labelDificuldade(roteiro.dificuldade)}</span>
-            <span>{kmRoteiro(roteiro)} km</span>
-          </div>
-        </div>
-
-        <div className="heroContent">
-          <p className="eyebrow">Experiência PrussikTrails</p>
-          <h1>{tituloRoteiro(roteiro)}</h1>
-          <p className="description">{roteiro.descricao || 'Uma experiência outdoor conduzida por guia, com reserva segura e acompanhamento dentro do app.'}</p>
-
-          <div className="shareBox" aria-label="Compartilhar roteiro">
-            <button type="button" className="shareButton primary" onClick={compartilharRoteiro}>
-              Compartilhar
-            </button>
-
-            <button type="button" className="shareButton whatsapp" onClick={enviarWhatsAppRoteiro}>
-              WhatsApp
-            </button>
-
-            <button type="button" className="shareButton instagram" onClick={prepararInstagramRoteiro}>
-              Instagram
-            </button>
-
-            <button type="button" className="shareButton" onClick={copiarLinkRoteiro}>
-              Copiar link
-            </button>
-
-            {linkCopiado && <span className="shareFeedback">Link copiado.</span>}
-          </div>
-
-          {guiaAtual && (
-            <button type="button" className="guideHeroCard" onClick={abrirPerfilGuia}>
-              <div className="guideMiniAvatar">
-                {avatarGuia(guiaAtual) ? <img src={avatarGuia(guiaAtual)} alt={nomePublicoGuia(guiaAtual)} /> : <span>{nomePublicoGuia(guiaAtual).charAt(0).toUpperCase()}</span>}
-              </div>
-
-              <div>
-                <small>Experiência conduzida por</small>
-                <strong>{nomePublicoGuia(guiaAtual)}</strong>
-                {(guiaAtual.cadastur || guiaAtual.cadastro_turismo) && <em>CADASTUR {guiaAtual.cadastur || guiaAtual.cadastro_turismo}</em>}
-              </div>
-
-              <span className="guideHeroArrow">Ver perfil →</span>
-            </button>
-          )}
-
-          <div className="heroFacts">
-            <div><span>Data</span><strong>{dataTexto}</strong>{horaTexto && <small>{horaTexto}</small>}</div>
-            <div><span>Local</span><strong>{localRoteiro(roteiro)}</strong></div>
-            <div><span>Duração</span><strong>{duracaoRoteiro(roteiro) || 'A combinar'} h</strong></div>
-          </div>
-
-          {mensagem && <div className="alert">{mensagem}</div>}
-
-          <div className="mobileBooking">
-            <strong>{formatarMoeda(precoRoteiro(roteiro))}</strong>
-            <button type="button" onClick={abrirModalReserva} disabled={reservando || esgotado}>{esgotado ? 'Esgotado' : reservando ? 'Reservando...' : 'Reservar'}</button>
-          </div>
         </div>
       </section>
 
-      {fotosRoteiro.length > 1 && (
-        <section className="galleryStrip">
-          {fotosRoteiro.map((foto, index) => (
-            <button type="button" key={`${foto}-${index}`} className={fotoSelecionada === index ? 'active' : ''} onClick={() => setFotoSelecionada(index)} aria-label={`Ver foto ${index + 1}`}>
-              <img src={foto} alt="" />
+      <section className="filters">
+        <div className="searchBox">
+          <span>Buscar</span>
+          <input
+            value={busca}
+            onChange={(event) => setBusca(event.target.value)}
+            placeholder="Nome, local, guia, dificuldade..."
+          />
+        </div>
+
+        <label>
+          <span>Nível</span>
+          <select value={filtroNivel} onChange={(event) => setFiltroNivel(event.target.value)}>
+            <option value="todos">Todos</option>
+            {niveisDisponiveis.map((nivel) => (
+              <option key={nivel} value={nivel}>
+                {nivel}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <span>Ordenar</span>
+          <select
+            value={filtroOrdenacao}
+            onChange={(event) => setFiltroOrdenacao(event.target.value as 'recentes' | 'data' | 'preco' | 'km')}
+          >
+            <option value="recentes">Mais recentes</option>
+            <option value="data">Próxima data</option>
+            <option value="preco">Menor preço</option>
+            <option value="km">Menor distância</option>
+          </select>
+        </label>
+
+        <button type="button" className="refreshBtn" onClick={carregarRoteiros}>
+          Atualizar
+        </button>
+      </section>
+
+      {erro && <div className="alert error">{erro}</div>}
+
+      <section className="listSection">
+        <div className="sectionHead">
+          <div>
+            <h2>Roteiros disponíveis</h2>
+            <p>
+              {carregando
+                ? 'Carregando experiências...'
+                : `${roteirosFiltrados.length} roteiro(s) encontrado(s).`}
+            </p>
+          </div>
+        </div>
+
+        {carregando ? (
+          <div className="loadingGrid">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div className="skeletonCard" key={index} />
+            ))}
+          </div>
+        ) : roteirosFiltrados.length === 0 ? (
+          <div className="emptyCard">
+            <span>🧭</span>
+            <h3>Nenhum roteiro encontrado</h3>
+            <p>
+              Verifique se há roteiros com status ativo/publicado ou ajuste os filtros de busca.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setBusca('')
+                setFiltroNivel('todos')
+                setFiltroOrdenacao('recentes')
+                carregarRoteiros()
+              }}
+            >
+              Limpar filtros e atualizar
             </button>
-          ))}
-        </section>
-      )}
+          </div>
+        ) : (
+          <div className="routeGrid">
+            {roteirosFiltrados.map((roteiro) => {
+              const guia = guias[guiaIdRoteiro(roteiro)]
+              const nomeGuia = nomePublicoGuia(guia, roteiro)
+              const foto = fotoRoteiro(roteiro)
+              const data = formatarData(dataPrincipal(roteiro))
+              const hora = horaPrincipal(roteiro)
+              const nivel = labelDificuldade(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade)
+              const km = kmRoteiro(roteiro)
 
-      <section className="contentGrid">
-        <div className="mainColumn">
-          <section className="card">
-            <div className="sectionTitle"><span>01</span><div><h2>Sobre a experiência</h2><p>O essencial para entender o roteiro antes da reserva.</p></div></div>
-            <div className="infoGrid">
-              <div><span>Embarque</span><strong>{roteiro.embarque_local || roteiro.local_encontro || roteiro.ponto_encontro || 'A combinar'}</strong></div>
-              <div><span>Retorno</span><strong>{roteiro.retorno_local || 'A combinar'}</strong></div>
-              <div><span>Vagas</span><strong>{vagasRestantes === null ? 'Sem limite informado' : vagasRestantes > 0 ? `${vagasRestantes} disponível(is)` : 'Esgotado'}</strong></div>
-              <div><span>Recorrência</span><strong>{roteiro.recorrencia || 'Experiência única'}</strong></div>
-            </div>
-          </section>
-
-          {detalhesTexto && (
-            <section className="card"><div className="sectionTitle"><span>02</span><div><h2>Roteiro detalhado</h2><p>Como a aventura deve acontecer.</p></div></div><div className="routeDescriptionBox">{detalhesTexto}</div></section>
-          )}
-
-          {(inclui.length > 0 || naoInclui.length > 0) && (
-            <section className="splitCards">
-              {inclui.length > 0 && <div className="card"><div className="sectionTitle compact"><span>✓</span><div><h2>Inclui</h2><p>Itens informados pelo guia.</p></div></div><ul className="bulletList">{inclui.map((item) => <li key={item}>{item}</li>)}</ul></div>}
-              {naoInclui.length > 0 && <div className="card"><div className="sectionTitle compact"><span>!</span><div><h2>Não inclui</h2><p>Planeje-se antes de sair.</p></div></div><ul className="bulletList">{naoInclui.map((item) => <li key={item}>{item}</li>)}</ul></div>}
-            </section>
-          )}
-
-          {orientacoes.length > 0 && (
-            <section className="card"><div className="sectionTitle"><span>03</span><div><h2>Orientações importantes</h2><p>Leia antes de reservar.</p></div></div><ul className="bulletList">{orientacoes.map((item) => <li key={item}>{item}</li>)}</ul></section>
-          )}
-
-          <section className="card questionsCard">
-            <div className="sectionTitle"><span>?</span><div><h2>Perguntas públicas</h2><p>Clientes perguntam no roteiro e o guia responde de forma transparente.</p></div></div>
-
-            {!ehGuiaDono && (
-              <div className="questionBox">
-                <textarea value={novaPergunta} onChange={(event) => setNovaPergunta(event.target.value)} placeholder={idUsuarioLogado ? 'Pergunte sobre ponto de encontro, preparo físico, equipamentos ou qualquer detalhe do roteiro.' : 'Faça login para enviar uma pergunta pública ao guia.'} maxLength={700} disabled={!idUsuarioLogado || enviandoPergunta} />
-                <div className="questionActions"><span>{novaPergunta.length}/700</span><button type="button" onClick={idUsuarioLogado ? enviarPerguntaPublica : () => router.push('/login')} disabled={enviandoPergunta}>{idUsuarioLogado ? enviandoPergunta ? 'Publicando...' : 'Enviar pergunta' : 'Entrar para perguntar'}</button></div>
-              </div>
-            )}
-
-            {perguntasAviso && <div className="questionNotice">{perguntasAviso}</div>}
-
-            <div className="questionsList">
-              {perguntas.length === 0 ? (
-                <div className="emptyQuestions"><strong>Ainda não há perguntas públicas.</strong><p>Seja o primeiro a perguntar algo útil para outros aventureiros.</p></div>
-              ) : (
-                perguntas.map((pergunta) => (
-                  <article key={pergunta.id} className="questionItem">
-                    <div className="questionHeader"><div><strong>{pergunta.cliente_nome || 'Aventureiro PrussikTrails'}</strong><span>perguntou</span></div>{pergunta.created_at && <time>{formatarData(pergunta.created_at)}</time>}</div>
-                    <p className="questionText">{pergunta.pergunta}</p>
-                    {pergunta.resposta ? (
-                      <div className="answerBox"><span>Resposta do guia</span><p>{pergunta.resposta}</p></div>
-                    ) : ehGuiaDono ? (
-                      <div className="answerEditor"><textarea value={respostasGuia[pergunta.id] || ''} onChange={(event) => setRespostasGuia((prev) => ({ ...prev, [pergunta.id]: event.target.value }))} placeholder="Responder publicamente esta pergunta..." maxLength={900} disabled={respondendoPerguntaId === pergunta.id} /><button type="button" onClick={() => responderPerguntaPublica(pergunta.id)} disabled={respondendoPerguntaId === pergunta.id}>{respondendoPerguntaId === pergunta.id ? 'Publicando...' : 'Responder como guia'}</button></div>
+              return (
+                <article className="routeCard" key={roteiro.id}>
+                  <button
+                    type="button"
+                    className="routePhoto"
+                    onClick={() => abrirRoteiro(roteiro.id)}
+                    aria-label={`Abrir ${tituloRoteiro(roteiro)}`}
+                  >
+                    {foto ? (
+                      <img src={foto} alt={tituloRoteiro(roteiro)} />
                     ) : (
-                      <div className="pendingAnswer">Aguardando resposta do guia.</div>
+                      <div className="photoFallback">
+                        <img src="/logo-prussik-display.png" alt="" />
+                      </div>
                     )}
-                  </article>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
 
-        <aside className="sideColumn">
-          <section className="bookingCard">
-            <p className="bookingLabel">Valor por pessoa</p>
-            <strong className="bookingPrice">{formatarMoeda(precoRoteiro(roteiro))}</strong>
-            <label>Pessoas<select value={quantidadePessoas} onChange={(event) => setQuantidadePessoas(Number(event.target.value))} disabled={esgotado}>{Array.from({ length: Math.max(1, Math.min(12, vagasRestantes || 12)) }).map((_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
-            <div className="bookingTotal"><span>Total</span><strong>{formatarMoeda(valorTotal)}</strong></div>
-            <button type="button" className="reserveBtn" onClick={abrirModalReserva} disabled={reservando || esgotado}>{esgotado ? 'Roteiro esgotado' : reservando ? 'Criando reserva...' : 'Reservar agora'}</button>
-            <p className="bookingNote">O pagamento será feito na próxima etapa com confirmação automática quando disponível.</p>
-          </section>
+                    <span className="levelBadge">{nivel}</span>
+                  </button>
 
-          {guiaAtual && (
-            <section className="guideCard guideCardClickable" role="button" tabIndex={0} onClick={abrirPerfilGuia} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrirPerfilGuia() } }}>
-              <div className="guideTop"><div className="guideAvatar">{avatarGuia(guiaAtual) ? <img src={avatarGuia(guiaAtual)} alt={nomePublicoGuia(guiaAtual)} /> : <span>{nomePublicoGuia(guiaAtual).charAt(0).toUpperCase()}</span>}</div><div><span>Guia responsável</span><strong>{nomePublicoGuia(guiaAtual)}</strong>{(guiaAtual.cadastur || guiaAtual.cadastro_turismo) && <small>CADASTUR {guiaAtual.cadastur || guiaAtual.cadastro_turismo}</small>}</div></div>
-              {guiaAtual.bio && <p>{guiaAtual.bio}</p>}
-              <div className="guideBtn fakeGuideBtn">Ver perfil do guia</div>
-            </section>
-          )}
-        </aside>
-      </section>
+                  <div className="routeBody">
+                    <div className="routeTop">
+                      <div>
+                        <h3>{tituloRoteiro(roteiro)}</h3>
+                        <p>{descricaoCurta(roteiro)}</p>
+                      </div>
+                    </div>
 
-      {modalReservaAberto && roteiro && (
-        <div className="modalOverlay" role="dialog" aria-modal="true" aria-label="Revisar reserva">
-          <div className="modalCard">
-            <div className="modalHead"><div><span>Reserva PrussikTrails</span><h2>Revise sua jornada</h2><p>Confira os dados antes de gerar o QR Code PIX da sua reserva.</p></div><button type="button" className="modalClose" onClick={() => setModalReservaAberto(false)} disabled={reservando} aria-label="Fechar">×</button></div>
-            <div className="modalBody">
-              <div className="modalRoute"><div className="modalThumb">{fotoAtual ? <img src={fotoAtual} alt={tituloRoteiro(roteiro)} /> : <span>RT</span>}</div><div><strong>{tituloRoteiro(roteiro)}</strong><small>{localRoteiro(roteiro)}</small><small>{dataTexto}{horaTexto ? ` · ${horaTexto}` : ''}</small></div></div>
-              <div className="modalInfoGrid"><div><span>Valor por pessoa</span><strong>{formatarMoeda(precoRoteiro(roteiro))}</strong></div><div><span>Pessoas</span><strong>{quantidadePessoas}</strong></div><div><span>Total da reserva</span><strong>{formatarMoeda(valorTotal)}</strong></div></div>
-              <label className="modalQuantity"><span>Quantidade de pessoas</span><select value={quantidadePessoas} onChange={(event) => setQuantidadePessoas(Number(event.target.value))} disabled={reservando || esgotado}>{Array.from({ length: Math.max(1, Math.min(12, vagasRestantes || 12)) }).map((_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
-              <p className="modalNote">Ao confirmar, criaremos a reserva e abriremos a tela de pagamento para gerar o QR Code PIX.</p>
-              <div className="modalActions"><button type="button" className="modalCancel" onClick={() => setModalReservaAberto(false)} disabled={reservando}>Voltar</button><button type="button" className="modalConfirm" onClick={handleReservar} disabled={reservando || esgotado}>{reservando ? 'Criando reserva...' : 'Confirmar e gerar QR Code PIX'}</button></div>
-            </div>
+                    <div className="routeFacts">
+                      <span>📍 {localRoteiro(roteiro)}</span>
+                      <span>📅 {data}{hora ? ` · ${hora}` : ''}</span>
+                      <span>🥾 {km > 0 ? `${km} km` : 'Distância a combinar'} · {duracaoRoteiro(roteiro)}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="guideLine"
+                      onClick={() => abrirPerfilGuia(roteiro)}
+                      disabled={!guiaIdRoteiro(roteiro)}
+                    >
+                      <span className="guideAvatar">
+                        {avatarGuia(guia, roteiro) ? (
+                          <img src={avatarGuia(guia, roteiro)} alt={nomeGuia} />
+                        ) : (
+                          nomeGuia.slice(0, 1).toUpperCase()
+                        )}
+                      </span>
+
+                      <span>
+                        <small>Guia/Agência</small>
+                        <strong>{nomeGuia}</strong>
+                      </span>
+                    </button>
+
+                    <div className="routeFooter">
+                      <div className="price">
+                        <span>Valor</span>
+                        <strong>{precoRoteiro(roteiro) > 0 ? formatarMoeda(precoRoteiro(roteiro)) : 'Consultar'}</strong>
+                      </div>
+
+                      <div className="cardActions">
+                        <button
+                          type="button"
+                          className="secondaryBtn"
+                          onClick={() => copiarLink(roteiro)}
+                        >
+                          {copiadoId === roteiro.id ? 'Copiado' : 'Copiar link'}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="secondaryBtn whatsapp"
+                          onClick={() => enviarWhatsApp(roteiro)}
+                        >
+                          WhatsApp
+                        </button>
+
+                        <button
+                          type="button"
+                          className="primaryBtn"
+                          onClick={() => abrirRoteiro(roteiro.id)}
+                        >
+                          Ver roteiro
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
           </div>
-        </div>
-      )}
-
-      <style jsx>{styles}</style>
+        )}
+      </section>
     </main>
   )
 }
@@ -1089,72 +976,89 @@ const styles = `
       radial-gradient(circle at 90% 8%, rgba(251, 146, 60, 0.13), transparent 28%),
       linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
     color: #172018;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    padding-bottom: 72px;
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+    padding-bottom: 70px;
   }
 
   .topbar {
     position: sticky;
     top: 0;
-    z-index: 40;
-    background: rgba(255, 253, 247, 0.88);
+    z-index: 60;
+    background: rgba(255, 253, 247, 0.92);
     border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     backdrop-filter: blur(18px);
-    padding: 8px 14px;
+    padding: 8px 16px;
   }
 
   .topbarInner {
     width: 100%;
     max-width: 1180px;
     margin: 0 auto;
-    display: grid;
-    grid-template-columns: 46px minmax(0, 1fr) 46px;
+    min-height: 56px;
+    display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
+    gap: 16px;
   }
 
-  .headerGhost {
-    width: 42px;
-    height: 42px;
-  }
-
-  .brandCenter {
-    min-width: 0;
+  .brand {
     border: none;
     background: transparent;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    gap: 12px;
     cursor: pointer;
     padding: 0;
-    text-align: center;
+    min-width: 0;
   }
 
-  .brandLogo {
-    width: clamp(178px, 54vw, 270px);
-    max-width: 100%;
-    height: auto;
+  .brand img {
+    width: 122px;
+    height: 48px;
     object-fit: contain;
     display: block;
   }
 
-  .brandSubtitle {
+  .brand span {
     color: #6b7280;
-    font-size: clamp(9px, 2.6vw, 11px);
-    line-height: 1;
-    font-weight: 850;
-    letter-spacing: 0.08em;
-    margin-top: -3px;
+    font-size: 10px;
+    line-height: 1.1;
+    font-weight: 900;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
     white-space: nowrap;
-    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .profileButton,
+  .navActions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+
+  .navLink,
   .loginButton {
+    border: 1px solid rgba(32, 60, 46, 0.13);
+    background: rgba(255,255,255,0.76);
+    color: #203c2e;
+    border-radius: 999px;
+    min-height: 40px;
+    padding: 0 15px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .profileButton {
     width: 42px;
     height: 42px;
     border: 1px solid rgba(15, 23, 42, 0.08);
@@ -1169,14 +1073,8 @@ const styles = `
     padding: 0;
     box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
     transition: 0.2s ease;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 950;
-  }
-
-  .profileButton:hover,
-  .loginButton:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
   }
 
   .profileButton img {
@@ -1186,230 +1084,416 @@ const styles = `
     display: block;
   }
 
-  .profileInitial {
-    width: 100%;
-    height: 100%;
-    border-radius: 999px;
-    background: #172018;
-    color: #ffffff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    font-weight: 950;
-  }
-
   .hero {
     max-width: 1180px;
-    margin: 18px auto 0;
+    margin: 24px auto 0;
     padding: 0 18px;
     display: grid;
-    grid-template-columns: minmax(0, 1.07fr) minmax(340px, 0.93fr);
+    grid-template-columns: minmax(0, 1fr) 420px;
     gap: 22px;
     align-items: stretch;
   }
 
-  .heroMedia {
-    position: relative;
-    min-height: 520px;
-    border-radius: 36px;
-    overflow: hidden;
-    background: #d9dfcf;
-    box-shadow: 0 28px 80px rgba(32, 60, 46, 0.16);
+  .heroText,
+  .heroCard,
+  .filters,
+  .alert,
+  .sectionHead,
+  .emptyCard,
+  .routeCard,
+  .skeletonCard {
+    border: 1px solid rgba(32, 60, 46, 0.08);
+    background: rgba(255, 253, 247, 0.84);
+    box-shadow: 0 20px 56px rgba(32, 60, 46, 0.09);
   }
 
-  .heroMedia > img {
+  .heroText {
+    border-radius: 36px;
+    padding: clamp(28px, 5vw, 54px);
+  }
+
+  .eyebrow {
+    margin: 0 0 13px;
+    color: #991b1b;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .heroText h1 {
+    max-width: 780px;
+    margin: 0;
+    color: #172018;
+    font-size: clamp(42px, 7vw, 86px);
+    line-height: 0.9;
+    letter-spacing: -0.078em;
+    font-weight: 950;
+  }
+
+  .heroText p {
+    max-width: 680px;
+    margin: 20px 0 0;
+    color: rgba(23, 32, 24, 0.68);
+    font-size: 16px;
+    line-height: 1.65;
+    font-weight: 700;
+  }
+
+  .heroStats {
+    margin-top: 28px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .heroStats div {
+    border-radius: 22px;
+    background: rgba(32, 60, 46, 0.055);
+    padding: 15px;
+  }
+
+  .heroStats strong {
+    display: block;
+    color: #203c2e;
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: -0.055em;
+    font-weight: 950;
+  }
+
+  .heroStats span {
+    display: block;
+    margin-top: 7px;
+    color: rgba(23, 32, 24, 0.58);
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 850;
+  }
+
+  .heroCard {
+    border-radius: 36px;
+    overflow: hidden;
+    min-height: 440px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .heroCardPhoto {
+    position: relative;
+    flex: 1;
+    min-height: 255px;
+    background: #dfe7d2;
+  }
+
+  .heroCardPhoto img,
+  .routePhoto img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
   }
 
-  .fallbackHero {
+  .photoFallback {
+    width: 100%;
     height: 100%;
-    min-height: 520px;
+    min-height: inherit;
     display: grid;
     place-items: center;
-    text-align: center;
-    padding: 28px;
     background:
-      radial-gradient(circle at 50% 20%, rgba(153, 27, 27, 0.13), transparent 30%),
+      radial-gradient(circle at 50% 20%, rgba(153,27,27,0.11), transparent 32%),
       linear-gradient(135deg, #dfe7d2, #f7f0dd);
   }
 
-  .fallbackHero img {
-    width: 96px;
-    height: 96px;
+  .photoFallback img {
+    width: 92px;
+    height: 92px;
     object-fit: contain;
   }
 
-  .fallbackHero span {
-    display: block;
-    max-width: 320px;
-    color: #203c2e;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 30px;
-    font-weight: 700;
-    letter-spacing: -0.05em;
-    line-height: 1;
+  .heroCardBody {
+    padding: 18px;
   }
 
-  .heroBadges {
-    position: absolute;
-    left: 18px;
-    right: 18px;
-    bottom: 18px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .heroBadges span {
+  .hotTag {
+    display: inline-flex;
+    width: fit-content;
     border-radius: 999px;
-    padding: 9px 12px;
-    background: rgba(255, 253, 247, 0.86);
-    color: #203c2e;
-    font-size: 12px;
-    font-weight: 950;
-    backdrop-filter: blur(12px);
-  }
-
-  .heroContent,
-  .card,
-  .bookingCard,
-  .guideCard,
-  .loadingCard,
-  .emptyCard {
-    border: 1px solid rgba(32, 60, 46, 0.08);
-    border-radius: 30px;
-    background: rgba(255, 253, 247, 0.82);
-    box-shadow: 0 20px 56px rgba(32, 60, 46, 0.09);
-    padding: 22px;
-    min-width: 0;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-  }
-
-  .heroContent {
-    border-radius: 36px;
-    padding: clamp(24px, 4vw, 44px);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-
-  .eyebrow {
-    margin: 0 0 12px;
+    background: rgba(153, 27, 27, 0.10);
     color: #991b1b;
-    font-size: 11px;
+    padding: 7px 10px;
+    font-size: 10px;
     font-weight: 950;
     text-transform: uppercase;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.10em;
   }
 
-  .heroContent h1 {
-    margin: 0;
+  .heroCardBody h2 {
+    margin: 13px 0 0;
     color: #172018;
-    font-size: clamp(42px, 6vw, 76px);
-    line-height: 0.92;
-    letter-spacing: -0.075em;
+    font-size: 26px;
+    line-height: 1;
+    letter-spacing: -0.055em;
     font-weight: 950;
   }
 
-  .description {
-    margin: 18px 0 0;
-    color: rgba(23, 32, 24, 0.68);
-    font-size: 16px;
-    line-height: 1.65;
-    font-weight: 650;
-    overflow-wrap: anywhere;
+  .heroCardBody p {
+    margin: 9px 0 0;
+    color: rgba(23, 32, 24, 0.62);
+    font-size: 13px;
+    font-weight: 800;
   }
 
-  .shareBox {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-    margin-top: 16px;
-  }
-
-  .shareButton {
-    border: 1px solid rgba(32, 60, 46, 0.12);
-    background: rgba(255, 253, 247, 0.86);
-    color: #203c2e;
+  .heroCardBody button,
+  .emptyCard button,
+  .refreshBtn,
+  .primaryBtn,
+  .secondaryBtn {
+    border: none;
     border-radius: 999px;
-    padding: 11px 14px;
-    font-size: 12px;
-    font-weight: 950;
     cursor: pointer;
+    font-weight: 950;
     transition: 0.18s ease;
-    white-space: nowrap;
   }
 
-  .shareButton:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
-  }
-
-  .shareButton.primary {
+  .heroCardBody button {
+    margin-top: 16px;
     background: #203c2e;
     color: #fffdf7;
-    border-color: #203c2e;
+    padding: 12px 16px;
+    font-size: 13px;
   }
 
-  .shareButton.whatsapp {
-    background: #dcfce7;
-    color: #166534;
-    border-color: #bbf7d0;
+  .heroEmpty {
+    min-height: 440px;
+    padding: 26px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    text-align: center;
+    color: #203c2e;
   }
 
-  .shareButton.instagram {
-    background: #fff7ed;
-    color: #9a3412;
-    border-color: #fed7aa;
+  .heroEmpty span {
+    font-size: 44px;
   }
 
-  .shareFeedback {
-    color: #166534;
+  .heroEmpty strong {
+    display: block;
+    margin-top: 12px;
+    font-size: 22px;
+    font-weight: 950;
+    letter-spacing: -0.04em;
+  }
+
+  .heroEmpty p {
+    max-width: 280px;
+    color: rgba(23, 32, 24, 0.58);
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 760;
+  }
+
+  .filters,
+  .listSection {
+    max-width: 1180px;
+    margin: 20px auto 0;
+    padding: 0 18px;
+  }
+
+  .filters {
+    border-radius: 28px;
+    padding: 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px 180px auto;
+    gap: 10px;
+    align-items: end;
+  }
+
+  .filters label,
+  .searchBox {
+    display: grid;
+    gap: 6px;
+  }
+
+  .filters span,
+  .searchBox span {
+    color: rgba(23, 32, 24, 0.58);
+    font-size: 10px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+  }
+
+  .filters input,
+  .filters select {
+    width: 100%;
+    border: 1px solid rgba(32, 60, 46, 0.12);
+    background: rgba(255,255,255,0.78);
+    color: #172018;
+    border-radius: 17px;
+    padding: 12px 13px;
+    font-size: 14px;
+    font-weight: 820;
+    outline: none;
+  }
+
+  .filters input:focus,
+  .filters select:focus {
+    border-color: rgba(132, 204, 22, 0.70);
+    box-shadow: 0 0 0 4px rgba(132,204,22,0.12);
+  }
+
+  .refreshBtn {
+    min-height: 43px;
+    background: #eef2e5;
+    color: #203c2e;
+    padding: 0 14px;
     font-size: 12px;
+  }
+
+  .alert {
+    max-width: 1180px;
+    margin: 18px auto 0;
+    border-radius: 20px;
+    padding: 14px 18px;
+    color: #7f1d1d;
+    font-size: 13px;
     font-weight: 850;
   }
 
-  .guideHeroCard {
-    width: 100%;
-    margin-top: 18px;
-    border: 1px solid rgba(32, 60, 46, 0.1);
-    border-radius: 24px;
-    background: rgba(32, 60, 46, 0.055);
-    padding: 12px;
+  .sectionHead {
+    border-radius: 28px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .sectionHead h2 {
+    margin: 0;
+    color: #172018;
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: -0.05em;
+    font-weight: 950;
+  }
+
+  .sectionHead p {
+    margin: 8px 0 0;
+    color: rgba(23, 32, 24, 0.58);
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 760;
+  }
+
+  .routeGrid,
+  .loadingGrid {
     display: grid;
-    grid-template-columns: 48px minmax(0, 1fr) auto;
-    gap: 12px;
-    align-items: center;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .routeCard {
+    border-radius: 30px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .routePhoto {
+    position: relative;
+    width: 100%;
+    height: 230px;
+    border: 0;
+    padding: 0;
+    background: #dfe7d2;
+    cursor: pointer;
+    overflow: hidden;
+  }
+
+  .levelBadge {
+    position: absolute;
+    left: 14px;
+    top: 14px;
+    border-radius: 999px;
+    background: rgba(255,253,247,0.90);
+    color: #203c2e;
+    padding: 8px 11px;
+    font-size: 11px;
+    font-weight: 950;
+    backdrop-filter: blur(10px);
+  }
+
+  .routeBody {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .routeTop h3 {
+    margin: 0;
+    color: #172018;
+    font-size: 23px;
+    line-height: 1.02;
+    letter-spacing: -0.055em;
+    font-weight: 950;
+  }
+
+  .routeTop p {
+    min-height: 58px;
+    margin: 9px 0 0;
+    color: rgba(23, 32, 24, 0.64);
+    font-size: 13px;
+    line-height: 1.48;
+    font-weight: 720;
+  }
+
+  .routeFacts {
+    margin-top: 14px;
+    display: grid;
+    gap: 7px;
+  }
+
+  .routeFacts span {
+    color: rgba(23, 32, 24, 0.68);
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 830;
+  }
+
+  .guideLine {
+    margin-top: 14px;
+    border: 1px solid rgba(32, 60, 46, 0.08);
+    background: rgba(32, 60, 46, 0.045);
     color: inherit;
+    border-radius: 20px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     text-align: left;
     cursor: pointer;
   }
 
-  .guideMiniAvatar,
+  .guideLine:disabled {
+    cursor: default;
+  }
+
   .guideAvatar {
-    overflow: hidden;
+    width: 42px;
+    height: 42px;
+    border-radius: 16px;
     background: #203c2e;
     color: #fffdf7;
     display: grid;
     place-items: center;
+    font-size: 15px;
     font-weight: 950;
+    overflow: hidden;
     flex: 0 0 auto;
   }
 
-  .guideMiniAvatar {
-    width: 48px;
-    height: 48px;
-    border-radius: 18px;
-    font-size: 20px;
-  }
-
-  .guideMiniAvatar img,
   .guideAvatar img {
     width: 100%;
     height: 100%;
@@ -1417,275 +1501,283 @@ const styles = `
     display: block;
   }
 
-  .guideHeroCard small,
-  .heroFacts span,
-  .infoGrid span,
-  .bookingLabel,
-  .guideTop span {
+  .guideLine small {
     display: block;
-    color: rgba(23, 32, 24, 0.52);
-    font-size: 11px;
-    font-weight: 900;
+    color: rgba(23, 32, 24, 0.48);
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    margin-bottom: 6px;
   }
 
-  .guideHeroCard strong,
-  .heroFacts strong,
-  .infoGrid strong {
-    display: block;
-    color: #203c2e;
-    font-size: 15px;
-    line-height: 1.35;
-    font-weight: 900;
-  }
-
-  .guideHeroCard em {
+  .guideLine strong {
     display: block;
     margin-top: 3px;
-    color: #7b8372;
-    font-size: 11px;
-    font-style: normal;
-    font-weight: 850;
-  }
-
-  .guideHeroArrow {
-    color: #991b1b;
-    font-size: 12px;
-    font-weight: 950;
-    white-space: nowrap;
-  }
-
-  .heroFacts {
-    margin-top: 24px;
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .heroFacts div,
-  .infoGrid div {
-    border-radius: 22px;
-    background: rgba(32, 60, 46, 0.05);
-    padding: 14px 16px;
-  }
-
-  .heroFacts small {
-    display: block;
-    margin-top: 4px;
-    color: #7b8372;
-    font-size: 12px;
-    font-weight: 850;
-  }
-
-  .alert,
-  .questionNotice {
-    margin-top: 18px;
-    border-radius: 18px;
-    background: rgba(153, 27, 27, 0.08);
-    border: 1px solid rgba(153, 27, 27, 0.16);
-    color: #7f1d1d;
-    padding: 12px 14px;
+    color: #203c2e;
     font-size: 13px;
-    font-weight: 850;
+    line-height: 1.25;
+    font-weight: 950;
   }
 
-  .mobileBooking { display: none; }
-
-  .galleryStrip {
-    max-width: 1180px;
-    margin: 16px auto 0;
-    padding: 0 18px;
-    display: flex;
-    gap: 10px;
-    overflow-x: auto;
-  }
-
-  .galleryStrip button {
-    width: 92px;
-    height: 72px;
-    flex: 0 0 auto;
-    border: 3px solid transparent;
-    border-radius: 18px;
-    overflow: hidden;
-    padding: 0;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .galleryStrip button.active { border-color: #991b1b; }
-  .galleryStrip img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-  .contentGrid {
-    max-width: 1180px;
-    margin: 22px auto 0;
-    padding: 0 18px;
+  .routeFooter {
+    margin-top: auto;
+    padding-top: 16px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    gap: 22px;
-    align-items: start;
+    gap: 12px;
   }
 
-  .mainColumn { display: grid; gap: 18px; }
-  .sideColumn { position: sticky; top: 92px; display: grid; gap: 18px; }
+  .price span {
+    display: block;
+    color: rgba(23, 32, 24, 0.48);
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
 
-  .loadingCard,
-  .emptyCard { max-width: 520px; margin: 80px auto; text-align: center; }
-  .emptyCard span { font-size: 54px; }
-  .emptyCard h1 { margin: 10px 0 0; font-size: 34px; letter-spacing: -0.05em; }
-  .emptyCard p { color: #64748b; font-weight: 700; }
-  .emptyCard button { border: 0; border-radius: 999px; padding: 12px 16px; background: #991b1b; color: #fffdf7; font-weight: 950; cursor: pointer; }
+  .price strong {
+    display: block;
+    margin-top: 3px;
+    color: #991b1b;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: -0.05em;
+    font-weight: 950;
+  }
 
-  .spinner { width: 34px; height: 34px; border: 4px solid rgba(32, 60, 46, 0.12); border-top-color: #991b1b; border-radius: 999px; margin: 0 auto 12px; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .cardActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
 
-  .sectionTitle { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; }
-  .sectionTitle.compact { margin-bottom: 14px; }
-  .sectionTitle > span { width: 38px; height: 38px; border-radius: 14px; background: rgba(153, 27, 27, 0.1); color: #991b1b; display: grid; place-items: center; font-size: 13px; font-weight: 950; flex: 0 0 auto; }
-  .sectionTitle h2 { margin: 0; font-size: 24px; line-height: 1; letter-spacing: -0.045em; color: #172018; }
-  .sectionTitle p { margin: 6px 0 0; color: rgba(23, 32, 24, 0.58); font-size: 13px; font-weight: 750; }
+  .primaryBtn,
+  .secondaryBtn {
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 11px;
+  }
 
-  .infoGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .routeDescriptionBox { border-radius: 22px; background: rgba(32, 60, 46, 0.045); color: rgba(23, 32, 24, 0.76); padding: 18px; font-size: 14px; line-height: 1.75; font-weight: 750; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .splitCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-  .bulletList { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-  .bulletList li { position: relative; padding-left: 22px; color: rgba(23, 32, 24, 0.72); font-size: 14px; line-height: 1.45; font-weight: 750; }
-  .bulletList li::before { content: ''; position: absolute; left: 0; top: 7px; width: 8px; height: 8px; border-radius: 999px; background: #991b1b; }
+  .primaryBtn {
+    grid-column: 1 / -1;
+    background: #203c2e;
+    color: #fffdf7;
+  }
 
-  .questionsCard { display: grid; gap: 16px; }
-  .questionBox { border-radius: 24px; background: rgba(32, 60, 46, 0.045); padding: 12px; display: grid; gap: 10px; }
-  .questionBox textarea, .answerEditor textarea { width: 100%; min-height: 104px; resize: vertical; border: 1px solid rgba(32, 60, 46, 0.12); border-radius: 20px; background: rgba(255, 255, 255, 0.78); color: #172018; padding: 14px; font: inherit; font-size: 14px; line-height: 1.5; font-weight: 750; outline: none; }
-  .questionActions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-  .questionActions span { color: rgba(23, 32, 24, 0.5); font-size: 12px; font-weight: 850; }
-  .questionActions button, .answerEditor button { border: 0; border-radius: 999px; background: #203c2e; color: #fffdf7; padding: 11px 14px; font-size: 12px; font-weight: 950; cursor: pointer; }
-  .questionActions button:disabled, .answerEditor button:disabled { opacity: 0.58; cursor: not-allowed; }
-  .questionsList { display: grid; gap: 12px; }
-  .emptyQuestions { border-radius: 22px; background: rgba(32, 60, 46, 0.045); padding: 16px; }
-  .emptyQuestions strong { display: block; color: #203c2e; font-size: 14px; font-weight: 950; }
-  .emptyQuestions p { margin: 6px 0 0; color: rgba(23, 32, 24, 0.58); font-size: 13px; line-height: 1.4; font-weight: 750; }
-  .questionItem { border-radius: 24px; background: rgba(255, 255, 255, 0.66); border: 1px solid rgba(32, 60, 46, 0.08); padding: 15px; display: grid; gap: 10px; }
-  .questionHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .questionHeader strong { display: block; color: #203c2e; font-size: 13px; font-weight: 950; }
-  .questionHeader span, .questionHeader time { color: rgba(23, 32, 24, 0.48); font-size: 11px; font-weight: 850; }
-  .questionText { margin: 0; color: rgba(23, 32, 24, 0.74); font-size: 14px; line-height: 1.55; font-weight: 760; }
-  .answerBox { border-left: 4px solid #203c2e; border-radius: 18px; background: rgba(32, 60, 46, 0.06); padding: 12px; }
-  .answerBox span { display: block; color: #203c2e; font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 7px; }
-  .answerBox p { margin: 0; color: rgba(23, 32, 24, 0.72); font-size: 13px; line-height: 1.5; font-weight: 750; }
-  .answerEditor { display: grid; gap: 10px; }
-  .answerEditor textarea { min-height: 92px; }
-  .answerEditor button { justify-self: end; }
-  .pendingAnswer { border-radius: 999px; background: rgba(123, 131, 114, 0.1); color: #64705b; padding: 9px 12px; font-size: 12px; font-weight: 850; width: fit-content; }
+  .secondaryBtn {
+    background: #eef2e5;
+    color: #203c2e;
+  }
 
-  .bookingCard { display: grid; gap: 14px; }
-  .bookingPrice { color: #203c2e; font-size: 34px; line-height: 1; letter-spacing: -0.06em; }
-  .bookingCard label { display: grid; gap: 7px; color: rgba(23, 32, 24, 0.58); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; }
-  .bookingCard select { width: 100%; border: 1px solid rgba(32, 60, 46, 0.12); border-radius: 18px; background: rgba(255, 255, 255, 0.72); color: #172018; padding: 12px 13px; font-size: 14px; font-weight: 850; outline: none; }
-  .bookingTotal { border-radius: 20px; background: rgba(153, 27, 27, 0.08); padding: 14px; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-  .bookingTotal span { color: #7f1d1d; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; }
-  .bookingTotal strong { color: #7f1d1d; font-size: 20px; letter-spacing: -0.04em; }
-  .reserveBtn, .guideBtn { width: 100%; border: 0; border-radius: 999px; background: #991b1b; color: #fffdf7; padding: 14px 16px; font-size: 14px; font-weight: 950; cursor: pointer; box-shadow: 0 18px 36px rgba(153, 27, 27, 0.18); }
-  .reserveBtn:disabled { opacity: 0.58; cursor: not-allowed; box-shadow: none; }
-  .bookingNote { margin: 0; color: rgba(23, 32, 24, 0.52); font-size: 12px; line-height: 1.45; font-weight: 750; }
+  .secondaryBtn.whatsapp {
+    background: #dcfce7;
+    color: #166534;
+  }
 
-  .guideTop { display: flex; gap: 12px; align-items: center; }
-  .guideAvatar { width: 58px; height: 58px; border-radius: 22px; font-size: 22px; }
-  .guideTop strong { display: block; color: #172018; font-size: 16px; font-weight: 950; }
-  .guideTop small { display: block; margin-top: 4px; color: #7b8372; font-size: 11px; font-weight: 850; }
-  .guideCard p { margin: 14px 0; color: rgba(23, 32, 24, 0.64); font-size: 13px; line-height: 1.5; font-weight: 700; }
-  .guideCardClickable { cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
-  .guideCardClickable:hover, .guideCardClickable:focus { transform: translateY(-2px); border-color: rgba(32, 60, 46, 0.18); box-shadow: 0 24px 64px rgba(32, 60, 46, 0.13); outline: none; }
-  .guideBtn { background: #203c2e; box-shadow: 0 18px 36px rgba(32, 60, 46, 0.14); }
+  .emptyCard {
+    border-radius: 30px;
+    padding: 34px 22px;
+    text-align: center;
+  }
 
-  .modalOverlay { position: fixed; inset: 0; z-index: 1000; background: rgba(23, 32, 24, 0.58); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; padding: 18px; }
-  .modalCard { width: min(560px, 100%); max-height: calc(100vh - 36px); overflow: auto; border-radius: 34px; background: #fffdf7; border: 1px solid rgba(255,255,255,0.28); box-shadow: 0 30px 90px rgba(15, 23, 42, 0.34); }
-  .modalHead { display: flex; justify-content: space-between; gap: 16px; padding: 24px; color: #ffffff; background: radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 36%), linear-gradient(135deg, #172018, #203c2e); }
-  .modalHead span { display: inline-flex; color: #bef264; font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; }
-  .modalHead h2 { margin: 0; font-size: 31px; line-height: 0.95; font-weight: 950; letter-spacing: -0.07em; }
-  .modalHead p { margin: 9px 0 0; color: rgba(255,255,255,0.78); font-size: 13px; line-height: 1.45; font-weight: 750; }
-  .modalClose { width: 38px; height: 38px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.10); color: #ffffff; border-radius: 999px; font-size: 24px; font-weight: 850; line-height: 1; cursor: pointer; flex: 0 0 auto; }
-  .modalBody { padding: 20px; }
-  .modalRoute { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 13px; align-items: center; padding: 12px; border-radius: 24px; background: #f6f7f1; border: 1px solid rgba(15, 23, 42, 0.06); margin-bottom: 13px; }
-  .modalThumb { width: 86px; height: 86px; border-radius: 22px; overflow: hidden; background: #e8eadf; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: 950; }
-  .modalThumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .modalRoute strong { display: block; color: #172018; font-size: 16px; line-height: 1.25; font-weight: 950; }
-  .modalRoute small { display: block; color: #64748b; font-size: 12px; line-height: 1.35; font-weight: 750; margin-top: 4px; }
-  .modalInfoGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-bottom: 13px; }
-  .modalInfoGrid div { background: #fffdf7; border: 1px solid rgba(15, 23, 42, 0.06); border-radius: 19px; padding: 12px; }
-  .modalInfoGrid span { display: block; color: #7b8372; font-size: 10px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.06em; }
-  .modalInfoGrid strong { display: block; margin-top: 5px; color: #172018; font-size: 15px; font-weight: 950; }
-  .modalQuantity { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #f6f7f1; border: 1px solid rgba(15, 23, 42, 0.06); border-radius: 22px; padding: 13px 14px; color: #172018; font-size: 13px; font-weight: 950; margin-bottom: 13px; }
-  .modalQuantity select { border: 1px solid rgba(15,23,42,0.10); background: #ffffff; color: #172018; border-radius: 999px; padding: 10px 13px; font-weight: 950; outline: none; }
-  .modalNote { margin: 0 0 15px; color: #64748b; font-size: 12px; line-height: 1.45; font-weight: 750; }
-  .modalActions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
-  .modalCancel, .modalConfirm { border: none; border-radius: 999px; padding: 13px 16px; font-size: 12px; font-weight: 950; cursor: pointer; }
-  .modalCancel { background: #e5e7eb; color: #374151; }
-  .modalConfirm { background: #172018; color: #ffffff; }
-  .modalCancel:disabled, .modalConfirm:disabled { opacity: 0.62; cursor: not-allowed; }
+  .emptyCard span {
+    font-size: 48px;
+  }
+
+  .emptyCard h3 {
+    margin: 10px 0 0;
+    color: #172018;
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: -0.05em;
+  }
+
+  .emptyCard p {
+    max-width: 520px;
+    margin: 10px auto 0;
+    color: rgba(23, 32, 24, 0.62);
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 760;
+  }
+
+  .emptyCard button {
+    margin-top: 18px;
+    background: #203c2e;
+    color: #fffdf7;
+    padding: 12px 16px;
+    font-size: 13px;
+  }
+
+  .skeletonCard {
+    height: 430px;
+    border-radius: 30px;
+    background:
+      linear-gradient(90deg, rgba(255,255,255,0.45), rgba(255,255,255,0.85), rgba(255,255,255,0.45)),
+      rgba(255, 253, 247, 0.84);
+    background-size: 220% 100%;
+    animation: shine 1.2s linear infinite;
+  }
+
+  @keyframes shine {
+    to {
+      background-position: -220% 0;
+    }
+  }
 
   @media (min-width: 941px) {
-    .page { padding-top: 84px; }
-    .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 80; height: 84px; padding: 8px 26px; display: flex; align-items: center; background: rgba(255, 253, 247, 0.94); border-bottom: 1px solid rgba(15, 23, 42, 0.06); backdrop-filter: blur(18px); box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045); }
-    .topbarInner { width: 100%; max-width: 1180px; height: 68px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
-    .headerGhost { display: none; }
-    .brandCenter { grid-column: 1; justify-self: start; width: fit-content; max-width: 100%; min-width: 0; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px; padding: 0; text-align: left; }
-    .brandLogo { width: 128px; max-width: 128px; height: 58px; object-fit: contain; display: block; flex: 0 0 auto; }
-    .brandSubtitle { margin-top: 0; max-width: 460px; color: #6b7280; font-size: 10px; line-height: 1.1; font-weight: 900; letter-spacing: 0.11em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .profileButton, .loginButton { grid-column: 2; justify-self: end; width: 44px; height: 44px; flex: 0 0 auto; }
-    .hero { margin-top: 18px; }
-    .sideColumn { top: 104px; }
+    .page {
+      padding-top: 74px;
+    }
+
+    .topbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      height: 74px;
+      display: flex;
+      align-items: center;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
+    }
   }
 
-  @media (max-width: 940px) {
-    .hero, .contentGrid { grid-template-columns: 1fr; }
-    .heroMedia { min-height: 380px; }
-    .sideColumn { position: static; }
-    .bookingCard { display: none; }
-    .mobileBooking { margin-top: 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border-radius: 22px; background: rgba(153, 27, 27, 0.08); padding: 12px; }
-    .mobileBooking strong { color: #7f1d1d; font-size: 20px; letter-spacing: -0.04em; }
-    .mobileBooking button { border: 0; border-radius: 999px; background: #991b1b; color: #fffdf7; padding: 12px 15px; font-size: 13px; font-weight: 950; cursor: pointer; white-space: nowrap; }
-    .mobileBooking button:disabled { opacity: 0.58; cursor: not-allowed; }
+  @media (max-width: 1040px) {
+    .hero {
+      grid-template-columns: 1fr;
+    }
+
+    .heroCard {
+      min-height: 360px;
+    }
+
+    .routeGrid,
+    .loadingGrid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .filters {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .refreshBtn {
+      grid-column: 1 / -1;
+    }
   }
 
-  @media (max-width: 640px) {
-    .modalOverlay { padding: 10px; align-items: flex-end; }
-    .modalCard { border-radius: 28px 28px 22px 22px; max-height: calc(100vh - 20px); }
-    .modalHead { padding: 20px; }
-    .modalHead h2 { font-size: 27px; }
-    .modalRoute { grid-template-columns: 72px minmax(0, 1fr); }
-    .modalThumb { width: 72px; height: 72px; border-radius: 18px; }
-    .modalInfoGrid { grid-template-columns: 1fr; }
-    .modalQuantity { align-items: stretch; flex-direction: column; }
-    .modalQuantity select, .modalCancel, .modalConfirm { width: 100%; }
-    .topbar { padding: 7px 10px; }
-    .topbarInner { grid-template-columns: 38px minmax(0, 1fr) 38px; }
-    .headerGhost, .profileButton, .loginButton { width: 36px; height: 36px; box-shadow: none; }
-    .brandLogo { width: clamp(154px, 58vw, 218px); }
-    .brandSubtitle { font-size: 8.5px; letter-spacing: 0.06em; margin-top: -2px; }
-    .hero { margin-top: 8px; padding: 0 12px; gap: 12px; }
-    .heroMedia { min-height: 270px; border-radius: 26px; }
-    .fallbackHero { min-height: 270px; }
-    .heroContent { border-radius: 26px; padding: 20px; }
-    .heroContent h1 { font-size: 40px; }
-    .description { font-size: 14px; line-height: 1.5; }
-    .shareBox { display: grid; grid-template-columns: 1fr 1fr; }
-    .shareButton { width: 100%; padding: 10px 12px; }
-    .shareFeedback { grid-column: 1 / -1; }
-    .guideHeroCard { grid-template-columns: 42px minmax(0, 1fr); border-radius: 20px; padding: 10px; }
-    .guideMiniAvatar { width: 42px; height: 42px; border-radius: 16px; }
-    .guideHeroArrow { grid-column: 2; font-size: 11px; }
-    .heroFacts { gap: 8px; margin-top: 16px; }
-    .heroFacts div { border-radius: 18px; padding: 12px; }
-    .galleryStrip { padding: 0 12px; margin-top: 12px; }
-    .galleryStrip button { width: 76px; height: 62px; border-radius: 15px; }
-    .contentGrid { padding: 0 12px; margin-top: 12px; gap: 12px; }
-    .card, .guideCard { border-radius: 24px; padding: 18px; }
-    .sectionTitle h2 { font-size: 21px; }
-    .infoGrid, .splitCards { grid-template-columns: 1fr; }
-    .mobileBooking { align-items: stretch; flex-direction: column; }
-    .mobileBooking button { width: 100%; }
-    .questionActions { align-items: stretch; flex-direction: column; }
-    .questionActions button, .answerEditor button { width: 100%; justify-self: stretch; }
-    .questionHeader { flex-direction: column; gap: 4px; }
+  @media (max-width: 700px) {
+    .topbar {
+      padding: 7px 10px;
+    }
+
+    .topbarInner {
+      min-height: 52px;
+      gap: 8px;
+    }
+
+    .brand {
+      gap: 8px;
+    }
+
+    .brand img {
+      width: 112px;
+      height: 42px;
+    }
+
+    .brand span {
+      display: none;
+    }
+
+    .desktopOnly {
+      display: none;
+    }
+
+    .profileButton,
+    .loginButton {
+      width: 38px;
+      height: 38px;
+      min-height: 38px;
+      padding: 0;
+      font-size: 10px;
+      box-shadow: none;
+    }
+
+    .loginButton {
+      width: auto;
+      padding: 0 13px;
+    }
+
+    .hero {
+      margin-top: 12px;
+      padding: 0 12px;
+      gap: 12px;
+    }
+
+    .heroText,
+    .heroCard,
+    .filters,
+    .sectionHead,
+    .emptyCard,
+    .routeCard {
+      border-radius: 24px;
+    }
+
+    .heroText {
+      padding: 22px;
+    }
+
+    .heroText h1 {
+      font-size: 40px;
+    }
+
+    .heroText p {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .heroStats {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .heroCard {
+      min-height: 0;
+    }
+
+    .heroCardPhoto {
+      min-height: 220px;
+    }
+
+    .filters,
+    .listSection {
+      padding: 0 12px;
+      margin-top: 12px;
+    }
+
+    .filters {
+      padding: 12px;
+      grid-template-columns: 1fr;
+    }
+
+    .routeGrid,
+    .loadingGrid {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .routePhoto {
+      height: 220px;
+    }
+
+    .routeTop p {
+      min-height: 0;
+    }
+
+    .cardActions {
+      grid-template-columns: 1fr;
+    }
+
+    .primaryBtn {
+      grid-column: auto;
+    }
   }
 `
