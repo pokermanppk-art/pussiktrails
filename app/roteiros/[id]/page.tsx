@@ -51,6 +51,7 @@ type Roteiro = {
   data_trilha?: string | null
   data_roteiro?: string | null
   proxima_data?: string | null
+  hora_trilha?: string | null
   retorno_local?: string | null
   retorno_data?: string | null
   retorno_data_hora?: string | null
@@ -159,6 +160,20 @@ function quebrarTexto(valor?: string | null) {
     .split(/\n|;|\|/g)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function limparTextoLongo(valor?: string | null) {
+  if (!valor) return ''
+
+  return String(valor)
+    .replace(/\r\n/g, '\n')
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function parseGaleria(valor: unknown) {
@@ -375,13 +390,23 @@ export default function DetalhesRoteiroPage() {
 
   function dataPrincipal(item?: Roteiro | null) {
     return (
+      item?.embarque_data ||
       item?.proxima_data ||
       item?.embarque_data_hora ||
-      item?.embarque_data ||
       item?.data_trilha ||
       item?.data_roteiro ||
       ''
     )
+  }
+
+  function horaPrincipal(item?: Roteiro | null) {
+    const horaInformada = texto(item?.hora_trilha)
+
+    if (horaInformada) {
+      return horaInformada.length >= 5 ? horaInformada.slice(0, 5) : horaInformada
+    }
+
+    return formatarHora(item?.proxima_data || item?.embarque_data_hora || item?.data_trilha || item?.data_roteiro || '')
   }
 
   function fotoCapa(item?: Roteiro | null) {
@@ -811,8 +836,8 @@ export default function DetalhesRoteiroPage() {
 
   const fotoAtual = fotosRoteiro[fotoSelecionada] || fotoCapa(roteiro)
   const dataTexto = formatarData(dataPrincipal(roteiro))
-  const horaTexto = formatarHora(dataPrincipal(roteiro))
-  const detalhes = quebrarTexto(roteiro.roteiro_detalhado || roteiro.detalhes)
+  const horaTexto = horaPrincipal(roteiro)
+  const detalhesTexto = limparTextoLongo(roteiro.roteiro_detalhado || roteiro.detalhes)
   const inclui = quebrarTexto(roteiro.inclui)
   const naoInclui = quebrarTexto(roteiro.nao_inclui)
   const orientacoes = quebrarTexto(roteiro.orientacoes)
@@ -894,8 +919,8 @@ export default function DetalhesRoteiroPage() {
             </div>
           </section>
 
-          {detalhes.length > 0 && (
-            <section className="card"><div className="sectionTitle"><span>02</span><div><h2>Roteiro detalhado</h2><p>Como a aventura deve acontecer.</p></div></div><div className="textList">{detalhes.map((item) => <p key={item}>{item}</p>)}</div></section>
+          {detalhesTexto && (
+            <section className="card"><div className="sectionTitle"><span>02</span><div><h2>Roteiro detalhado</h2><p>Como a aventura deve acontecer.</p></div></div><div className="routeDescriptionBox">{detalhesTexto}</div></section>
           )}
 
           {(inclui.length > 0 || naoInclui.length > 0) && (
@@ -1399,8 +1424,7 @@ const styles = `
   .sectionTitle p { margin: 6px 0 0; color: rgba(23, 32, 24, 0.58); font-size: 13px; font-weight: 750; }
 
   .infoGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .textList { display: grid; gap: 10px; }
-  .textList p { margin: 0; border-radius: 18px; background: rgba(32, 60, 46, 0.045); color: rgba(23, 32, 24, 0.72); padding: 13px 14px; line-height: 1.55; font-size: 14px; font-weight: 700; }
+  .routeDescriptionBox { border-radius: 22px; background: rgba(32, 60, 46, 0.045); color: rgba(23, 32, 24, 0.76); padding: 18px; font-size: 14px; line-height: 1.75; font-weight: 750; white-space: pre-wrap; overflow-wrap: anywhere; }
   .splitCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
   .bulletList { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
   .bulletList li { position: relative; padding-left: 22px; color: rgba(23, 32, 24, 0.72); font-size: 14px; line-height: 1.45; font-weight: 750; }
