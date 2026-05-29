@@ -48,6 +48,21 @@ function erroColunaInexistente(error: any) {
   )
 }
 
+function erroCheckConstraint(error: any) {
+  const mensagem = String(
+    error?.message ||
+      error?.details ||
+      error?.hint ||
+      ''
+  ).toLowerCase()
+
+  return (
+    error?.code === '23514' ||
+    mensagem.includes('check constraint') ||
+    mensagem.includes('violates check')
+  )
+}
+
 function extrairColunaInexistente(error: any) {
   const textoErro = [
     error?.message,
@@ -98,6 +113,34 @@ async function atualizarRoteiroComFallback(params: {
   }
 
   throw new Error('Não foi possível atualizar o roteiro.')
+}
+
+async function atualizarComStatusPermitido(params: {
+  supabase: any
+  roteiroId: string
+  payloadBase: AnyRecord
+}) {
+  const statusTentativas = ['ativo', 'aprovado', 'publicado']
+  let ultimoErro: any = null
+
+  for (const status of statusTentativas) {
+    try {
+      return await atualizarRoteiroComFallback({
+        supabase: params.supabase,
+        roteiroId: params.roteiroId,
+        payloadOriginal: {
+          ...params.payloadBase,
+          status,
+          ativo: true,
+        },
+      })
+    } catch (error) {
+      ultimoErro = error
+      if (!erroCheckConstraint(error)) throw error
+    }
+  }
+
+  throw ultimoErro || new Error('Nenhum status de aprovação foi aceito pelo banco.')
 }
 
 export async function GET(request: Request) {
@@ -263,11 +306,11 @@ export async function POST(request: Request) {
     const local = texto(body.local ?? dados.local ?? solicitacao.local_solicitado)
 
     const precoInformado =
-      body.preco !== undefined
+      body.preco !== undefined && body.preco !== null
         ? Number(body.preco)
-        : dados.preco !== undefined
+        : dados.preco !== undefined && dados.preco !== null
           ? Number(dados.preco)
-          : solicitacao.preco_solicitado !== null
+          : solicitacao.preco_solicitado !== null && solicitacao.preco_solicitado !== undefined
             ? Number(solicitacao.preco_solicitado)
             : null
 
@@ -275,8 +318,6 @@ export async function POST(request: Request) {
 
     const payloadRoteiro: AnyRecord = {
       updated_at: new Date().toISOString(),
-      ativo: true,
-      status: 'ativo',
     }
 
     if (titulo) {
@@ -311,10 +352,10 @@ export async function POST(request: Request) {
       payloadRoteiro.valor = precoInformado
     }
 
-    const roteiroAtualizado = await atualizarRoteiroComFallback({
+    const roteiroAtualizado = await atualizarComStatusPermitido({
       supabase,
       roteiroId: solicitacao.roteiro_id,
-      payloadOriginal: payloadRoteiro,
+      payloadBase: payloadRoteiro,
     })
 
     const { data: solicitacaoAtualizada, error: updateSolicitacaoError } =

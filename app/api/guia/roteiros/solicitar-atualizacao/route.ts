@@ -11,7 +11,8 @@ function texto(valor: unknown) {
 }
 
 function numeroOuNull(valor: unknown) {
-  const n = Number(valor)
+  if (valor === null || valor === undefined || valor === '') return null
+  const n = Number(String(valor).replace(',', '.'))
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
     body = await request.json().catch(() => ({}))
 
     const roteiroId = texto(body.roteiroId || body.roteiro_id)
-    const guiaId = texto(body.guiaId || body.guia_id || body.userId)
+    const guiaId = texto(body.guiaId || body.guia_id || body.userId || body.user_id)
 
     const tituloSolicitado = texto(body.titulo)
     const descricaoSolicitada = texto(body.descricao)
@@ -115,7 +116,7 @@ export async function POST(request: Request) {
 
     const dadosAtuais = {
       titulo: roteiro.titulo || roteiro.nome || null,
-      descricao: roteiro.descricao || null,
+      descricao: roteiro.descricao || roteiro.roteiro_detalhado || roteiro.detalhes || null,
       data:
         roteiro.proxima_data ||
         roteiro.data_trilha ||
@@ -141,6 +142,7 @@ export async function POST(request: Request) {
         roteiro_id: roteiroId,
         guia_id: guiaId,
         status: 'pendente',
+        tipo_solicitacao: 'atualizacao_roteiro',
 
         titulo_atual: dadosAtuais.titulo,
         titulo_solicitado: tituloSolicitado || null,
@@ -151,6 +153,7 @@ export async function POST(request: Request) {
         data_atual: dadosAtuais.data,
         data_solicitada: dataSolicitada || null,
 
+        hora_atual: null,
         hora_solicitada: horaSolicitada || null,
 
         local_atual: dadosAtuais.local,
