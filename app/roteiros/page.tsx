@@ -95,6 +95,10 @@ type Roteiro = {
   guia_email?: string | null
   guia_avatar_url?: string | null
   guia_foto_url?: string | null
+  guia_nome_resolvido?: string | null
+  guia_email_resolvido?: string | null
+  guia_avatar_resolvido?: string | null
+  guia_id_resolvido?: string | null
   nome_agencia?: string | null
   agencia_nome?: string | null
   empresa_nome?: string | null
@@ -350,39 +354,80 @@ function labelDificuldade(valor?: string | null) {
   return dificuldade.charAt(0).toUpperCase() + dificuldade.slice(1)
 }
 
+const NOMES_GENERICOS_GUIA = new Set([
+  'guia/agencia prussiktrails',
+  'guia agencia prussiktrails',
+  'guia/agencia',
+  'guia agencia',
+  'guia prussiktrails',
+  'guia/agência prussiktrails',
+  'prussiktrails',
+  'onlyprussik',
+  'guia responsavel',
+  'guia responsável',
+  'guia nao identificado',
+  'guia não identificado'
+])
+
+function textoNomeGuia(valor: unknown) {
+  const valorTexto = texto(valor)
+  if (!valorTexto) return ''
+
+  const normalizado = normalizar(valorTexto)
+  if (!normalizado) return ''
+  if (NOMES_GENERICOS_GUIA.has(normalizado)) return ''
+  if (normalizado.includes('guia/agencia prussiktrails')) return ''
+  if (normalizado.includes('guia agencia prussiktrails')) return ''
+
+  return valorTexto
+}
+
 function nomePublicoGuia(guia?: GuiaResumo | null, roteiro?: Roteiro | null) {
-  const nomeGuiaBanco =
-    texto(guia?.nome_agencia) ||
-    texto(guia?.agencia_nome) ||
-    texto(guia?.empresa_nome) ||
-    texto(guia?.nome_empresa) ||
-    texto(guia?.nome_fantasia) ||
-    texto(guia?.razao_social) ||
-    texto(guia?.nome) ||
-    texto(guia?.name) ||
-    texto(guia?.email)
+  const nomeResolvidoApi = textoNomeGuia(roteiro?.guia_nome_resolvido)
 
-  if (nomeGuiaBanco) return nomeGuiaBanco
+  if (nomeResolvidoApi) return nomeResolvidoApi
 
-  const nomeGuiaRoteiro =
-    texto(roteiro?.nome_agencia) ||
-    texto(roteiro?.agencia_nome) ||
-    texto(roteiro?.empresa_nome) ||
-    texto(roteiro?.nome_empresa) ||
-    texto(roteiro?.nome_fantasia) ||
-    texto(roteiro?.razao_social) ||
-    texto(roteiro?.agencia) ||
-    texto(roteiro?.guia_nome) ||
-    texto(roteiro?.nome_guia) ||
-    texto(roteiro?.guia_name) ||
-    texto(roteiro?.guia_email)
+  const nomePessoaBanco = textoNomeGuia(guia?.nome)
 
-  return nomeGuiaRoteiro || 'Guia/Agência PrussikTrails'
+  if (nomePessoaBanco) return nomePessoaBanco
+
+  const nomePessoaRoteiro =
+    textoNomeGuia(roteiro?.guia_nome) ||
+    textoNomeGuia(roteiro?.nome_guia) ||
+    textoNomeGuia(roteiro?.guia_name)
+
+  if (nomePessoaRoteiro) return nomePessoaRoteiro
+
+  const nomeAgenciaBanco =
+    textoNomeGuia(guia?.nome_agencia) ||
+    textoNomeGuia(guia?.agencia_nome) ||
+    textoNomeGuia(guia?.empresa_nome) ||
+    textoNomeGuia(guia?.nome_empresa) ||
+    textoNomeGuia(guia?.nome_fantasia) ||
+    textoNomeGuia(guia?.razao_social)
+
+  if (nomeAgenciaBanco) return nomeAgenciaBanco
+
+  const nomeAgenciaRoteiro =
+    textoNomeGuia(roteiro?.nome_agencia) ||
+    textoNomeGuia(roteiro?.agencia_nome) ||
+    textoNomeGuia(roteiro?.empresa_nome) ||
+    textoNomeGuia(roteiro?.nome_empresa) ||
+    textoNomeGuia(roteiro?.nome_fantasia) ||
+    textoNomeGuia(roteiro?.razao_social) ||
+    textoNomeGuia(roteiro?.agencia)
+
+  if (nomeAgenciaRoteiro) return nomeAgenciaRoteiro
+
+  const email = textoNomeGuia(guia?.email) || textoNomeGuia(roteiro?.guia_email)
+
+  return email || 'Guia responsável'
 }
 
 function avatarGuia(guia?: GuiaResumo | null, roteiro?: Roteiro | null) {
   return texto(
-    guia?.avatar_url ||
+    roteiro?.guia_avatar_resolvido ||
+      guia?.avatar_url ||
       guia?.foto_url ||
       guia?.imagem_url ||
       roteiro?.guia_avatar_url ||
@@ -484,6 +529,48 @@ export default function RoteirosPage() {
     setErro('')
 
     try {
+      const response = await fetch('/api/roteiros/publicos', {
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache'
+        }
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (response.ok && data?.sucesso !== false && Array.isArray(data?.roteiros)) {
+        const disponiveis = (data.roteiros as Roteiro[]).filter(roteiroEstaDisponivel)
+        setRoteiros(disponiveis)
+
+        const mapa: Record<string, GuiaResumo> = {}
+
+        disponiveis.forEach((roteiro) => {
+          const guiaId = guiaIdRoteiro(roteiro)
+          const nomeResolvido = textoNomeGuia(roteiro.guia_nome_resolvido)
+          const emailResolvido = texto(roteiro.guia_email_resolvido || roteiro.guia_email)
+          const avatarResolvido = texto(roteiro.guia_avatar_resolvido || roteiro.guia_avatar_url || roteiro.guia_foto_url)
+
+          if (guiaId && (nomeResolvido || emailResolvido || avatarResolvido)) {
+            mapa[guiaId] = {
+              id: guiaId,
+              nome: nomeResolvido || emailResolvido || 'Guia responsável',
+              email: emailResolvido || null,
+              avatar_url: avatarResolvido || null
+            }
+          }
+        })
+
+        setGuias(mapa)
+        setCarregando(false)
+        return
+      }
+
+      throw new Error(data?.erro || data?.message || `Erro HTTP ${response.status} ao carregar roteiros.`)
+    } catch (apiError) {
+      console.warn('Não foi possível carregar roteiros pela API pública. Tentando fallback pelo client:', apiError)
+    }
+
+    try {
       let roteirosData: Roteiro[] = []
 
       const consultaPrincipal = await supabase
@@ -519,21 +606,46 @@ export default function RoteirosPage() {
       )
 
       if (guiaIds.length > 0) {
-        const { data: guiasData, error: guiasError } = await supabase
-          .from('users')
-          .select('id, nome, name, email, avatar_url, foto_url, imagem_url, nome_agencia, agencia_nome, empresa_nome, nome_empresa, nome_fantasia, razao_social, cadastur, cadastur_numero')
-          .in('id', guiaIds)
+        const tentativasSelect = [
+          'id, nome, email, avatar_url, foto_url, imagem_url, nome_agencia, agencia_nome, empresa_nome, nome_empresa, nome_fantasia, razao_social, cadastur, cadastur_numero',
+          'id, nome, email, avatar_url, foto_url, imagem_url',
+          'id, nome, email, avatar_url',
+          'id, nome, email',
+          'id, email'
+        ]
 
-        if (!guiasError && Array.isArray(guiasData)) {
+        let guiasData: GuiaResumo[] = []
+        let ultimoErroGuias: any = null
+
+        for (const campos of tentativasSelect) {
+          const { data, error } = await supabase
+            .from('users')
+            .select(campos)
+            .in('id', guiaIds)
+
+          if (!error && Array.isArray(data)) {
+            guiasData = (data as unknown) as GuiaResumo[]
+            ultimoErroGuias = null
+            break
+          }
+
+          ultimoErroGuias = error
+        }
+
+        if (guiasData.length > 0) {
           const mapa: Record<string, GuiaResumo> = {}
 
-          ;(guiasData as GuiaResumo[]).forEach((guia) => {
+          guiasData.forEach((guia) => {
             if (guia?.id) mapa[guia.id] = guia
           })
 
           setGuias(mapa)
-        } else if (guiasError) {
-          console.warn('Não foi possível carregar nomes dos guias:', guiasError)
+        } else {
+          setGuias({})
+
+          if (ultimoErroGuias) {
+            console.warn('Não foi possível carregar nomes dos guias:', ultimoErroGuias)
+          }
         }
       } else {
         setGuias({})
@@ -778,43 +890,45 @@ ${link}`
           </p>
         </div>
 
-        <div className="heroCard">
+        <div className="heroCard homeStyleHotCard">
           {destaque ? (
             <>
-              <div className="heroCardPhoto">
-                {fotoRoteiro(destaque) ? (
-                  <img src={fotoRoteiro(destaque)} alt={tituloRoteiro(destaque)} />
-                ) : (
-                  <div className="photoFallback">
-                    <img src="/logo-prussik-display.png" alt="" />
-                  </div>
-                )}
-              </div>
+              {fotoRoteiro(destaque) ? (
+                <img className="hotCardBackground" src={fotoRoteiro(destaque)} alt={tituloRoteiro(destaque)} />
+              ) : (
+                <div className="hotCardFallback">
+                  <img src="/logo-prussik-display.png" alt="" />
+                </div>
+              )}
 
-              <div className="heroCardBody">
-                <span className="hotTag">Roteiros mais quentes</span>
+              <div className="hotCardShade" />
+
+              <div className="hotCardContent">
+                <span className="hotTag">Roteiro quente</span>
+
                 <h2>{tituloRoteiro(destaque)}</h2>
-                <p>{localRoteiro(destaque)}</p>
 
-                <div className="heroCardMeta">
-                  <span>{labelDificuldade(destaque.dificuldade || destaque.nivel || destaque.intensidade)}</span>
-                  <span>{formatarMoeda(precoRoteiro(destaque))}</span>
+                <div className="hotCardInfo">
+                  <p><strong>Local:</strong> {localRoteiro(destaque)}</p>
+                  <p><strong>Nível:</strong> {labelDificuldade(destaque.dificuldade || destaque.nivel || destaque.intensidade)}</p>
+                  <p><strong>Guia:</strong> {nomePublicoGuia(guias[guiaIdRoteiro(destaque)], destaque)}</p>
+                  <p><strong>Valor:</strong> {precoRoteiro(destaque) > 0 ? formatarMoeda(precoRoteiro(destaque)) : 'Consultar'}</p>
                 </div>
 
-                <div className="heroCardActions">
-                  <button type="button" onClick={() => abrirRoteiro(destaque.id)}>
+                <div className="hotCardActions">
+                  <button type="button" className="hotPrimaryButton" onClick={() => abrirRoteiro(destaque.id)}>
                     Ver roteiro
                   </button>
 
                   {roteirosQuentes.length > 1 && (
-                    <button type="button" className="ghostHeroButton" onClick={irParaProximoDestaque}>
+                    <button type="button" className="hotGhostButton" onClick={irParaProximoDestaque}>
                       Próximo
                     </button>
                   )}
                 </div>
 
                 {roteirosQuentes.length > 1 && (
-                  <div className="heroDots" aria-label="Roteiros em destaque">
+                  <div className="heroDots hotDots" aria-label="Roteiros em destaque">
                     {roteirosQuentes.map((roteiro, index) => (
                       <button
                         key={roteiro.id}
@@ -977,7 +1091,7 @@ ${link}`
                       </span>
 
                       <span>
-                        <small>Guia/Agência</small>
+                        <small>Guia responsável</small>
                         <strong>{nomeGuia}</strong>
                       </span>
                     </button>
@@ -1217,16 +1331,77 @@ const styles = `
   .heroCard {
     border-radius: 36px;
     overflow: hidden;
-    min-height: 440px;
+    min-height: 0;
     display: flex;
     flex-direction: column;
   }
 
+  .homeStyleHotCard {
+    position: relative;
+    min-height: 520px;
+    isolation: isolate;
+    background: #203c2e;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .hotCardBackground {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center center;
+    display: block;
+    z-index: 0;
+  }
+
+  .hotCardFallback {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background:
+      radial-gradient(circle at 50% 20%, rgba(190, 242, 100, 0.18), transparent 32%),
+      linear-gradient(135deg, #203c2e, #8b5e34);
+    z-index: 0;
+  }
+
+  .hotCardFallback img {
+    width: 120px;
+    height: 120px;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+    opacity: 0.92;
+  }
+
+  .hotCardShade {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(180deg, rgba(23, 32, 24, 0.24) 0%, rgba(23, 32, 24, 0.58) 46%, rgba(23, 32, 24, 0.86) 100%),
+      linear-gradient(90deg, rgba(23, 32, 24, 0.72) 0%, rgba(23, 32, 24, 0.28) 58%, rgba(23, 32, 24, 0.10) 100%);
+    z-index: 1;
+  }
+
+  .hotCardContent {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    margin-top: auto;
+    padding: 28px;
+    color: #fffdf7;
+  }
+
   .heroCardPhoto {
     position: relative;
-    flex: 1;
-    min-height: 255px;
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    min-height: 0;
+    max-height: 430px;
     background: #dfe7d2;
+    overflow: hidden;
+    flex: 0 0 auto;
   }
 
   .heroCardPhoto img,
@@ -1234,6 +1409,7 @@ const styles = `
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center center;
     display: block;
   }
 
@@ -1262,13 +1438,90 @@ const styles = `
     display: inline-flex;
     width: fit-content;
     border-radius: 999px;
-    background: rgba(153, 27, 27, 0.10);
-    color: #991b1b;
-    padding: 7px 10px;
+    background: rgba(255, 253, 247, 0.18);
+    color: #fffdf7;
+    border: 1px solid rgba(255, 253, 247, 0.28);
+    backdrop-filter: blur(12px);
+    padding: 8px 12px;
     font-size: 10px;
     font-weight: 950;
     text-transform: uppercase;
-    letter-spacing: 0.10em;
+    letter-spacing: 0.12em;
+  }
+
+  .hotCardContent h2 {
+    margin: 18px 0 0;
+    color: #fffdf7;
+    font-size: clamp(34px, 4.3vw, 52px);
+    line-height: 0.94;
+    letter-spacing: -0.075em;
+    font-weight: 950;
+    text-shadow: 0 3px 18px rgba(0, 0, 0, 0.32);
+  }
+
+  .hotCardInfo {
+    display: grid;
+    gap: 7px;
+    margin-top: 16px;
+  }
+
+  .hotCardInfo p {
+    margin: 0;
+    color: rgba(255, 253, 247, 0.92);
+    font-size: 13px;
+    line-height: 1.28;
+    font-weight: 850;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  .hotCardInfo strong {
+    color: #ffffff;
+    font-weight: 950;
+  }
+
+  .hotCardActions {
+    display: flex;
+    gap: 9px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 20px;
+  }
+
+  .hotPrimaryButton,
+  .hotGhostButton {
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    font-weight: 950;
+    transition: 0.18s ease;
+    padding: 13px 18px;
+    font-size: 13px;
+  }
+
+  .hotPrimaryButton {
+    background: #bef264;
+    color: #172018;
+    box-shadow: 0 14px 34px rgba(190, 242, 100, 0.26);
+  }
+
+  .hotGhostButton {
+    background: rgba(255, 253, 247, 0.15);
+    color: #fffdf7;
+    border: 1px solid rgba(255, 253, 247, 0.32);
+    backdrop-filter: blur(14px);
+  }
+
+  .hotPrimaryButton:hover,
+  .hotGhostButton:hover {
+    transform: translateY(-1px);
+  }
+
+  .hotDots button {
+    background: rgba(255, 253, 247, 0.42) !important;
+  }
+
+  .hotDots button.active {
+    background: #bef264 !important;
   }
 
   .heroCardBody h2 {
@@ -1513,7 +1766,9 @@ const styles = `
   .routePhoto {
     position: relative;
     width: 100%;
-    height: 230px;
+    aspect-ratio: 4 / 3;
+    height: auto;
+    min-height: 0;
     border: 0;
     padding: 0;
     background: #dfe7d2;
@@ -1760,6 +2015,10 @@ const styles = `
       min-height: 360px;
     }
 
+    .homeStyleHotCard {
+      min-height: 420px;
+    }
+
     .routeGrid,
     .loadingGrid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1848,8 +2107,33 @@ const styles = `
       min-height: 0;
     }
 
+    .homeStyleHotCard {
+      min-height: 420px;
+    }
+
+    .hotCardContent {
+      padding: 22px;
+    }
+
+    .hotCardContent h2 {
+      font-size: 36px;
+    }
+
+    .hotCardActions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .hotPrimaryButton,
+    .hotGhostButton {
+      width: 100%;
+      padding: 12px 14px;
+    }
+
     .heroCardPhoto {
-      min-height: 220px;
+      aspect-ratio: 4 / 5;
+      min-height: 0;
+      max-height: none;
     }
 
     .filters,
@@ -1870,7 +2154,8 @@ const styles = `
     }
 
     .routePhoto {
-      height: 220px;
+      aspect-ratio: 4 / 3;
+      height: auto;
     }
 
     .routeTop p {

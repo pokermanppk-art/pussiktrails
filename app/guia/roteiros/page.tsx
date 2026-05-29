@@ -4,21 +4,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
-type AnyRecord = Record<string, any>
-
 type UsuarioLocal = {
   id?: string | null
   user_id?: string | null
   usuario_id?: string | null
-  cliente_id?: string | null
   guia_id?: string | null
   nome?: string | null
   name?: string | null
   email?: string | null
   tipo?: string | null
-  avatar_url?: string | null
-  foto_url?: string | null
-  imagem_url?: string | null
 }
 
 type Roteiro = {
@@ -30,144 +24,153 @@ type Roteiro = {
   detalhes?: string | null
   preco?: number | string | null
   valor?: number | string | null
-  preco_total?: number | string | null
-  preco_por_pessoa?: number | string | null
   duracao_horas?: number | string | null
-  duracao?: number | string | null
   km?: number | string | null
   distancia_km?: number | string | null
   dificuldade?: string | null
-  nivel?: string | null
-  intensidade?: string | null
-  categoria?: string | null
-  tipo?: string | null
-  modalidade?: string | null
   localizacao?: string | null
   local?: string | null
-  cidade?: string | null
-  estado?: string | null
-  destino?: string | null
-  foto_capa?: string | null
-  imagem_url?: string | null
-  image_url?: string | null
-  imagem?: string | null
-  foto_url?: string | null
-  capa_url?: string | null
-  embarque_local?: string | null
   local_encontro?: string | null
   ponto_encontro?: string | null
-  embarque_data?: string | null
-  embarque_data_hora?: string | null
-  data_trilha?: string | null
-  data_roteiro?: string | null
-  proxima_data?: string | null
-  hora_trilha?: string | null
-  retorno_local?: string | null
-  retorno_data?: string | null
-  retorno_data_hora?: string | null
+  foto_capa?: string | null
+  foto_url?: string | null
+  imagem_url?: string | null
+  imagem?: string | null
   status?: string | null
-  situacao?: string | null
-  publicacao?: string | null
-  estado_publicacao?: string | null
   ativo?: boolean | null
-  removido_em?: string | null
-  excluido_em?: string | null
-  removido_pelo_guia?: boolean | null
-  removido_pelo_admin?: boolean | null
+  limite_pessoas?: number | string | null
+  vagas?: number | string | null
+  recorrencia?: string | null
+  renovar_automaticamente?: boolean | null
+  proxima_data?: string | null
+  embarque_data_hora?: string | null
+  retorno_data_hora?: string | null
+  embarque_data?: string | null
+  data_disponivel?: string | null
+  data_trilha?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  cancelado_em?: string | null
+  cancelamento_motivo?: string | null
+  cancelamento_motivo_codigo?: string | null
   id_guia?: string | null
   guia_id?: string | null
   user_id?: string | null
-  id_user?: string | null
   usuario_id?: string | null
   criador_id?: string | null
   created_by?: string | null
-  criado_por?: string | null
-  owner_id?: string | null
-  limite_pessoas?: number | string | null
-  capacidade?: number | string | null
-  max_pessoas?: number | string | null
-  recorrencia?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-  guia_nome?: string | null
-  nome_guia?: string | null
-  guia_name?: string | null
-  guia_email?: string | null
-  guia_avatar_url?: string | null
-  guia_foto_url?: string | null
-  nome_agencia?: string | null
-  agencia_nome?: string | null
-  empresa_nome?: string | null
-  nome_empresa?: string | null
-  nome_fantasia?: string | null
-  razao_social?: string | null
-  agencia?: string | null
+  reservas_total?: number
+  reservas_pagas?: number
+  reservas_pendentes?: number
 }
 
-type GuiaResumo = {
+type ReservaResumo = {
   id: string
-  nome?: string | null
-  name?: string | null
-  email?: string | null
-  avatar_url?: string | null
-  foto_url?: string | null
-  imagem_url?: string | null
-  nome_agencia?: string | null
-  agencia_nome?: string | null
-  empresa_nome?: string | null
-  nome_empresa?: string | null
-  nome_fantasia?: string | null
-  razao_social?: string | null
-  cadastur?: string | null
-  cadastur_numero?: string | null
+  roteiro_id?: string | null
+  id_roteiro?: string | null
+  status?: string | null
+  pagamento_status?: string | null
+  quantidade_pessoas?: number | string | null
+  valor_total?: number | string | null
 }
 
-const STATUS_OCULTOS = new Set([
-  'rascunho',
-  'pendente',
-  'pendente_aprovacao',
-  'aguardando_aprovacao',
-  'em_analise',
-  'analise',
-  'reprovado',
-  'reprovada',
-  'cancelado',
-  'cancelada',
-  'pausado',
-  'pausada',
-  'inativo',
-  'inativa',
-  'excluido',
-  'excluida',
-  'removido',
-  'removida',
-  'arquivado',
-  'arquivada'
-])
-
-const STATUS_PUBLICOS = new Set([
-  'ativo',
-  'ativa',
-  'aprovado',
-  'aprovada',
-  'publicado',
-  'publicada',
-  'disponivel',
-  'disponível',
-  'confirmado',
-  'confirmada'
-])
-
-function texto(valor: unknown) {
-  return String(valor || '').trim()
-}
+const MOTIVOS_CANCELAMENTO = [
+  {
+    codigo: 'clima_inseguro',
+    titulo: 'Condição climática insegura',
+    descricao:
+      'Chuva intensa, tempestade, vento, visibilidade ou outra condição climática que comprometa a segurança.',
+  },
+  {
+    codigo: 'risco_operacional',
+    titulo: 'Risco operacional / segurança',
+    descricao:
+      'Alteração no terreno, bloqueio, risco de acesso, resgate ou segurança da atividade.',
+  },
+  {
+    codigo: 'saude_guia',
+    titulo: 'Problema de saúde do guia',
+    descricao:
+      'Impossibilidade temporária do guia conduzir a experiência com segurança.',
+  },
+  {
+    codigo: 'minimo_participantes',
+    titulo: 'Número mínimo não atingido',
+    descricao: 'A experiência não atingiu o mínimo operacional previsto.',
+  },
+  {
+    codigo: 'roteiro_indisponivel',
+    titulo: 'Roteiro indisponível',
+    descricao: 'O roteiro deixou de estar disponível na data prevista.',
+  },
+  {
+    codigo: 'outro',
+    titulo: 'Outro motivo justificado',
+    descricao: 'Use quando houver outro motivo relevante. Descreva com clareza.',
+  },
+]
 
 function normalizar(valor: unknown) {
-  return texto(valor)
+  return String(valor || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
+}
+
+function extrairUsuarioId(usuario: UsuarioLocal | null) {
+  return String(
+    usuario?.id ||
+      usuario?.user_id ||
+      usuario?.usuario_id ||
+      usuario?.guia_id ||
+      ''
+  ).trim()
+}
+
+function guiaIdRoteiro(roteiro: Roteiro) {
+  return String(
+    roteiro.id_guia ||
+      roteiro.guia_id ||
+      roteiro.user_id ||
+      roteiro.usuario_id ||
+      roteiro.criador_id ||
+      roteiro.created_by ||
+      ''
+  ).trim()
+}
+
+function tituloRoteiro(roteiro: Roteiro) {
+  return String(roteiro.titulo || roteiro.nome || 'Roteiro sem título')
+}
+
+function descricaoRoteiro(roteiro: Roteiro) {
+  return String(
+    roteiro.descricao ||
+      roteiro.roteiro_detalhado ||
+      roteiro.detalhes ||
+      ''
+  )
+}
+
+function localRoteiro(roteiro: Roteiro) {
+  return String(
+    roteiro.localizacao ||
+      roteiro.local ||
+      roteiro.local_encontro ||
+      roteiro.ponto_encontro ||
+      'Local a confirmar'
+  )
+}
+
+function fotoRoteiro(roteiro: Roteiro) {
+  return String(
+    roteiro.foto_capa ||
+      roteiro.foto_url ||
+      roteiro.imagem_url ||
+      roteiro.imagem ||
+      ''
+  ).trim()
 }
 
 function numero(valor: unknown) {
@@ -175,1762 +178,1814 @@ function numero(valor: unknown) {
   return Number.isFinite(n) ? n : 0
 }
 
-function extrairUsuarioId(usuario: UsuarioLocal | null): string {
-  return texto(
-    usuario?.id ||
-      usuario?.user_id ||
-      usuario?.usuario_id ||
-      usuario?.cliente_id ||
-      usuario?.guia_id
-  )
-}
-
-function tituloRoteiro(roteiro: Roteiro) {
-  return texto(roteiro.titulo || roteiro.nome) || 'Roteiro PrussikTrails'
-}
-
-function descricaoCurta(roteiro: Roteiro) {
-  const base =
-    texto(roteiro.descricao) ||
-    texto(roteiro.roteiro_detalhado) ||
-    texto(roteiro.detalhes) ||
-    'Experiência outdoor conduzida por guia, com reserva organizada pelo PrussikTrails.'
-
-  return base
-    .replace(/\r\n/g, '\n')
-    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
-    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/__(.*?)__/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 150)
-}
-
-function guiaIdRoteiro(roteiro: Roteiro) {
-  return texto(
-    roteiro.id_guia ||
-      roteiro.guia_id ||
-      roteiro.id_user ||
-      roteiro.usuario_id ||
-      roteiro.criador_id ||
-      roteiro.created_by ||
-      roteiro.criado_por ||
-      roteiro.owner_id ||
-      roteiro.user_id
-  )
-}
-
-function fotoRoteiro(roteiro: Roteiro) {
-  return texto(
-    roteiro.foto_capa ||
-      roteiro.imagem_url ||
-      roteiro.image_url ||
-      roteiro.imagem ||
-      roteiro.foto_url ||
-      roteiro.capa_url
-  )
-}
-
-function localRoteiro(roteiro: Roteiro) {
-  const local =
-    texto(roteiro.localizacao) ||
-    texto(roteiro.local) ||
-    texto(roteiro.destino) ||
-    texto(roteiro.embarque_local) ||
-    texto(roteiro.local_encontro) ||
-    texto(roteiro.ponto_encontro)
-
-  if (local) return local
-
-  const cidadeEstado = [roteiro.cidade, roteiro.estado]
-    .map((parte) => texto(parte))
-    .filter(Boolean)
-    .join(' / ')
-
-  return cidadeEstado || 'Local a definir'
-}
-
-function precoRoteiro(roteiro: Roteiro) {
-  return numero(
-    roteiro.preco ||
-      roteiro.valor ||
-      roteiro.preco_por_pessoa ||
-      roteiro.preco_total ||
-      0
-  )
+function valorRoteiro(roteiro: Roteiro) {
+  return numero(roteiro.preco) || numero(roteiro.valor)
 }
 
 function kmRoteiro(roteiro: Roteiro) {
-  return numero(roteiro.km ?? roteiro.distancia_km)
+  return numero(roteiro.km) || numero(roteiro.distancia_km)
 }
 
 function duracaoRoteiro(roteiro: Roteiro) {
-  const duracao = roteiro.duracao_horas ?? roteiro.duracao ?? ''
-  const n = Number(duracao)
+  return numero(roteiro.duracao_horas)
+}
 
-  if (Number.isFinite(n) && n > 0) {
-    return `${n}h`
+function limiteRoteiro(roteiro: Roteiro) {
+  return numero(roteiro.limite_pessoas) || numero(roteiro.vagas)
+}
+
+function statusRoteiro(roteiro: Roteiro) {
+  const status = normalizar(roteiro.status)
+
+  if (
+    status === 'excluido' ||
+    status === 'excluida' ||
+    status === 'removido' ||
+    status === 'removida' ||
+    status === 'arquivado' ||
+    status === 'arquivada'
+  ) return 'removido'
+
+  if (status === 'cancelado' || status === 'cancelada') return 'cancelado'
+  if (status === 'pausado' || status === 'pausada') return 'pausado'
+  if (status === 'rascunho') return 'rascunho'
+  if (status === 'reprovado' || status === 'reprovada') return 'reprovado'
+
+  if (
+    status === 'encerrado' ||
+    status === 'finalizado' ||
+    status === 'finalizada' ||
+    status === 'realizado' ||
+    status === 'realizada'
+  ) {
+    return 'encerrado'
   }
 
-  return texto(duracao) || 'A combinar'
+  if (roteiro.ativo === false) return 'pausado'
+
+  return 'ativo'
+}
+
+function statusReservaCancelada(reserva: ReservaResumo) {
+  const status = normalizar(reserva.status)
+  return status === 'cancelada' || status === 'cancelado'
+}
+
+function pagamentoReservaConfirmado(reserva: ReservaResumo) {
+  const pagamento = normalizar(reserva.pagamento_status)
+  const status = normalizar(reserva.status)
+
+  return (
+    pagamento === 'pago' ||
+    pagamento === 'confirmado' ||
+    pagamento === 'aprovado' ||
+    pagamento === 'paid' ||
+    pagamento === 'approved' ||
+    status === 'confirmada' ||
+    status === 'confirmado' ||
+    status === 'realizada' ||
+    status === 'realizado'
+  )
 }
 
 function dataPrincipal(roteiro: Roteiro) {
   return (
-    texto(roteiro.embarque_data) ||
-    texto(roteiro.proxima_data) ||
-    texto(roteiro.embarque_data_hora) ||
-    texto(roteiro.data_trilha) ||
-    texto(roteiro.data_roteiro) ||
-    ''
+    roteiro.proxima_data ||
+    roteiro.embarque_data_hora ||
+    roteiro.embarque_data ||
+    roteiro.data_disponivel ||
+    roteiro.data_trilha ||
+    roteiro.created_at ||
+    null
   )
 }
 
-function horaPrincipal(roteiro: Roteiro) {
-  const horaInformada = texto(roteiro.hora_trilha)
-
-  if (horaInformada) {
-    return horaInformada.length >= 5 ? horaInformada.slice(0, 5) : horaInformada
-  }
-
-  const dataHora =
-    texto(roteiro.proxima_data) ||
-    texto(roteiro.embarque_data_hora) ||
-    texto(roteiro.data_trilha) ||
-    texto(roteiro.data_roteiro)
-
-  if (!dataHora || !dataHora.includes('T')) return ''
-
-  const match = dataHora.match(/T(\d{2}:\d{2})/)
-  if (match?.[1]) return match[1]
-
-  return ''
-}
-
 function formatarData(valor?: string | null) {
-  if (!valor) return 'Data a combinar'
+  if (!valor) return 'Data a definir'
 
-  const textoData = String(valor)
+  const texto = String(valor)
+  const data =
+    texto.length <= 10
+      ? new Date(`${texto.slice(0, 10)}T12:00:00`)
+      : new Date(texto)
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(textoData)) {
-    const [ano, mes, dia] = textoData.split('-').map(Number)
-    const dataLocal = new Date(ano, mes - 1, dia, 12, 0, 0)
-
-    return dataLocal.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    })
-  }
-
-  const data = new Date(textoData)
-  if (Number.isNaN(data.getTime())) return 'Data a combinar'
+  if (Number.isNaN(data.getTime())) return 'Data a definir'
 
   return data.toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'short',
-    year: 'numeric'
+    year: 'numeric',
   })
+}
+
+
+function valorParaInputData(valor?: string | null) {
+  if (!valor) return ''
+
+  const texto = String(valor).trim()
+  const matchData = texto.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (matchData?.[1]) return matchData[1]
+
+  const data = new Date(texto)
+  if (Number.isNaN(data.getTime())) return ''
+
+  const ano = data.getFullYear()
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
+
+  return `${ano}-${mes}-${dia}`
+}
+
+function valorParaInputHora(valor?: string | null) {
+  if (!valor) return ''
+
+  const texto = String(valor).trim()
+  const matchHora = texto.match(/T(\d{2}:\d{2})/) || texto.match(/\s(\d{2}:\d{2})/)
+  if (matchHora?.[1]) return matchHora[1]
+
+  const data = new Date(texto)
+  if (Number.isNaN(data.getTime())) return ''
+
+  return `${String(data.getHours()).padStart(2, '0')}:${String(data.getMinutes()).padStart(2, '0')}`
+}
+
+function numeroParaCampo(valor: unknown) {
+  const n = numero(valor)
+  if (!n) return ''
+  return String(n).replace('.', ',')
+}
+
+function numeroCampoParaApi(valor: string) {
+  const texto = String(valor || '').replace(/\./g, '').replace(',', '.').trim()
+  const n = Number(texto)
+  return Number.isFinite(n) && n >= 0 ? n : null
 }
 
 function formatarMoeda(valor: unknown) {
   return numero(valor).toLocaleString('pt-BR', {
     style: 'currency',
-    currency: 'BRL'
+    currency: 'BRL',
   })
 }
 
-function labelDificuldade(valor?: string | null) {
-  const dificuldade = texto(valor)
+function labelRecorrencia(valor?: string | null) {
+  const rec = normalizar(valor)
 
-  if (!dificuldade) return 'Nível livre'
+  if (rec === 'semanal') return 'Semanal'
+  if (rec === 'mensal') return 'Mensal'
+  if (rec === 'anual') return 'Anual'
 
-  return dificuldade.charAt(0).toUpperCase() + dificuldade.slice(1)
+  return 'Única'
 }
 
-const NOMES_GENERICOS_GUIA = new Set([
-  'guia/agencia prussiktrails',
-  'guia agencia prussiktrails',
-  'guia/agencia',
-  'guia agencia',
-  'guia prussiktrails',
-  'guia/agência prussiktrails',
-  'prussiktrails',
-  'onlyprussik',
-  'guia responsavel',
-  'guia responsável',
-  'guia nao identificado',
-  'guia não identificado'
-])
+function labelStatus(status: string) {
+  if (status === 'ativo') return 'Ativo'
+  if (status === 'removido') return 'Removido'
+  if (status === 'pausado') return 'Pausado'
+  if (status === 'cancelado') return 'Cancelado'
+  if (status === 'encerrado') return 'Encerrado'
+  if (status === 'rascunho') return 'Rascunho'
+  if (status === 'reprovado') return 'Reprovado'
 
-function textoNomeGuia(valor: unknown) {
-  const valorTexto = texto(valor)
-  if (!valorTexto) return ''
-
-  const normalizado = normalizar(valorTexto)
-  if (!normalizado) return ''
-  if (NOMES_GENERICOS_GUIA.has(normalizado)) return ''
-  if (normalizado.includes('guia/agencia prussiktrails')) return ''
-  if (normalizado.includes('guia agencia prussiktrails')) return ''
-
-  return valorTexto
+  return 'Ativo'
 }
 
-function nomePublicoGuia(guia?: GuiaResumo | null, roteiro?: Roteiro | null) {
-  const nomePessoaBanco =
-    textoNomeGuia(guia?.nome) ||
-    textoNomeGuia(guia?.name)
-
-  if (nomePessoaBanco) return nomePessoaBanco
-
-  const nomePessoaRoteiro =
-    textoNomeGuia(roteiro?.guia_nome) ||
-    textoNomeGuia(roteiro?.nome_guia) ||
-    textoNomeGuia(roteiro?.guia_name)
-
-  if (nomePessoaRoteiro) return nomePessoaRoteiro
-
-  const nomeAgenciaBanco =
-    textoNomeGuia(guia?.nome_agencia) ||
-    textoNomeGuia(guia?.agencia_nome) ||
-    textoNomeGuia(guia?.empresa_nome) ||
-    textoNomeGuia(guia?.nome_empresa) ||
-    textoNomeGuia(guia?.nome_fantasia) ||
-    textoNomeGuia(guia?.razao_social)
-
-  if (nomeAgenciaBanco) return nomeAgenciaBanco
-
-  const nomeAgenciaRoteiro =
-    textoNomeGuia(roteiro?.nome_agencia) ||
-    textoNomeGuia(roteiro?.agencia_nome) ||
-    textoNomeGuia(roteiro?.empresa_nome) ||
-    textoNomeGuia(roteiro?.nome_empresa) ||
-    textoNomeGuia(roteiro?.nome_fantasia) ||
-    textoNomeGuia(roteiro?.razao_social) ||
-    textoNomeGuia(roteiro?.agencia)
-
-  if (nomeAgenciaRoteiro) return nomeAgenciaRoteiro
-
-  const email = textoNomeGuia(guia?.email) || textoNomeGuia(roteiro?.guia_email)
-
-  return email || 'Guia responsável'
-}
-
-function avatarGuia(guia?: GuiaResumo | null, roteiro?: Roteiro | null) {
-  return texto(
-    guia?.avatar_url ||
-      guia?.foto_url ||
-      guia?.imagem_url ||
-      roteiro?.guia_avatar_url ||
-      roteiro?.guia_foto_url
-  )
-}
-
-function roteiroEstaDisponivel(roteiro: Roteiro) {
-  if (!roteiro?.id) return false
-  if (roteiro.removido_em || roteiro.excluido_em) return false
-  if (roteiro.removido_pelo_admin || roteiro.removido_pelo_guia) return false
-
-  const status = normalizar(roteiro.status)
-  const situacao = normalizar(roteiro.situacao)
-  const publicacao = normalizar(roteiro.publicacao || roteiro.estado_publicacao)
-
-  if (STATUS_OCULTOS.has(status) || STATUS_OCULTOS.has(situacao) || STATUS_OCULTOS.has(publicacao)) {
-    return false
-  }
-
-  if (roteiro.ativo === true) return true
-  if (STATUS_PUBLICOS.has(status) || STATUS_PUBLICOS.has(situacao) || STATUS_PUBLICOS.has(publicacao)) return true
-
-  return false
-}
-
-function ordenarPorData(a: Roteiro, b: Roteiro) {
-  const dataA = dataPrincipal(a)
-  const dataB = dataPrincipal(b)
-
-  const timeA = dataA ? new Date(dataA.length <= 10 ? `${dataA}T12:00:00` : dataA).getTime() : Number.POSITIVE_INFINITY
-  const timeB = dataB ? new Date(dataB.length <= 10 ? `${dataB}T12:00:00` : dataB).getTime() : Number.POSITIVE_INFINITY
-
-  const aValido = Number.isFinite(timeA) ? timeA : Number.POSITIVE_INFINITY
-  const bValido = Number.isFinite(timeB) ? timeB : Number.POSITIVE_INFINITY
-
-  return aValido - bValido
-}
-
-export default function RoteirosPage() {
+export default function GuiaRoteirosPage() {
   const router = useRouter()
 
-  const [usuarioLogado, setUsuarioLogado] = useState<UsuarioLocal | null>(null)
+  const [usuario, setUsuario] = useState<UsuarioLocal | null>(null)
+  const [guiaId, setGuiaId] = useState('')
   const [roteiros, setRoteiros] = useState<Roteiro[]>([])
-  const [guias, setGuias] = useState<Record<string, GuiaResumo>>({})
   const [carregando, setCarregando] = useState(true)
+  const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
   const [busca, setBusca] = useState('')
-  const [filtroNivel, setFiltroNivel] = useState('todos')
-  const [filtroOrdenacao, setFiltroOrdenacao] = useState<'recentes' | 'data' | 'preco' | 'km'>('recentes')
-  const [copiadoId, setCopiadoId] = useState('')
-  const [destaqueIndex, setDestaqueIndex] = useState(0)
+  const [filtroStatus, setFiltroStatus] = useState('todos')
+  const [filtroDificuldade, setFiltroDificuldade] = useState('todas')
+  const [cancelando, setCancelando] = useState(false)
+  const [removendoId, setRemovendoId] = useState('')
+  const [roteiroCancelamento, setRoteiroCancelamento] = useState<Roteiro | null>(null)
+  const [motivoCodigo, setMotivoCodigo] = useState(MOTIVOS_CANCELAMENTO[0].codigo)
+  const [motivoDescricao, setMotivoDescricao] = useState(
+    MOTIVOS_CANCELAMENTO[0].descricao
+  )
+  const [observacaoGuia, setObservacaoGuia] = useState('')
+
+const [roteiroAtualizacao, setRoteiroAtualizacao] = useState<Roteiro | null>(null)
+const [atualizacaoTitulo, setAtualizacaoTitulo] = useState('')
+const [atualizacaoDescricao, setAtualizacaoDescricao] = useState('')
+const [atualizacaoData, setAtualizacaoData] = useState('')
+const [atualizacaoHora, setAtualizacaoHora] = useState('')
+const [atualizacaoLocal, setAtualizacaoLocal] = useState('')
+const [atualizacaoPreco, setAtualizacaoPreco] = useState('')
+const [atualizacaoObservacao, setAtualizacaoObservacao] = useState('')
+const [enviandoAtualizacao, setEnviandoAtualizacao] = useState(false)
 
   useEffect(() => {
-    const salvo = localStorage.getItem('user')
-    const usuario = salvo ? (JSON.parse(salvo) as UsuarioLocal) : null
-    setUsuarioLogado(usuario)
-
-    if (usuario) sincronizarUsuarioCabecalho(usuario)
-
-    carregarRoteiros()
+    iniciar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function sincronizarUsuarioCabecalho(usuarioAtual: UsuarioLocal) {
-    const usuarioId = extrairUsuarioId(usuarioAtual)
-    if (!usuarioId) return
-
+  async function iniciar() {
     try {
-      const { data } = await supabase
-        .from('users')
-        .select('id, nome, name, email, tipo, avatar_url, foto_url, imagem_url')
-        .eq('id', usuarioId)
-        .maybeSingle()
+      setCarregando(true)
+      setErro('')
+      setMensagem('')
 
-      if (!data) return
+      const salvo = localStorage.getItem('user')
+      const parsedUser = salvo ? (JSON.parse(salvo) as UsuarioLocal) : null
 
-      const atualizado: UsuarioLocal = {
-        ...usuarioAtual,
-        id: data.id || usuarioAtual.id,
-        nome: data.nome || usuarioAtual.nome || null,
-        name: data.name || usuarioAtual.name || null,
-        email: data.email || usuarioAtual.email || null,
-        tipo: data.tipo || usuarioAtual.tipo || null,
-        avatar_url: data.avatar_url || usuarioAtual.avatar_url || null,
-        foto_url: data.foto_url || usuarioAtual.foto_url || null,
-        imagem_url: data.imagem_url || usuarioAtual.imagem_url || null
+      if (!parsedUser || normalizar(parsedUser.tipo) !== 'guia') {
+        router.replace('/login')
+        return
       }
 
-      setUsuarioLogado(atualizado)
-      localStorage.setItem('user', JSON.stringify(atualizado))
+      const id = extrairUsuarioId(parsedUser)
+
+      if (!id) {
+        localStorage.removeItem('user')
+        router.replace('/login')
+        return
+      }
+
+      setUsuario({ ...parsedUser, id })
+      setGuiaId(id)
+
+      await carregarRoteiros(id)
     } catch (error) {
-      console.warn('Não foi possível sincronizar avatar do usuário no cabeçalho:', error)
-    }
-  }
-
-  async function carregarRoteiros() {
-    setCarregando(true)
-    setErro('')
-
-    try {
-      let roteirosData: Roteiro[] = []
-
-      const consultaPrincipal = await supabase
-        .from('roteiros')
-        .select('*')
-        .order('updated_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false, nullsFirst: false })
-
-      if (consultaPrincipal.error) {
-        console.warn('Erro ao ordenar roteiros por data. Tentando consulta simples:', consultaPrincipal.error)
-
-        const consultaFallback = await supabase
-          .from('roteiros')
-          .select('*')
-
-        if (consultaFallback.error) throw consultaFallback.error
-
-        roteirosData = (consultaFallback.data || []) as Roteiro[]
-      } else {
-        roteirosData = (consultaPrincipal.data || []) as Roteiro[]
-      }
-
-      const disponiveis = roteirosData.filter(roteiroEstaDisponivel)
-
-      setRoteiros(disponiveis)
-
-      const guiaIds = Array.from(
-        new Set(
-          disponiveis
-            .map((roteiro) => guiaIdRoteiro(roteiro))
-            .filter(Boolean)
-        )
-      )
-
-      if (guiaIds.length > 0) {
-        const { data: guiasData, error: guiasError } = await supabase
-          .from('users')
-          .select('id, nome, name, email, avatar_url, foto_url, imagem_url, nome_agencia, agencia_nome, empresa_nome, nome_empresa, nome_fantasia, razao_social, cadastur, cadastur_numero')
-          .in('id', guiaIds)
-
-        if (!guiasError && Array.isArray(guiasData)) {
-          const mapa: Record<string, GuiaResumo> = {}
-
-          ;(guiasData as GuiaResumo[]).forEach((guia) => {
-            if (guia?.id) mapa[guia.id] = guia
-          })
-
-          setGuias(mapa)
-        } else if (guiasError) {
-          console.warn('Não foi possível carregar nomes dos guias:', guiasError)
-        }
-      } else {
-        setGuias({})
-      }
-    } catch (error: any) {
-      console.error('Erro ao carregar roteiros:', error)
-      setErro(error?.message || 'Não foi possível carregar os roteiros agora.')
-      setRoteiros([])
+      console.error('Erro ao iniciar página de roteiros do guia:', error)
+      setErro('Não foi possível carregar seus roteiros.')
     } finally {
       setCarregando(false)
     }
   }
 
-  function nomeUsuario(usuario?: UsuarioLocal | null) {
-    return usuario?.nome || usuario?.name || usuario?.email || 'Usuário'
-  }
+  async function buscarReservasPorRoteiros(roteiroIds: string[]) {
+    if (roteiroIds.length === 0) return []
 
-  function primeiroNome(valor?: string | null) {
-    const nome = String(valor || 'Usuário').trim()
-    return nome.split(' ')[0] || 'Usuário'
-  }
+    const tentativas = ['roteiro_id', 'id_roteiro']
+    const acumuladas: ReservaResumo[] = []
 
-  function avatarUsuario(usuario?: UsuarioLocal | null) {
-    return usuario?.avatar_url || usuario?.foto_url || usuario?.imagem_url || ''
-  }
+    for (const coluna of tentativas) {
+      const { data, error } = await supabase
+        .from('reservas')
+        .select(
+          'id, roteiro_id, id_roteiro, status, pagamento_status, quantidade_pessoas, valor_total'
+        )
+        .in(coluna, roteiroIds)
 
-  function inicialUsuario(usuario?: UsuarioLocal | null) {
-    return primeiroNome(nomeUsuario(usuario)).slice(0, 1).toUpperCase()
-  }
+      if (error) {
+        const textoErro = String(error.message || error.details || '').toLowerCase()
 
-  function rotaPerfilUsuario(usuario?: UsuarioLocal | null) {
-    const tipo = normalizar(usuario?.tipo)
-    if (tipo === 'guia') return '/guia/perfil'
-    if (tipo === 'admin') return '/admin/dashboard'
-    return '/cliente/perfil'
-  }
+        if (textoErro.includes('column') || error.code === '42703') continue
 
-  function rotaPrincipalUsuario() {
-    const tipo = normalizar(usuarioLogado?.tipo)
-    if (tipo === 'cliente') return '/cliente/dashboard'
-    if (tipo === 'guia') return '/guia/dashboard'
-    if (tipo === 'admin') return '/admin/dashboard'
-    return '/'
-  }
+        console.warn('Erro ao buscar reservas dos roteiros:', error)
+        continue
+      }
 
-  function abrirRoteiro(id: string) {
-    router.push(`/roteiros/${id}`)
-  }
-
-  function abrirPerfilGuia(roteiro: Roteiro) {
-    const guiaId = guiaIdRoteiro(roteiro)
-    if (!guiaId) return
-    router.push(`/guia/publico/${guiaId}`)
-  }
-
-  async function copiarLink(roteiro: Roteiro) {
-    const link =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/roteiros/${roteiro.id}`
-        : `https://prussiktrails.com.br/roteiros/${roteiro.id}`
-
-    try {
-      await navigator.clipboard.writeText(link)
-      setCopiadoId(roteiro.id)
-      window.setTimeout(() => setCopiadoId(''), 2200)
-    } catch {
-      window.prompt('Copie o link do roteiro:', link)
+      if (data?.length) {
+        acumuladas.push(...(data as ReservaResumo[]))
+      }
     }
+
+    const mapa = new Map<string, ReservaResumo>()
+
+    acumuladas.forEach((reserva) => {
+      if (reserva.id) mapa.set(reserva.id, reserva)
+    })
+
+    return Array.from(mapa.values())
   }
 
-  function enviarWhatsApp(roteiro: Roteiro) {
-    const link =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/roteiros/${roteiro.id}`
-        : `https://prussiktrails.com.br/roteiros/${roteiro.id}`
+  async function carregarRoteiros(idGuia: string) {
+    setErro('')
+    setMensagem('')
 
-    const mensagem = `Olha esse roteiro no PrussikTrails: ${tituloRoteiro(roteiro)}
-${link}`
+    const { data, error } = await supabase
+      .from('roteiros')
+      .select('*')
+      .order('created_at', { ascending: false })
 
-    window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank', 'noopener,noreferrer')
+    if (error) {
+      console.error('Erro ao carregar roteiros:', error)
+      setErro('Erro ao carregar seus roteiros.')
+      setRoteiros([])
+      return
+    }
+
+    const base = ((data || []) as Roteiro[]).filter((roteiro) => {
+      const dono = guiaIdRoteiro(roteiro)
+      const status = statusRoteiro(roteiro)
+      const removido =
+        status === 'removido' ||
+        Boolean((roteiro as any).removido_em) ||
+        Boolean((roteiro as any).excluido_em) ||
+        Boolean((roteiro as any).removido_pelo_guia) ||
+        Boolean((roteiro as any).removido_pelo_admin)
+
+      if (removido) return false
+
+      return dono ? dono === idGuia : false
+    })
+
+    const ids = base.map((roteiro) => roteiro.id).filter(Boolean)
+    const reservas = await buscarReservasPorRoteiros(ids)
+
+    const lista = base.map((roteiro) => {
+      const reservasRoteiro = reservas.filter((reserva) => {
+        const roteiroReserva = String(reserva.roteiro_id || reserva.id_roteiro || '')
+        return roteiroReserva === roteiro.id && !statusReservaCancelada(reserva)
+      })
+
+      const pagas = reservasRoteiro.filter(pagamentoReservaConfirmado)
+      const pendentes = reservasRoteiro.filter(
+        (reserva) => !pagamentoReservaConfirmado(reserva)
+      )
+
+      return {
+        ...roteiro,
+        reservas_total: reservasRoteiro.length,
+        reservas_pagas: pagas.length,
+        reservas_pendentes: pendentes.length,
+      }
+    })
+
+    setRoteiros(lista)
   }
 
-  const niveisDisponiveis = useMemo(() => {
-    const niveis = roteiros
-      .map((roteiro) => labelDificuldade(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade))
-      .filter(Boolean)
+  const dificuldadesDisponiveis = useMemo(() => {
+    const set = new Set<string>()
 
-    return Array.from(new Set(niveis)).sort((a, b) => a.localeCompare(b))
+    roteiros.forEach((roteiro) => {
+      const dificuldade = String(roteiro.dificuldade || '').trim()
+      if (dificuldade) set.add(dificuldade)
+    })
+
+    return Array.from(set)
   }, [roteiros])
 
   const roteirosFiltrados = useMemo(() => {
-    const buscaNormalizada = normalizar(busca)
+    const termo = normalizar(busca)
 
-    let lista = roteiros.filter((roteiro) => {
-      const guia = guias[guiaIdRoteiro(roteiro)]
-
-      const textoBusca = normalizar(
+    return roteiros.filter((roteiro) => {
+      const status = statusRoteiro(roteiro)
+      const texto = normalizar(
         [
           tituloRoteiro(roteiro),
-          descricaoCurta(roteiro),
           localRoteiro(roteiro),
-          labelDificuldade(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade),
-          nomePublicoGuia(guia, roteiro),
-          roteiro.categoria,
-          roteiro.tipo,
-          roteiro.modalidade
+          roteiro.descricao,
+          roteiro.dificuldade,
+          labelRecorrencia(roteiro.recorrencia),
+          status,
         ].join(' ')
       )
 
-      const passaBusca = !buscaNormalizada || textoBusca.includes(buscaNormalizada)
-      const nivelAtual = labelDificuldade(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade)
-      const passaNivel = filtroNivel === 'todos' || nivelAtual === filtroNivel
+      const passaBusca = termo ? texto.includes(termo) : true
+      const passaStatus = filtroStatus === 'todos' ? true : status === filtroStatus
+      const passaDificuldade =
+        filtroDificuldade === 'todas'
+          ? true
+          : String(roteiro.dificuldade || '') === filtroDificuldade
 
-      return passaBusca && passaNivel
+      return passaBusca && passaStatus && passaDificuldade
+    })
+  }, [roteiros, busca, filtroStatus, filtroDificuldade])
+
+  const resumo = useMemo(() => {
+    const ativos = roteiros.filter((roteiro) => statusRoteiro(roteiro) === 'ativo').length
+    const cancelados = roteiros.filter(
+      (roteiro) => statusRoteiro(roteiro) === 'cancelado'
+    ).length
+    const reservas = roteiros.reduce(
+      (acc, roteiro) => acc + Number(roteiro.reservas_total || 0),
+      0
+    )
+    const reservasPagas = roteiros.reduce(
+      (acc, roteiro) => acc + Number(roteiro.reservas_pagas || 0),
+      0
+    )
+
+    return {
+      total: roteiros.length,
+      ativos,
+      cancelados,
+      reservas,
+      reservasPagas,
+    }
+  }, [roteiros])
+
+
+function abrirModalAtualizacao(roteiro: Roteiro) {
+  const dataBase = dataPrincipal(roteiro)
+
+  setRoteiroAtualizacao(roteiro)
+  setAtualizacaoTitulo(tituloRoteiro(roteiro))
+  setAtualizacaoDescricao(descricaoRoteiro(roteiro))
+  setAtualizacaoData(valorParaInputData(dataBase))
+  setAtualizacaoHora(valorParaInputHora(dataBase))
+  setAtualizacaoLocal(localRoteiro(roteiro) === 'Local a confirmar' ? '' : localRoteiro(roteiro))
+  setAtualizacaoPreco(numeroParaCampo(valorRoteiro(roteiro)))
+  setAtualizacaoObservacao('')
+  setErro('')
+  setMensagem('')
+}
+
+function fecharModalAtualizacao() {
+  if (enviandoAtualizacao) return
+
+  setRoteiroAtualizacao(null)
+  setAtualizacaoTitulo('')
+  setAtualizacaoDescricao('')
+  setAtualizacaoData('')
+  setAtualizacaoHora('')
+  setAtualizacaoLocal('')
+  setAtualizacaoPreco('')
+  setAtualizacaoObservacao('')
+}
+
+async function confirmarSolicitacaoAtualizacao() {
+  if (!roteiroAtualizacao?.id || !guiaId) return
+
+  if (!atualizacaoData.trim() && !atualizacaoTitulo.trim() && !atualizacaoDescricao.trim() && !atualizacaoLocal.trim() && !atualizacaoPreco.trim()) {
+    setErro('Informe ao menos uma alteração para enviar ao Admin.')
+    return
+  }
+
+  try {
+    setEnviandoAtualizacao(true)
+    setErro('')
+    setMensagem('')
+
+    const resposta = await fetch('/api/guia/roteiros/solicitar-atualizacao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roteiroId: roteiroAtualizacao.id,
+        guiaId,
+        titulo: atualizacaoTitulo.trim(),
+        descricao: atualizacaoDescricao.trim(),
+        data: atualizacaoData.trim(),
+        hora: atualizacaoHora.trim(),
+        local: atualizacaoLocal.trim(),
+        preco: numeroCampoParaApi(atualizacaoPreco),
+        observacao: atualizacaoObservacao.trim(),
+      }),
     })
 
-    if (filtroOrdenacao === 'data') {
-      lista = [...lista].sort(ordenarPorData)
-    } else if (filtroOrdenacao === 'preco') {
-      lista = [...lista].sort((a, b) => precoRoteiro(a) - precoRoteiro(b))
-    } else if (filtroOrdenacao === 'km') {
-      lista = [...lista].sort((a, b) => kmRoteiro(a) - kmRoteiro(b))
-    } else {
-      lista = [...lista].sort((a, b) => {
-        const updatedA = new Date(String(a.updated_at || a.created_at || '')).getTime()
-        const updatedB = new Date(String(b.updated_at || b.created_at || '')).getTime()
+    const json = await resposta.json().catch(() => null)
 
-        const aValido = Number.isFinite(updatedA) ? updatedA : 0
-        const bValido = Number.isFinite(updatedB) ? updatedB : 0
-
-        return bValido - aValido
-      })
+    if (!resposta.ok || !json?.sucesso) {
+      throw new Error(json?.erro || json?.message || 'Não foi possível enviar a solicitação de atualização.')
     }
 
-    return lista
-  }, [busca, filtroNivel, filtroOrdenacao, guias, roteiros])
+    setMensagem('Solicitação enviada para análise do Admin. O roteiro público só será alterado após aprovação.')
+    fecharModalAtualizacao()
+  } catch (error) {
+    console.error('Erro ao solicitar atualização:', error)
+    setErro(error instanceof Error ? error.message : 'Erro ao solicitar atualização.')
+  } finally {
+    setEnviandoAtualizacao(false)
+  }
+}
 
-  const roteirosQuentes = useMemo(() => {
-    const base = roteirosFiltrados.length > 0 ? roteirosFiltrados : roteiros
+  function abrirModalCancelamento(roteiro: Roteiro) {
+    setRoteiroCancelamento(roteiro)
+    setMotivoCodigo(MOTIVOS_CANCELAMENTO[0].codigo)
+    setMotivoDescricao(MOTIVOS_CANCELAMENTO[0].descricao)
+    setObservacaoGuia('')
+    setErro('')
+    setMensagem('')
+  }
 
-    return [...base]
-      .sort((a, b) => {
-        const fotoA = fotoRoteiro(a) ? 1 : 0
-        const fotoB = fotoRoteiro(b) ? 1 : 0
+  function fecharModalCancelamento() {
+    if (cancelando) return
+    setRoteiroCancelamento(null)
+    setObservacaoGuia('')
+  }
 
-        if (fotoA !== fotoB) return fotoB - fotoA
+  function atualizarMotivo(codigo: string) {
+    const motivo = MOTIVOS_CANCELAMENTO.find((item) => item.codigo === codigo)
+    setMotivoCodigo(codigo)
+    setMotivoDescricao(motivo?.descricao || '')
+  }
 
-        const updatedA = new Date(String(a.updated_at || a.created_at || '')).getTime()
-        const updatedB = new Date(String(b.updated_at || b.created_at || '')).getTime()
+  async function confirmarCancelamentoRoteiro() {
+    if (!roteiroCancelamento?.id || !guiaId) return
 
-        const aValido = Number.isFinite(updatedA) ? updatedA : 0
-        const bValido = Number.isFinite(updatedB) ? updatedB : 0
+    const motivoFinal = motivoDescricao.trim()
+    const observacaoFinal = observacaoGuia.trim()
 
-        return bValido - aValido
+    if (!motivoFinal) {
+      setErro('Informe o motivo do cancelamento.')
+      return
+    }
+
+    if (motivoCodigo === 'outro' && observacaoFinal.length < 12) {
+      setErro('Para “Outro motivo”, descreva melhor o motivo do cancelamento.')
+      return
+    }
+
+    try {
+      setCancelando(true)
+      setErro('')
+      setMensagem('')
+
+      const resposta = await fetch('/api/guia/roteiros/cancelar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roteiroId: roteiroCancelamento.id,
+          guiaId,
+          motivoCodigo,
+          motivoDescricao: motivoFinal,
+          observacao: observacaoFinal,
+        }),
       })
-      .slice(0, 6)
-  }, [roteiros, roteirosFiltrados])
 
-  useEffect(() => {
-    setDestaqueIndex(0)
-  }, [busca, filtroNivel, filtroOrdenacao, roteiros.length])
+      const json = await resposta.json().catch(() => null)
 
-  useEffect(() => {
-    if (roteirosQuentes.length <= 1) return
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível cancelar o roteiro.')
+      }
 
-    const intervalId = window.setInterval(() => {
-      setDestaqueIndex((atual) => (atual + 1) % roteirosQuentes.length)
-    }, 5200)
+      setMensagem(
+        `Roteiro cancelado. ${Number(json.reservasCanceladas || 0)} reserva(s) cancelada(s) e ${formatarMoeda(json.totalCreditado || 0)} creditados em Saldo de Jornada.`
+      )
 
-    return () => window.clearInterval(intervalId)
-  }, [roteirosQuentes.length])
+      setRoteiroCancelamento(null)
+      await carregarRoteiros(guiaId)
+    } catch (error) {
+      console.error('Erro ao cancelar roteiro:', error)
+      setErro(error instanceof Error ? error.message : 'Erro ao cancelar roteiro.')
+    } finally {
+      setCancelando(false)
+    }
+  }
 
-  const destaque = roteirosQuentes[destaqueIndex % Math.max(roteirosQuentes.length, 1)] || null
+  async function handleRemoverRoteiro(roteiro: Roteiro) {
+    if (!guiaId || !roteiro.id) return
 
-  function irParaProximoDestaque() {
-    if (roteirosQuentes.length <= 1) return
-    setDestaqueIndex((atual) => (atual + 1) % roteirosQuentes.length)
+    const confirma = window.confirm(
+      'Deseja remover este roteiro da sua lista? O histórico será preservado.'
+    )
+
+    if (!confirma) return
+
+    try {
+      setRemovendoId(roteiro.id)
+      setErro('')
+      setMensagem('')
+
+      const resposta = await fetch('/api/guia/roteiros/excluir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roteiroId: roteiro.id,
+          guiaId,
+        }),
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível remover o roteiro.')
+      }
+
+      setMensagem('Roteiro removido com sucesso.')
+      setRoteiros((prev) => prev.filter((item) => item.id !== roteiro.id))
+    } catch (error) {
+      console.error('Erro ao remover roteiro:', error)
+      setErro(error instanceof Error ? error.message : 'Erro ao remover roteiro.')
+    } finally {
+      setRemovendoId('')
+    }
+  }
+
+  if (carregando) {
+    return (
+      <div className="page loadingPage">
+        <style jsx>{`
+          .loadingPage {
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            background:
+              radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
+              radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
+              linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
+            color: #203c2e;
+            font-weight: 900;
+          }
+        `}</style>
+
+        Carregando seus roteiros...
+      </div>
+    )
   }
 
   return (
-    <main className="page">
-      <style jsx>{styles}</style>
+    <>
+      <style jsx global>{`
+        body {
+          background: #fffdf7;
+        }
+      `}</style>
 
-      <header className="topbar">
-        <div className="topbarInner">
-          <button
-            type="button"
-            className="brand"
-            onClick={() => router.push(rotaPrincipalUsuario())}
-            aria-label="Voltar ao início"
-          >
-            <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <span>Roteiros públicos</span>
-          </button>
+      <style jsx>{`
+        .page {
+          min-height: 100dvh;
+          background:
+            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
+            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
+          color: #172018;
+        }
 
-          <nav className="navActions" aria-label="Ações principais">
-            <button
-              type="button"
-              className="navLink desktopOnly"
-              onClick={() => router.push('/')}
-            >
-              Início
-            </button>
+        .header {
+          position: sticky;
+          top: 0;
+          z-index: 30;
+          backdrop-filter: blur(18px);
+          background: rgba(255, 253, 247, 0.82);
+          border-bottom: 1px solid rgba(62, 74, 45, 0.10);
+        }
 
-            {usuarioLogado ? (
-              <button
-                type="button"
-                className="profileButton"
-                onClick={() => router.push(rotaPerfilUsuario(usuarioLogado))}
-                aria-label={`Abrir perfil de ${primeiroNome(nomeUsuario(usuarioLogado))}`}
-              >
-                {avatarUsuario(usuarioLogado) ? (
-                  <img src={avatarUsuario(usuarioLogado)} alt={nomeUsuario(usuarioLogado)} />
-                ) : (
-                  <span>{inicialUsuario(usuarioLogado)}</span>
-                )}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="loginButton"
-                onClick={() => router.push('/login')}
-              >
-                Entrar
-              </button>
-            )}
-          </nav>
-        </div>
-      </header>
+        .headerInner {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 12px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+        }
 
-      <section className="hero">
-        <div className="heroText">
-          <p className="eyebrow">Explore com guias cadastrados</p>
-          <h1>Roteiros outdoor para sua próxima jornada.</h1>
-          <p>
-            Encontre experiências publicadas por guias e agências, descubra novas paisagens,
-            tire dúvidas com quem conduz a aventura e escolha sua próxima saída com mais segurança.
-          </p>
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+        }
 
-          <p className="heroSignature">
-            Para o aventureiro, tranquilidade para reservar. Para o guia, uma vitrine funcional para divulgar roteiros e organizar a jornada.
-          </p>
-        </div>
+        .brandLogo {
+          width: 34px;
+          height: 34px;
+          object-fit: contain;
+          flex: 0 0 auto;
+        }
 
-        <div className="heroCard">
-          {destaque ? (
-            <>
-              <div className="heroCardPhoto">
-                {fotoRoteiro(destaque) ? (
-                  <img src={fotoRoteiro(destaque)} alt={tituloRoteiro(destaque)} />
-                ) : (
-                  <div className="photoFallback">
-                    <img src="/logo-prussik-display.png" alt="" />
-                  </div>
-                )}
+        .brandName {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: clamp(24px, 3vw, 36px);
+          font-weight: 700;
+          color: #203c2e;
+          line-height: 0.92;
+          letter-spacing: -0.055em;
+        }
+
+        .brandSub {
+          margin-top: 4px;
+          color: #7b8372;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: 0.13em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+
+        .headerActions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
+        .main {
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 22px 16px 56px;
+        }
+
+        .hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);
+          gap: 18px;
+          align-items: stretch;
+          margin-bottom: 18px;
+        }
+
+        .heroCard,
+        .summaryCard,
+        .filters,
+        .card,
+        .modal {
+          border: 1px solid rgba(62, 74, 45, 0.10);
+          background: rgba(255, 255, 255, 0.72);
+          box-shadow: 0 18px 40px rgba(32, 60, 46, 0.08);
+          border-radius: 30px;
+        }
+
+        .heroCard {
+          padding: 24px;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .heroKicker {
+          margin: 0 0 9px;
+          color: #991b1b;
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+          letter-spacing: 0.14em;
+        }
+
+        .heroTitle {
+          margin: 0;
+          color: #172018;
+          font-size: clamp(31px, 6vw, 58px);
+          line-height: 0.94;
+          font-weight: 950;
+          letter-spacing: -0.07em;
+          max-width: 760px;
+        }
+
+        .heroText {
+          max-width: 720px;
+          margin: 14px 0 0;
+          color: rgba(23, 32, 24, 0.66);
+          font-size: 15px;
+          line-height: 1.55;
+          font-weight: 650;
+        }
+
+        .summaryCard {
+          padding: 18px;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+
+        .summaryItem {
+          border-radius: 22px;
+          background: rgba(255, 253, 247, 0.72);
+          padding: 14px;
+          min-width: 0;
+        }
+
+        .summaryValue {
+          color: #203c2e;
+          font-size: 24px;
+          font-weight: 950;
+          letter-spacing: -0.05em;
+        }
+
+        .summaryLabel {
+          margin-top: 3px;
+          color: #6f7868;
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .filters {
+          padding: 16px;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 180px 180px;
+          gap: 10px;
+          margin-bottom: 18px;
+        }
+
+        .input,
+        .select,
+        .textarea {
+          width: 100%;
+          border: 1px solid rgba(62, 74, 45, 0.14);
+          border-radius: 18px;
+          background: rgba(255, 253, 247, 0.78);
+          color: #172018;
+          padding: 12px 13px;
+          font-size: 13px;
+          font-weight: 750;
+          outline: none;
+          min-width: 0;
+        }
+
+        .textarea {
+          min-height: 98px;
+          resize: vertical;
+          line-height: 1.45;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 16px;
+          align-items: start;
+        }
+
+        .card {
+          overflow: hidden;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          position: relative;
+          isolation: isolate;
+        }
+
+        /*
+          Ajuste principal:
+          a imagem fica confinada dentro da área .photo e nunca passa por cima
+          dos botões no PWA/mobile. A área do conteúdo fica em camada própria.
+        */
+        .photo {
+          width: 100%;
+          height: 184px;
+          min-height: 184px;
+          flex: 0 0 184px;
+          background:
+            radial-gradient(circle at 30% 20%, rgba(250, 204, 21, 0.22), transparent 32%),
+            linear-gradient(135deg, #294735, #172018);
+          display: grid;
+          place-items: center;
+          color: #fffdf7;
+          font-size: 46px;
+          position: relative;
+          overflow: hidden;
+          z-index: 1;
+        }
+
+        .photo img {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          max-width: 100%;
+          object-fit: cover;
+          display: block;
+          z-index: 1;
+        }
+
+        .photo > span:not(.statusPill) {
+          position: relative;
+          z-index: 2;
+        }
+
+        .statusPill {
+          position: absolute;
+          left: 12px;
+          top: 12px;
+          z-index: 3;
+          border-radius: 999px;
+          padding: 7px 10px;
+          background: rgba(255, 253, 247, 0.88);
+          color: #203c2e;
+          font-size: 11px;
+          font-weight: 950;
+          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+        }
+
+        .statusPill.cancelado {
+          color: #991b1b;
+        }
+
+        .statusPill.pausado,
+        .statusPill.rascunho {
+          color: #92400e;
+        }
+
+        .body {
+          padding: 16px;
+          min-width: 0;
+          position: relative;
+          z-index: 2;
+          background: rgba(255, 255, 255, 0.78);
+          display: flex;
+          flex-direction: column;
+          flex: 1 1 auto;
+        }
+
+        .title {
+          margin: 0;
+          color: #172018;
+          font-size: 18px;
+          line-height: 1.1;
+          font-weight: 950;
+          letter-spacing: -0.04em;
+          overflow-wrap: anywhere;
+        }
+
+        .meta {
+          margin: 8px 0 0;
+          color: rgba(23, 32, 24, 0.62);
+          font-size: 13px;
+          font-weight: 700;
+          line-height: 1.45;
+          overflow-wrap: anywhere;
+        }
+
+        .chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+          margin: 13px 0;
+        }
+
+        .chip {
+          border-radius: 999px;
+          padding: 6px 9px;
+          background: rgba(32, 60, 46, 0.08);
+          color: #203c2e;
+          font-size: 11px;
+          font-weight: 900;
+          max-width: 100%;
+          overflow-wrap: anywhere;
+        }
+
+        .chip.red {
+          background: rgba(153, 27, 27, 0.09);
+          color: #991b1b;
+        }
+
+        .chip.gold {
+          background: rgba(212, 179, 90, 0.18);
+          color: #7c4a03;
+        }
+
+        .statsLine {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin-top: 12px;
+        }
+
+        .miniStat {
+          border-radius: 18px;
+          background: rgba(255, 253, 247, 0.70);
+          padding: 10px;
+          min-width: 0;
+        }
+
+        .miniValue {
+          color: #203c2e;
+          font-size: 15px;
+          font-weight: 950;
+        }
+
+        .miniLabel {
+          color: #7b8372;
+          font-size: 10px;
+          font-weight: 850;
+          margin-top: 2px;
+        }
+
+        .actions {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+          margin-top: auto;
+          padding-top: 14px;
+          position: relative;
+          z-index: 4;
+          clear: both;
+        }
+
+        .actions .btn {
+          width: 100%;
+        }
+
+        .btn {
+          border: 0;
+          border-radius: 999px;
+          padding: 11px 14px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.16s ease;
+          white-space: nowrap;
+          min-height: 40px;
+          position: relative;
+          z-index: 5;
+        }
+
+        .btn:hover {
+          transform: translateY(-1px);
+        }
+
+        .btnDark {
+          background: #203c2e;
+          color: #fffdf7;
+          box-shadow: 0 12px 26px rgba(32, 60, 46, 0.18);
+        }
+
+        .btnLight {
+          background: rgba(255, 253, 247, 0.82);
+          color: #203c2e;
+          border: 1px solid rgba(62, 74, 45, 0.12);
+        }
+
+        .btnDanger {
+          background: #991b1b;
+          color: #fffdf7;
+          box-shadow: 0 12px 26px rgba(153, 27, 27, 0.18);
+        }
+
+        .btnWarn {
+          background: #92400e;
+          color: #fffdf7;
+          box-shadow: 0 12px 26px rgba(146, 64, 14, 0.16);
+        }
+
+        .btn:disabled {
+          opacity: 0.58;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .alert {
+          margin-bottom: 14px;
+          border-radius: 20px;
+          padding: 13px 14px;
+          font-size: 13px;
+          font-weight: 850;
+          line-height: 1.45;
+        }
+
+        .alert.ok {
+          background: rgba(22, 101, 52, 0.09);
+          color: #166534;
+          border: 1px solid rgba(22, 101, 52, 0.16);
+        }
+
+        .alert.err {
+          background: rgba(153, 27, 27, 0.09);
+          color: #991b1b;
+          border: 1px solid rgba(153, 27, 27, 0.16);
+        }
+
+        .empty {
+          border-radius: 30px;
+          border: 1px solid rgba(62, 74, 45, 0.10);
+          background: rgba(255, 255, 255, 0.72);
+          padding: 44px 18px;
+          text-align: center;
+          color: #6f7868;
+          font-weight: 850;
+        }
+
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 80;
+          display: grid;
+          place-items: center;
+          padding: 18px;
+          background: rgba(8, 13, 7, 0.56);
+          backdrop-filter: blur(10px);
+        }
+
+        .modal {
+          width: min(680px, 100%);
+          max-height: min(760px, 92dvh);
+          overflow: auto;
+          padding: 20px;
+          background:
+            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.12), transparent 28%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 100%);
+        }
+
+        .modalTitle {
+          margin: 0;
+          color: #172018;
+          font-size: 28px;
+          font-weight: 950;
+          letter-spacing: -0.055em;
+        }
+
+        .modalSub {
+          margin-top: 7px;
+          color: rgba(23, 32, 24, 0.66);
+          font-size: 13px;
+          font-weight: 750;
+          line-height: 1.45;
+        }
+
+        .field {
+          margin-top: 14px;
+        }
+
+        .label {
+          display: block;
+          margin-bottom: 7px;
+          color: #203c2e;
+          font-size: 12px;
+          font-weight: 950;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+
+        .modalNotice {
+          margin-top: 14px;
+          border-radius: 20px;
+          padding: 13px;
+          background: rgba(212, 179, 90, 0.16);
+          border: 1px solid rgba(212, 179, 90, 0.25);
+          color: #6b3d05;
+          font-size: 13px;
+          font-weight: 800;
+          line-height: 1.45;
+        }
+
+
+.modalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+}
+
+.textareaTall {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.modalCompare {
+  margin-top: 14px;
+  border-radius: 18px;
+  background: rgba(32, 60, 46, 0.06);
+  border: 1px solid rgba(32, 60, 46, 0.10);
+  padding: 12px;
+  color: rgba(23, 32, 24, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 750;
+}
+
+.modalCompare strong {
+  color: #203c2e;
+}
+
+        .modalActions {
+          display: flex;
+          justify-content: flex-end;
+          flex-wrap: wrap;
+          gap: 9px;
+          margin-top: 18px;
+        }
+
+        @media (max-width: 1020px) {
+          .hero {
+            grid-template-columns: 1fr;
+          }
+
+          .grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .filters {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .filters .input {
+            grid-column: 1 / -1;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .headerInner {
+            padding: 10px 12px;
+            align-items: center;
+          }
+
+          .brandLogo {
+            width: 30px;
+            height: 30px;
+          }
+
+          .brandName {
+            font-size: 25px;
+          }
+
+          .brandSub {
+            font-size: 9px;
+            letter-spacing: 0.10em;
+          }
+
+          .headerActions .btnLight {
+            display: none;
+          }
+
+          .main {
+            padding: 16px 12px 44px;
+          }
+
+          .heroCard {
+            padding: 18px;
+            border-radius: 26px;
+          }
+
+          .heroTitle {
+            font-size: 34px;
+          }
+
+          .summaryCard {
+            grid-template-columns: repeat(2, 1fr);
+            border-radius: 26px;
+          }
+
+          .filters {
+            grid-template-columns: 1fr;
+            border-radius: 24px;
+          }
+
+          .grid {
+            grid-template-columns: 1fr;
+            gap: 14px;
+          }
+
+          .card {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 26px;
+          }
+
+          .photo {
+            height: 158px;
+            min-height: 158px;
+            flex-basis: 158px;
+          }
+
+          .body {
+            padding: 14px;
+            background: rgba(255, 255, 255, 0.86);
+          }
+
+          .statsLine {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+
+          .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            width: 100%;
+          }
+
+.modalGrid {
+  grid-template-columns: 1fr;
+}
+
+
+          .actions .btn {
+            width: 100%;
+            min-width: 0;
+          }
+
+          .modalOverlay {
+            align-items: end;
+            padding: 10px;
+          }
+
+          .modal {
+            border-radius: 26px;
+            max-height: 90dvh;
+          }
+
+  
+.modalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+}
+
+.textareaTall {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.modalCompare {
+  margin-top: 14px;
+  border-radius: 18px;
+  background: rgba(32, 60, 46, 0.06);
+  border: 1px solid rgba(32, 60, 46, 0.10);
+  padding: 12px;
+  color: rgba(23, 32, 24, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 750;
+}
+
+.modalCompare strong {
+  color: #203c2e;
+}
+
+        .modalActions {
+            display: grid;
+            grid-template-columns: 1fr;
+          }
+
+          .modalActions .btn {
+            width: 100%;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .actions {
+            grid-template-columns: 1fr;
+          }
+
+          .photo {
+            height: 148px;
+            min-height: 148px;
+            flex-basis: 148px;
+          }
+        }
+      `}</style>
+
+      <div className="page">
+        <header className="header">
+          <div className="headerInner">
+            <div className="brand">
+              <img
+                className="brandLogo"
+                src="/logo-prussik-display.png"
+                alt="PrussikTrails"
+                onError={(event) => {
+                  ;(event.currentTarget as HTMLImageElement).style.display = 'none'
+                }}
+              />
+
+              <div>
+                <div className="brandName">PrussikTrails</div>
+                <div className="brandSub">Painel do guia</div>
               </div>
-
-              <div className="heroCardBody">
-                <span className="hotTag">Roteiros mais quentes</span>
-                <h2>{tituloRoteiro(destaque)}</h2>
-                <p>{localRoteiro(destaque)}</p>
-
-                <div className="heroCardMeta">
-                  <span>{labelDificuldade(destaque.dificuldade || destaque.nivel || destaque.intensidade)}</span>
-                  <span>{formatarMoeda(precoRoteiro(destaque))}</span>
-                </div>
-
-                <div className="heroCardActions">
-                  <button type="button" onClick={() => abrirRoteiro(destaque.id)}>
-                    Ver roteiro
-                  </button>
-
-                  {roteirosQuentes.length > 1 && (
-                    <button type="button" className="ghostHeroButton" onClick={irParaProximoDestaque}>
-                      Próximo
-                    </button>
-                  )}
-                </div>
-
-                {roteirosQuentes.length > 1 && (
-                  <div className="heroDots" aria-label="Roteiros em destaque">
-                    {roteirosQuentes.map((roteiro, index) => (
-                      <button
-                        key={roteiro.id}
-                        type="button"
-                        className={index === destaqueIndex % roteirosQuentes.length ? 'active' : ''}
-                        onClick={() => setDestaqueIndex(index)}
-                        aria-label={`Ver roteiro em destaque ${index + 1}`}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="heroEmpty">
-              <span>🧭</span>
-              <strong>Nenhum roteiro disponível agora</strong>
-              <p>Assim que os guias publicarem novas experiências, elas aparecerão aqui.</p>
             </div>
-          )}
-        </div>
-      </section>
 
-      <section className="filters">
-        <div className="searchBox">
-          <span>Buscar</span>
+            <div className="headerActions">
+              <button
+                type="button"
+                className="btn btnLight"
+                onClick={() => router.push('/guia/dashboard')}
+              >
+                Dashboard
+              </button>
+
+              <button
+                type="button"
+                className="btn btnDark"
+                onClick={() => router.push('/guia/roteiros/novo')}
+              >
+                Novo roteiro
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="main">
+          <section className="hero">
+            <div className="heroCard">
+              <p className="heroKicker">Gestão de experiências</p>
+              <h1 className="heroTitle">Meus roteiros</h1>
+              <p className="heroText">
+                Administre suas jornadas, acompanhe reservas e cancele roteiros com
+                motivo obrigatório quando houver risco, indisponibilidade ou necessidade
+                operacional. Quando o guia cancela, os clientes recebem crédito em Saldo
+                de Jornada.
+              </p>
+            </div>
+
+            <div className="summaryCard">
+              <div className="summaryItem">
+                <div className="summaryValue">{resumo.total}</div>
+                <div className="summaryLabel">total</div>
+              </div>
+
+              <div className="summaryItem">
+                <div className="summaryValue">{resumo.ativos}</div>
+                <div className="summaryLabel">ativos</div>
+              </div>
+
+              <div className="summaryItem">
+                <div className="summaryValue">{resumo.reservasPagas}</div>
+                <div className="summaryLabel">pagas</div>
+              </div>
+
+              <div className="summaryItem">
+                <div className="summaryValue">{resumo.cancelados}</div>
+                <div className="summaryLabel">cancelados</div>
+              </div>
+            </div>
+          </section>
+
+          {mensagem && <div className="alert ok">{mensagem}</div>}
+          {erro && <div className="alert err">{erro}</div>}
+
+          <section className="filters">
+            <input
+              className="input"
+              value={busca}
+              onChange={(event) => setBusca(event.target.value)}
+              placeholder="Buscar por título, local, status ou dificuldade..."
+            />
+
+            <select
+              className="select"
+              value={filtroStatus}
+              onChange={(event) => setFiltroStatus(event.target.value)}
+            >
+              <option value="todos">Todos os status</option>
+              <option value="ativo">Ativos</option>
+              <option value="pausado">Pausados</option>
+              <option value="cancelado">Cancelados</option>
+              <option value="encerrado">Encerrados</option>
+              <option value="rascunho">Rascunhos</option>
+            </select>
+
+            <select
+              className="select"
+              value={filtroDificuldade}
+              onChange={(event) => setFiltroDificuldade(event.target.value)}
+            >
+              <option value="todas">Todas dificuldades</option>
+              {dificuldadesDisponiveis.map((dificuldade) => (
+                <option key={dificuldade} value={dificuldade}>
+                  {dificuldade}
+                </option>
+              ))}
+            </select>
+          </section>
+
+          {roteirosFiltrados.length === 0 ? (
+            <section className="empty">
+              <div style={{ fontSize: 44, marginBottom: 10 }}>🧭</div>
+              Nenhum roteiro encontrado com esses filtros.
+
+              <div style={{ marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="btn btnDark"
+                  onClick={() => router.push('/guia/roteiros/novo')}
+                >
+                  Criar primeiro roteiro
+                </button>
+              </div>
+            </section>
+          ) : (
+            <section className="grid">
+              {roteirosFiltrados.map((roteiro) => {
+                const status = statusRoteiro(roteiro)
+                const foto = fotoRoteiro(roteiro)
+                const totalReservas = Number(roteiro.reservas_total || 0)
+                const reservasPagas = Number(roteiro.reservas_pagas || 0)
+                const podeCancelar =
+                  status === 'ativo' || status === 'pausado' || status === 'rascunho'
+                const podeRemover =
+                  status === 'cancelado' ||
+                  status === 'encerrado' ||
+                  status === 'rascunho' ||
+                  totalReservas === 0
+
+                return (
+                  <article className="card" key={roteiro.id}>
+                    <div className="photo">
+                      {foto ? (
+                        <img
+                          src={foto}
+                          alt={tituloRoteiro(roteiro)}
+                          onError={(event) => {
+                            ;(event.currentTarget as HTMLImageElement).style.display = 'none'
+                          }}
+                        />
+                      ) : (
+                        <span>🥾</span>
+                      )}
+
+                      <span className={`statusPill ${status}`}>
+                        {labelStatus(status)}
+                      </span>
+                    </div>
+
+                    <div className="body">
+                      <h2 className="title">{tituloRoteiro(roteiro)}</h2>
+
+                      <div className="meta">
+                        {localRoteiro(roteiro)}
+                        <br />
+                        {formatarData(dataPrincipal(roteiro))}
+                      </div>
+
+                      <div className="chips">
+                        <span className="chip">{formatarMoeda(valorRoteiro(roteiro))}</span>
+
+                        <span className="chip">{labelRecorrencia(roteiro.recorrencia)}</span>
+
+                        {roteiro.renovar_automaticamente ? (
+                          <span className="chip gold">renovação automática</span>
+                        ) : null}
+
+                        {status === 'cancelado' && roteiro.cancelamento_motivo_codigo ? (
+                          <span className="chip red">
+                            {roteiro.cancelamento_motivo_codigo}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="statsLine">
+                        <div className="miniStat">
+                          <div className="miniValue">{kmRoteiro(roteiro) || '-'}</div>
+                          <div className="miniLabel">km</div>
+                        </div>
+
+                        <div className="miniStat">
+                          <div className="miniValue">{duracaoRoteiro(roteiro) || '-'}</div>
+                          <div className="miniLabel">horas</div>
+                        </div>
+
+                        <div className="miniStat">
+                          <div className="miniValue">{limiteRoteiro(roteiro) || '-'}</div>
+                          <div className="miniLabel">vagas</div>
+                        </div>
+                      </div>
+
+                      <div className="statsLine">
+                        <div className="miniStat">
+                          <div className="miniValue">{totalReservas}</div>
+                          <div className="miniLabel">reservas</div>
+                        </div>
+
+                        <div className="miniStat">
+                          <div className="miniValue">{reservasPagas}</div>
+                          <div className="miniLabel">pagas</div>
+                        </div>
+
+                        <div className="miniStat">
+                          <div className="miniValue">
+                            {Number(roteiro.reservas_pendentes || 0)}
+                          </div>
+                          <div className="miniLabel">pendentes</div>
+                        </div>
+                      </div>
+
+                      <div className="actions">
+                        <button
+                          type="button"
+                          className="btn btnLight"
+                          onClick={() => router.push(`/roteiros/${roteiro.id}`)}
+                        >
+                          Ver
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btnDark"
+                          onClick={() => router.push(`/guia/roteiros/editar/${roteiro.id}`)}
+                          disabled={status === 'cancelado'}
+                        >
+                          Editar
+                        </button>
+
+                        {status !== 'cancelado' && status !== 'encerrado' && status !== 'removido' ? (
+                          <button
+                            type="button"
+                            className="btn btnLight"
+                            onClick={() => abrirModalAtualizacao(roteiro)}
+                          >
+                            Solicitar att
+                          </button>
+                        ) : null}
+
+                        {podeCancelar ? (
+                          <button
+                            type="button"
+                            className="btn btnWarn"
+                            onClick={() => abrirModalCancelamento(roteiro)}
+                          >
+                            Cancelar
+                          </button>
+                        ) : null}
+
+                        {podeRemover ? (
+                          <button
+                            type="button"
+                            className="btn btnDanger"
+                            onClick={() => handleRemoverRoteiro(roteiro)}
+                            disabled={removendoId === roteiro.id}
+                          >
+                            {removendoId === roteiro.id ? 'Removendo...' : 'Remover'}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </section>
+          )}
+        </main>
+
+        {roteiroCancelamento && (
+          <div className="modalOverlay" role="dialog" aria-modal="true">
+            <section className="modal">
+              <h2 className="modalTitle">Cancelar roteiro</h2>
+
+              <p className="modalSub">
+                Você está cancelando <strong>{tituloRoteiro(roteiroCancelamento)}</strong>.
+                O motivo ficará registrado e as reservas vinculadas receberão crédito em
+                Saldo de Jornada quando aplicável.
+              </p>
+
+              <div className="modalNotice">
+                Cancelamento pelo guia gera crédito integral ao cliente e preserva o
+                histórico financeiro, reservas e extrato.
+              </div>
+
+              <div className="field">
+                <label className="label">Motivo do cancelamento</label>
+                <select
+                  className="select"
+                  value={motivoCodigo}
+                  onChange={(event) => atualizarMotivo(event.target.value)}
+                >
+                  {MOTIVOS_CANCELAMENTO.map((motivo) => (
+                    <option value={motivo.codigo} key={motivo.codigo}>
+                      {motivo.titulo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field">
+                <label className="label">Descrição para registro</label>
+                <textarea
+                  className="textarea"
+                  value={motivoDescricao}
+                  onChange={(event) => setMotivoDescricao(event.target.value)}
+                  placeholder="Descreva o motivo do cancelamento..."
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Observação complementar do guia</label>
+                <textarea
+                  className="textarea"
+                  value={observacaoGuia}
+                  onChange={(event) => setObservacaoGuia(event.target.value)}
+                  placeholder="Opcional. Use para explicar detalhes operacionais, clima, segurança ou orientação aos clientes."
+                />
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="btn btnLight"
+                  onClick={fecharModalCancelamento}
+                  disabled={cancelando}
+                >
+                  Voltar
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btnDanger"
+                  onClick={confirmarCancelamentoRoteiro}
+                  disabled={cancelando}
+                >
+                  {cancelando ? 'Cancelando...' : 'Confirmar cancelamento'}
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {roteiroAtualizacao && (
+  <div className="modalOverlay" role="dialog" aria-modal="true">
+    <section className="modal">
+      <h2 className="modalTitle">Solicitar atualização</h2>
+
+      <p className="modalSub">
+        Informe a mudança necessária em <strong>{tituloRoteiro(roteiroAtualizacao)}</strong>.
+        O Admin poderá revisar, ajustar e aplicar a nova data, horário, local, preço ou descrição.
+      </p>
+
+      <div className="modalNotice">
+        O roteiro público não muda imediatamente. A alteração entra como solicitação pendente e só será aplicada depois da aprovação administrativa.
+      </div>
+
+      <div className="modalCompare">
+        <strong>Dados atuais:</strong>
+        <br />
+        Data: {formatarData(dataPrincipal(roteiroAtualizacao))} · Local: {localRoteiro(roteiroAtualizacao)} · Valor: {formatarMoeda(valorRoteiro(roteiroAtualizacao))}
+      </div>
+
+      <div className="modalGrid">
+        <div className="field fieldFull">
+          <label className="label">Título sugerido</label>
           <input
-            value={busca}
-            onChange={(event) => setBusca(event.target.value)}
-            placeholder="Nome, local, guia, dificuldade..."
+            className="input"
+            value={atualizacaoTitulo}
+            onChange={(event) => setAtualizacaoTitulo(event.target.value)}
+            placeholder="Título do roteiro"
           />
         </div>
 
-        <label>
-          <span>Nível</span>
-          <select value={filtroNivel} onChange={(event) => setFiltroNivel(event.target.value)}>
-            <option value="todos">Todos</option>
-            {niveisDisponiveis.map((nivel) => (
-              <option key={nivel} value={nivel}>
-                {nivel}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Ordenar</span>
-          <select
-            value={filtroOrdenacao}
-            onChange={(event) => setFiltroOrdenacao(event.target.value as 'recentes' | 'data' | 'preco' | 'km')}
-          >
-            <option value="recentes">Mais recentes</option>
-            <option value="data">Próxima data</option>
-            <option value="preco">Menor preço</option>
-            <option value="km">Menor distância</option>
-          </select>
-        </label>
-
-        <button type="button" className="refreshBtn" onClick={carregarRoteiros}>
-          Atualizar
-        </button>
-      </section>
-
-      {erro && <div className="alert error">{erro}</div>}
-
-      <section className="listSection">
-        <div className="sectionHead">
-          <div>
-            <h2>Roteiros disponíveis</h2>
-            <p>
-              {carregando
-                ? 'Carregando experiências...'
-                : `${roteirosFiltrados.length} roteiro(s) encontrado(s).`}
-            </p>
-          </div>
+        <div className="field">
+          <label className="label">Nova data</label>
+          <input
+            className="input"
+            type="date"
+            value={atualizacaoData}
+            onChange={(event) => setAtualizacaoData(event.target.value)}
+          />
         </div>
 
-        {carregando ? (
-          <div className="loadingGrid">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <div className="skeletonCard" key={index} />
-            ))}
-          </div>
-        ) : roteirosFiltrados.length === 0 ? (
-          <div className="emptyCard">
-            <span>🧭</span>
-            <h3>Nenhum roteiro encontrado</h3>
-            <p>
-              Verifique se há roteiros com status ativo/publicado ou ajuste os filtros de busca.
-            </p>
+        <div className="field">
+          <label className="label">Novo horário</label>
+          <input
+            className="input"
+            type="time"
+            value={atualizacaoHora}
+            onChange={(event) => setAtualizacaoHora(event.target.value)}
+          />
+        </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setBusca('')
-                setFiltroNivel('todos')
-                setFiltroOrdenacao('recentes')
-                carregarRoteiros()
-              }}
-            >
-              Limpar filtros e atualizar
-            </button>
-          </div>
-        ) : (
-          <div className="routeGrid">
-            {roteirosFiltrados.map((roteiro) => {
-              const guia = guias[guiaIdRoteiro(roteiro)]
-              const nomeGuia = nomePublicoGuia(guia, roteiro)
-              const foto = fotoRoteiro(roteiro)
-              const data = formatarData(dataPrincipal(roteiro))
-              const hora = horaPrincipal(roteiro)
-              const nivel = labelDificuldade(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade)
-              const km = kmRoteiro(roteiro)
+        <div className="field fieldFull">
+          <label className="label">Local de encontro / embarque</label>
+          <input
+            className="input"
+            value={atualizacaoLocal}
+            onChange={(event) => setAtualizacaoLocal(event.target.value)}
+            placeholder="Informe o novo local, se necessário"
+          />
+        </div>
 
-              return (
-                <article className="routeCard" key={roteiro.id}>
-                  <button
-                    type="button"
-                    className="routePhoto"
-                    onClick={() => abrirRoteiro(roteiro.id)}
-                    aria-label={`Abrir ${tituloRoteiro(roteiro)}`}
-                  >
-                    {foto ? (
-                      <img src={foto} alt={tituloRoteiro(roteiro)} />
-                    ) : (
-                      <div className="photoFallback">
-                        <img src="/logo-prussik-display.png" alt="" />
-                      </div>
-                    )}
+        <div className="field">
+          <label className="label">Preço sugerido</label>
+          <input
+            className="input"
+            value={atualizacaoPreco}
+            onChange={(event) => setAtualizacaoPreco(event.target.value)}
+            inputMode="decimal"
+            placeholder="Ex.: 120,00"
+          />
+        </div>
 
-                    <span className="levelBadge">{nivel}</span>
-                  </button>
+        <div className="field fieldFull">
+          <label className="label">Descrição sugerida</label>
+          <textarea
+            className="textarea textareaTall"
+            value={atualizacaoDescricao}
+            onChange={(event) => setAtualizacaoDescricao(event.target.value)}
+            placeholder="Atualize o descritivo do roteiro, se necessário"
+          />
+        </div>
 
-                  <div className="routeBody">
-                    <div className="routeTop">
-                      <div>
-                        <h3>{tituloRoteiro(roteiro)}</h3>
-                        <p>{descricaoCurta(roteiro)}</p>
-                      </div>
-                    </div>
+        <div className="field fieldFull">
+          <label className="label">Observação para o Admin</label>
+          <textarea
+            className="textarea textareaTall"
+            value={atualizacaoObservacao}
+            onChange={(event) => setAtualizacaoObservacao(event.target.value)}
+            placeholder="Explique o motivo da atualização: clima, logística, ajuste de horário, mudança no ponto de encontro etc."
+          />
+        </div>
+      </div>
 
-                    <div className="routeFacts">
-                      <span>📍 {localRoteiro(roteiro)}</span>
-                      <span>📅 {data}{hora ? ` · ${hora}` : ''}</span>
-                      <span>🥾 {km > 0 ? `${km} km` : 'Distância a combinar'} · {duracaoRoteiro(roteiro)}</span>
-                    </div>
+      <div className="modalActions">
+        <button
+          type="button"
+          className="btn btnLight"
+          onClick={fecharModalAtualizacao}
+          disabled={enviandoAtualizacao}
+        >
+          Voltar
+        </button>
 
-                    <button
-                      type="button"
-                      className="guideLine"
-                      onClick={() => abrirPerfilGuia(roteiro)}
-                      disabled={!guiaIdRoteiro(roteiro)}
-                    >
-                      <span className="guideAvatar">
-                        {avatarGuia(guia, roteiro) ? (
-                          <img src={avatarGuia(guia, roteiro)} alt={nomeGuia} />
-                        ) : (
-                          nomeGuia.slice(0, 1).toUpperCase()
-                        )}
-                      </span>
-
-                      <span>
-                        <small>Guia responsável</small>
-                        <strong>{nomeGuia}</strong>
-                      </span>
-                    </button>
-
-                    <div className="routeFooter">
-                      <div className="price">
-                        <span>Valor</span>
-                        <strong>{precoRoteiro(roteiro) > 0 ? formatarMoeda(precoRoteiro(roteiro)) : 'Consultar'}</strong>
-                      </div>
-
-                      <div className="cardActions">
-                        <button
-                          type="button"
-                          className="secondaryBtn"
-                          onClick={() => copiarLink(roteiro)}
-                        >
-                          {copiadoId === roteiro.id ? 'Copiado' : 'Copiar link'}
-                        </button>
-
-                        <button
-                          type="button"
-                          className="secondaryBtn whatsapp"
-                          onClick={() => enviarWhatsApp(roteiro)}
-                        >
-                          WhatsApp
-                        </button>
-
-                        <button
-                          type="button"
-                          className="primaryBtn"
-                          onClick={() => abrirRoteiro(roteiro.id)}
-                        >
-                          Ver roteiro
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        )}
-      </section>
-    </main>
+        <button
+          type="button"
+          className="btn btnDark"
+          onClick={confirmarSolicitacaoAtualizacao}
+          disabled={enviandoAtualizacao}
+        >
+          {enviandoAtualizacao ? 'Enviando...' : 'Enviar para aprovação'}
+        </button>
+      </div>
+    </section>
+  </div>
+)}
+      </div>
+    </>
   )
 }
-
-const styles = `
-  .page {
-    min-height: 100vh;
-    background:
-      radial-gradient(circle at 8% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
-      radial-gradient(circle at 90% 8%, rgba(251, 146, 60, 0.13), transparent 28%),
-      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
-    color: #172018;
-    font-family:
-      Inter,
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      sans-serif;
-    padding-bottom: 70px;
-  }
-
-  .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 60;
-    background: rgba(255, 253, 247, 0.92);
-    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-    backdrop-filter: blur(18px);
-    padding: 8px 16px;
-  }
-
-  .topbarInner {
-    width: 100%;
-    max-width: 1180px;
-    margin: 0 auto;
-    min-height: 56px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-
-  .brand {
-    border: none;
-    background: transparent;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    cursor: pointer;
-    padding: 0;
-    min-width: 0;
-  }
-
-  .brand img {
-    width: 122px;
-    height: 48px;
-    object-fit: contain;
-    display: block;
-  }
-
-  .brand span {
-    color: #6b7280;
-    font-size: 10px;
-    line-height: 1.1;
-    font-weight: 900;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .navActions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex: 0 0 auto;
-  }
-
-  .navLink,
-  .loginButton {
-    border: 1px solid rgba(32, 60, 46, 0.13);
-    background: rgba(255,255,255,0.76);
-    color: #203c2e;
-    border-radius: 999px;
-    min-height: 40px;
-    padding: 0 15px;
-    font-size: 12px;
-    font-weight: 950;
-    cursor: pointer;
-  }
-
-  .profileButton {
-    width: 42px;
-    height: 42px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(255,255,255,0.78);
-    color: #172018;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    overflow: hidden;
-    padding: 0;
-    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
-    transition: 0.2s ease;
-    font-size: 14px;
-    font-weight: 950;
-  }
-
-  .profileButton img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .hero {
-    max-width: 1180px;
-    margin: 24px auto 0;
-    padding: 0 18px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 420px;
-    gap: 22px;
-    align-items: stretch;
-  }
-
-  .heroText,
-  .heroCard,
-  .filters,
-  .alert,
-  .sectionHead,
-  .emptyCard,
-  .routeCard,
-  .skeletonCard {
-    border: 1px solid rgba(32, 60, 46, 0.08);
-    background: rgba(255, 253, 247, 0.84);
-    box-shadow: 0 20px 56px rgba(32, 60, 46, 0.09);
-  }
-
-  .heroText {
-    position: relative;
-    overflow: hidden;
-    border-radius: 36px;
-    padding: clamp(30px, 5vw, 58px);
-    background:
-      radial-gradient(circle at 8% 0%, rgba(132, 204, 22, 0.18), transparent 34%),
-      radial-gradient(circle at 92% 8%, rgba(251, 146, 60, 0.18), transparent 34%),
-      linear-gradient(135deg, #fffdf7 0%, #f5f0df 46%, #edf3e2 100%);
-  }
-
-  .eyebrow {
-    margin: 0 0 13px;
-    color: #991b1b;
-    font-size: 11px;
-    font-weight: 950;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-  }
-
-  .heroText h1 {
-    max-width: 780px;
-    margin: 0;
-    color: #172018;
-    font-size: clamp(42px, 7vw, 86px);
-    line-height: 0.9;
-    letter-spacing: -0.078em;
-    font-weight: 950;
-  }
-
-  .heroText p {
-    max-width: 680px;
-    margin: 20px 0 0;
-    color: rgba(23, 32, 24, 0.68);
-    font-size: 16px;
-    line-height: 1.65;
-    font-weight: 700;
-  }
-
-  .heroSignature {
-    margin-top: 16px !important;
-    max-width: 720px !important;
-    border-left: 4px solid rgba(153, 27, 27, 0.38);
-    padding: 10px 0 10px 14px;
-    color: rgba(32, 60, 46, 0.78) !important;
-    font-size: 14px !important;
-    line-height: 1.55 !important;
-    font-weight: 850 !important;
-  }
-
-  .heroCard {
-    border-radius: 36px;
-    overflow: hidden;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .heroCardPhoto {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 4 / 5;
-    min-height: 0;
-    max-height: 430px;
-    background: #dfe7d2;
-    overflow: hidden;
-    flex: 0 0 auto;
-  }
-
-  .heroCardPhoto img,
-  .routePhoto img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: center center;
-    display: block;
-  }
-
-  .photoFallback {
-    width: 100%;
-    height: 100%;
-    min-height: inherit;
-    display: grid;
-    place-items: center;
-    background:
-      radial-gradient(circle at 50% 20%, rgba(153,27,27,0.11), transparent 32%),
-      linear-gradient(135deg, #dfe7d2, #f7f0dd);
-  }
-
-  .photoFallback img {
-    width: 92px;
-    height: 92px;
-    object-fit: contain;
-  }
-
-  .heroCardBody {
-    padding: 18px;
-  }
-
-  .hotTag {
-    display: inline-flex;
-    width: fit-content;
-    border-radius: 999px;
-    background: rgba(153, 27, 27, 0.10);
-    color: #991b1b;
-    padding: 7px 10px;
-    font-size: 10px;
-    font-weight: 950;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-  }
-
-  .heroCardBody h2 {
-    margin: 13px 0 0;
-    color: #172018;
-    font-size: 26px;
-    line-height: 1;
-    letter-spacing: -0.055em;
-    font-weight: 950;
-  }
-
-  .heroCardBody p {
-    margin: 9px 0 0;
-    color: rgba(23, 32, 24, 0.62);
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .heroCardMeta {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 12px;
-  }
-
-  .heroCardMeta span {
-    border-radius: 999px;
-    background: rgba(32, 60, 46, 0.055);
-    color: #203c2e;
-    padding: 7px 10px;
-    font-size: 11px;
-    font-weight: 950;
-  }
-
-  .heroCardActions {
-    display: flex;
-    gap: 9px;
-    flex-wrap: wrap;
-    align-items: center;
-    margin-top: 16px;
-  }
-
-  .heroDots {
-    display: flex;
-    gap: 6px;
-    margin-top: 14px;
-  }
-
-  .heroDots button {
-    width: 8px;
-    height: 8px;
-    min-width: 8px;
-    border-radius: 999px;
-    border: none;
-    padding: 0;
-    background: rgba(32, 60, 46, 0.22);
-    cursor: pointer;
-  }
-
-  .heroDots button.active {
-    width: 22px;
-    background: #203c2e;
-  }
-
-  .heroCardBody button,
-  .emptyCard button,
-  .refreshBtn,
-  .primaryBtn,
-  .secondaryBtn {
-    border: none;
-    border-radius: 999px;
-    cursor: pointer;
-    font-weight: 950;
-    transition: 0.18s ease;
-  }
-
-  .heroCardBody button {
-    background: #203c2e;
-    color: #fffdf7;
-    padding: 12px 16px;
-    font-size: 13px;
-  }
-
-  .heroCardBody button.ghostHeroButton {
-    background: rgba(255, 253, 247, 0.92);
-    color: #203c2e;
-    border: 1px solid rgba(32, 60, 46, 0.14);
-  }
-
-  .heroCardBody .heroDots button {
-    width: 8px;
-    height: 8px;
-    min-width: 8px;
-    border-radius: 999px;
-    border: none;
-    padding: 0;
-    background: rgba(32, 60, 46, 0.22);
-    box-shadow: none;
-  }
-
-  .heroCardBody .heroDots button.active {
-    width: 22px;
-    background: #203c2e;
-  }
-
-  .heroEmpty {
-    min-height: 440px;
-    padding: 26px;
-    display: grid;
-    place-items: center;
-    align-content: center;
-    text-align: center;
-    color: #203c2e;
-  }
-
-  .heroEmpty span {
-    font-size: 44px;
-  }
-
-  .heroEmpty strong {
-    display: block;
-    margin-top: 12px;
-    font-size: 22px;
-    font-weight: 950;
-    letter-spacing: -0.04em;
-  }
-
-  .heroEmpty p {
-    max-width: 280px;
-    color: rgba(23, 32, 24, 0.58);
-    font-size: 13px;
-    line-height: 1.45;
-    font-weight: 760;
-  }
-
-  .filters,
-  .listSection {
-    max-width: 1180px;
-    margin: 20px auto 0;
-    padding: 0 18px;
-  }
-
-  .filters {
-    border-radius: 28px;
-    padding: 14px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 180px 180px auto;
-    gap: 10px;
-    align-items: end;
-  }
-
-  .filters label,
-  .searchBox {
-    display: grid;
-    gap: 6px;
-  }
-
-  .filters span,
-  .searchBox span {
-    color: rgba(23, 32, 24, 0.58);
-    font-size: 10px;
-    font-weight: 950;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-  }
-
-  .filters input,
-  .filters select {
-    width: 100%;
-    border: 1px solid rgba(32, 60, 46, 0.12);
-    background: rgba(255,255,255,0.78);
-    color: #172018;
-    border-radius: 17px;
-    padding: 12px 13px;
-    font-size: 14px;
-    font-weight: 820;
-    outline: none;
-  }
-
-  .filters input:focus,
-  .filters select:focus {
-    border-color: rgba(132, 204, 22, 0.70);
-    box-shadow: 0 0 0 4px rgba(132,204,22,0.12);
-  }
-
-  .refreshBtn {
-    min-height: 43px;
-    background: #eef2e5;
-    color: #203c2e;
-    padding: 0 14px;
-    font-size: 12px;
-  }
-
-  .alert {
-    max-width: 1180px;
-    margin: 18px auto 0;
-    border-radius: 20px;
-    padding: 14px 18px;
-    color: #7f1d1d;
-    font-size: 13px;
-    font-weight: 850;
-  }
-
-  .sectionHead {
-    border-radius: 28px;
-    padding: 20px;
-    margin-bottom: 16px;
-  }
-
-  .sectionHead h2 {
-    margin: 0;
-    color: #172018;
-    font-size: 28px;
-    line-height: 1;
-    letter-spacing: -0.05em;
-    font-weight: 950;
-  }
-
-  .sectionHead p {
-    margin: 8px 0 0;
-    color: rgba(23, 32, 24, 0.58);
-    font-size: 13px;
-    line-height: 1.45;
-    font-weight: 760;
-  }
-
-  .routeGrid,
-  .loadingGrid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 18px;
-  }
-
-  .routeCard {
-    border-radius: 30px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .routePhoto {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 4 / 3;
-    height: auto;
-    min-height: 0;
-    border: 0;
-    padding: 0;
-    background: #dfe7d2;
-    cursor: pointer;
-    overflow: hidden;
-  }
-
-  .levelBadge {
-    position: absolute;
-    left: 14px;
-    top: 14px;
-    border-radius: 999px;
-    background: rgba(255,253,247,0.90);
-    color: #203c2e;
-    padding: 8px 11px;
-    font-size: 11px;
-    font-weight: 950;
-    backdrop-filter: blur(10px);
-  }
-
-  .routeBody {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-  }
-
-  .routeTop h3 {
-    margin: 0;
-    color: #172018;
-    font-size: 23px;
-    line-height: 1.02;
-    letter-spacing: -0.055em;
-    font-weight: 950;
-  }
-
-  .routeTop p {
-    min-height: 58px;
-    margin: 9px 0 0;
-    color: rgba(23, 32, 24, 0.64);
-    font-size: 13px;
-    line-height: 1.48;
-    font-weight: 720;
-  }
-
-  .routeFacts {
-    margin-top: 14px;
-    display: grid;
-    gap: 7px;
-  }
-
-  .routeFacts span {
-    color: rgba(23, 32, 24, 0.68);
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 830;
-  }
-
-  .guideLine {
-    margin-top: 14px;
-    border: 1px solid rgba(32, 60, 46, 0.08);
-    background: rgba(32, 60, 46, 0.045);
-    color: inherit;
-    border-radius: 20px;
-    padding: 10px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .guideLine:disabled {
-    cursor: default;
-  }
-
-  .guideAvatar {
-    width: 42px;
-    height: 42px;
-    border-radius: 16px;
-    background: #203c2e;
-    color: #fffdf7;
-    display: grid;
-    place-items: center;
-    font-size: 15px;
-    font-weight: 950;
-    overflow: hidden;
-    flex: 0 0 auto;
-  }
-
-  .guideAvatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .guideLine small {
-    display: block;
-    color: rgba(23, 32, 24, 0.48);
-    font-size: 10px;
-    font-weight: 950;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .guideLine strong {
-    display: block;
-    margin-top: 3px;
-    color: #203c2e;
-    font-size: 13px;
-    line-height: 1.25;
-    font-weight: 950;
-  }
-
-  .routeFooter {
-    margin-top: auto;
-    padding-top: 16px;
-    display: grid;
-    gap: 12px;
-  }
-
-  .price span {
-    display: block;
-    color: rgba(23, 32, 24, 0.48);
-    font-size: 10px;
-    font-weight: 950;
-    letter-spacing: 0.10em;
-    text-transform: uppercase;
-  }
-
-  .price strong {
-    display: block;
-    margin-top: 3px;
-    color: #991b1b;
-    font-size: 24px;
-    line-height: 1;
-    letter-spacing: -0.05em;
-    font-weight: 950;
-  }
-
-  .cardActions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-
-  .primaryBtn,
-  .secondaryBtn {
-    min-height: 40px;
-    padding: 0 12px;
-    font-size: 11px;
-  }
-
-  .primaryBtn {
-    grid-column: 1 / -1;
-    background: #203c2e;
-    color: #fffdf7;
-  }
-
-  .secondaryBtn {
-    background: #eef2e5;
-    color: #203c2e;
-  }
-
-  .secondaryBtn.whatsapp {
-    background: #dcfce7;
-    color: #166534;
-  }
-
-  .emptyCard {
-    border-radius: 30px;
-    padding: 34px 22px;
-    text-align: center;
-  }
-
-  .emptyCard span {
-    font-size: 48px;
-  }
-
-  .emptyCard h3 {
-    margin: 10px 0 0;
-    color: #172018;
-    font-size: 28px;
-    line-height: 1;
-    letter-spacing: -0.05em;
-  }
-
-  .emptyCard p {
-    max-width: 520px;
-    margin: 10px auto 0;
-    color: rgba(23, 32, 24, 0.62);
-    font-size: 14px;
-    line-height: 1.5;
-    font-weight: 760;
-  }
-
-  .emptyCard button {
-    margin-top: 18px;
-    background: #203c2e;
-    color: #fffdf7;
-    padding: 12px 16px;
-    font-size: 13px;
-  }
-
-  .skeletonCard {
-    height: 430px;
-    border-radius: 30px;
-    background:
-      linear-gradient(90deg, rgba(255,255,255,0.45), rgba(255,255,255,0.85), rgba(255,255,255,0.45)),
-      rgba(255, 253, 247, 0.84);
-    background-size: 220% 100%;
-    animation: shine 1.2s linear infinite;
-  }
-
-  @keyframes shine {
-    to {
-      background-position: -220% 0;
-    }
-  }
-
-  @media (min-width: 941px) {
-    .page {
-      padding-top: 74px;
-    }
-
-    .topbar {
-      position: fixed;
-      left: 0;
-      right: 0;
-      height: 74px;
-      display: flex;
-      align-items: center;
-      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
-    }
-  }
-
-  @media (max-width: 1040px) {
-    .hero {
-      grid-template-columns: 1fr;
-    }
-
-    .heroCard {
-      min-height: 360px;
-    }
-
-    .routeGrid,
-    .loadingGrid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .filters {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .refreshBtn {
-      grid-column: 1 / -1;
-    }
-  }
-
-  @media (max-width: 700px) {
-    .topbar {
-      padding: 7px 10px;
-    }
-
-    .topbarInner {
-      min-height: 52px;
-      gap: 8px;
-    }
-
-    .brand {
-      gap: 8px;
-    }
-
-    .brand img {
-      width: 112px;
-      height: 42px;
-    }
-
-    .brand span {
-      display: none;
-    }
-
-    .desktopOnly {
-      display: none;
-    }
-
-    .profileButton,
-    .loginButton {
-      width: 38px;
-      height: 38px;
-      min-height: 38px;
-      padding: 0;
-      font-size: 10px;
-      box-shadow: none;
-    }
-
-    .loginButton {
-      width: auto;
-      padding: 0 13px;
-    }
-
-    .hero {
-      margin-top: 12px;
-      padding: 0 12px;
-      gap: 12px;
-    }
-
-    .heroText,
-    .heroCard,
-    .filters,
-    .sectionHead,
-    .emptyCard,
-    .routeCard {
-      border-radius: 24px;
-    }
-
-    .heroText {
-      padding: 22px;
-    }
-
-    .heroText h1 {
-      font-size: 40px;
-    }
-
-    .heroText p {
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .heroCard {
-      min-height: 0;
-    }
-
-    .heroCardPhoto {
-      aspect-ratio: 4 / 5;
-      min-height: 0;
-      max-height: none;
-    }
-
-    .filters,
-    .listSection {
-      padding: 0 12px;
-      margin-top: 12px;
-    }
-
-    .filters {
-      padding: 12px;
-      grid-template-columns: 1fr;
-    }
-
-    .routeGrid,
-    .loadingGrid {
-      grid-template-columns: 1fr;
-      gap: 12px;
-    }
-
-    .routePhoto {
-      aspect-ratio: 4 / 3;
-      height: auto;
-    }
-
-    .routeTop p {
-      min-height: 0;
-    }
-
-    .cardActions {
-      grid-template-columns: 1fr;
-    }
-
-    .primaryBtn {
-      grid-column: auto;
-    }
-  }
-`
