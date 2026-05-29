@@ -1,9 +1,406 @@
 'use client'
 
+import { CSSProperties, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
+
+type AnyRecord = Record<string, any>
+
+type HotTrail = {
+  id: string
+  title: string
+  location: string
+  difficulty: string
+  price: string
+  tag: string
+  guide: string
+  image?: string | null
+}
+
+const fallbackHotTrails: HotTrail[] = [
+  {
+    id: 'fallback-1',
+    title: 'Trilhas para respirar melhor',
+    location: 'Natureza, pausa e movimento',
+    difficulty: 'Leve a moderada',
+    price: 'Experiências selecionadas',
+    tag: 'Bem-estar',
+    guide: 'Guias preparados',
+    image: null
+  },
+  {
+    id: 'fallback-2',
+    title: 'Cachoeiras e caminhos de fim de semana',
+    location: 'Roteiros próximos e acessíveis',
+    difficulty: 'Para começar com segurança',
+    price: 'Reserve pelo app',
+    tag: 'Mais procurados',
+    guide: 'Condução organizada',
+    image: null
+  },
+  {
+    id: 'fallback-3',
+    title: 'Experiências outdoor com guia',
+    location: 'Do planejamento ao encontro',
+    difficulty: 'Informação clara antes da trilha',
+    price: 'Vagas e reservas no app',
+    tag: 'Outdoor',
+    guide: 'Gestão para guias',
+    image: null
+  }
+]
+
+const USER_SELECT_BASE = [
+  'id',
+  'nome',
+  'email',
+  'tipo',
+  'nome_agencia',
+  'agencia_nome',
+  'empresa',
+  'empresa_nome',
+  'nome_empresa',
+  'nome_fantasia',
+  'razao_social'
+]
+
+function texto(valor: unknown) {
+  return String(valor || '').trim()
+}
+
+function normalizar(valor: unknown) {
+  return texto(valor)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function normalizarPreco(valor: unknown) {
+  const numero = Number(valor)
+
+  if (!Number.isFinite(numero) || numero <= 0) {
+    return 'Consulte no app'
+  }
+
+  return numero.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  })
+}
+
+function erroColunaInexistente(error: any) {
+  const mensagem = String(
+    error?.message ||
+      error?.details ||
+      error?.hint ||
+      ''
+  ).toLowerCase()
+
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    mensagem.includes('column') ||
+    mensagem.includes('schema cache') ||
+    mensagem.includes('does not exist') ||
+    mensagem.includes('could not find')
+  )
+}
+
+function extrairColunaInexistente(error: any) {
+  const textoErro = [
+    error?.message,
+    error?.details,
+    error?.hint
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const matchUsers = textoErro.match(/users\.([a-zA-Z0-9_]+)/)
+
+  if (matchUsers?.[1]) return matchUsers[1]
+
+  const matchColumn = textoErro.match(/column\s+["']?([a-zA-Z0-9_]+)["']?/i)
+
+  if (matchColumn?.[1]) return matchColumn[1]
+
+  const matchAspas = textoErro.match(/'([^']+)'/)
+
+  if (matchAspas?.[1]) return matchAspas[1]
+
+  return ''
+}
+
+function pegarGuiaIdDoRoteiro(roteiro: AnyRecord) {
+  return texto(
+    roteiro.id_guia ||
+      roteiro.guia_id ||
+      roteiro.user_id ||
+      roteiro.usuario_id ||
+      roteiro.criado_por ||
+      roteiro.created_by ||
+      roteiro.owner_id
+  )
+}
+
+function pegarNomeGuiaDiretoDoRoteiro(roteiro: AnyRecord) {
+  return texto(
+    roteiro.nome_guia ||
+      roteiro.guia_nome ||
+      roteiro.nome_do_guia ||
+      roteiro.guia ||
+      roteiro.organizador ||
+      roteiro.nome_agencia ||
+      roteiro.agencia_nome ||
+      roteiro.empresa_nome ||
+      roteiro.nome_empresa ||
+      roteiro.nome_fantasia ||
+      roteiro.razao_social ||
+      roteiro.agencia
+  )
+}
+
+function pegarNomePublicoUsuario(user: AnyRecord) {
+  return texto(
+    user.nome_agencia ||
+      user.agencia_nome ||
+      user.empresa_nome ||
+      user.nome_empresa ||
+      user.nome_fantasia ||
+      user.razao_social ||
+      user.empresa ||
+      user.nome ||
+      user.email
+  )
+}
+
+async function buscarGuiasPorIds(ids: string[]) {
+  const idsValidos = Array.from(
+    new Set(
+      ids
+        .map((id) => texto(id))
+        .filter(Boolean)
+    )
+  )
+
+  if (idsValidos.length === 0) return new Map<string, string>()
+
+  let campos = [...USER_SELECT_BASE]
+
+  for (let tentativa = 0; tentativa < 14; tentativa++) {
+    const { data, error } = await supabase
+      .from('users')
+      .select(campos.join(', '))
+      .in('id', idsValidos)
+
+    if (!error) {
+      const usuarios: AnyRecord[] = Array.isArray(data)
+        ? (data as AnyRecord[])
+        : []
+
+      const mapa = new Map<string, string>()
+
+      usuarios.forEach((usuario: AnyRecord) => {
+        const id = texto(usuario.id)
+        const nome = pegarNomePublicoUsuario(usuario)
+
+        if (id && nome) {
+          mapa.set(id, nome)
+        }
+      })
+
+      return mapa
+    }
+
+    if (!erroColunaInexistente(error)) {
+      console.warn('[home] Não foi possível buscar nomes dos guias:', {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint
+      })
+
+      return new Map<string, string>()
+    }
+
+    const coluna = extrairColunaInexistente(error)
+
+    if (!coluna) {
+      console.warn('[home] Erro de coluna sem identificação ao buscar guias:', {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint
+      })
+
+      return new Map<string, string>()
+    }
+
+    campos = campos.filter((campo) => campo !== coluna)
+
+    if (campos.length <= 2) {
+      return new Map<string, string>()
+    }
+  }
+
+  return new Map<string, string>()
+}
+
+function normalizarRoteiro(
+  roteiro: AnyRecord,
+  index: number,
+  mapaGuias: Map<string, string>
+): HotTrail {
+  const preco =
+    roteiro.valor_total ??
+    roteiro.valor ??
+    roteiro.preco ??
+    roteiro.preco_total ??
+    roteiro.preco_por_pessoa ??
+    null
+
+  const guiaId = pegarGuiaIdDoRoteiro(roteiro)
+  const guiaDireto = pegarNomeGuiaDiretoDoRoteiro(roteiro)
+  const guiaDoUsuario = guiaId ? texto(mapaGuias.get(guiaId)) : ''
+
+  return {
+    id: texto(roteiro.id || roteiro.uuid || `roteiro-${index}`),
+    title:
+      texto(
+        roteiro.titulo ||
+          roteiro.nome ||
+          roteiro.nome_roteiro ||
+          roteiro.nomeRoteiro
+      ) || 'Roteiro PrussikTrails',
+    location:
+      texto(
+        roteiro.local ||
+          roteiro.cidade ||
+          roteiro.destino ||
+          roteiro.localizacao ||
+          roteiro.ponto_encontro
+      ) || 'Experiência outdoor',
+    difficulty:
+      texto(roteiro.dificuldade || roteiro.nivel || roteiro.intensidade) ||
+      'Nível informado pelo guia',
+    price: normalizarPreco(preco),
+    tag:
+      texto(roteiro.categoria || roteiro.tipo || roteiro.modalidade) ||
+      'Roteiro quente',
+    guide:
+      guiaDireto ||
+      guiaDoUsuario ||
+      'Guia/Agência PrussikTrails',
+    image:
+      texto(
+        roteiro.foto_capa ||
+          roteiro.foto_url ||
+          roteiro.imagem_url ||
+          roteiro.image_url ||
+          roteiro.capa_url
+      ) || null
+  }
+}
 
 export default function HomePage() {
   const router = useRouter()
+
+  const [hotTrails, setHotTrails] = useState<HotTrail[]>(fallbackHotTrails)
+  const [activeHotTrail, setActiveHotTrail] = useState(0)
+
+  useEffect(() => {
+    let ativo = true
+
+    async function carregarRoteirosQuentes() {
+      try {
+        const { data, error } = await supabase
+          .from('roteiros')
+          .select('*')
+          .limit(12)
+
+        if (error) {
+          console.warn('[home] Não foi possível carregar roteiros:', error)
+          return
+        }
+
+        const registros: AnyRecord[] = Array.isArray(data)
+          ? (data as AnyRecord[])
+          : []
+
+        const filtradosBase = registros
+          .filter((roteiro: AnyRecord) => {
+            if (roteiro.ativo === false) return false
+
+            const status = normalizar(
+              roteiro.status ||
+                roteiro.situacao ||
+                roteiro.estado ||
+                roteiro.publicacao
+            )
+
+            if (!status) return true
+
+            return ![
+              'cancelado',
+              'cancelada',
+              'inativo',
+              'inativa',
+              'rascunho',
+              'arquivado',
+              'arquivada',
+              'pausado',
+              'pausada'
+            ].includes(status)
+          })
+          .slice(0, 6)
+
+        const guiaIds = filtradosBase
+          .map((roteiro: AnyRecord) => pegarGuiaIdDoRoteiro(roteiro))
+          .filter(Boolean)
+
+        const mapaGuias = await buscarGuiasPorIds(guiaIds)
+
+        const filtrados = filtradosBase
+          .map((roteiro: AnyRecord, index: number) =>
+            normalizarRoteiro(roteiro, index, mapaGuias)
+          )
+          .filter((roteiro: HotTrail) => roteiro.title)
+
+        if (ativo && filtrados.length > 0) {
+          setHotTrails(filtrados)
+          setActiveHotTrail(0)
+        }
+      } catch (error) {
+        console.warn('[home] Erro inesperado ao carregar roteiros:', error)
+      }
+    }
+
+    carregarRoteirosQuentes()
+
+    return () => {
+      ativo = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (hotTrails.length <= 1) return
+
+    const intervalo = window.setInterval(() => {
+      setActiveHotTrail((prev) => {
+        return (prev + 1) % hotTrails.length
+      })
+    }, 4300)
+
+    return () => window.clearInterval(intervalo)
+  }, [hotTrails.length])
+
+  const roteiroAtivo = useMemo(() => {
+    return hotTrails[activeHotTrail] || hotTrails[0] || fallbackHotTrails[0]
+  }, [hotTrails, activeHotTrail])
+
+  function irParaRoteiros() {
+    router.push('/roteiros')
+  }
 
   return (
     <main className="page">
@@ -148,7 +545,7 @@ export default function HomePage() {
         .hero {
           min-height: calc(100vh - 145px);
           display: grid;
-          grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
+          grid-template-columns: minmax(0, 1.02fr) minmax(350px, 0.98fr);
           gap: 22px;
           align-items: stretch;
         }
@@ -159,7 +556,7 @@ export default function HomePage() {
           border-radius: 42px;
           padding: 34px;
           background:
-            linear-gradient(135deg, rgba(23, 32, 24, 0.82), rgba(23, 32, 24, 0.40)),
+            linear-gradient(135deg, rgba(23, 32, 24, 0.84), rgba(23, 32, 24, 0.42)),
             radial-gradient(circle at top right, rgba(190, 242, 100, 0.28), transparent 34%),
             linear-gradient(135deg, #1f331f 0%, #5f7547 48%, #d7c6a1 100%);
           color: #ffffff;
@@ -303,11 +700,133 @@ export default function HomePage() {
           overflow: hidden;
         }
 
-        .card.dark {
+        .hotCard {
+          padding: 0;
+          min-height: 334px;
+          position: relative;
           background:
-            radial-gradient(circle at top right, rgba(132, 204, 22, 0.18), transparent 36%),
-            #172018;
+            radial-gradient(circle at 15% 0%, rgba(190, 242, 100, 0.26), transparent 36%),
+            linear-gradient(135deg, #172018 0%, #253f2c 52%, #6f7f4f 100%);
           color: #ffffff;
+        }
+
+        .hotVisual {
+          min-height: 334px;
+          padding: 22px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          background:
+            linear-gradient(135deg, rgba(23, 32, 24, 0.70), rgba(23, 32, 24, 0.40)),
+            var(--hot-image);
+          background-size: cover;
+          background-position: center;
+        }
+
+        .hotTop {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .hotBadge {
+          width: fit-content;
+          border-radius: 999px;
+          padding: 8px 11px;
+          background: rgba(255, 255, 255, 0.16);
+          border: 1px solid rgba(255, 255, 255, 0.20);
+          color: #f7fee7;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          backdrop-filter: blur(12px);
+        }
+
+        .hotCounter {
+          color: rgba(255, 255, 255, 0.72);
+          font-size: 12px;
+          font-weight: 900;
+        }
+
+        .hotContent {
+          display: grid;
+          gap: 12px;
+        }
+
+        .hotTitle {
+          margin: 0;
+          color: #ffffff;
+          font-size: 31px;
+          line-height: 0.96;
+          font-weight: 950;
+          letter-spacing: -0.065em;
+        }
+
+        .hotMeta {
+          display: grid;
+          gap: 7px;
+          color: rgba(255, 255, 255, 0.80);
+          font-size: 13px;
+          line-height: 1.42;
+          font-weight: 800;
+        }
+
+        .hotMeta strong {
+          color: #ffffff;
+          font-weight: 950;
+        }
+
+        .hotActions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-top: 4px;
+        }
+
+        .hotButton {
+          border: none;
+          border-radius: 999px;
+          padding: 12px 15px;
+          background: #bef264;
+          color: #172018;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .hotButton.secondary {
+          background: rgba(255, 255, 255, 0.15);
+          color: #ffffff;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+        }
+
+        .hotButton:hover {
+          transform: translateY(-1px);
+        }
+
+        .hotDots {
+          display: flex;
+          gap: 7px;
+          margin-top: 12px;
+        }
+
+        .hotDot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          border: 0;
+          background: rgba(255, 255, 255, 0.35);
+          cursor: pointer;
+          transition: 0.2s ease;
+          padding: 0;
+        }
+
+        .hotDot.active {
+          width: 24px;
+          background: #bef264;
         }
 
         .cardLabel {
@@ -319,10 +838,6 @@ export default function HomePage() {
           margin-bottom: 10px;
         }
 
-        .card.dark .cardLabel {
-          color: #bef264;
-        }
-
         .cardTitle {
           margin: 0;
           color: #172018;
@@ -330,10 +845,6 @@ export default function HomePage() {
           line-height: 1.02;
           font-weight: 950;
           letter-spacing: -0.06em;
-        }
-
-        .card.dark .cardTitle {
-          color: #ffffff;
         }
 
         .cardText {
@@ -344,71 +855,44 @@ export default function HomePage() {
           font-weight: 700;
         }
 
-        .card.dark .cardText {
-          color: rgba(255, 255, 255, 0.74);
-        }
-
-        .journeyList {
+        .appGrid {
           display: grid;
-          gap: 10px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
           margin-top: 16px;
         }
 
-        .journeyItem {
-          display: grid;
-          grid-template-columns: 42px minmax(0, 1fr);
-          gap: 12px;
-          align-items: center;
-          padding: 12px;
-          border-radius: 22px;
-          background: #fffdf7;
+        .appMiniCard {
+          border-radius: 26px;
+          padding: 18px;
+          background: rgba(255, 253, 247, 0.88);
           border: 1px solid rgba(15, 23, 42, 0.06);
         }
 
-        .journeyIcon {
-          width: 42px;
-          height: 42px;
-          border-radius: 17px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: #f0fdf4;
-          font-size: 20px;
-        }
-
-        .journeyTitle {
-          color: #172018;
-          font-size: 13px;
+        .appMiniKicker {
+          color: #84cc16;
+          font-size: 10px;
           font-weight: 950;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-bottom: 9px;
         }
 
-        .journeyText {
-          margin-top: 2px;
+        .appMiniTitle {
+          margin: 0;
+          color: #172018;
+          font-size: 18px;
+          line-height: 1.05;
+          font-weight: 950;
+          letter-spacing: -0.055em;
+        }
+
+        .appMiniText {
+          margin: 8px 0 0;
           color: #64748b;
           font-size: 12px;
-          font-weight: 700;
-          line-height: 1.4;
-        }
-
-        .quote {
-          font-size: 30px;
-          line-height: 0.98;
-          font-weight: 950;
-          letter-spacing: -0.065em;
-          color: #ffffff;
-          margin: 0;
-        }
-
-        .quote span {
-          color: #bef264;
-        }
-
-        .quoteSub {
-          color: rgba(255, 255, 255, 0.70);
-          font-size: 13px;
-          line-height: 1.6;
-          font-weight: 700;
-          margin-top: 12px;
+          line-height: 1.5;
+          font-weight: 750;
         }
 
         .bottomGrid {
@@ -434,7 +918,9 @@ export default function HomePage() {
           align-items: center;
           justify-content: center;
           background: #f0fdf4;
-          font-size: 21px;
+          color: #203c2e;
+          font-size: 18px;
+          font-weight: 950;
           margin-bottom: 14px;
         }
 
@@ -524,6 +1010,14 @@ export default function HomePage() {
           .heroFooter {
             grid-template-columns: 1fr;
           }
+
+          .appGrid {
+            grid-template-columns: 1fr;
+          }
+
+          .hotVisual {
+            min-height: 320px;
+          }
         }
 
         @media (max-width: 390px) {
@@ -560,8 +1054,8 @@ export default function HomePage() {
             width: 100%;
           }
 
-          .quote {
-            font-size: 26px;
+          .hotTitle {
+            font-size: 27px;
           }
         }
       `}</style>
@@ -610,8 +1104,9 @@ export default function HomePage() {
               </h1>
 
               <p className="heroText">
-                Encontre trilhas, experiências outdoor e guias preparados para transformar
-                um fim de semana comum em uma história que você vai querer contar.
+                O PrussikTrails é o app para transformar vontade de sair da rotina
+                em experiência real: o aventureiro encontra roteiros com mais
+                tranquilidade, e o guia organiza reservas, grupos e gestão em um só lugar.
               </p>
 
               <div className="heroActions">
@@ -626,7 +1121,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="cta secondary"
-                  onClick={() => router.push('/roteiros')}
+                  onClick={irParaRoteiros}
                 >
                   Ver roteiros disponíveis
                 </button>
@@ -652,56 +1147,115 @@ export default function HomePage() {
           </div>
 
           <aside className="side">
-            <section className="card dark">
-              <div className="cardLabel">Frase da jornada</div>
+            <section className="card hotCard">
+              <div
+                className="hotVisual"
+                style={
+                  {
+                    '--hot-image': roteiroAtivo.image
+                      ? `url("${roteiroAtivo.image}")`
+                      : 'radial-gradient(circle at 80% 10%, rgba(190,242,100,0.24), transparent 34%), linear-gradient(135deg, #203c2e 0%, #5f7547 48%, #d7c6a1 100%)'
+                  } as CSSProperties
+                }
+              >
+                <div>
+                  <div className="hotTop">
+                    <div className="hotBadge">{roteiroAtivo.tag}</div>
 
-              <p className="quote">
-                Saia do mapa.
-                <br />
-                Volte com <span>história.</span>
-              </p>
+                    <div className="hotCounter">
+                      {String(activeHotTrail + 1).padStart(2, '0')} /{' '}
+                      {String(hotTrails.length).padStart(2, '0')}
+                    </div>
+                  </div>
+                </div>
 
-              <p className="quoteSub">
-                O PrussikTrails conecta pessoas, guias e caminhos para quem quer
-                viver mais do que apenas chegar.
-              </p>
+                <div className="hotContent">
+                  <h2 className="hotTitle">{roteiroAtivo.title}</h2>
+
+                  <div className="hotMeta">
+                    <div>
+                      <strong>Local:</strong> {roteiroAtivo.location}
+                    </div>
+
+                    <div>
+                      <strong>Nível:</strong> {roteiroAtivo.difficulty}
+                    </div>
+
+                    <div>
+                      <strong>Guia:</strong> {roteiroAtivo.guide}
+                    </div>
+
+                    <div>
+                      <strong>Valor:</strong> {roteiroAtivo.price}
+                    </div>
+                  </div>
+
+                  <div className="hotActions">
+                    <button
+                      type="button"
+                      className="hotButton"
+                      onClick={irParaRoteiros}
+                    >
+                      Ver roteiro
+                    </button>
+
+                    <button
+                      type="button"
+                      className="hotButton secondary"
+                      onClick={() => {
+                        setActiveHotTrail((prev) => {
+                          return (prev + 1) % hotTrails.length
+                        })
+                      }}
+                    >
+                      Próximo
+                    </button>
+                  </div>
+
+                  <div className="hotDots" aria-label="Roteiros em destaque">
+                    {hotTrails.map((roteiro, index) => (
+                      <button
+                        key={roteiro.id}
+                        type="button"
+                        className={`hotDot ${
+                          index === activeHotTrail ? 'active' : ''
+                        }`}
+                        aria-label={`Ver destaque ${index + 1}`}
+                        onClick={() => setActiveHotTrail(index)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section className="card">
-              <div className="cardLabel">Como funciona</div>
+              <div className="cardLabel">App para aventureiros e guias</div>
 
               <h2 className="cardTitle">
-                Simples para o aventureiro. Organizado para o guia.
+                Tranquilidade para quem vai. Funcionalidade para quem conduz.
               </h2>
 
               <p className="cardText">
-                Você encontra o roteiro, reserva, acompanha o pagamento e acessa suas
-                informações em uma área própria.
+                A proposta é deixar a experiência mais simples: o cliente entende,
+                reserva e acompanha; o guia organiza, comunica e gerencia melhor.
               </p>
 
-              <div className="journeyList">
-                <div className="journeyItem">
-                  <div className="journeyIcon">🧭</div>
-                  <div>
-                    <div className="journeyTitle">Descubra</div>
-                    <div className="journeyText">Roteiros ativos e experiências outdoor.</div>
-                  </div>
+              <div className="appGrid">
+                <div className="appMiniCard">
+                  <div className="appMiniKicker">Aventureiro</div>
+                  <h3 className="appMiniTitle">Escolha com calma</h3>
+                  <p className="appMiniText">
+                    Veja roteiros, informações essenciais e reservas em uma área própria.
+                  </p>
                 </div>
 
-                <div className="journeyItem">
-                  <div className="journeyIcon">🎒</div>
-                  <div>
-                    <div className="journeyTitle">Reserve</div>
-                    <div className="journeyText">Garanta sua vaga de forma direta.</div>
-                  </div>
-                </div>
-
-                <div className="journeyItem">
-                  <div className="journeyIcon">🏅</div>
-                  <div>
-                    <div className="journeyTitle">Evolua</div>
-                    <div className="journeyText">Acompanhe conquistas e histórico.</div>
-                  </div>
+                <div className="appMiniCard">
+                  <div className="appMiniKicker">Guia</div>
+                  <h3 className="appMiniTitle">Gerencie melhor</h3>
+                  <p className="appMiniText">
+                    Cadastre experiências, acompanhe reservas e mantenha sua operação organizada.
+                  </p>
                 </div>
               </div>
             </section>
@@ -710,7 +1264,7 @@ export default function HomePage() {
 
         <section className="bottomGrid">
           <article className="feature">
-            <div className="featureIcon">🌄</div>
+            <div className="featureIcon">01</div>
             <div className="featureTitle">Roteiros com alma outdoor</div>
             <div className="featureText">
               Experiências criadas para quem busca ar livre, natureza e presença.
@@ -718,7 +1272,7 @@ export default function HomePage() {
           </article>
 
           <article className="feature">
-            <div className="featureIcon">🧗</div>
+            <div className="featureIcon">02</div>
             <div className="featureTitle">Guias como protagonistas</div>
             <div className="featureText">
               O guia cadastra, organiza e conduz experiências com mais autonomia.
@@ -726,7 +1280,7 @@ export default function HomePage() {
           </article>
 
           <article className="feature">
-            <div className="featureIcon">🔥</div>
+            <div className="featureIcon">03</div>
             <div className="featureTitle">Comunidade em movimento</div>
             <div className="featureText">
               Acompanhe reservas, trilhas quentes, conquistas e novas jornadas.
