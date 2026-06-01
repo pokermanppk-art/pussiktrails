@@ -1,7 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
+
+type AnyRecord = Record<string, any>
 
 type UsuarioLocal = {
   id: string
@@ -30,6 +33,8 @@ type Roteiro = {
   foto_capa?: string | null
   foto_url?: string | null
   imagem_url?: string | null
+  image_url?: string | null
+  capa_url?: string | null
   preco?: number | null
   valor?: number | null
   duracao_horas?: number | null
@@ -39,7 +44,10 @@ type Roteiro = {
   dificuldade?: string | null
   localizacao?: string | null
   local?: string | null
+  cidade?: string | null
+  destino?: string | null
   status?: string | null
+  ativo?: boolean | null
   created_at?: string | null
   hot_score?: number
   hot_reservas?: number
@@ -71,6 +79,7 @@ type Notificacao = {
   destino?: string
   emoji: string
   tipo: 'all' | 'com'
+  tipoEvento?: string
   created_at?: string | null
 }
 
@@ -98,14 +107,17 @@ type MedalhaUsuario = {
   medalhas?: Medalha | Medalha[] | null
 }
 
-type TierJornada = {
-  key: string
-  titulo: string
-  nome: string
-  km: number
-  svg: string
-  cor: string
+type ProximaMedalha = {
+  nome?: string | null
+  descricao?: string | null
+  progresso_atual?: number | null
+  progresso_total?: number | null
+  icone?: string | null
+  svg?: string | null
 }
+
+type SuporteTipo = 'bug' | 'suporte' | 'sugestao'
+type PrioridadeSuporte = 'baixa' | 'normal' | 'alta' | 'urgente'
 
 const statsInicial: Stats = {
   totalKm: 0,
@@ -114,387 +126,282 @@ const statsInicial: Stats = {
   reservasConfirmadas: 0,
   reservasRealizadas: 0,
   totalMedalhas: 0,
-  ultimaAtividade: 'Sem histórico',
+  ultimaAtividade: 'Ainda sem atividade registrada',
 }
 
-const METAS_JORNADA: TierJornada[] = [
-  {
-    key: 'mochila_partida',
-    nome: 'Partida',
-    titulo: 'Mochila de Partida',
-    km: 0,
-    svg: '/medalhas/progressao/01_mochila_de_partida.svg',
-    cor: '#8b5e34',
-  },
-  {
-    key: 'barraca_base',
-    nome: 'Base',
-    titulo: 'Barraca Base',
-    km: 32,
-    svg: '/medalhas/progressao/02_barraca_base.svg',
-    cor: '#64748b',
-  },
-  {
-    key: 'fogueira_jornada',
-    nome: 'Fogueira',
-    titulo: 'Fogueira da Jornada',
-    km: 96,
-    svg: '/medalhas/progressao/03_fogueira_da_jornada.svg',
-    cor: '#b45309',
-  },
-  {
-    key: 'lanterna_serra',
-    nome: 'Lanterna',
-    titulo: 'Lanterna da Serra',
-    km: 192,
-    svg: '/medalhas/progressao/04_lanterna_da_serra.svg',
-    cor: '#365314',
-  },
-  {
-    key: 'placa_trilha',
-    nome: 'Rumo',
-    titulo: 'Rumo Certo',
-    km: 384,
-    svg: '/medalhas/progressao/05_rumo_certo.svg',
-    cor: '#3f6212',
-  },
-  {
-    key: 'corda_prussik',
-    nome: 'Prussik',
-    titulo: 'Corda Prussik',
-    km: 768,
-    svg: '/medalhas/progressao/06_prussik.svg',
-    cor: '#334155',
-  },
-  {
-    key: 'cachoeira_viva',
-    nome: 'Cachoeira',
-    titulo: 'Cachoeira Viva',
-    km: 1152,
-    svg: '/medalhas/progressao/07_cachoeira_viva.svg',
-    cor: '#0f766e',
-  },
-  {
-    key: 'amanhecer_cume',
-    nome: 'Cume',
-    titulo: 'Amanhecer no Cume',
-    km: 1920,
-    svg: '/medalhas/progressao/08_amanhecer_no_cume.svg',
-    cor: '#ca8a04',
-  },
-  {
-    key: 'mirante_explorador',
-    nome: 'Mirante',
-    titulo: 'Mirante do Explorador',
-    km: 3840,
-    svg: '/medalhas/progressao/09_mirante_do_explorador.svg',
-    cor: '#111827',
-  },
-  {
-    key: 'mapa_lendario',
-    nome: 'Lenda',
-    titulo: 'Mapa Lendário',
-    km: 7680,
-    svg: '/medalhas/progressao/10_mapa_lendario.svg',
-    cor: '#0f172a',
-  },
-]
-
-const BETA_MEDALHAS_SVG: Record<string, string> = {
-  inicio_jornada_beta: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
-  primeiros_passos: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
-  botinha_beta_oficial: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
-  aventureiro_pioneiro_beta: '/medalhas/iniciais_jornada/02_aventureiro_pioneiro_beta.svg',
-  voz_da_trilha_beta: '/medalhas/iniciais_jornada/03_voz_da_trilha_beta.svg',
-  guia_pioneiro_beta: '/medalhas/iniciais_jornada/04_guia_pioneiro_beta.svg',
-  construtor_da_jornada_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg',
-  construtor_da_trilha_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg',
+const notificacaoVaziaAll: Notificacao = {
+  id: 'empty-all',
+  titulo: 'A comunidade está começando a se mover',
+  texto: 'Quando novos aventureiros, guias, roteiros e medalhas aparecerem, você verá tudo aqui.',
+  emoji: '🌿',
+  tipo: 'all',
+  destino: '/roteiros',
+  created_at: null,
 }
 
-type IconeNome =
-  | 'reservas'
-  | 'explorar'
-  | 'perfil'
-  | 'pagamentos'
-  | 'roteiro'
-  | 'medalha'
-  | 'curtida'
-  | 'reserva'
-  | 'comunidade'
-  | 'check'
+const notificacaoVaziaCom: Notificacao = {
+  id: 'empty-com',
+  titulo: 'Siga guias e aventureiros para movimentar a COM',
+  texto: 'Novos seguidores, curtidas e roteiros publicados por guias que você segue aparecerão aqui.',
+  emoji: '👣',
+  tipo: 'com',
+  destino: '/roteiros',
+  created_at: null,
+}
 
-function normalizar(valor?: string | null) {
-  return String(valor || '')
+function texto(valor: unknown) {
+  return String(valor || '').trim()
+}
+
+function normalizar(valor: unknown) {
+  return texto(valor)
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
 }
 
-function normalizarChaveMedalha(valor?: string | null) {
-  return String(valor || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
+function numeroSeguro(valor: unknown, fallback = 0) {
+  const numero = Number(valor)
+  return Number.isFinite(numero) ? numero : fallback
 }
 
-function primeiroNome(nome?: string | null) {
-  const texto = String(nome || 'aventureiro').trim()
-  if (!texto) return 'aventureiro'
-  return texto.split(' ')[0]
+function formatarKm(valor: unknown) {
+  const km = numeroSeguro(valor)
+  if (km >= 1000) return km.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+  return km.toLocaleString('pt-BR', { maximumFractionDigits: km % 1 === 0 ? 0 : 1 })
 }
 
-function formatarMoeda(valor: any) {
-  return new Intl.NumberFormat('pt-BR', {
+function formatarMoeda(valor: unknown) {
+  return numeroSeguro(valor).toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
-  }).format(Number(valor || 0))
+  })
 }
 
 function formatarData(valor?: string | null) {
-  if (!valor) return '-'
+  const raw = texto(valor)
+  if (!raw) return 'Data a definir'
 
-  const data = new Date(valor)
+  const data = raw.length <= 10 ? new Date(`${raw.slice(0, 10)}T12:00:00`) : new Date(raw)
+  if (Number.isNaN(data.getTime())) return 'Data a definir'
 
-  if (Number.isNaN(data.getTime())) {
-    return valor
-  }
-
-  return data.toLocaleDateString('pt-BR')
+  return data.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
-function formatarHora(valor?: string | null) {
-  if (!valor) return ''
+function formatarDataHora(valor?: string | null) {
+  const raw = texto(valor)
+  if (!raw) return ''
 
-  const data = new Date(valor)
+  const data = new Date(raw)
+  if (Number.isNaN(data.getTime())) return formatarData(raw)
 
-  if (Number.isNaN(data.getTime())) {
-    return ''
-  }
-
-  return data.toLocaleTimeString('pt-BR', {
+  return data.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
     hour: '2-digit',
     minute: '2-digit',
   })
 }
 
-function tempoRelativo(valor?: string | null) {
-  if (!valor) return ''
-
-  const data = new Date(valor).getTime()
-
-  if (Number.isNaN(data)) return ''
-
-  const diff = Date.now() - data
-  const minutos = Math.floor(diff / 60000)
-  const horas = Math.floor(minutos / 60)
-  const dias = Math.floor(horas / 24)
-
-  if (minutos < 1) return 'agora'
-  if (minutos < 60) return `${minutos}min atrás`
-  if (horas < 24) return `${horas}h atrás`
-  if (dias === 1) return 'ontem'
-  if (dias < 7) return `${dias} dias atrás`
-
-  return formatarData(valor)
-}
-
 function tituloRoteiro(roteiro?: Roteiro | null) {
-  return roteiro?.titulo || roteiro?.nome || 'Roteiro'
+  return texto(roteiro?.titulo || roteiro?.nome) || 'Roteiro PrussikTrails'
 }
 
 function fotoRoteiro(roteiro?: Roteiro | null) {
-  return roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || ''
+  return texto(roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || roteiro?.image_url || roteiro?.capa_url)
+}
+
+function localRoteiro(roteiro?: Roteiro | null) {
+  return texto(roteiro?.localizacao || roteiro?.local || roteiro?.cidade || roteiro?.destino) || 'Local a confirmar'
 }
 
 function precoRoteiro(roteiro?: Roteiro | null) {
-  return Number(roteiro?.preco || roteiro?.valor || 0)
-}
-
-function kmRoteiro(roteiro?: Roteiro | null) {
-  return Number(roteiro?.km || roteiro?.distancia_km || 0)
+  return numeroSeguro(roteiro?.preco ?? roteiro?.valor)
 }
 
 function dataReserva(reserva: Reserva) {
   return reserva.data_trilha || reserva.data_roteiro || reserva.created_at || null
 }
 
-function reservaCancelada(reserva: Reserva) {
-  const status = normalizar(reserva.status)
-  return status === 'cancelada' || status === 'cancelado'
+function tituloReserva(reserva: Reserva) {
+  return texto(reserva.roteiro_titulo || reserva.roteiro?.titulo || reserva.roteiro?.nome) || 'Roteiro reservado'
 }
 
-function pagamentoConfirmado(reserva: Reserva) {
-  const pagamento = normalizar(reserva.pagamento_status || reserva.status_pagamento)
-  const status = normalizar(reserva.status)
-
-  return (
-    pagamento === 'pago' ||
-    pagamento === 'paga' ||
-    pagamento === 'confirmado' ||
-    pagamento === 'confirmada' ||
-    pagamento === 'aprovado' ||
-    pagamento === 'aprovada' ||
-    Boolean(reserva.pagamento_confirmado_em) ||
-    status === 'confirmada' ||
-    status === 'realizada'
-  )
+function fotoReserva(reserva: Reserva) {
+  return texto(reserva.roteiro_foto || fotoRoteiro(reserva.roteiro))
 }
 
-function medalhaRelacionada(item: MedalhaUsuario): Medalha | null {
-  if (Array.isArray(item.medalhas)) {
-    return item.medalhas[0] || null
-  }
-
-  return item.medalhas || null
+function normalizarMedalha(item: MedalhaUsuario): Medalha | null {
+  const medalhas = item.medalhas
+  if (Array.isArray(medalhas)) return medalhas[0] || null
+  return medalhas || null
 }
 
-function progressoPercentual(item: MedalhaUsuario) {
-  const atual = Number(item.progresso_atual || 0)
-  const total = Number(item.progresso_total || 1)
-
-  if (!total || total <= 0) return 0
-
-  return Math.min(100, Math.max(0, Math.round((atual / total) * 100)))
+function avatarUsuario(user?: UsuarioLocal | null) {
+  return texto(user?.avatar_url || user?.foto_url || user?.imagem_url)
 }
 
-function obterSvgMedalhaBeta(medalha?: Medalha | null) {
-  const codigo = normalizarChaveMedalha(medalha?.codigo)
-  const nome = normalizarChaveMedalha(medalha?.nome)
-
-  if (BETA_MEDALHAS_SVG[codigo]) return BETA_MEDALHAS_SVG[codigo]
-  if (BETA_MEDALHAS_SVG[nome]) return BETA_MEDALHAS_SVG[nome]
-
-  if (nome.includes('inicio') && nome.includes('beta')) return BETA_MEDALHAS_SVG.inicio_jornada_beta
-  if (nome.includes('botinha') && nome.includes('beta')) return BETA_MEDALHAS_SVG.botinha_beta_oficial
-  if (nome.includes('aventureiro') && nome.includes('pioneiro') && nome.includes('beta')) return BETA_MEDALHAS_SVG.aventureiro_pioneiro_beta
-  if (nome.includes('voz') && nome.includes('trilha') && nome.includes('beta')) return BETA_MEDALHAS_SVG.voz_da_trilha_beta
-  if (nome.includes('guia') && nome.includes('pioneiro') && nome.includes('beta')) return BETA_MEDALHAS_SVG.guia_pioneiro_beta
-  if (nome.includes('construtor') && nome.includes('beta')) return BETA_MEDALHAS_SVG.construtor_da_jornada_beta
-
-  return ''
+function nomeUsuario(user?: UsuarioLocal | null) {
+  return texto(user?.nome || user?.email) || 'Aventureiro'
 }
 
-function obterFallbackSvgMedalhaBeta(svg: string) {
-  if (!svg.startsWith('/medalhas/iniciais_jornada/')) return ''
-  return svg.replace('/medalhas/iniciais_jornada/', '/medalhas/prussik_svg_pack/iniciais_jornada/')
+function tipoEventoNotificacao(item: AnyRecord) {
+  return normalizar(item?.tipo_evento || item?.evento || item?.acao || item?.tipo || item?.categoria || item?.metadata?.tipo)
 }
 
-function IconeDashboard({ name }: { name: IconeNome }) {
-  const common = {
-    width: 22,
-    height: 22,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.9,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    'aria-hidden': true,
+function destinoPorPerfil(usuarioId: string, tipoUsuario?: string | null) {
+  const tipo = normalizar(tipoUsuario)
+  if (!usuarioId) return '/cliente/dashboard'
+  if (tipo.includes('guia')) return `/guia/publico/${usuarioId}`
+  return `/cliente/publico/${usuarioId}`
+}
+
+function destinoNotificacao(item: AnyRecord, fallback = '/cliente/dashboard') {
+  const metadata = item?.metadata || item?.detalhes || {}
+  const direto = texto(item?.destino_url || item?.destino || item?.rota || item?.url || metadata?.destino_url || metadata?.destino || metadata?.rota || metadata?.url)
+  if (direto) return direto
+
+  const roteiroId = texto(item?.roteiro_id || metadata?.roteiro_id || metadata?.roteiroId)
+  if (roteiroId) return `/roteiros/${roteiroId}`
+
+  const actorId = texto(item?.actor_id || item?.ator_id || item?.usuario_origem_id || metadata?.actor_id || metadata?.ator_id)
+  if (actorId) return destinoPorPerfil(actorId, item?.actor_tipo || item?.tipo_actor || metadata?.tipo_usuario || metadata?.actor_tipo)
+
+  const usuarioId = texto(item?.usuario_id || metadata?.usuario_id || metadata?.user_id)
+  if (usuarioId) return destinoPorPerfil(usuarioId, item?.tipo_usuario || metadata?.tipo_usuario)
+
+  return fallback
+}
+
+function emojiAll(item: AnyRecord) {
+  const tipo = tipoEventoNotificacao(item)
+  const titulo = normalizar(item?.titulo || item?.descricao || item?.mensagem)
+
+  if (tipo.includes('medalha') || titulo.includes('medalha')) return '🏅'
+  if (tipo.includes('roteiro') || titulo.includes('roteiro')) return '🧭'
+  if (tipo.includes('guia') && (tipo.includes('cadastro') || tipo.includes('novo') || titulo.includes('novo guia'))) return '🥾'
+  if (tipo.includes('usuario') || tipo.includes('cadastro') || titulo.includes('chegou') || titulo.includes('novo aventureiro')) return '🌿'
+  if (tipo.includes('reserva')) return '🎟️'
+  if (tipo.includes('avaliacao')) return '⭐'
+  if (tipo.includes('grupo')) return '💬'
+
+  return texto(item?.emoji) || '🌿'
+}
+
+function emojiCom(item: AnyRecord) {
+  const tipo = tipoEventoNotificacao(item)
+  const titulo = normalizar(item?.titulo || item?.descricao || item?.mensagem)
+
+  if (tipo.includes('roteiro') || titulo.includes('publicou') || titulo.includes('novo roteiro')) return '🧭'
+  if (tipo.includes('seguir') || titulo.includes('seguiu') || titulo.includes('comecou a seguir')) return '👣'
+  if (tipo.includes('curtida') || tipo.includes('like') || titulo.includes('curtiu')) return '❤️'
+  if (tipo.includes('comentario') || titulo.includes('comentou')) return '💬'
+  if (tipo.includes('grupo')) return '🏕️'
+  if (tipo.includes('foto')) return '📷'
+
+  return texto(item?.emoji) || '❤️'
+}
+
+function tituloAll(item: AnyRecord) {
+  const titulo = texto(item?.titulo)
+  if (titulo) return titulo
+
+  const tipo = tipoEventoNotificacao(item)
+  const metadata = item?.metadata || item?.detalhes || {}
+  const nome = texto(item?.nome_usuario || metadata?.nome_usuario || metadata?.usuario_nome || item?.usuario_nome)
+  const medalha = texto(item?.nome_medalha || metadata?.nome_medalha || metadata?.medalha_nome)
+
+  if (tipo.includes('medalha')) return medalha ? `${nome || 'Aventureiro'} conquistou ${medalha}` : 'Nova medalha conquistada'
+  if (tipo.includes('roteiro')) return 'Novo roteiro publicado'
+  if (tipo.includes('cadastro')) return 'Novo aventureiro na comunidade'
+
+  return texto(item?.descricao || item?.mensagem) || 'Movimento na comunidade'
+}
+
+function textoAll(item: AnyRecord) {
+  const mensagem = texto(item?.texto || item?.mensagem)
+  if (mensagem) return mensagem
+
+  const descricao = texto(item?.descricao)
+  if (descricao) return descricao
+
+  const tipo = tipoEventoNotificacao(item)
+  const metadata = item?.metadata || item?.detalhes || {}
+
+  if (tipo.includes('medalha')) {
+    const medalha = texto(item?.nome_medalha || metadata?.nome_medalha || metadata?.medalha_nome)
+    return medalha ? `Uma nova conquista apareceu na comunidade: ${medalha}.` : 'Uma nova conquista apareceu na comunidade.'
   }
 
-  if (name === 'reservas') {
-    return (
-      <svg {...common}>
-        <path d="M6.7 8.2h10.6l1 10.3a2 2 0 0 1-2 2.2H7.7a2 2 0 0 1-2-2.2l1-10.3Z" />
-        <path d="M9 8.2V6.6a3 3 0 0 1 6 0v1.6" />
-        <path d="M9.6 12.4h4.8" />
-        <path d="M9.6 15.8h3.1" />
-      </svg>
-    )
-  }
+  if (tipo.includes('roteiro')) return 'Um novo roteiro foi publicado no PrussikTrails.'
+  if (tipo.includes('cadastro')) return 'Uma nova pessoa entrou na comunidade outdoor.'
 
-  if (name === 'explorar') {
-    return (
-      <svg {...common}>
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="m15.4 8.6-2.2 5.1-5.1 2.2 2.2-5.1 5.1-2.2Z" />
-        <path d="M12 2.8v1.7M12 19.5v1.7M2.8 12h1.7M19.5 12h1.7" />
-      </svg>
-    )
-  }
+  return 'A comunidade PrussikTrails teve uma nova movimentação.'
+}
 
-  if (name === 'perfil') {
-    return (
-      <svg {...common}>
-        <path d="M12 12.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Z" />
-        <path d="M4.8 20.2a7.4 7.4 0 0 1 14.4 0" />
-        <path d="M17.5 5.4l1.2 1.2 2-2" />
-      </svg>
-    )
-  }
+function tituloCom(item: AnyRecord) {
+  const titulo = texto(item?.titulo)
+  if (titulo) return titulo
 
-  if (name === 'pagamentos') {
-    return (
-      <svg {...common}>
-        <rect x="3.4" y="5.3" width="17.2" height="13.4" rx="3" />
-        <path d="M3.8 9.1h16.4" />
-        <path d="M7.1 14.9h4.1" />
-        <path d="m15.3 14.6 1.2 1.2 2.3-2.6" />
-      </svg>
-    )
-  }
+  const tipo = tipoEventoNotificacao(item)
+  if (tipo.includes('roteiro')) return 'Guia que você segue publicou um roteiro'
+  if (tipo.includes('seguir')) return 'Novo seguidor na COM'
+  if (tipo.includes('curtida')) return 'Nova curtida na COM'
 
-  if (name === 'roteiro') {
-    return (
-      <svg {...common}>
-        <path d="M4.4 18.7 8.8 5.3l4.2 13.4 2.7-8.3 3.9 8.3" />
-        <path d="M7.1 14.6h4.8" />
-        <path d="M14.2 14.6h2.9" />
-      </svg>
-    )
-  }
+  return 'Interação na COM'
+}
 
-  if (name === 'medalha') {
-    return (
-      <svg {...common}>
-        <path d="M8.2 3.5 12 8.1l3.8-4.6" />
-        <path d="M8.2 3.5h7.6" />
-        <circle cx="12" cy="14.2" r="5.2" />
-        <path d="m12 11.7.8 1.6 1.8.3-1.3 1.3.3 1.8-1.6-.9-1.6.9.3-1.8-1.3-1.3 1.8-.3.8-1.6Z" />
-      </svg>
-    )
-  }
+function textoCom(item: AnyRecord) {
+  const mensagem = texto(item?.mensagem || item?.texto || item?.descricao)
+  if (mensagem) return mensagem
 
-  if (name === 'curtida') {
-    return (
-      <svg {...common}>
-        <path d="M20.2 8.7c0 5-8.2 9.6-8.2 9.6S3.8 13.7 3.8 8.7a4.4 4.4 0 0 1 7.9-2.6 4.4 4.4 0 0 1 8.5 2.6Z" />
-      </svg>
-    )
-  }
+  const tipo = tipoEventoNotificacao(item)
+  if (tipo.includes('roteiro')) return 'Um guia que você segue publicou uma nova experiência. Toque para ver o roteiro.'
+  if (tipo.includes('seguir')) return 'Alguém começou a seguir você. Abra o perfil para seguir de volta.'
+  if (tipo.includes('curtida')) return 'Alguém curtiu seu perfil ou uma foto sua.'
 
-  if (name === 'reserva') {
-    return (
-      <svg {...common}>
-        <path d="M7.2 3.8v3.1M16.8 3.8v3.1" />
-        <rect x="4.2" y="5.4" width="15.6" height="15" rx="3" />
-        <path d="M4.6 9.2h14.8" />
-        <path d="m8.2 14.4 2.1 2.1 5-5" />
-      </svg>
-    )
-  }
+  return 'Alguém interagiu com você na comunidade.'
+}
 
-  if (name === 'check') {
-    return (
-      <svg {...common}>
-        <circle cx="12" cy="12" r="8.7" />
-        <path d="m8.5 12.4 2.2 2.2 4.9-5.2" />
-      </svg>
-    )
-  }
+function normalizarNotificacaoAll(item: AnyRecord, index: number): Notificacao {
+  const tipoEvento = tipoEventoNotificacao(item)
 
-  return (
-    <svg {...common}>
-      <path d="M12 4.4v15.2" />
-      <path d="M4.4 12h15.2" />
-      <path d="M6.6 6.6 17.4 17.4" />
-      <path d="M17.4 6.6 6.6 17.4" />
-      <circle cx="12" cy="12" r="8.5" />
-    </svg>
-  )
+  return {
+    id: texto(item?.id) || `all-${index}-${Date.now()}`,
+    titulo: tituloAll(item),
+    texto: textoAll(item),
+    destino: destinoNotificacao(item, '/cliente/dashboard'),
+    emoji: emojiAll(item),
+    tipo: 'all',
+    tipoEvento,
+    created_at: texto(item?.created_at || item?.criado_em || item?.data) || null,
+  }
+}
+
+function normalizarNotificacaoCom(item: AnyRecord, index: number): Notificacao {
+  const tipoEvento = tipoEventoNotificacao(item)
+
+  return {
+    id: texto(item?.id) || `com-${index}-${Date.now()}`,
+    titulo: tituloCom(item),
+    texto: textoCom(item),
+    destino: destinoNotificacao(item, '/cliente/dashboard'),
+    emoji: emojiCom(item),
+    tipo: 'com',
+    tipoEvento,
+    created_at: texto(item?.created_at || item?.criado_em || item?.data) || null,
+  }
+}
+
+function compararDataDesc(a: Notificacao, b: Notificacao) {
+  const dataA = a.created_at ? new Date(a.created_at).getTime() : 0
+  const dataB = b.created_at ? new Date(b.created_at).getTime() : 0
+  return dataB - dataA
 }
 
 export default function ClienteDashboardPage() {
@@ -503,67 +410,72 @@ export default function ClienteDashboardPage() {
   const reconciliandoRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [carregando, setCarregando] = useState(true)
-  const [atualizando, setAtualizando] = useState(false)
-  const [reconciliando, setReconciliando] = useState(false)
-  const [mensagem, setMensagem] = useState('')
   const [stats, setStats] = useState<Stats>(statsInicial)
   const [roteirosQuentes, setRoteirosQuentes] = useState<Roteiro[]>([])
   const [proximasReservas, setProximasReservas] = useState<Reserva[]>([])
-  const [notificacoes, setNotificacoes] = useState<Notificacao[]>([])
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
+  const [notificacoesAll, setNotificacoesAll] = useState<Notificacao[]>([])
+  const [notificacoesCom, setNotificacoesCom] = useState<Notificacao[]>([])
+  const [abaNotificacoes, setAbaNotificacoes] = useState<'all' | 'com'>('all')
   const [medalhasConquistadas, setMedalhasConquistadas] = useState<MedalhaUsuario[]>([])
-  const [proximaMedalha, setProximaMedalha] = useState<MedalhaUsuario | null>(null)
-  const [abaNotificacao, setAbaNotificacao] = useState<'all' | 'com'>(() => {
-    if (typeof window === 'undefined') return 'all'
-    const salva = window.localStorage.getItem('cliente_dashboard_notificacoes_aba')
-    return salva === 'com' ? 'com' : 'all'
-  })
+  const [proximaMedalha, setProximaMedalha] = useState<ProximaMedalha | null>(null)
+  const [atualizando, setAtualizando] = useState(false)
+  const [reconciliando, setReconciliando] = useState(false)
+  const [mensagem, setMensagem] = useState('')
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
+  const [menuAberto, setMenuAberto] = useState(false)
+
+  const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
+  const [senhaAtual, setSenhaAtual] = useState('')
+  const [novaSenha, setNovaSenha] = useState('')
+  const [confirmarSenha, setConfirmarSenha] = useState('')
+  const [alterandoSenha, setAlterandoSenha] = useState(false)
+
+  const [modalSuporteAberto, setModalSuporteAberto] = useState(false)
+  const [tipoSuporte, setTipoSuporte] = useState<SuporteTipo>('suporte')
+  const [prioridadeSuporte, setPrioridadeSuporte] = useState<PrioridadeSuporte>('normal')
+  const [assuntoSuporte, setAssuntoSuporte] = useState('Mensagem ao suporte')
+  const [descricaoSuporte, setDescricaoSuporte] = useState('')
+  const [enviandoSuporte, setEnviandoSuporte] = useState(false)
+  const [erroSuporte, setErroSuporte] = useState('')
 
   useEffect(() => {
     if (iniciouRef.current) return
-
     iniciouRef.current = true
-    iniciarDashboard()
+    iniciar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    if (!user?.id) return
+    router.prefetch('/cliente/perfil')
+    router.prefetch('/cliente/minhas-reservas')
+    router.prefetch('/roteiros')
+  }, [router])
 
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return
-      reconciliarPagamentosPendentes(true)
-    }, 90000)
+  const notificacoesVisiveis = useMemo(() => {
+    const lista = abaNotificacoes === 'all' ? notificacoesAll : notificacoesCom
+    if (lista.length === 0) return [abaNotificacoes === 'all' ? notificacaoVaziaAll : notificacaoVaziaCom]
+    return lista
+  }, [abaNotificacoes, notificacoesAll, notificacoesCom])
 
-    return () => clearInterval(interval)
-  }, [user?.id])
+  const primeiroRoteiroQuente = roteirosQuentes[0] || null
+  const avatar = avatarUsuario(user)
+  const nome = nomeUsuario(user)
 
-  async function iniciarDashboard() {
-    setMensagem('')
-
+  async function iniciar() {
     try {
-      const userData = localStorage.getItem('user')
+      const salvo = localStorage.getItem('user')
+      const parsedUser = salvo ? (JSON.parse(salvo) as UsuarioLocal) : null
 
-      if (!userData) {
-        router.replace('/login')
-        return
-      }
-
-      const parsedUser = JSON.parse(userData) as UsuarioLocal
-
-      if (parsedUser.tipo !== 'cliente') {
+      if (!parsedUser?.id || normalizar(parsedUser.tipo) !== 'cliente') {
         router.replace('/login')
         return
       }
 
       setUser(parsedUser)
-      setCarregando(false)
-
-      await carregarResumo(parsedUser.id, true)
+      await carregarResumo(parsedUser.id)
     } catch (error) {
       console.error('Erro ao iniciar dashboard do cliente:', error)
-      setMensagem('Não foi possível carregar sua área agora.')
-      setCarregando(false)
+      setMensagem('Não foi possível carregar sua dashboard agora.')
     }
   }
 
@@ -586,11 +498,13 @@ export default function ClienteDashboardPage() {
 
       const data = await response.json().catch(() => null)
 
-      if (!response.ok || !data?.sucesso) {
-        throw new Error(data?.erro || 'Erro ao carregar resumo da dashboard.')
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || data?.message || 'Erro ao carregar resumo da dashboard.')
       }
 
-      if (data.usuario?.id) {
+      const usuarioId = texto(data?.usuario?.id || clienteId)
+
+      if (data?.usuario?.id) {
         const usuarioAtualizado: UsuarioLocal = {
           id: data.usuario.id,
           nome: data.usuario.nome || '',
@@ -605,13 +519,26 @@ export default function ClienteDashboardPage() {
         localStorage.setItem('user', JSON.stringify(usuarioAtualizado))
       }
 
-      setStats(data.stats || statsInicial)
-      setRoteirosQuentes(data.roteirosQuentes || [])
-      setProximasReservas(data.proximasReservas || [])
-      setNotificacoes(data.notificacoes || [])
-      setMedalhasConquistadas(data.medalhasConquistadas || [])
-      setProximaMedalha(data.proximaMedalha || null)
-      setUltimaAtualizacao(data.ultimaAtualizacao || new Date().toLocaleTimeString('pt-BR'))
+      setStats({ ...statsInicial, ...(data?.stats || {}) })
+      setRoteirosQuentes(Array.isArray(data?.roteirosQuentes) ? data.roteirosQuentes : [])
+      setProximasReservas(Array.isArray(data?.proximasReservas) ? data.proximasReservas : [])
+      setMedalhasConquistadas(Array.isArray(data?.medalhasConquistadas) ? data.medalhasConquistadas : [])
+      setProximaMedalha(data?.proximaMedalha || null)
+      setUltimaAtualizacao(data?.ultimaAtualizacao || new Date().toLocaleTimeString('pt-BR'))
+
+      const notificacoesBase: AnyRecord[] = Array.isArray(data?.notificacoes) ? data.notificacoes : []
+
+      const notificacoesGerais = notificacoesBase
+        .filter((item) => normalizar(item?.tipo) !== 'com')
+        .map((item, index) => normalizarNotificacaoAll(item, index))
+        .sort(compararDataDesc)
+        .slice(0, 12)
+
+      setNotificacoesAll(notificacoesGerais)
+
+      carregarNotificacoesCom(usuarioId).then((listaCom) => {
+        setNotificacoesCom(listaCom.sort(compararDataDesc).slice(0, 12))
+      })
     } catch (error) {
       console.error('Erro ao carregar resumo da dashboard:', error)
 
@@ -629,10 +556,34 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  async function reconciliarPagamentosPendentesInterno(
-    clienteId: string,
-    silencioso = false
-  ) {
+  async function carregarNotificacoesCom(usuarioId: string): Promise<Notificacao[]> {
+    if (!usuarioId) return []
+
+    try {
+      const response = await fetch(
+        `/api/notificacoes/com?usuarioId=${encodeURIComponent(usuarioId)}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        }
+      )
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Não foi possível carregar notificações COM:', data)
+        return []
+      }
+
+      const lista: AnyRecord[] = Array.isArray(data?.notificacoes) ? data.notificacoes : []
+      return lista.map((item, index) => normalizarNotificacaoCom(item, index))
+    } catch (error) {
+      console.warn('Erro ao carregar notificações COM do cliente:', error)
+      return []
+    }
+  }
+
+  async function reconciliarPagamentosPendentesInterno(clienteId: string, silencioso = false) {
     if (!clienteId) return false
     if (reconciliandoRef.current) return false
 
@@ -654,1126 +605,199 @@ export default function ClienteDashboardPage() {
 
       const data = await response.json().catch(() => null)
 
-      if (!response.ok || !data?.sucesso) {
-        if (!silencioso && response.status !== 404) {
-          setMensagem(
-            data?.erro ||
-              data?.message ||
-              'Não foi possível verificar os pagamentos agora.'
-          )
-        }
-
-        return false
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || data?.message || 'Não foi possível reconciliar pagamentos.')
       }
-
-      const atualizadas = Number(data?.atualizadas || 0)
-      const jaConfirmadas = Number(data?.jaConfirmadas || 0)
 
       if (!silencioso) {
-        if (atualizadas > 0) {
-          setMensagem('Pagamento confirmado. Sua reserva foi atualizada.')
-        } else if (jaConfirmadas > 0) {
-          setMensagem('Suas reservas já estavam confirmadas.')
-        } else {
-          setMensagem('Tudo certo. Nenhuma nova confirmação por enquanto.')
-        }
+        setMensagem(data?.mensagem || 'Pagamentos verificados.')
       }
 
-      return atualizadas > 0 || jaConfirmadas > 0
+      await carregarResumo(clienteId, true)
+      return true
     } catch (error) {
-      console.warn('Erro ao reconciliar pagamentos do cliente:', error)
-
+      console.warn('Erro ao reconciliar pagamentos:', error)
       if (!silencioso) {
-        setMensagem('Não foi possível verificar os pagamentos agora.')
+        setMensagem(error instanceof Error ? error.message : 'Erro ao verificar pagamentos.')
       }
-
       return false
     } finally {
       reconciliandoRef.current = false
-
-      if (!silencioso) {
-        setReconciliando(false)
-      }
+      if (!silencioso) setReconciliando(false)
     }
   }
 
-  async function reconciliarPagamentosPendentes(silencioso = false) {
-    if (!user?.id) return
-
-    const atualizou = await reconciliarPagamentosPendentesInterno(user.id, silencioso)
-
-    if (atualizou) {
-      await carregarResumo(user.id, true)
-    }
+  function abrirDestino(destino?: string) {
+    const url = texto(destino) || '/cliente/dashboard'
+    router.push(url)
   }
 
-  async function atualizarDashboard() {
+  function abrirSuporte(tipo: SuporteTipo) {
+    setMenuAberto(false)
+    setTipoSuporte(tipo)
+    setPrioridadeSuporte(tipo === 'bug' ? 'alta' : 'normal')
+    setAssuntoSuporte(
+      tipo === 'bug'
+        ? 'Erro no app'
+        : tipo === 'sugestao'
+          ? 'Sugestão para o PrussikTrails'
+          : 'Mensagem ao suporte'
+    )
+    setDescricaoSuporte('')
+    setErroSuporte('')
+    setModalSuporteAberto(true)
+  }
+
+  async function enviarSuporte() {
     if (!user?.id) return
 
-    setAtualizando(true)
-    setMensagem('')
+    if (!assuntoSuporte.trim()) {
+      setErroSuporte('Informe o assunto da solicitação.')
+      return
+    }
+
+    if (!descricaoSuporte.trim() || descricaoSuporte.trim().length < 8) {
+      setErroSuporte('Descreva melhor o que aconteceu.')
+      return
+    }
 
     try {
-      await reconciliarPagamentosPendentesInterno(user.id, true)
-      await carregarResumo(user.id, true)
-      setMensagem('Pronto, sua área foi atualizada.')
-    } finally {
-      setAtualizando(false)
-    }
-  }
+      setEnviandoSuporte(true)
+      setErroSuporte('')
 
-  function alterarAbaNotificacao(aba: 'all' | 'com') {
-    setAbaNotificacao(aba)
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('cliente_dashboard_notificacoes_aba', aba)
-    }
-  }
-
-  function avatarCliente() {
-    return user?.avatar_url || user?.foto_url || user?.imagem_url || ''
-  }
-
-  function inicialCliente() {
-    return primeiroNome(user?.nome || user?.email).slice(0, 1).toUpperCase()
-  }
-
-  function iconeNotificacao(notificacao: Notificacao): IconeNome {
-    const texto = normalizar(`${notificacao.titulo} ${notificacao.texto} ${notificacao.emoji}`)
-
-    if (texto.includes('curt') || texto.includes('❤️')) return 'curtida'
-    if (texto.includes('medalha') || texto.includes('conquista')) return 'medalha'
-    if (texto.includes('reserva') || texto.includes('confirmada') || texto.includes('aventura')) return 'reserva'
-    if (texto.includes('roteiro') || texto.includes('guia')) return 'roteiro'
-
-    return 'comunidade'
-  }
-
-  function badgeStatusReserva(reserva: Reserva) {
-    if (reservaCancelada(reserva)) {
-      return <span className="badge badge-red">Cancelada</span>
-    }
-
-    if (pagamentoConfirmado(reserva)) {
-      return <span className="badge badge-green">Confirmada</span>
-    }
-
-    return <span className="badge badge-yellow">Aguardando</span>
-  }
-
-  function hotLabel(roteiro: Roteiro) {
-    const total = Number(roteiro.hot_reservas || 0)
-    const confirmadas = Number(roteiro.hot_confirmadas || 0)
-
-    if (total === 0) return 'Novidade'
-    if (confirmadas > 0) return `${confirmadas} confirmação(ões)`
-
-    return `${total} reserva(s)`
-  }
-
-  const notificacoesFiltradas = useMemo(() => {
-    if (abaNotificacao === 'all') return notificacoes
-    return notificacoes.filter((notificacao) => notificacao.tipo === 'com')
-  }, [notificacoes, abaNotificacao])
-
-  const proximaReserva = proximasReservas[0] || null
-
-  const medalhasPainel = useMemo(() => {
-    const progressoAtual = METAS_JORNADA.filter((meta) => stats.totalKm >= meta.km)
-    const indiceAtual = Math.max(0, progressoAtual.length - 1)
-    const janelaJornada = METAS_JORNADA.slice(indiceAtual, indiceAtual + 4)
-
-    const especiais = medalhasConquistadas
-      .map((item) => {
-        const medalha = medalhaRelacionada(item)
-        const svg = obterSvgMedalhaBeta(medalha)
-
-        if (!svg) return null
-
-        return {
-          key: `banco-${item.id}`,
-          nome: medalha?.nome || 'Medalha Beta',
-          svg,
-          fallback: obterFallbackSvgMedalhaBeta(svg),
-          cor: medalha?.cor || '#991b1b',
-          desbloqueada: true,
-          especial: true,
-        }
+      const response = await fetch('/api/suporte/chamados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuarioId: user.id,
+          tipoUsuario: 'cliente',
+          tipoChamado: tipoSuporte,
+          assunto: assuntoSuporte.trim(),
+          descricao: descricaoSuporte.trim(),
+          prioridade: prioridadeSuporte,
+          paginaOrigem: typeof window !== 'undefined' ? window.location.pathname : '/cliente/dashboard',
+          metadata: {
+            email: user.email || '',
+            nome: user.nome || '',
+          },
+        }),
       })
-      .filter(Boolean) as Array<{
-        key: string
-        nome: string
-        svg: string
-        fallback: string
-        cor: string
-        desbloqueada: boolean
-        especial: boolean
-      }>
 
-    const jornada = janelaJornada.map((meta) => ({
-      key: `jornada-${meta.key}`,
-      nome: meta.titulo,
-      svg: meta.svg,
-      fallback: '',
-      cor: meta.cor,
-      desbloqueada: stats.totalKm >= meta.km,
-      especial: false,
-    }))
+      const data = await response.json().catch(() => ({}))
 
-    const unicas = new Map<string, {
-      key: string
-      nome: string
-      svg: string
-      fallback: string
-      cor: string
-      desbloqueada: boolean
-      especial: boolean
-    }>()
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || data?.message || 'Não foi possível enviar a solicitação.')
+      }
 
-    ;[...especiais, ...jornada].forEach((medalha) => {
-      const chave = normalizarChaveMedalha(medalha.nome)
-      if (!unicas.has(chave)) unicas.set(chave, medalha)
-    })
+      setModalSuporteAberto(false)
+      setAssuntoSuporte('')
+      setDescricaoSuporte('')
+      setMensagem('Solicitação enviada com sucesso.')
+    } catch (error) {
+      setErroSuporte(error instanceof Error ? error.message : 'Erro ao enviar solicitação.')
+    } finally {
+      setEnviandoSuporte(false)
+    }
+  }
 
-    return Array.from(unicas.values()).slice(0, 4)
-  }, [stats.totalKm, medalhasConquistadas])
+  function abrirAlterarSenha() {
+    setMenuAberto(false)
+    setSenhaAtual('')
+    setNovaSenha('')
+    setConfirmarSenha('')
+    setModalSenhaAberto(true)
+  }
 
-  if (carregando || !user) {
+  async function alterarSenha(event: FormEvent) {
+    event.preventDefault()
+
+    if (!user?.id) return
+
+    if (!senhaAtual.trim()) {
+      setMensagem('Informe a senha atual.')
+      return
+    }
+
+    if (!novaSenha || novaSenha.length < 6) {
+      setMensagem('A nova senha precisa ter pelo menos 6 caracteres.')
+      return
+    }
+
+    if (novaSenha !== confirmarSenha) {
+      setMensagem('A confirmação da senha não confere.')
+      return
+    }
+
+    try {
+      setAlterandoSenha(true)
+      setMensagem('')
+
+      const response = await fetch('/api/alterar-senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          email: user.email || '',
+          senhaAtual,
+          novaSenha,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || data?.message || data?.error || 'Não foi possível alterar a senha.')
+      }
+
+      setModalSenhaAberto(false)
+      setSenhaAtual('')
+      setNovaSenha('')
+      setConfirmarSenha('')
+      setMensagem('Senha alterada com sucesso.')
+    } catch (error) {
+      setMensagem(error instanceof Error ? error.message : 'Erro ao alterar senha.')
+    } finally {
+      setAlterandoSenha(false)
+    }
+  }
+
+  async function sair() {
+    setMenuAberto(false)
+
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.warn('Aviso ao encerrar sessão Supabase:', error)
+    }
+
+    localStorage.removeItem('user')
+    localStorage.removeItem('usuario')
+    localStorage.removeItem('token')
+    localStorage.removeItem('session')
+
+    router.replace('/login')
+  }
+
+  if (!user) {
     return (
-      <main className="loading">
-        <style>{`
-          * { box-sizing: border-box; }
-
-          body {
-            margin: 0;
-            background: #f6f7f1;
-            font-family:
-              Inter,
-              ui-sans-serif,
-              system-ui,
-              -apple-system,
-              BlinkMacSystemFont,
-              "Segoe UI",
-              sans-serif;
-          }
-
-          .loading {
-            min-height: 100vh;
-            min-height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background:
-              radial-gradient(circle at top left, rgba(132, 204, 22, 0.18), transparent 30%),
-              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
-            color: #374151;
-          }
-
-          .loadingCard {
-            background: #ffffff;
-            border: 1px solid rgba(15, 23, 42, 0.06);
-            border-radius: 30px;
-            padding: 28px;
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-            text-align: center;
-          }
-
-          .loadingCard img {
-            height: 68px;
-            width: auto;
-            margin-bottom: 12px;
-          }
-        `}</style>
-
-        <div className="loadingCard">
-          <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <div>Preparando sua próxima aventura...</div>
-        </div>
+      <main className="loadingPage">
+        <style>{styles}</style>
+        <div className="loadingCard">Carregando sua dashboard...</div>
       </main>
     )
   }
 
   return (
     <main className="page">
-      <style>{`
-        * { box-sizing: border-box; }
-
-        body {
-          margin: 0;
-          background: #f6f7f1;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        .page {
-          min-height: 100vh;
-          min-height: 100dvh;
-          background:
-            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
-            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
-          color: #172018;
-        }
-
-        .topbar {
-          position: sticky;
-          top: 0;
-          z-index: 50;
-          background: rgba(255,253,247,0.94);
-          border-bottom: 1px solid rgba(15,23,42,0.06);
-          backdrop-filter: blur(18px);
-          padding: 9px 14px;
-        }
-
-        .topbarInner {
-          max-width: 1180px;
-          margin: 0 auto;
-          display: grid;
-          grid-template-columns: 44px minmax(0, 1fr) 44px;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .headerSpacer {
-          width: 42px;
-          height: 42px;
-        }
-
-        .brandDashboard {
-          min-width: 0;
-          border: 0;
-          background: transparent;
-          padding: 4px 6px 3px;
-          text-align: center;
-          cursor: pointer;
-          color: #172018;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          justify-self: center;
-          max-width: 100%;
-        }
-
-        .brandDashboard strong {
-          display: block;
-          color: #1f3f2d;
-          font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(31px, 7.4vw, 56px);
-          font-weight: 800;
-          line-height: 0.88;
-          letter-spacing: -0.06em;
-          white-space: nowrap;
-          max-width: min(72vw, 560px);
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .brandDashboard span {
-          display: block;
-          margin-top: 6px;
-          color: #7b8375;
-          font-size: clamp(8px, 1.35vw, 13px);
-          font-weight: 850;
-          letter-spacing: clamp(0.08em, 0.8vw, 0.22em);
-          text-transform: uppercase;
-          white-space: nowrap;
-          max-width: min(72vw, 560px);
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .topActions {
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-        }
-
-        .profileAvatarBtn {
-          width: 42px;
-          height: 42px;
-          border-radius: 999px;
-          border: 1px solid rgba(15,23,42,0.08);
-          background: rgba(255,255,255,0.86);
-          color: #1f3f2d;
-          box-shadow: 0 10px 22px rgba(15,23,42,0.08);
-          cursor: pointer;
-          overflow: hidden;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0;
-          transition: 0.2s ease;
-        }
-
-        .profileAvatarBtn:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.13);
-        }
-
-        .profileAvatarBtn img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .profileAvatarBtn span {
-          font-size: 15px;
-          font-weight: 950;
-          letter-spacing: -0.04em;
-        }
-
-        .container {
-          max-width: 1180px;
-          margin: 0 auto;
-          padding: 22px 16px 48px;
-        }
-
-        .hero {
-          position: relative;
-          overflow: hidden;
-          min-height: 300px;
-          border-radius: 36px;
-          padding: 28px;
-          background:
-            linear-gradient(135deg, rgba(23, 32, 24, 0.72), rgba(23, 32, 24, 0.34)),
-            radial-gradient(circle at top right, rgba(132, 204, 22, 0.28), transparent 34%),
-            linear-gradient(135deg, #203322 0%, #647a49 46%, #d7c6a1 100%);
-          color: #ffffff;
-          box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
-          margin-bottom: 16px;
-        }
-
-        .hero::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background:
-            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-          background-size: 46px 46px;
-          mask-image: linear-gradient(to bottom, black, transparent);
-          pointer-events: none;
-        }
-
-        .heroContent {
-          position: relative;
-          z-index: 2;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 260px;
-          gap: 22px;
-          align-items: end;
-          min-height: 238px;
-        }
-
-        .eyebrow {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.26);
-          background: rgba(255, 255, 255, 0.12);
-          color: #f7fee7;
-          padding: 8px 12px;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin-bottom: 14px;
-        }
-
-        .heroTitle {
-          margin: 0;
-          max-width: 680px;
-          font-size: clamp(38px, 6vw, 66px);
-          line-height: 0.94;
-          font-weight: 950;
-          letter-spacing: -0.08em;
-        }
-
-        .heroTitle span {
-          color: #bef264;
-        }
-
-        .heroText {
-          max-width: 620px;
-          color: rgba(255,255,255,0.82);
-          line-height: 1.62;
-          margin: 15px 0 0;
-          font-size: 14px;
-        }
-
-        .nextCard {
-          background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          border-radius: 28px;
-          padding: 18px;
-          backdrop-filter: blur(16px);
-        }
-
-        .nextLabel {
-          color: rgba(255,255,255,0.76);
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-        }
-
-        .nextTitle {
-          margin-top: 8px;
-          color: #ffffff;
-          font-size: 22px;
-          font-weight: 950;
-          line-height: 1.1;
-          letter-spacing: -0.05em;
-        }
-
-        .nextMeta {
-          margin-top: 8px;
-          color: rgba(255,255,255,0.78);
-          font-size: 12px;
-          line-height: 1.45;
-        }
-
-        .message {
-          background: #ecfdf5;
-          color: #166534;
-          border: 1px solid #bbf7d0;
-          border-radius: 18px;
-          padding: 13px 15px;
-          margin-bottom: 16px;
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .utilityGrid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 12px;
-          margin-bottom: 16px;
-        }
-
-        .utilityCard {
-          background: rgba(255,255,255,0.86);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 28px;
-          padding: 16px;
-          min-height: 132px;
-          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
-          cursor: pointer;
-          transition: 0.2s ease;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .utilityCard:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
-        }
-
-        .utilityIcon {
-          width: 46px;
-          height: 46px;
-          border-radius: 19px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background:
-            radial-gradient(circle at 30% 20%, rgba(255,255,255,0.94), transparent 38%),
-            linear-gradient(135deg, rgba(132, 204, 22, 0.18), rgba(31, 63, 45, 0.08));
-          color: #1f3f2d;
-          margin-bottom: 12px;
-          box-shadow: inset 0 0 0 1px rgba(31, 63, 45, 0.07), 0 10px 20px rgba(23, 32, 24, 0.07);
-        }
-
-        .utilityIcon svg,
-        .notificationIcon svg {
-          display: block;
-        }
-
-        .utilityTitle {
-          color: #172018;
-          font-size: 15px;
-          font-weight: 950;
-          line-height: 1.2;
-        }
-
-        .utilityText {
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 700;
-        }
-
-        .mainGrid {
-          display: grid;
-          grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
-          gap: 16px;
-        }
-
-        .panel {
-          background: rgba(255,255,255,0.88);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 32px;
-          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
-          overflow: hidden;
-        }
-
-        .panelHeader {
-          padding: 18px 20px;
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .panelTitle {
-          margin: 0;
-          font-size: 19px;
-          font-weight: 950;
-          color: #172018;
-          letter-spacing: -0.04em;
-        }
-
-        .panelSub {
-          margin-top: 3px;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 700;
-        }
-
-        .panelBody {
-          padding: 16px;
-        }
-
-        .textLink {
-          border: none;
-          background: transparent;
-          color: #16a34a;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          padding: 0;
-        }
-
-        .list {
-          display: grid;
-          gap: 12px;
-        }
-
-        .trailCard,
-        .reservationCard {
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          background: #fffdf7;
-          border-radius: 26px;
-          padding: 13px;
-          display: grid;
-          grid-template-columns: 84px minmax(0, 1fr);
-          gap: 14px;
-          align-items: center;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .trailCard:hover,
-        .reservationCard:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
-        }
-
-        .hotCard {
-          background:
-            radial-gradient(circle at top right, rgba(251, 146, 60, 0.14), transparent 34%),
-            #fffdf7;
-          border-color: #fed7aa;
-        }
-
-        .thumb {
-          width: 84px;
-          height: 84px;
-          border-radius: 24px;
-          background: #e8eadf;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #64748b;
-          font-weight: 950;
-          overflow: hidden;
-          flex: none;
-        }
-
-        .thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .itemTitle {
-          color: #172018;
-          font-size: 15px;
-          font-weight: 950;
-          line-height: 1.3;
-        }
-
-        .itemMeta {
-          color: #64748b;
-          font-size: 12px;
-          margin-top: 5px;
-          line-height: 1.45;
-          font-weight: 700;
-        }
-
-        .itemFooter {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin-top: 10px;
-          flex-wrap: wrap;
-        }
-
-        .price {
-          color: #16a34a;
-          font-weight: 950;
-          font-size: 14px;
-        }
-
-        .hotPill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          background: #ffedd5;
-          color: #9a3412;
-          border: 1px solid #fed7aa;
-          border-radius: 999px;
-          padding: 6px 10px;
-          font-size: 11px;
-          font-weight: 950;
-        }
-
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 999px;
-          padding: 6px 10px;
-          font-size: 11px;
-          font-weight: 950;
-          white-space: nowrap;
-        }
-
-        .badge-green {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .badge-yellow {
-          background: #fef3c7;
-          color: #92400e;
-        }
-
-        .badge-red {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-
-        .sideGrid {
-          display: grid;
-          gap: 16px;
-        }
-
-        .momentPanel {
-          cursor: pointer;
-          transition: 0.22s ease;
-        }
-
-        .momentPanel:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 18px 44px rgba(15,23,42,0.10);
-          border-color: rgba(22,163,74,0.16);
-        }
-
-        .momentPanel:focus-visible {
-          outline: 3px solid rgba(132,204,22,0.34);
-          outline-offset: 3px;
-        }
-
-        .tabs {
-          display: flex;
-          gap: 6px;
-          background: #eef2e5;
-          border-radius: 999px;
-          padding: 4px;
-        }
-
-        .tab {
-          border: none;
-          border-radius: 999px;
-          padding: 8px 12px;
-          font-size: 11px;
-          font-weight: 950;
-          cursor: pointer;
-          color: #64748b;
-          background: transparent;
-          transition: 0.2s ease;
-        }
-
-        .tab.active {
-          background: #172018;
-          color: #ffffff;
-          box-shadow: 0 8px 18px rgba(23, 32, 24, 0.16);
-        }
-
-        .notificationPanel {
-          margin: 0 0 16px;
-        }
-
-        .notificationPanel .panelHeader {
-          padding: 14px 18px;
-        }
-
-        .notificationPanel .panelBody {
-          padding: 12px 14px 14px;
-        }
-
-        .notificationList {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 10px;
-        }
-
-        .notification {
-          display: grid;
-          grid-template-columns: 40px minmax(0, 1fr);
-          gap: 10px;
-          align-items: flex-start;
-          padding: 10px;
-          border-radius: 20px;
-          background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.055);
-          cursor: default;
-          transition: 0.2s ease;
-          min-height: 84px;
-        }
-
-        .notification.clickable {
-          cursor: pointer;
-        }
-
-        .notification.clickable:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
-          border-color: rgba(22, 163, 74, 0.18);
-        }
-
-        .notificationIcon {
-          width: 40px;
-          height: 40px;
-          border-radius: 16px;
-          background:
-            radial-gradient(circle at 30% 20%, rgba(255,255,255,0.94), transparent 38%),
-            linear-gradient(135deg, rgba(132, 204, 22, 0.16), rgba(31, 63, 45, 0.08));
-          color: #1f3f2d;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .notificationTitle {
-          color: #172018;
-          font-size: 13px;
-          font-weight: 950;
-          line-height: 1.28;
-        }
-
-        .notificationText {
-          color: #64748b;
-          font-size: 11.5px;
-          line-height: 1.35;
-          margin-top: 3px;
-          font-weight: 700;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-
-        .notificationTime {
-          color: #94a3b8;
-          font-size: 10.5px;
-          margin-top: 5px;
-          font-weight: 850;
-        }
-
-        .miniStats {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 10px;
-        }
-
-        .miniStat {
-          background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 22px;
-          padding: 13px;
-          text-align: center;
-        }
-
-        .miniValue {
-          color: #172018;
-          font-size: 22px;
-          font-weight: 950;
-          letter-spacing: -0.06em;
-        }
-
-        .miniLabel {
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 850;
-          margin-top: 3px;
-        }
-
-        .medalBox {
-          margin-top: 14px;
-          background:
-            radial-gradient(circle at top right, rgba(251, 146, 60, 0.10), transparent 34%),
-            #fffdf7;
-          border: 1px solid rgba(146, 64, 14, 0.10);
-          border-radius: 24px;
-          padding: 14px;
-        }
-
-        .medalBoxHead {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 10px;
-          margin-bottom: 12px;
-        }
-
-        .medalBoxHead strong {
-          display: block;
-          color: #172018;
-          font-size: 14px;
-          font-weight: 950;
-          letter-spacing: -0.03em;
-        }
-
-        .medalKicker {
-          color: #92400e;
-          font-size: 10px;
-          font-weight: 950;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin-bottom: 3px;
-        }
-
-        .dashboardMedalRail {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 9px;
-          margin-top: 12px;
-          align-items: center;
-        }
-
-        .dashboardMedalSvg {
-          width: 52px;
-          height: 52px;
-          border-radius: 18px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: transparent;
-          flex: 0 0 auto;
-          transition: 0.2s ease;
-        }
-
-        .dashboardMedalSvg img {
-          width: 58px;
-          height: 58px;
-          object-fit: contain;
-          display: block;
-          filter: drop-shadow(0 10px 16px rgba(15,23,42,0.16));
-        }
-
-        .dashboardMedalSvg.locked img {
-          opacity: 0.26;
-          filter: grayscale(1) saturate(0.12) contrast(0.82) brightness(1.08);
-        }
-
-        .dashboardMedalSvg.special img {
-          width: 64px;
-          height: 64px;
-          filter: drop-shadow(0 12px 20px rgba(80,36,12,0.20));
-        }
-
-        .nextMedalBox {
-          margin-top: 12px;
-          padding: 10px;
-          border-radius: 18px;
-          background: rgba(23, 32, 24, 0.04);
-          border: 1px solid rgba(15, 23, 42, 0.05);
-        }
-
-        .nextMedalBox span {
-          display: block;
-          color: #92400e;
-          font-size: 10px;
-          font-weight: 950;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
-
-        .nextMedalBox strong {
-          display: block;
-          margin-top: 4px;
-          color: #172018;
-          font-size: 12px;
-          font-weight: 950;
-        }
-
-        .miniProgress {
-          height: 7px;
-          border-radius: 999px;
-          background: rgba(15, 23, 42, 0.08);
-          overflow: hidden;
-          margin-top: 8px;
-        }
-
-        .miniProgress div {
-          height: 100%;
-          border-radius: inherit;
-          background: linear-gradient(90deg, #365314, #84cc16, #f97316);
-        }
-
-        .empty {
-          padding: 24px;
-          text-align: center;
-          color: #64748b;
-          font-size: 13px;
-          background: #fffdf7;
-          border-radius: 22px;
-          border: 1px dashed #cbd5e1;
-          font-weight: 700;
-        }
-
-        @media (max-width: 1040px) {
-          .utilityGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .mainGrid,
-          .heroContent {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 720px) {
-          .topbar {
-            padding: 7px 10px;
-          }
-
-          .topbarInner {
-            grid-template-columns: 38px minmax(0, 1fr) 38px;
-            gap: 6px;
-            align-items: center;
-          }
-
-          .headerSpacer {
-            width: 36px;
-            height: 36px;
-          }
-
-          .brandDashboard {
-            padding: 3px 4px 2px;
-          }
-
-          .brandDashboard strong {
-            font-size: clamp(28px, 8.2vw, 36px);
-            max-width: calc(100vw - 104px);
-          }
-
-          .brandDashboard span {
-            font-size: 8px;
-            letter-spacing: 0.11em;
-            margin-top: 5px;
-            max-width: calc(100vw - 104px);
-          }
-
-          .profileAvatarBtn {
-            width: 36px;
-            height: 36px;
-            box-shadow: none;
-          }
-
-          .container {
-            padding: 16px 12px 40px;
-          }
-
-          .hero,
-          .panel {
-            border-radius: 26px;
-          }
-
-          .hero {
-            padding: 22px;
-            min-height: auto;
-          }
-
-          .utilityGrid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .notificationList {
-            grid-template-columns: 1fr;
-          }
-
-          .trailCard,
-          .reservationCard {
-            grid-template-columns: 74px minmax(0, 1fr);
-          }
-
-          .thumb {
-            width: 74px;
-            height: 74px;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .utilityGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .heroTitle {
-            font-size: 38px;
-          }
-
-          .miniStats {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
+      <style>{styles}</style>
 
       <header className="topbar">
         <div className="topbarInner">
-          <div className="headerSpacer" aria-hidden="true" />
-
           <button
             type="button"
-            className="brandDashboard"
+            className="brandText"
             onClick={() => router.push('/cliente/dashboard')}
-            aria-label="Voltar para a dashboard do cliente"
+            aria-label="Dashboard do cliente"
           >
             <strong>PrussikTrails</strong>
             <span>Seu app de aventuras</span>
@@ -1782,445 +806,1394 @@ export default function ClienteDashboardPage() {
           <div className="topActions">
             <button
               type="button"
-              className="profileAvatarBtn"
+              className="avatarMini"
               onClick={() => router.push('/cliente/perfil')}
-              title="Perfil"
-              aria-label="Abrir perfil e configurações"
+              aria-label="Abrir perfil"
             >
-              {avatarCliente() ? (
-                <img
-                  src={avatarCliente()}
-                  alt={user.nome || user.email || 'Perfil'}
-                  loading="eager"
-                  decoding="async"
-                />
-              ) : (
-                <span>{inicialCliente()}</span>
-              )}
+              {avatar ? <img src={avatar} alt={nome} /> : <span>{nome.charAt(0).toUpperCase()}</span>}
             </button>
+
+            <div className="settingsWrap">
+              <button
+                type="button"
+                className="gearButton"
+                onClick={() => setMenuAberto((aberto) => !aberto)}
+                aria-label="Abrir configurações"
+              >
+                ⚙
+              </button>
+
+              {menuAberto && (
+                <div className="settingsMenu">
+                  <button type="button" onClick={() => router.push('/cliente/perfil')}>
+                    🎒 Meu Passaporte
+                  </button>
+                  <button type="button" onClick={() => router.push('/cliente/minhas-reservas')}>
+                    🎟️ Minhas reservas
+                  </button>
+                  <button type="button" onClick={() => abrirSuporte('suporte')}>
+                    🛟 Ajuda e suporte
+                  </button>
+                  <button type="button" onClick={() => abrirSuporte('bug')}>
+                    🐞 Reportar bug
+                  </button>
+                  <button type="button" onClick={abrirAlterarSenha}>
+                    🔐 Alterar senha
+                  </button>
+                  <button type="button" className="dangerItem" onClick={sair}>
+                    🚪 Sair
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="container">
+      <section className="shell">
         <section className="hero">
-          <div className="heroContent">
-            <div>
-              <div className="eyebrow">
-                {atualizando ? 'Atualizando sua área' : 'Bom te ver por aqui'}
-              </div>
+          <div className="heroText">
+            <div className="eyebrow">Dashboard do aventureiro</div>
+            <h1>Olá, {nome.split(' ')[0] || 'aventureiro'}.</h1>
+            <p>
+              Acompanhe suas reservas, conquistas, notificações da comunidade e os roteiros que estão movimentando o PrussikTrails.
+            </p>
 
-              <h1 className="heroTitle">
-                Oi, {primeiroNome(user.nome)}.
-                <br />
-                Bora respirar <span>lá fora?</span>
-              </h1>
-
-              <p className="heroText">
-                Veja o que está acontecendo, acompanhe suas reservas e descubra as
-                trilhas mais comentadas da comunidade.
-                {ultimaAtualizacao && (
-                  <>
-                    <br />
-                    Atualizado às {ultimaAtualizacao}.
-                  </>
-                )}
-              </p>
-            </div>
-
-            <aside className="nextCard">
-              <div className="nextLabel">Próxima boa ideia</div>
-
-              <div className="nextTitle">
-                {proximaReserva
-                  ? proximaReserva.roteiro_titulo || 'Sua próxima aventura'
-                  : 'Escolher uma trilha'}
-              </div>
-
-              <div className="nextMeta">
-                {proximaReserva
-                  ? `${formatarData(dataReserva(proximaReserva))} ${formatarHora(dataReserva(proximaReserva))}`
-                  : 'Explore roteiros, salve uma experiência e comece pelo simples.'}
-              </div>
-            </aside>
-          </div>
-        </section>
-
-        {mensagem && <div className="message">{mensagem}</div>}
-
-        <section className="utilityGrid">
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/cliente/minhas-reservas')}
-          >
-            <div className="utilityIcon"><IconeDashboard name="reservas" /></div>
-            <div className="utilityTitle">Minhas reservas</div>
-            <div className="utilityText">
-              {stats.reservasConfirmadas} confirmada(s), {stats.reservasPendentes} aguardando.
-            </div>
-          </article>
-
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/roteiros')}
-          >
-            <div className="utilityIcon"><IconeDashboard name="explorar" /></div>
-            <div className="utilityTitle">Explorar roteiros</div>
-            <div className="utilityText">
-              Encontre uma nova experiência para o próximo final de semana.
-            </div>
-          </article>
-
-          <article
-            className="utilityCard"
-            onClick={() => router.push('/cliente/perfil')}
-          >
-            <div className="utilityIcon"><IconeDashboard name="perfil" /></div>
-            <div className="utilityTitle">Meu perfil</div>
-            <div className="utilityText">
-              {stats.totalMedalhas} medalha(s), {stats.totalKm.toFixed(0)} km no histórico.
-            </div>
-          </article>
-
-          <article
-            className="utilityCard"
-            onClick={() => reconciliarPagamentosPendentes(false)}
-          >
-            <div className="utilityIcon"><IconeDashboard name="pagamentos" /></div>
-            <div className="utilityTitle">Pagamentos</div>
-            <div className="utilityText">
-              {reconciliando
-                ? 'Verificando agora...'
-                : 'Conferir confirmação das reservas pendentes.'}
-            </div>
-          </article>
-        </section>
-
-        <section className="panel notificationPanel">
-          <div className="panelHeader">
-            <div>
-              <h2 className="panelTitle">Notificações</h2>
-              <div className="panelSub">
-                {abaNotificacao === 'com'
-                  ? 'Movimentos da comunidade com atalhos úteis.'
-                  : 'Resumo geral. Sem cliques por enquanto.'}
-              </div>
-            </div>
-
-            <div className="tabs">
-              <button
-                type="button"
-                className={`tab ${abaNotificacao === 'all' ? 'active' : ''}`}
-                onClick={() => alterarAbaNotificacao('all')}
-              >
-                ALL
+            <div className="heroActions">
+              <button type="button" className="btn primary" onClick={() => router.push('/roteiros')}>
+                Explorar roteiros
               </button>
-
+              <button type="button" className="btn light" onClick={() => router.push('/cliente/minhas-reservas')}>
+                Minhas reservas
+              </button>
               <button
                 type="button"
-                className={`tab ${abaNotificacao === 'com' ? 'active' : ''}`}
-                onClick={() => alterarAbaNotificacao('com')}
+                className="btn soft"
+                onClick={() => user?.id && reconciliarPagamentosPendentesInterno(user.id)}
+                disabled={reconciliando}
               >
-                COM
+                {reconciliando ? 'Verificando...' : 'Verificar pagamentos'}
               </button>
             </div>
           </div>
 
-          <div className="panelBody">
-            {notificacoesFiltradas.length === 0 ? (
-              <div className="empty">
-                Nenhuma notificação por enquanto.
-              </div>
-            ) : (
-              <div className="notificationList">
-                {notificacoesFiltradas.slice(0, 4).map((notificacao) => {
-                  const clicavel = abaNotificacao === 'com' && Boolean(notificacao.destino)
+          <aside className="heroCard">
+            <span>Próxima experiência</span>
+            <strong>{proximasReservas.length > 0 ? tituloReserva(proximasReservas[0]) : 'Escolha uma trilha'}</strong>
+            <p>
+              {proximasReservas.length > 0
+                ? `Reserva para ${formatarData(dataReserva(proximasReservas[0]))}.`
+                : 'Encontre um roteiro e comece sua jornada outdoor.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push(proximasReservas.length > 0 ? '/cliente/minhas-reservas' : '/roteiros')}
+            >
+              {proximasReservas.length > 0 ? 'Ver reservas' : 'Explorar agora'}
+            </button>
+          </aside>
+        </section>
 
-                  return (
-                    <article
-                      className={`notification ${clicavel ? 'clickable' : 'static'}`}
-                      key={notificacao.id}
-                      role={clicavel ? 'button' : undefined}
-                      tabIndex={clicavel ? 0 : undefined}
-                      onClick={() => {
-                        if (clicavel && notificacao.destino) {
-                          router.push(notificacao.destino)
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (clicavel && notificacao.destino && (event.key === 'Enter' || event.key === ' ')) {
-                          event.preventDefault()
-                          router.push(notificacao.destino)
-                        }
-                      }}
-                    >
-                      <div className="notificationIcon">
-                        <IconeDashboard name={iconeNotificacao(notificacao)} />
-                      </div>
+        {mensagem && <div className="notice">{mensagem}</div>}
 
-                      <div>
-                        <div className="notificationTitle">
-                          {notificacao.titulo}
-                        </div>
-
-                        <div className="notificationText">
-                          {notificacao.texto}
-                        </div>
-
-                        <div className="notificationTime">
-                          {tempoRelativo(notificacao.created_at)}
-                        </div>
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+        <section className="statsGrid">
+          <article className="statCard">
+            <span>Km registrados</span>
+            <strong>{formatarKm(stats.totalKm)}</strong>
+          </article>
+          <article className="statCard">
+            <span>Trilhas</span>
+            <strong>{stats.totalTrilhas}</strong>
+          </article>
+          <article className="statCard">
+            <span>Reservas confirmadas</span>
+            <strong>{stats.reservasConfirmadas}</strong>
+          </article>
+          <article className="statCard">
+            <span>Reservas pendentes</span>
+            <strong>{stats.reservasPendentes}</strong>
+          </article>
+          <article className="statCard">
+            <span>Medalhas</span>
+            <strong>{stats.totalMedalhas || medalhasConquistadas.length}</strong>
+          </article>
+          <article className="statCard">
+            <span>Atualização</span>
+            <strong>{ultimaAtualizacao || 'Agora'}</strong>
+          </article>
         </section>
 
         <section className="mainGrid">
-          <div>
+          <div className="leftColumn">
+            <section className="panel notificationsPanel">
+              <div className="panelHeader">
+                <div>
+                  <h2>Notificações</h2>
+                  <p>ALL mostra a comunidade. COM mostra interações relacionadas a você e aos guias que você segue.</p>
+                </div>
+
+                <button type="button" className="smallButton" onClick={() => carregarResumo(user.id)} disabled={atualizando}>
+                  {atualizando ? 'Atualizando...' : 'Atualizar'}
+                </button>
+              </div>
+
+              <div className="tabs">
+                <button
+                  type="button"
+                  className={abaNotificacoes === 'all' ? 'active' : ''}
+                  onClick={() => setAbaNotificacoes('all')}
+                >
+                  ALL <span>{notificacoesAll.length}</span>
+                </button>
+                <button
+                  type="button"
+                  className={abaNotificacoes === 'com' ? 'active' : ''}
+                  onClick={() => setAbaNotificacoes('com')}
+                >
+                  COM <span>{notificacoesCom.length}</span>
+                </button>
+              </div>
+
+              <div className="notificationsList">
+                {notificacoesVisiveis.map((notificacao) => (
+                  <button
+                    type="button"
+                    key={notificacao.id}
+                    className={`notificationItem ${notificacao.id.startsWith('empty') ? 'emptyNotification' : ''}`}
+                    onClick={() => abrirDestino(notificacao.destino)}
+                  >
+                    <span className="notificationEmoji">{notificacao.emoji}</span>
+                    <span className="notificationContent">
+                      <strong>{notificacao.titulo}</strong>
+                      <small>{notificacao.texto}</small>
+                      {notificacao.created_at && <em>{formatarDataHora(notificacao.created_at)}</em>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
             <section className="panel">
               <div className="panelHeader">
                 <div>
-                  <h2 className="panelTitle">Roteiros quentes</h2>
-                  <div className="panelSub">
-                    O que está movimentando a comunidade.
-                  </div>
+                  <h2>Roteiros em destaque</h2>
+                  <p>Experiências recentes e com movimento dentro da plataforma.</p>
                 </div>
-
-                <button
-                  type="button"
-                  className="textLink"
-                  onClick={() => router.push('/roteiros')}
-                >
+                <button type="button" className="smallButton" onClick={() => router.push('/roteiros')}>
                   Ver todos
                 </button>
               </div>
 
-              <div className="panelBody">
-                {roteirosQuentes.length === 0 ? (
-                  <div className="empty">
-                    Nenhum roteiro ativo encontrado por enquanto.
-                  </div>
-                ) : (
-                  <div className="list">
-                    {roteirosQuentes.map((roteiro) => {
-                      const foto = fotoRoteiro(roteiro)
+              {roteirosQuentes.length === 0 ? (
+                <div className="emptyBox">Assim que novos roteiros forem aprovados, eles aparecerão aqui.</div>
+              ) : (
+                <div className="routesGrid">
+                  {roteirosQuentes.slice(0, 4).map((roteiro) => {
+                    const foto = fotoRoteiro(roteiro)
 
-                      return (
-                        <article
-                          className="trailCard hotCard"
-                          key={roteiro.id}
-                          onClick={() => router.push(`/roteiros/${roteiro.id}`)}
-                        >
-                          <div className="thumb">
-                            {foto ? (
-                              <img
-                                src={foto}
-                                alt={tituloRoteiro(roteiro)}
-                                loading="lazy"
-                                decoding="async"
-                              />
-                            ) : (
-                              'HOT'
-                            )}
+                    return (
+                      <article className="routeCard" key={roteiro.id}>
+                        <button type="button" className="routeImage" onClick={() => router.push(`/roteiros/${roteiro.id}`)}>
+                          {foto ? <img src={foto} alt={tituloRoteiro(roteiro)} loading="lazy" /> : <span>🏞️</span>}
+                        </button>
+                        <div className="routeBody">
+                          <h3>{tituloRoteiro(roteiro)}</h3>
+                          <p>{localRoteiro(roteiro)}</p>
+                          <div className="routeMeta">
+                            <span>{roteiro.dificuldade || 'Nível a confirmar'}</span>
+                            <strong>{formatarMoeda(precoRoteiro(roteiro))}</strong>
                           </div>
+                          <button type="button" onClick={() => router.push(`/roteiros/${roteiro.id}`)}>
+                            Ver roteiro
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
 
-                          <div>
-                            <div className="itemTitle">{tituloRoteiro(roteiro)}</div>
-
-                            <div className="itemMeta">
-                              {roteiro.localizacao || roteiro.local || 'Local a confirmar'}
-                              {roteiro.km || roteiro.distancia_km
-                                ? ` · ${kmRoteiro(roteiro)} km`
-                                : ''}
-                              {roteiro.duracao_horas
-                                ? ` · ${roteiro.duracao_horas}h`
-                                : roteiro.duracao
-                                  ? ` · ${roteiro.duracao}`
-                                  : ''}
-                            </div>
-
-                            <div className="itemFooter">
-                              <span className="price">
-                                {formatarMoeda(precoRoteiro(roteiro))}
-                              </span>
-
-                              <span className="hotPill">
-                                🔥 {hotLabel(roteiro)}
-                              </span>
-                            </div>
-                          </div>
-                        </article>
-                      )
-                    })}
-                  </div>
-                )}
+          <aside className="rightColumn">
+            <section className="panel hotPanel">
+              <div className="panelHeader compact">
+                <div>
+                  <h2>Roteiro quente</h2>
+                  <p>Um convite para sair do feed e entrar na trilha.</p>
+                </div>
               </div>
+
+              {primeiroRoteiroQuente ? (
+                <article className="hotRoute">
+                  <div className="hotImage">
+                    {fotoRoteiro(primeiroRoteiroQuente) ? (
+                      <img src={fotoRoteiro(primeiroRoteiroQuente)} alt={tituloRoteiro(primeiroRoteiroQuente)} loading="lazy" />
+                    ) : (
+                      <span>🧭</span>
+                    )}
+                  </div>
+                  <strong>{tituloRoteiro(primeiroRoteiroQuente)}</strong>
+                  <p>{localRoteiro(primeiroRoteiroQuente)}</p>
+                  <button type="button" onClick={() => router.push(`/roteiros/${primeiroRoteiroQuente.id}`)}>
+                    Abrir roteiro
+                  </button>
+                </article>
+              ) : (
+                <div className="emptyBox small">Nenhum roteiro quente no momento.</div>
+              )}
             </section>
 
-            <section className="panel" style={{ marginTop: 16 }}>
-              <div className="panelHeader">
+            <section className="panel compactPanel">
+              <div className="panelHeader compact">
                 <div>
-                  <h2 className="panelTitle">Reservas em andamento</h2>
-                  <div className="panelSub">
-                    O que precisa da sua atenção agora.
-                  </div>
+                  <h2>Próximas reservas</h2>
+                  <p>O que vem pela frente.</p>
                 </div>
+              </div>
 
-                <button
-                  type="button"
-                  className="textLink"
-                  onClick={() => router.push('/cliente/minhas-reservas')}
-                >
-                  Ver reservas
+              {proximasReservas.length === 0 ? (
+                <div className="emptyBox small">Você ainda não tem reservas futuras.</div>
+              ) : (
+                <div className="reservationList">
+                  {proximasReservas.slice(0, 4).map((reserva) => (
+                    <button type="button" key={reserva.id} onClick={() => router.push('/cliente/minhas-reservas')}>
+                      {fotoReserva(reserva) ? <img src={fotoReserva(reserva)} alt={tituloReserva(reserva)} loading="lazy" /> : <span>🎟️</span>}
+                      <span>
+                        <strong>{tituloReserva(reserva)}</strong>
+                        <small>{formatarData(dataReserva(reserva))}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="panel compactPanel">
+              <div className="panelHeader compact">
+                <div>
+                  <h2>Passaporte</h2>
+                  <p>Medalhas e evolução.</p>
+                </div>
+                <button type="button" className="smallButton" onClick={() => router.push('/cliente/perfil')}>
+                  Abrir
                 </button>
               </div>
 
-              <div className="panelBody">
-                {proximasReservas.length === 0 ? (
-                  <div className="empty">
-                    Nada pendente por aqui. Que tal escolher uma trilha?
-                  </div>
-                ) : (
-                  <div className="list">
-                    {proximasReservas.map((reserva) => (
-                      <article
-                        className="reservationCard"
-                        key={reserva.id}
-                        onClick={() => router.push('/cliente/minhas-reservas')}
-                      >
-                        <div className="thumb">
-                          {reserva.roteiro_foto ? (
-                            <img
-                              src={reserva.roteiro_foto}
-                              alt={reserva.roteiro_titulo || 'Roteiro'}
-                              loading="lazy"
-                              decoding="async"
-                            />
-                          ) : (
-                            'RT'
-                          )}
-                        </div>
+              <div className="medalList">
+                {medalhasConquistadas.slice(0, 4).map((item) => {
+                  const medalha = normalizarMedalha(item)
 
-                        <div>
-                          <div className="itemTitle">
-                            {reserva.roteiro_titulo || 'Roteiro'}
-                          </div>
+                  return (
+                    <div className="medalMini" key={item.id}>
+                      <span>{medalha?.icone || '🏅'}</span>
+                      <strong>{medalha?.nome || 'Medalha conquistada'}</strong>
+                    </div>
+                  )
+                })}
 
-                          <div className="itemMeta">
-                            {formatarData(dataReserva(reserva))}
-                            {formatarHora(dataReserva(reserva)) && ` · ${formatarHora(dataReserva(reserva))}`}
-                            <br />
-                            {reserva.quantidade_pessoas || 1} pessoa(s)
-                          </div>
-
-                          <div className="itemFooter">
-                            <span className="price">
-                              {formatarMoeda(reserva.valor_total || 0)}
-                            </span>
-
-                            {badgeStatusReserva(reserva)}
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
+                {medalhasConquistadas.length === 0 && (
+                  <div className="emptyBox small">Suas medalhas aparecerão aqui.</div>
                 )}
               </div>
+
+              {proximaMedalha && (
+                <div className="nextMedalBox">
+                  <span>{proximaMedalha.icone || '🏅'}</span>
+                  <div>
+                    <strong>{proximaMedalha.nome || 'Próxima medalha'}</strong>
+                    <small>{proximaMedalha.descricao || 'Continue sua jornada para desbloquear a próxima conquista.'}</small>
+                  </div>
+                </div>
+              )}
             </section>
-          </div>
-
-          <div className="sideGrid">
-            <section
-              className="panel momentPanel"
-              role="button"
-              tabIndex={0}
-              onClick={() => router.push('/cliente/perfil')}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  router.push('/cliente/perfil')
-                }
-              }}
-            >
-              <div className="panelHeader">
-                <div>
-                  <h2 className="panelTitle">Seu momento</h2>
-                  <div className="panelSub">
-                    Um resumo simples, sem complicar.
-                  </div>
-                </div>
-              </div>
-
-              <div className="panelBody">
-                <div className="miniStats">
-                  <div className="miniStat">
-                    <div className="miniValue">{stats.totalKm.toFixed(0)}</div>
-                    <div className="miniLabel">km</div>
-                  </div>
-
-                  <div className="miniStat">
-                    <div className="miniValue">{stats.totalTrilhas}</div>
-                    <div className="miniLabel">trilhas</div>
-                  </div>
-
-                  <div className="miniStat">
-                    <div className="miniValue">{stats.totalMedalhas}</div>
-                    <div className="miniLabel">medalhas</div>
-                  </div>
-                </div>
-
-                <div className="medalBox">
-                  <div className="medalBoxHead">
-                    <div>
-                      <div className="medalKicker">Coleção</div>
-                      <strong>Medalhas da jornada</strong>
-                    </div>
-                  </div>
-
-                  <div className="dashboardMedalRail">
-                    {medalhasPainel.map((medalha) => (
-                      <div
-                        key={medalha.key}
-                        className={`dashboardMedalSvg ${medalha.desbloqueada ? '' : 'locked'} ${medalha.especial ? 'special' : ''}`}
-                        title={medalha.nome}
-                      >
-                        <img
-                          src={medalha.svg}
-                          alt={medalha.nome}
-                          loading="lazy"
-                          decoding="async"
-                          data-fallback={medalha.fallback}
-                          onError={(event) => {
-                            const fallback = event.currentTarget.dataset.fallback
-                            if (fallback) {
-                              event.currentTarget.src = fallback
-                              event.currentTarget.dataset.fallback = ''
-                            }
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-
-                  {proximaMedalha && (
-                    <div className="nextMedalBox">
-                      <span>Próxima conquista</span>
-                      <strong>{medalhaRelacionada(proximaMedalha)?.nome || 'Nova medalha'}</strong>
-                      <div className="miniProgress">
-                        <div style={{ width: `${progressoPercentual(proximaMedalha)}%` }} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-          </div>
+          </aside>
         </section>
-      </div>
+      </section>
+
+      {modalSuporteAberto && (
+        <div className="modalOverlay" onClick={() => !enviandoSuporte && setModalSuporteAberto(false)}>
+          <section className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <span>Ajuda e suporte</span>
+                <h2>{tipoSuporte === 'bug' ? 'Reportar bug' : tipoSuporte === 'sugestao' ? 'Sugerir melhoria' : 'Mensagem ao suporte'}</h2>
+              </div>
+              <button type="button" onClick={() => setModalSuporteAberto(false)} disabled={enviandoSuporte}>
+                ×
+              </button>
+            </div>
+
+            <label className="field">
+              <span>Tipo</span>
+              <select value={tipoSuporte} onChange={(event) => setTipoSuporte(event.target.value as SuporteTipo)}>
+                <option value="bug">Bug / erro no app</option>
+                <option value="suporte">Mensagem ao suporte</option>
+                <option value="sugestao">Sugestão de melhoria</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Assunto</span>
+              <input value={assuntoSuporte} onChange={(event) => setAssuntoSuporte(event.target.value)} />
+            </label>
+
+            <label className="field">
+              <span>Descrição</span>
+              <textarea
+                value={descricaoSuporte}
+                onChange={(event) => setDescricaoSuporte(event.target.value)}
+                placeholder="Descreva o que aconteceu, em qual tela e o que você esperava."
+              />
+            </label>
+
+            <label className="field">
+              <span>Prioridade</span>
+              <select value={prioridadeSuporte} onChange={(event) => setPrioridadeSuporte(event.target.value as PrioridadeSuporte)}>
+                <option value="baixa">Baixa</option>
+                <option value="normal">Normal</option>
+                <option value="alta">Alta</option>
+                <option value="urgente">Urgente</option>
+              </select>
+            </label>
+
+            {erroSuporte && <div className="modalError">{erroSuporte}</div>}
+
+            <div className="modalActions">
+              <button type="button" className="btn light" onClick={() => setModalSuporteAberto(false)} disabled={enviandoSuporte}>
+                Cancelar
+              </button>
+              <button type="button" className="btn primary" onClick={enviarSuporte} disabled={enviandoSuporte}>
+                {enviandoSuporte ? 'Enviando...' : 'Enviar'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {modalSenhaAberto && (
+        <div className="modalOverlay" onClick={() => !alterandoSenha && setModalSenhaAberto(false)}>
+          <form className="modal" onSubmit={alterarSenha} onClick={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <span>Configurações</span>
+                <h2>Alterar senha</h2>
+              </div>
+              <button type="button" onClick={() => setModalSenhaAberto(false)} disabled={alterandoSenha}>
+                ×
+              </button>
+            </div>
+
+            <label className="field">
+              <span>Senha atual</span>
+              <input type="password" value={senhaAtual} onChange={(event) => setSenhaAtual(event.target.value)} />
+            </label>
+
+            <label className="field">
+              <span>Nova senha</span>
+              <input type="password" value={novaSenha} onChange={(event) => setNovaSenha(event.target.value)} />
+            </label>
+
+            <label className="field">
+              <span>Confirmar nova senha</span>
+              <input type="password" value={confirmarSenha} onChange={(event) => setConfirmarSenha(event.target.value)} />
+            </label>
+
+            <div className="modalActions">
+              <button type="button" className="btn light" onClick={() => setModalSenhaAberto(false)} disabled={alterandoSenha}>
+                Cancelar
+              </button>
+              <button type="submit" className="btn primary" disabled={alterandoSenha}>
+                {alterandoSenha ? 'Salvando...' : 'Salvar senha'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   )
 }
+
+const styles = `
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #f6f7f1;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  .page,
+  .loadingPage {
+    min-height: 100vh;
+    min-height: 100dvh;
+    color: #172018;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
+      radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
+      linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
+  }
+
+  .loadingPage {
+    display: grid;
+    place-items: center;
+    padding: 20px;
+  }
+
+  .loadingCard {
+    border-radius: 28px;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(15,23,42,0.08);
+    padding: 28px;
+    box-shadow: 0 22px 60px rgba(15,23,42,0.12);
+    color: #203c2e;
+    font-weight: 950;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    background: rgba(255,253,247,0.90);
+    border-bottom: 1px solid rgba(15,23,42,0.06);
+    backdrop-filter: blur(18px);
+    padding: 8px 14px;
+  }
+
+  .topbarInner {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .brandText {
+    grid-column: 2;
+    justify-self: center;
+    border: 0;
+    background: transparent;
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    cursor: pointer;
+    padding: 4px 6px;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .brandText strong {
+    color: #203c2e;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(28px, 4vw, 44px);
+    line-height: 0.92;
+    letter-spacing: -0.06em;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .brandText span {
+    color: #7b8372;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .topActions {
+    grid-column: 3;
+    justify-self: end;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .avatarMini,
+  .gearButton {
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: rgba(255,255,255,0.88);
+    box-shadow: 0 10px 22px rgba(15,23,42,0.06);
+    cursor: pointer;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .avatarMini img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .avatarMini span {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #203c2e;
+    color: #fffdf7;
+    font-weight: 950;
+  }
+
+  .gearButton {
+    color: #203c2e;
+    font-size: 19px;
+  }
+
+  .settingsWrap {
+    position: relative;
+  }
+
+  .settingsMenu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    z-index: 100;
+    width: 246px;
+    border-radius: 22px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: rgba(255,253,247,0.98);
+    box-shadow: 0 24px 60px rgba(15,23,42,0.16);
+    padding: 8px;
+    backdrop-filter: blur(18px);
+  }
+
+  .settingsMenu button {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: #172018;
+    padding: 12px 13px;
+    border-radius: 16px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .settingsMenu button:hover {
+    background: #eef2e5;
+  }
+
+  .settingsMenu .dangerItem {
+    color: #b91c1c;
+  }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px 16px 54px;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 18px;
+    align-items: stretch;
+    margin-bottom: 16px;
+  }
+
+  .heroText,
+  .heroCard {
+    border-radius: 36px;
+    box-shadow: 0 24px 60px rgba(23,32,24,0.18);
+  }
+
+  .heroText {
+    padding: 28px;
+    color: #fff;
+    background:
+      linear-gradient(135deg, rgba(23,32,24,0.80), rgba(23,32,24,0.42)),
+      radial-gradient(circle at top right, rgba(190,242,100,0.30), transparent 34%),
+      linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    width: fit-content;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.24);
+    background: rgba(255,255,255,0.12);
+    color: #f7fee7;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .heroText h1 {
+    margin: 0;
+    font-size: clamp(44px, 6vw, 76px);
+    line-height: 0.92;
+    font-weight: 950;
+    letter-spacing: -0.085em;
+  }
+
+  .heroText p {
+    max-width: 760px;
+    margin: 14px 0 0;
+    color: rgba(255,255,255,0.82);
+    line-height: 1.6;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .heroActions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+  }
+
+  .btn,
+  .smallButton,
+  .heroCard button,
+  .routeBody button,
+  .hotRoute button {
+    border: 0;
+    border-radius: 999px;
+    padding: 11px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 950;
+    transition: 0.18s ease;
+  }
+
+  .btn:hover:not(:disabled),
+  .smallButton:hover:not(:disabled),
+  .heroCard button:hover,
+  .routeBody button:hover,
+  .hotRoute button:hover {
+    transform: translateY(-1px);
+  }
+
+  .btn:disabled,
+  .smallButton:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+  }
+
+  .btn.primary,
+  .heroCard button,
+  .routeBody button,
+  .hotRoute button {
+    background: #172018;
+    color: #fffdf7;
+  }
+
+  .btn.light,
+  .smallButton {
+    background: #eef2e5;
+    color: #334155;
+  }
+
+  .btn.soft {
+    background: rgba(255,255,255,0.16);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.20);
+  }
+
+  .heroCard {
+    padding: 22px;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(15,23,42,0.06);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .heroCard span {
+    color: #991b1b;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .heroCard strong {
+    display: block;
+    margin-top: 10px;
+    color: #172018;
+    font-size: 28px;
+    line-height: 0.96;
+    letter-spacing: -0.055em;
+    font-weight: 950;
+  }
+
+  .heroCard p {
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.5;
+    font-weight: 750;
+  }
+
+  .notice {
+    border-radius: 18px;
+    padding: 13px 15px;
+    margin-bottom: 16px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+    font-size: 13px;
+    font-weight: 850;
+  }
+
+  .statsGrid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .statCard,
+  .panel {
+    background: rgba(255,255,255,0.90);
+    border: 1px solid rgba(15,23,42,0.06);
+    box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+  }
+
+  .statCard {
+    border-radius: 24px;
+    padding: 16px;
+  }
+
+  .statCard span {
+    display: block;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 7px;
+  }
+
+  .statCard strong {
+    color: #172018;
+    font-size: 20px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.05em;
+  }
+
+  .mainGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .leftColumn,
+  .rightColumn {
+    display: grid;
+    gap: 16px;
+  }
+
+  .panel {
+    border-radius: 30px;
+    padding: 18px;
+    overflow: hidden;
+  }
+
+  .panelHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+  }
+
+  .panelHeader.compact {
+    margin-bottom: 12px;
+  }
+
+  .panelHeader h2 {
+    margin: 0;
+    color: #172018;
+    font-size: 23px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.055em;
+  }
+
+  .panelHeader p {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 750;
+    max-width: 560px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    padding: 5px;
+    background: #eef2e5;
+    border-radius: 999px;
+    width: fit-content;
+    margin-bottom: 14px;
+  }
+
+  .tabs button {
+    border: 0;
+    border-radius: 999px;
+    padding: 9px 12px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 950;
+  }
+
+  .tabs button.active {
+    background: #172018;
+    color: #fffdf7;
+  }
+
+  .tabs span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.22);
+    margin-left: 5px;
+    padding: 0 5px;
+  }
+
+  .notificationsList {
+    display: grid;
+    gap: 8px;
+  }
+
+  .notificationItem {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,0.06);
+    background: #fffdf7;
+    border-radius: 20px;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .notificationItem:hover {
+    border-color: rgba(32,60,46,0.18);
+    box-shadow: 0 10px 22px rgba(15,23,42,0.06);
+  }
+
+  .emptyNotification {
+    border-style: dashed;
+  }
+
+  .notificationEmoji {
+    width: 42px;
+    height: 42px;
+    border-radius: 16px;
+    background: #eef2e5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 21px;
+  }
+
+  .notificationContent {
+    display: grid;
+    min-width: 0;
+  }
+
+  .notificationContent strong {
+    color: #172018;
+    font-size: 14px;
+    font-weight: 950;
+    line-height: 1.25;
+  }
+
+  .notificationContent small {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 700;
+    margin-top: 3px;
+  }
+
+  .notificationContent em {
+    color: #94a3b8;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 850;
+    margin-top: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .routesGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .routeCard {
+    border: 1px solid rgba(15,23,42,0.06);
+    background: #fffdf7;
+    border-radius: 24px;
+    overflow: hidden;
+  }
+
+  .routeImage {
+    border: 0;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #eef2e5;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    cursor: pointer;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 36px;
+  }
+
+  .routeImage img,
+  .hotImage img,
+  .reservationList img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .routeBody {
+    padding: 14px;
+  }
+
+  .routeBody h3,
+  .hotRoute strong {
+    margin: 0;
+    color: #172018;
+    font-size: 18px;
+    line-height: 1.1;
+    font-weight: 950;
+    letter-spacing: -0.045em;
+  }
+
+  .routeBody p,
+  .hotRoute p {
+    margin: 7px 0 0;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .routeMeta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: center;
+    margin: 11px 0;
+  }
+
+  .routeMeta span {
+    border-radius: 999px;
+    background: #eef2e5;
+    color: #475569;
+    padding: 6px 8px;
+    font-size: 10px;
+    font-weight: 900;
+  }
+
+  .routeMeta strong {
+    color: #203c2e;
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .emptyBox {
+    border: 1px dashed rgba(15,23,42,0.16);
+    background: #fffdf7;
+    border-radius: 20px;
+    padding: 22px;
+    text-align: center;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .emptyBox.small {
+    padding: 16px;
+    font-size: 12px;
+  }
+
+  .hotRoute {
+    display: grid;
+    gap: 10px;
+  }
+
+  .hotImage {
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    border-radius: 22px;
+    background: #eef2e5;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    color: #64748b;
+    font-size: 40px;
+  }
+
+  .reservationList {
+    display: grid;
+    gap: 8px;
+  }
+
+  .reservationList button {
+    border: 1px solid rgba(15,23,42,0.06);
+    background: #fffdf7;
+    border-radius: 18px;
+    padding: 8px;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .reservationList img,
+  .reservationList > button > span:first-child {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    object-fit: cover;
+    background: #eef2e5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .reservationList strong,
+  .medalMini strong,
+  .nextMedalBox strong {
+    display: block;
+    color: #172018;
+    font-size: 12px;
+    line-height: 1.25;
+    font-weight: 950;
+  }
+
+  .reservationList small,
+  .nextMedalBox small {
+    display: block;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 750;
+    line-height: 1.35;
+  }
+
+  .medalList {
+    display: grid;
+    gap: 8px;
+  }
+
+  .medalMini,
+  .nextMedalBox {
+    border: 1px solid rgba(15,23,42,0.06);
+    background: #fffdf7;
+    border-radius: 18px;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 9px;
+    align-items: center;
+  }
+
+  .medalMini span,
+  .nextMedalBox > span {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+    background: #eef2e5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .nextMedalBox {
+    margin-top: 10px;
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+
+  .modalOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8,13,7,0.50);
+    backdrop-filter: blur(10px);
+  }
+
+  .modal {
+    width: min(520px, 100%);
+    max-height: calc(100dvh - 36px);
+    overflow: auto;
+    border-radius: 30px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.08);
+    box-shadow: 0 34px 90px rgba(15,23,42,0.24);
+    padding: 20px;
+  }
+
+  .modalHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .modalHeader span,
+  .field span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .modalHeader h2 {
+    margin: 0;
+    color: #172018;
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.055em;
+  }
+
+  .modalHeader button {
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: #f8fafc;
+    color: #172018;
+    font-size: 24px;
+    cursor: pointer;
+  }
+
+  .field {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,0.10);
+    background: #fff;
+    border-radius: 18px;
+    padding: 13px 14px;
+    color: #172018;
+    outline: none;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .field textarea {
+    min-height: 116px;
+    resize: vertical;
+    line-height: 1.45;
+  }
+
+  .modalError {
+    border-radius: 16px;
+    background: rgba(220,38,38,0.08);
+    border: 1px solid rgba(220,38,38,0.16);
+    color: #991b1b;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 850;
+    margin-bottom: 12px;
+  }
+
+  .modalActions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+
+  @media (max-width: 1040px) {
+    .hero,
+    .mainGrid {
+      grid-template-columns: 1fr;
+    }
+
+    .statsGrid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .rightColumn {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .hotPanel {
+      grid-column: 1 / -1;
+    }
+
+    .hotRoute {
+      grid-template-columns: 180px minmax(0, 1fr);
+      align-items: center;
+    }
+
+    .hotImage {
+      aspect-ratio: 4 / 3;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .topbar {
+      padding: 7px 10px;
+    }
+
+    .topbarInner {
+      grid-template-columns: 1fr auto;
+    }
+
+    .brandText {
+      grid-column: 1;
+      justify-self: start;
+      justify-items: start;
+    }
+
+    .brandText strong {
+      font-size: 29px;
+    }
+
+    .brandText span {
+      font-size: 8px;
+      letter-spacing: 0.12em;
+    }
+
+    .topActions {
+      grid-column: 2;
+    }
+
+    .avatarMini {
+      width: 36px;
+      height: 36px;
+    }
+
+    .gearButton {
+      width: 36px;
+      height: 36px;
+      font-size: 17px;
+      box-shadow: none;
+    }
+
+    .settingsMenu {
+      position: fixed;
+      top: 58px;
+      right: 10px;
+      width: min(246px, calc(100vw - 20px));
+    }
+
+    .shell {
+      padding: 12px 9px 40px;
+    }
+
+    .heroText,
+    .heroCard,
+    .panel {
+      border-radius: 24px;
+    }
+
+    .heroText {
+      padding: 20px;
+    }
+
+    .heroText h1 {
+      font-size: 42px;
+    }
+
+    .heroText p {
+      font-size: 13px;
+    }
+
+    .heroActions,
+    .modalActions {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .btn,
+    .smallButton,
+    .heroCard button,
+    .routeBody button,
+    .hotRoute button {
+      width: 100%;
+    }
+
+    .statsGrid,
+    .routesGrid,
+    .rightColumn,
+    .hotRoute {
+      grid-template-columns: 1fr;
+    }
+
+    .panel {
+      padding: 14px;
+    }
+
+    .tabs {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-radius: 18px;
+    }
+
+    .tabs button {
+      width: 100%;
+    }
+
+    .modalOverlay {
+      align-items: flex-end;
+      padding: 10px;
+    }
+
+    .modal {
+      border-radius: 26px;
+      max-height: calc(100dvh - 22px);
+    }
+  }
+`
