@@ -19,8 +19,8 @@ function getSupabaseAdmin(): any {
 
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
-      autoRefreshToken: false,
       persistSession: false,
+      autoRefreshToken: false,
     },
   })
 }
@@ -68,25 +68,6 @@ function extrairColunaAusente(error: any) {
   return ''
 }
 
-function extrairUserId(request: NextRequest, body: AnyRecord = {}) {
-  const { searchParams } = new URL(request.url)
-
-  return texto(
-    body.userId ||
-      body.usuarioId ||
-      body.usuario_id ||
-      body.guiaId ||
-      body.guia_id ||
-      body.id ||
-      searchParams.get('userId') ||
-      searchParams.get('usuarioId') ||
-      searchParams.get('usuario_id') ||
-      searchParams.get('guiaId') ||
-      searchParams.get('guia_id') ||
-      searchParams.get('id')
-  )
-}
-
 async function atualizarUsuarioComFallback(params: {
   supabase: any
   userId: string
@@ -95,7 +76,7 @@ async function atualizarUsuarioComFallback(params: {
   const { supabase, userId } = params
   let payload: AnyRecord = { ...params.payloadOriginal }
 
-  for (let tentativa = 0; tentativa < 12; tentativa++) {
+  for (let tentativa = 0; tentativa < 10; tentativa++) {
     const { data, error } = await supabase
       .from('users')
       .update(payload)
@@ -117,26 +98,40 @@ async function atualizarUsuarioComFallback(params: {
   throw new Error('Não foi possível atualizar a bio após ajustar colunas ausentes.')
 }
 
+function extrairUserId(request: NextRequest, body: AnyRecord) {
+  const { searchParams } = new URL(request.url)
+
+  return texto(
+    body.userId ||
+      body.usuarioId ||
+      body.usuario_id ||
+      body.guiaId ||
+      body.guia_id ||
+      body.id ||
+      searchParams.get('userId') ||
+      searchParams.get('usuarioId') ||
+      searchParams.get('usuario_id') ||
+      searchParams.get('guiaId') ||
+      searchParams.get('guia_id') ||
+      searchParams.get('id')
+  )
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdmin()
-    const userId = extrairUserId(request)
+    const userId = extrairUserId(request, {})
 
     if (!userId) {
       return NextResponse.json(
-        {
-          sucesso: false,
-          success: false,
-          erro: 'userId é obrigatório.',
-          error: 'userId é obrigatório.',
-        },
+        { sucesso: false, erro: 'userId é obrigatório.' },
         { status: 400 }
       )
     }
 
     const { data, error } = await supabase
       .from('users')
-      .select('*')
+      .select('id, nome, email, tipo, bio, bio_guia, updated_at')
       .eq('id', userId)
       .maybeSingle()
 
@@ -144,21 +139,14 @@ export async function GET(request: NextRequest) {
 
     if (!data?.id) {
       return NextResponse.json(
-        {
-          sucesso: false,
-          success: false,
-          erro: 'Usuário não encontrado.',
-          error: 'Usuário não encontrado.',
-        },
+        { sucesso: false, erro: 'Usuário não encontrado.' },
         { status: 404 }
       )
     }
 
     return NextResponse.json({
       sucesso: true,
-      success: true,
       usuario: data,
-      user: data,
       bio: data.bio_guia || data.bio || '',
     })
   } catch (error: any) {
@@ -172,9 +160,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         sucesso: false,
-        success: false,
         erro: error?.message || 'Erro ao carregar bio.',
-        error: error?.message || 'Erro ao carregar bio.',
         detalhe: {
           code: error?.code,
           details: error?.details,
@@ -204,34 +190,18 @@ async function salvarBio(request: NextRequest) {
 
     const userId = extrairUserId(request, body)
     const bio = String(body.bio ?? body.bio_guia ?? '').trim()
-    const tipoUsuario = normalizar(
-      body.tipoUsuario ||
-        body.tipo_usuario ||
-        body.tipo ||
-        'guia'
-    )
+    const tipoUsuario = normalizar(body.tipoUsuario || body.tipo_usuario || body.tipo || 'guia')
 
     if (!userId) {
       return NextResponse.json(
-        {
-          sucesso: false,
-          success: false,
-          erro: 'userId é obrigatório.',
-          error: 'userId é obrigatório.',
-          recebido: body,
-        },
+        { sucesso: false, erro: 'userId é obrigatório.', recebido: body },
         { status: 400 }
       )
     }
 
     if (bio.length > 2500) {
       return NextResponse.json(
-        {
-          sucesso: false,
-          success: false,
-          erro: 'A bio está muito longa. Limite recomendado: 2.500 caracteres.',
-          error: 'A bio está muito longa. Limite recomendado: 2.500 caracteres.',
-        },
+        { sucesso: false, erro: 'A bio está muito longa. Limite recomendado: 2.500 caracteres.' },
         { status: 400 }
       )
     }
@@ -246,12 +216,7 @@ async function salvarBio(request: NextRequest) {
 
     if (!usuarioAtual?.id) {
       return NextResponse.json(
-        {
-          sucesso: false,
-          success: false,
-          erro: 'Usuário não encontrado.',
-          error: 'Usuário não encontrado.',
-        },
+        { sucesso: false, erro: 'Usuário não encontrado.' },
         { status: 404 }
       )
     }
@@ -262,9 +227,7 @@ async function salvarBio(request: NextRequest) {
       return NextResponse.json(
         {
           sucesso: false,
-          success: false,
           erro: `Este usuário não é do tipo ${tipoUsuario}.`,
-          error: `Este usuário não é do tipo ${tipoUsuario}.`,
           tipoAtual: usuarioAtual.tipo,
         },
         { status: 403 }
@@ -273,12 +236,13 @@ async function salvarBio(request: NextRequest) {
 
     const payload: AnyRecord = {
       bio,
+      bio_guia: tipoUsuario === 'guia' ? bio : undefined,
       updated_at: new Date().toISOString(),
     }
 
-    if (tipoUsuario === 'guia') {
-      payload.bio_guia = bio
-    }
+    Object.keys(payload).forEach((key) => {
+      if (payload[key] === undefined) delete payload[key]
+    })
 
     const atualizado = await atualizarUsuarioComFallback({
       supabase,
@@ -286,20 +250,11 @@ async function salvarBio(request: NextRequest) {
       payloadOriginal: payload,
     })
 
-    const usuarioFinal = atualizado || {
-      ...usuarioAtual,
-      ...payload,
-    }
-
     return NextResponse.json({
       sucesso: true,
-      success: true,
-      mensagem: 'Biografia atualizada com sucesso.',
-      message: 'Biografia atualizada com sucesso.',
-      usuario: usuarioFinal,
-      user: usuarioFinal,
-      data: usuarioFinal,
+      usuario: atualizado || { ...usuarioAtual, ...payload },
       bio,
+      mensagem: 'Biografia atualizada com sucesso.',
     })
   } catch (error: any) {
     console.error('Erro em POST/PATCH /api/usuario/bio:', {
@@ -313,9 +268,7 @@ async function salvarBio(request: NextRequest) {
     return NextResponse.json(
       {
         sucesso: false,
-        success: false,
         erro: error?.message || 'Erro ao salvar bio.',
-        error: error?.message || 'Erro ao salvar bio.',
         detalhe: {
           code: error?.code,
           details: error?.details,

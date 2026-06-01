@@ -14,6 +14,7 @@ type UsuarioLocal = {
   avatar_url?: string | null
   foto_url?: string | null
   imagem_url?: string | null
+  bio?: string | null
 }
 
 type ReservaEstatistica = {
@@ -366,6 +367,7 @@ export default function PerfilCliente() {
   const [nome, setNome] = useState('')
   const [editandoNome, setEditandoNome] = useState(false)
   const [editandoBio, setEditandoBio] = useState(false)
+  const [salvandoBio, setSalvandoBio] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
@@ -476,6 +478,7 @@ export default function PerfilCliente() {
 
     atualizarLocalStorage({
       nome: data.nome || undefined,
+      bio: data.bio || undefined,
       avatar_url: avatar || undefined,
       foto_url: avatar || undefined,
       imagem_url: avatar || undefined,
@@ -699,27 +702,89 @@ export default function PerfilCliente() {
   }
 
   async function carregarBio(userId: string) {
-    const { data } = await supabase.from('users').select('bio').eq('id', userId).single()
-    if (data?.bio) setBio(data.bio)
+    try {
+      const response = await fetch(`/api/usuario/bio?userId=${encodeURIComponent(userId)}&tipo=cliente`, {
+        method: 'GET',
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache'
+        }
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        throw new Error(data?.erro || data?.error || data?.message || 'Não foi possível carregar a biografia.')
+      }
+
+      const bioCarregada = String(data?.bio ?? data?.usuario?.bio ?? '')
+      setBio(bioCarregada)
+      atualizarLocalStorage({ bio: bioCarregada })
+    } catch (error) {
+      console.warn('Erro ao carregar bio pela API. Tentando leitura direta:', error)
+
+      const { data } = await supabase.from('users').select('bio').eq('id', userId).maybeSingle()
+      if (data?.bio) {
+        setBio(data.bio)
+        atualizarLocalStorage({ bio: data.bio })
+      }
+    }
   }
 
   async function salvarBio() {
     if (!user?.id) return
 
     setErro('')
+    setMensagem('')
+    setSalvandoBio(true)
 
     try {
-      await atualizarUsuarioComFallback(user.id, {
-        bio,
-        updated_at: new Date().toISOString()
+      const response = await fetch('/api/usuario/bio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          usuarioId: user.id,
+          usuario_id: user.id,
+          tipoUsuario: 'cliente',
+          tipo: 'cliente',
+          bio
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        throw new Error(
+          data?.erro ||
+            data?.error ||
+            data?.message ||
+            `Erro HTTP ${response.status} ao salvar biografia.`
+        )
+      }
+
+      const bioSalva = String(data?.bio ?? data?.usuario?.bio ?? bio)
+      const usuarioAtualizado = data?.usuario || data?.user || data?.data || {}
+
+      setBio(bioSalva)
+      atualizarLocalStorage({
+        ...usuarioAtualizado,
+        id: user.id,
+        tipo: 'cliente',
+        bio: bioSalva
       })
 
       setMensagem('✅ Biografia atualizada!')
       setEditandoBio(false)
     } catch (error) {
-      console.error(error)
+      console.error('Erro ao salvar bio:', error)
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar a biografia.'
+      setErro(message)
       setMensagem('❌ Erro ao salvar biografia')
     } finally {
+      setSalvandoBio(false)
       setTimeout(() => setMensagem(''), 3000)
     }
   }
@@ -762,31 +827,64 @@ export default function PerfilCliente() {
     setMensagem('')
 
     try {
-      const caminho = `clientes/${user.id}/avatar/avatar-${Date.now()}.webp`
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('userId', user.id)
+      formData.append('usuarioId', user.id)
+      formData.append('tipoUsuario', 'cliente')
+      formData.append('pasta', 'clientes')
 
-      const { error: uploadError } = await supabase.storage
-        .from('fotos-aventuras')
-        .upload(caminho, file, {
-          upsert: true,
-          contentType: file.type || 'image/webp'
-        })
-
-      if (uploadError) throw uploadError
-
-      const { data } = supabase.storage.from('fotos-aventuras').getPublicUrl(caminho)
-      const publicUrl = data?.publicUrl || ''
-
-      if (!publicUrl) throw new Error('Não foi possível gerar a URL pública da foto.')
-
-      await atualizarUsuarioComFallback(user.id, {
-        avatar_url: publicUrl,
-        foto_url: publicUrl,
-        imagem_url: publicUrl,
-        updated_at: new Date().toISOString()
+      const response = await fetch('/api/usuario/avatar', {
+        method: 'POST',
+        body: formData
       })
 
+      const rawText = await response.text()
+      let data: any = null
+
+      try {
+        data = rawText ? JSON.parse(rawText) : null
+      } catch {
+        throw new Error(
+          `A rota /api/usuario/avatar não retornou JSON válido. Status: ${response.status}. Resposta: ${rawText.slice(0, 180)}`
+        )
+      }
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        throw new Error(
+          data?.erro ||
+            data?.error ||
+            data?.message ||
+            `Erro HTTP ${response.status} ao salvar foto.`
+        )
+      }
+
+      const publicUrl =
+        data?.avatarUrl ||
+        data?.avatar_url ||
+        data?.foto_url ||
+        data?.imagem_url ||
+        data?.publicUrl ||
+        data?.url ||
+        ''
+
+      if (!publicUrl) {
+        throw new Error('A rota /api/usuario/avatar não retornou a URL pública da foto.')
+      }
+
+      const usuarioAtualizado: UsuarioLocal = {
+        ...user,
+        ...(data?.usuario || data?.data || {}),
+        id: user.id,
+        tipo: 'cliente',
+        avatar_url: publicUrl,
+        foto_url: publicUrl,
+        imagem_url: publicUrl
+      }
+
+      localStorage.setItem('user', JSON.stringify(usuarioAtualizado))
+      setUser(usuarioAtualizado)
       setAvatarPreview(publicUrl)
-      atualizarLocalStorage({ avatar_url: publicUrl, foto_url: publicUrl, imagem_url: publicUrl })
       setCropAberto(false)
       setCropImageSrc('')
       setMensagem('✅ Foto de perfil atualizada!')
@@ -1180,7 +1278,7 @@ export default function PerfilCliente() {
                       placeholder="Conte algo sobre você, seu ritmo, o que gosta de viver nas trilhas..."
                     />
                     <div className="actionRow">
-                      <button type="button" className="primary" onClick={salvarBio}>Salvar bio</button>
+                      <button type="button" className="primary" onClick={salvarBio} disabled={salvandoBio}>{salvandoBio ? 'Salvando...' : 'Salvar bio'}</button>
                       <button
                         type="button"
                         className="secondary"
@@ -2867,7 +2965,5 @@ const styles = `
     .passwordActions button {
       width: 100%;
     }
-  }
-
   }
 `
