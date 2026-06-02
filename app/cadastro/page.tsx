@@ -1,265 +1,304 @@
-'use client'
+"use client";
 
-import { FormEvent, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
-type TipoUsuario = 'cliente' | 'guia'
+type TipoUsuario = "cliente" | "guia";
 
 type FormCadastro = {
-  nome: string
-  email: string
-  telefone: string
-  cpf: string
-  data_nascimento: string
-  senha: string
-  confirmar_senha: string
-  tipo: TipoUsuario
-}
+  nome: string;
+  email: string;
+  telefone: string;
+  cpf: string;
+  data_nascimento: string;
+  senha: string;
+  confirmar_senha: string;
+  tipo: TipoUsuario;
+};
 
 type UsuarioLocal = {
-  id?: string
-  nome?: string | null
-  email?: string | null
-  tipo?: string | null
-  avatar_url?: string | null
-  foto_url?: string | null
-  imagem_url?: string | null
-}
+  id?: string;
+  nome?: string | null;
+  email?: string | null;
+  tipo?: string | null;
+  telefone?: string | null;
+  celular?: string | null;
+  cpf?: string | null;
+  data_nascimento?: string | null;
+  avatar_url?: string | null;
+  foto_url?: string | null;
+  imagem_url?: string | null;
+};
 
-const LOGO_CADASTRO_SRC = '/logo-login-montanha-prussik.jpg?v=20260528'
+const LOGO_CADASTRO_SRC = "/logo-login-montanha-prussik.jpg?v=20260528";
 
 const formInicial: FormCadastro = {
-  nome: '',
-  email: '',
-  telefone: '',
-  cpf: '',
-  data_nascimento: '',
-  senha: '',
-  confirmar_senha: '',
-  tipo: 'cliente',
-}
+  nome: "",
+  email: "",
+  telefone: "",
+  cpf: "",
+  data_nascimento: "",
+  senha: "",
+  confirmar_senha: "",
+  tipo: "cliente",
+};
 
 export default function CadastroPage() {
-  const router = useRouter()
+  const router = useRouter();
 
-  const [form, setForm] = useState<FormCadastro>(formInicial)
-  const [carregando, setCarregando] = useState(false)
-  const [mensagem, setMensagem] = useState('')
-  const [tipoMensagem, setTipoMensagem] = useState<'erro' | 'sucesso' | ''>('')
+  const [form, setForm] = useState<FormCadastro>(formInicial);
+  const [carregando, setCarregando] = useState(false);
+  const [mensagem, setMensagem] = useState("");
+  const [tipoMensagem, setTipoMensagem] = useState<"erro" | "sucesso" | "">("");
 
   useEffect(() => {
-    const userData = localStorage.getItem('user')
+    const userData = localStorage.getItem("user");
 
-    if (!userData) return
+    if (!userData) return;
 
     try {
-      const user = JSON.parse(userData) as UsuarioLocal
-      const tipo = String(user?.tipo || '').toLowerCase()
+      const user = JSON.parse(userData) as UsuarioLocal;
+      const tipo = String(user?.tipo || "").toLowerCase();
 
-      if (user?.id && tipo === 'cliente') {
-        router.replace('/cliente/dashboard')
-        return
+      if (user?.id && tipo === "cliente") {
+        router.replace("/cliente/dashboard");
+        return;
       }
 
-      if (user?.id && tipo === 'guia') {
-        router.replace('/guia/dashboard')
-        return
+      if (user?.id && tipo === "guia") {
+        router.replace("/guia/dashboard");
+        return;
       }
 
-      if (user?.id && tipo === 'admin') {
-        router.replace('/admin/dashboard')
+      if (user?.id && tipo === "admin") {
+        router.replace("/admin/dashboard");
       }
     } catch {
-      localStorage.removeItem('user')
+      localStorage.removeItem("user");
     }
-  }, [router])
+  }, [router]);
 
   function texto(valor: unknown) {
-    return String(valor || '').trim()
+    return String(valor || "").trim();
   }
 
   function somenteNumeros(valor: unknown) {
-    return texto(valor).replace(/\D/g, '')
+    return texto(valor).replace(/\D/g, "");
   }
 
   function formatarTelefone(valor: string) {
-    const numeros = somenteNumeros(valor).slice(0, 11)
+    const numeros = somenteNumeros(valor).slice(0, 11);
 
-    if (numeros.length <= 2) return numeros
+    if (numeros.length <= 2) return numeros;
 
     if (numeros.length <= 6) {
-      return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`
+      return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
     }
 
     if (numeros.length <= 10) {
-      return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`
+      return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`;
     }
 
-    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`
+    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`;
   }
 
   function formatarCpf(valor: string) {
-    const numeros = somenteNumeros(valor).slice(0, 11)
+    const numeros = somenteNumeros(valor).slice(0, 11);
 
-    if (numeros.length <= 3) return numeros
+    if (numeros.length <= 3) return numeros;
 
     if (numeros.length <= 6) {
-      return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
+      return `${numeros.slice(0, 3)}.${numeros.slice(3)}`;
     }
 
     if (numeros.length <= 9) {
-      return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
+      return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`;
     }
 
-    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`;
+  }
+
+  function validarCpf(valor: string) {
+    const cpf = somenteNumeros(valor);
+
+    if (cpf.length !== 11) return false;
+    if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+    let soma = 0;
+
+    for (let i = 0; i < 9; i++) {
+      soma += Number(cpf.charAt(i)) * (10 - i);
+    }
+
+    let digito = (soma * 10) % 11;
+    if (digito === 10) digito = 0;
+    if (digito !== Number(cpf.charAt(9))) return false;
+
+    soma = 0;
+
+    for (let i = 0; i < 10; i++) {
+      soma += Number(cpf.charAt(i)) * (11 - i);
+    }
+
+    digito = (soma * 10) % 11;
+    if (digito === 10) digito = 0;
+
+    return digito === Number(cpf.charAt(10));
   }
 
   function atualizarCampo(campo: keyof FormCadastro, valor: string) {
-    setMensagem('')
-    setTipoMensagem('')
+    setMensagem("");
+    setTipoMensagem("");
 
-    if (campo === 'telefone') {
+    if (campo === "telefone") {
       setForm((prev) => ({
         ...prev,
         telefone: formatarTelefone(valor),
-      }))
-      return
+      }));
+      return;
     }
 
-    if (campo === 'cpf') {
+    if (campo === "cpf") {
       setForm((prev) => ({
         ...prev,
         cpf: formatarCpf(valor),
-      }))
-      return
+      }));
+      return;
     }
 
     setForm((prev) => ({
       ...prev,
       [campo]: valor,
-    }))
+    }));
   }
 
   function alterarTipo(tipo: TipoUsuario) {
-    setMensagem('')
-    setTipoMensagem('')
+    setMensagem("");
+    setTipoMensagem("");
 
     setForm((prev) => ({
       ...prev,
       tipo,
-    }))
+    }));
   }
 
   function validarEmail(email: string) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 
   function calcularIdade(dataNascimento: string) {
-    if (!dataNascimento) return 0
+    if (!dataNascimento) return 0;
 
-    const hoje = new Date()
-    const nascimento = new Date(dataNascimento)
+    const hoje = new Date();
+    const nascimento = new Date(dataNascimento);
 
-    if (Number.isNaN(nascimento.getTime())) return 0
+    if (Number.isNaN(nascimento.getTime())) return 0;
 
-    let idade = hoje.getFullYear() - nascimento.getFullYear()
-    const mes = hoje.getMonth() - nascimento.getMonth()
+    let idade = hoje.getFullYear() - nascimento.getFullYear();
+    const mes = hoje.getMonth() - nascimento.getMonth();
 
     if (mes < 0 || (mes === 0 && hoje.getDate() < nascimento.getDate())) {
-      idade--
+      idade--;
     }
 
-    return idade
+    return idade;
   }
 
   function isMaiorDeIdade(dataNascimento: string) {
-    return calcularIdade(dataNascimento) >= 18
+    return calcularIdade(dataNascimento) >= 18;
   }
 
   function validarFormulario() {
-    const nome = texto(form.nome)
-    const email = texto(form.email).toLowerCase()
-    const telefone = somenteNumeros(form.telefone)
-    const cpf = somenteNumeros(form.cpf)
+    const nome = texto(form.nome);
+    const email = texto(form.email).toLowerCase();
+    const telefone = somenteNumeros(form.telefone);
+    const cpf = somenteNumeros(form.cpf);
 
-    if (!nome) return 'Informe seu nome completo.'
+    if (!nome) return "Informe seu nome completo.";
 
-    if (nome.split(' ').filter(Boolean).length < 2) {
-      return 'Informe seu nome e sobrenome.'
+    if (nome.split(" ").filter(Boolean).length < 2) {
+      return "Informe seu nome e sobrenome.";
     }
 
     if (!email || !validarEmail(email)) {
-      return 'Informe um e-mail válido.'
+      return "Informe um e-mail válido.";
     }
 
     if (!telefone || telefone.length < 10) {
-      return 'Informe um celular válido.'
+      return "Informe um celular válido.";
     }
 
-    if (!cpf || cpf.length !== 11) {
-      return 'Informe um CPF válido.'
+    if (!cpf || cpf.length !== 11 || !validarCpf(cpf)) {
+      return "Informe um CPF válido. Ele será usado para gerar o PIX com segurança.";
     }
 
     if (!form.data_nascimento) {
-      return 'Informe sua data de nascimento.'
+      return "Informe sua data de nascimento.";
     }
 
     if (!isMaiorDeIdade(form.data_nascimento)) {
-      const idade = calcularIdade(form.data_nascimento)
-      return `Cadastro não permitido para menores de 18 anos. Idade informada: ${idade} anos.`
+      const idade = calcularIdade(form.data_nascimento);
+      return `Cadastro não permitido para menores de 18 anos. Idade informada: ${idade} anos.`;
     }
 
     if (!form.senha || form.senha.length < 6) {
-      return 'A senha deve ter pelo menos 6 caracteres.'
+      return "A senha deve ter pelo menos 6 caracteres.";
     }
 
     if (form.senha !== form.confirmar_senha) {
-      return 'As senhas não conferem.'
+      return "As senhas não conferem.";
     }
 
-    return ''
+    return "";
   }
 
   function rotaPorTipo(tipo?: string | null) {
-    const t = String(tipo || '').toLowerCase()
+    const t = String(tipo || "").toLowerCase();
 
-    if (t === 'guia') return '/guia/dashboard'
-    if (t === 'admin') return '/admin/dashboard'
+    if (t === "guia") return "/guia/dashboard";
+    if (t === "admin") return "/admin/dashboard";
 
-    return '/cliente/dashboard'
+    return "/cliente/dashboard";
   }
 
   async function cadastrar(event: FormEvent) {
-    event.preventDefault()
+    event.preventDefault();
 
-    if (carregando) return
+    if (carregando) return;
 
-    setMensagem('')
-    setTipoMensagem('')
+    setMensagem("");
+    setTipoMensagem("");
 
-    const erroValidacao = validarFormulario()
+    const erroValidacao = validarFormulario();
 
     if (erroValidacao) {
-      setMensagem(erroValidacao)
-      setTipoMensagem('erro')
-      return
+      setMensagem(erroValidacao);
+      setTipoMensagem("erro");
+      return;
     }
 
-    setCarregando(true)
+    setCarregando(true);
 
     try {
-      const response = await fetch('/api/cadastro', {
-        method: 'POST',
+      const cpfLimpo = somenteNumeros(form.cpf);
+      const telefoneLimpo = somenteNumeros(form.telefone);
+
+      const response = await fetch("/api/cadastro", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        cache: 'no-store',
+        cache: "no-store",
         body: JSON.stringify({
           nome: texto(form.nome),
           email: texto(form.email).toLowerCase(),
-          telefone: texto(form.telefone),
-          celular: texto(form.telefone),
-          cpf: somenteNumeros(form.cpf),
+          telefone: telefoneLimpo,
+          telefone_formatado: formatarTelefone(form.telefone),
+          celular: telefoneLimpo,
+          celular_formatado: formatarTelefone(form.telefone),
+          cpf: cpfLimpo,
+          cpf_cnpj: cpfLimpo,
+          documento: cpfLimpo,
           cpf_formatado: formatarCpf(form.cpf),
           data_nascimento: form.data_nascimento,
           nascimento: form.data_nascimento,
@@ -268,23 +307,23 @@ export default function CadastroPage() {
           confirmar_senha: form.confirmar_senha,
           tipo: form.tipo,
         }),
-      })
+      });
 
-      const respostaTexto = await response.text()
-      let data: any = null
+      const respostaTexto = await response.text();
+      let data: any = null;
 
       try {
-        data = respostaTexto ? JSON.parse(respostaTexto) : null
+        data = respostaTexto ? JSON.parse(respostaTexto) : null;
       } catch {
-        throw new Error('A rota de cadastro retornou uma resposta inválida.')
+        throw new Error("A rota de cadastro retornou uma resposta inválida.");
       }
 
       if (!response.ok || !data?.sucesso) {
         throw new Error(
           data?.erro ||
             data?.message ||
-            'Não foi possível realizar o cadastro.'
-        )
+            "Não foi possível realizar o cadastro.",
+        );
       }
 
       const usuario: UsuarioLocal = {
@@ -292,35 +331,41 @@ export default function CadastroPage() {
         nome: data.usuario?.nome || texto(form.nome),
         email: data.usuario?.email || texto(form.email).toLowerCase(),
         tipo: data.usuario?.tipo || form.tipo,
+        telefone:
+          data.usuario?.telefone || data.usuario?.celular || telefoneLimpo,
+        celular:
+          data.usuario?.celular || data.usuario?.telefone || telefoneLimpo,
+        cpf: data.usuario?.cpf || data.usuario?.documento || cpfLimpo,
+        data_nascimento: data.usuario?.data_nascimento || form.data_nascimento,
         avatar_url: data.usuario?.avatar_url || null,
         foto_url: data.usuario?.foto_url || null,
         imagem_url: data.usuario?.imagem_url || null,
-      }
+      };
 
       if (usuario.id) {
-        localStorage.setItem('user', JSON.stringify(usuario))
+        localStorage.setItem("user", JSON.stringify(usuario));
       }
 
       setMensagem(
-        form.tipo === 'guia'
-          ? 'Cadastro de guia realizado com sucesso. Vamos preparar sua área.'
-          : 'Cadastro realizado com sucesso. Vamos preparar sua área.'
-      )
-      setTipoMensagem('sucesso')
+        form.tipo === "guia"
+          ? "Cadastro de guia realizado com sucesso. Vamos preparar sua área."
+          : "Cadastro realizado com sucesso. Vamos preparar sua área.",
+      );
+      setTipoMensagem("sucesso");
 
       setTimeout(() => {
-        router.replace(data.redirectTo || rotaPorTipo(usuario.tipo))
-      }, 650)
+        router.replace(data.redirectTo || rotaPorTipo(usuario.tipo));
+      }, 650);
     } catch (error: any) {
-      console.error('Erro no cadastro:', error)
+      console.error("Erro no cadastro:", error);
 
       setMensagem(
         error?.message ||
-          'Erro ao realizar cadastro. Verifique os dados e tente novamente.'
-      )
-      setTipoMensagem('erro')
+          "Erro ao realizar cadastro. Verifique os dados e tente novamente.",
+      );
+      setTipoMensagem("erro");
     } finally {
-      setCarregando(false)
+      setCarregando(false);
     }
   }
 
@@ -514,6 +559,14 @@ export default function CadastroPage() {
           cursor: not-allowed;
         }
 
+        .miniHelp {
+          margin: -3px 0 0;
+          color: #7b8372;
+          font-size: 11px;
+          line-height: 1.35;
+          font-weight: 750;
+        }
+
         .message {
           padding: 13px 15px;
           border-radius: 18px;
@@ -697,7 +750,7 @@ export default function CadastroPage() {
                 loading="eager"
                 decoding="async"
                 onError={(event) => {
-                  event.currentTarget.style.display = 'none'
+                  event.currentTarget.style.display = "none";
                 }}
               />
             </div>
@@ -712,14 +765,15 @@ export default function CadastroPage() {
           </p>
 
           <p className="supportText">
-            Crie sua conta para reservar experiências ou cadastrar roteiros como guia.
+            Crie sua conta para reservar experiências ou cadastrar roteiros como
+            guia.
           </p>
 
           <div className="typeSelector" aria-label="Tipo de cadastro">
             <button
               type="button"
-              className={`typeButton ${form.tipo === 'cliente' ? 'active' : ''}`}
-              onClick={() => alterarTipo('cliente')}
+              className={`typeButton ${form.tipo === "cliente" ? "active" : ""}`}
+              onClick={() => alterarTipo("cliente")}
               disabled={carregando}
             >
               Sou aventureiro
@@ -727,8 +781,8 @@ export default function CadastroPage() {
 
             <button
               type="button"
-              className={`typeButton ${form.tipo === 'guia' ? 'active' : ''}`}
-              onClick={() => alterarTipo('guia')}
+              className={`typeButton ${form.tipo === "guia" ? "active" : ""}`}
+              onClick={() => alterarTipo("guia")}
               disabled={carregando}
             >
               Sou guia
@@ -741,7 +795,9 @@ export default function CadastroPage() {
                 <label>Nome completo *</label>
                 <input
                   value={form.nome}
-                  onChange={(event) => atualizarCampo('nome', event.target.value)}
+                  onChange={(event) =>
+                    atualizarCampo("nome", event.target.value)
+                  }
                   placeholder="Seu nome completo"
                   type="text"
                   autoComplete="name"
@@ -753,7 +809,9 @@ export default function CadastroPage() {
                 <label>E-mail *</label>
                 <input
                   value={form.email}
-                  onChange={(event) => atualizarCampo('email', event.target.value)}
+                  onChange={(event) =>
+                    atualizarCampo("email", event.target.value)
+                  }
                   placeholder="seuemail@email.com"
                   type="email"
                   autoComplete="email"
@@ -766,7 +824,9 @@ export default function CadastroPage() {
                 <label>Celular *</label>
                 <input
                   value={form.telefone}
-                  onChange={(event) => atualizarCampo('telefone', event.target.value)}
+                  onChange={(event) =>
+                    atualizarCampo("telefone", event.target.value)
+                  }
                   placeholder="(11) 99999-9999"
                   type="tel"
                   autoComplete="tel"
@@ -779,20 +839,27 @@ export default function CadastroPage() {
                 <label>CPF *</label>
                 <input
                   value={form.cpf}
-                  onChange={(event) => atualizarCampo('cpf', event.target.value)}
+                  onChange={(event) =>
+                    atualizarCampo("cpf", event.target.value)
+                  }
                   placeholder="000.000.000-00"
                   type="text"
                   autoComplete="off"
                   inputMode="numeric"
                   disabled={carregando}
                 />
+                <p className="miniHelp">
+                  Necessário para gerar PIX e confirmar reservas com a PagHiper.
+                </p>
               </div>
 
               <div className="formGroup full">
                 <label>Data de nascimento *</label>
                 <input
                   value={form.data_nascimento}
-                  onChange={(event) => atualizarCampo('data_nascimento', event.target.value)}
+                  onChange={(event) =>
+                    atualizarCampo("data_nascimento", event.target.value)
+                  }
                   type="date"
                   autoComplete="bday"
                   disabled={carregando}
@@ -803,7 +870,9 @@ export default function CadastroPage() {
                 <label>Senha *</label>
                 <input
                   value={form.senha}
-                  onChange={(event) => atualizarCampo('senha', event.target.value)}
+                  onChange={(event) =>
+                    atualizarCampo("senha", event.target.value)
+                  }
                   placeholder="Mínimo 6 caracteres"
                   type="password"
                   autoComplete="new-password"
@@ -815,7 +884,9 @@ export default function CadastroPage() {
                 <label>Confirmar senha *</label>
                 <input
                   value={form.confirmar_senha}
-                  onChange={(event) => atualizarCampo('confirmar_senha', event.target.value)}
+                  onChange={(event) =>
+                    atualizarCampo("confirmar_senha", event.target.value)
+                  }
                   placeholder="Repita sua senha"
                   type="password"
                   autoComplete="new-password"
@@ -825,7 +896,7 @@ export default function CadastroPage() {
             </div>
 
             {mensagem && (
-              <div className={`message ${tipoMensagem || 'erro'}`}>
+              <div className={`message ${tipoMensagem || "erro"}`}>
                 {mensagem}
               </div>
             )}
@@ -836,10 +907,10 @@ export default function CadastroPage() {
               disabled={carregando}
             >
               {carregando
-                ? 'Criando sua conta...'
-                : form.tipo === 'guia'
-                  ? 'Criar conta de guia'
-                  : 'Criar minha conta'}
+                ? "Criando sua conta..."
+                : form.tipo === "guia"
+                  ? "Criar conta de guia"
+                  : "Criar minha conta"}
             </button>
           </form>
 
@@ -847,7 +918,7 @@ export default function CadastroPage() {
             <button
               type="button"
               className="textButton"
-              onClick={() => router.push('/login')}
+              onClick={() => router.push("/login")}
               disabled={carregando}
             >
               Já tenho conta. Entrar
@@ -855,10 +926,12 @@ export default function CadastroPage() {
           </div>
 
           <p className="hint">
-            O cadastro é permitido apenas para maiores de 18 anos.
+            O cadastro é permitido apenas para maiores de 18 anos. CPF e celular
+            são usados para pagamento, confirmação de reserva e segurança da
+            conta.
           </p>
         </section>
       </div>
     </main>
-  )
+  );
 }

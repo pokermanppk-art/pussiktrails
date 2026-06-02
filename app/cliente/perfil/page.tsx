@@ -15,6 +15,15 @@ type UsuarioLocal = {
   foto_url?: string | null
   imagem_url?: string | null
   bio?: string | null
+  cpf?: string | null
+  cpf_cnpj?: string | null
+  documento?: string | null
+  cpf_formatado?: string | null
+  telefone?: string | null
+  telefone_formatado?: string | null
+  celular?: string | null
+  celular_formatado?: string | null
+  whatsapp?: string | null
 }
 
 type ReservaEstatistica = {
@@ -274,6 +283,63 @@ function numeroSeguro(valor: unknown, fallback = 0) {
   return Number.isFinite(numero) ? numero : fallback
 }
 
+function somenteNumeros(valor?: string | null) {
+  return String(valor || '').replace(/\D/g, '')
+}
+
+function validarCpf(valor?: string | null) {
+  const cpf = somenteNumeros(valor)
+
+  if (cpf.length !== 11) return false
+  if (/^(\d)\1+$/.test(cpf)) return false
+
+  let soma = 0
+
+  for (let i = 0; i < 9; i++) {
+    soma += Number(cpf.charAt(i)) * (10 - i)
+  }
+
+  let digito = 11 - (soma % 11)
+  if (digito >= 10) digito = 0
+  if (digito !== Number(cpf.charAt(9))) return false
+
+  soma = 0
+
+  for (let i = 0; i < 10; i++) {
+    soma += Number(cpf.charAt(i)) * (11 - i)
+  }
+
+  digito = 11 - (soma % 11)
+  if (digito >= 10) digito = 0
+
+  return digito === Number(cpf.charAt(10))
+}
+
+function formatarCpf(valor?: string | null) {
+  const cpf = somenteNumeros(valor).slice(0, 11)
+
+  if (cpf.length <= 3) return cpf
+  if (cpf.length <= 6) return `${cpf.slice(0, 3)}.${cpf.slice(3)}`
+  if (cpf.length <= 9) return `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6)}`
+
+  return `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9, 11)}`
+}
+
+function formatarTelefone(valor?: string | null) {
+  const telefone = somenteNumeros(valor).slice(0, 11)
+
+  if (telefone.length <= 2) return telefone
+  if (telefone.length <= 6) return `(${telefone.slice(0, 2)}) ${telefone.slice(2)}`
+  if (telefone.length <= 10) return `(${telefone.slice(0, 2)}) ${telefone.slice(2, 6)}-${telefone.slice(6)}`
+
+  return `(${telefone.slice(0, 2)}) ${telefone.slice(2, 7)}-${telefone.slice(7)}`
+}
+
+function telefoneValido(valor?: string | null) {
+  const telefone = somenteNumeros(valor)
+  return telefone.length === 10 || telefone.length === 11
+}
+
 function formatarKm(km: number) {
   if (km >= 1000) return km.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
   return km.toFixed(km % 1 === 0 ? 0 : 1)
@@ -368,6 +434,10 @@ export default function PerfilCliente() {
   const [editandoNome, setEditandoNome] = useState(false)
   const [editandoBio, setEditandoBio] = useState(false)
   const [salvandoBio, setSalvandoBio] = useState(false)
+  const [cpf, setCpf] = useState('')
+  const [telefone, setTelefone] = useState('')
+  const [editandoDadosPagamento, setEditandoDadosPagamento] = useState(false)
+  const [salvandoDadosPagamento, setSalvandoDadosPagamento] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
@@ -429,6 +499,8 @@ export default function PerfilCliente() {
 
     setUser(parsedUser)
     setNome(parsedUser.nome || '')
+    setCpf(formatarCpf(parsedUser.cpf || parsedUser.cpf_cnpj || parsedUser.documento || parsedUser.cpf_formatado || ''))
+    setTelefone(formatarTelefone(parsedUser.telefone || parsedUser.celular || parsedUser.whatsapp || parsedUser.telefone_formatado || parsedUser.celular_formatado || ''))
     setAvatarPreview(parsedUser.avatar_url || parsedUser.foto_url || parsedUser.imagem_url || null)
 
     void carregarDados(parsedUser.id)
@@ -455,7 +527,7 @@ export default function PerfilCliente() {
   async function carregarPerfilBasico(userId: string) {
     const { data, error } = await supabase
       .from('users')
-      .select('nome, bio, avatar_url, foto_url, imagem_url')
+      .select('nome, bio, avatar_url, foto_url, imagem_url, cpf, cpf_cnpj, documento, cpf_formatado, telefone, telefone_formatado, celular, celular_formatado, whatsapp')
       .eq('id', userId)
       .maybeSingle()
 
@@ -472,13 +544,39 @@ export default function PerfilCliente() {
       data.imagem_url ||
       ''
 
+    const cpfCarregado =
+      data.cpf ||
+      data.cpf_cnpj ||
+      data.documento ||
+      data.cpf_formatado ||
+      ''
+
+    const telefoneCarregado =
+      data.telefone ||
+      data.celular ||
+      data.whatsapp ||
+      data.telefone_formatado ||
+      data.celular_formatado ||
+      ''
+
     if (data.nome) setNome(data.nome)
     if (data.bio) setBio(data.bio)
+    if (cpfCarregado) setCpf(formatarCpf(cpfCarregado))
+    if (telefoneCarregado) setTelefone(formatarTelefone(telefoneCarregado))
     if (avatar) setAvatarPreview(avatar)
 
     atualizarLocalStorage({
       nome: data.nome || undefined,
       bio: data.bio || undefined,
+      cpf: somenteNumeros(cpfCarregado) || undefined,
+      cpf_cnpj: somenteNumeros(cpfCarregado) || undefined,
+      documento: somenteNumeros(cpfCarregado) || undefined,
+      cpf_formatado: cpfCarregado ? formatarCpf(cpfCarregado) : undefined,
+      telefone: somenteNumeros(telefoneCarregado) || undefined,
+      celular: somenteNumeros(telefoneCarregado) || undefined,
+      whatsapp: somenteNumeros(telefoneCarregado) || undefined,
+      telefone_formatado: telefoneCarregado ? formatarTelefone(telefoneCarregado) : undefined,
+      celular_formatado: telefoneCarregado ? formatarTelefone(telefoneCarregado) : undefined,
       avatar_url: avatar || undefined,
       foto_url: avatar || undefined,
       imagem_url: avatar || undefined,
@@ -785,6 +883,96 @@ export default function PerfilCliente() {
       setMensagem('❌ Erro ao salvar biografia')
     } finally {
       setSalvandoBio(false)
+      setTimeout(() => setMensagem(''), 3000)
+    }
+  }
+
+
+  async function salvarDadosPagamento() {
+    if (!user?.id) return
+
+    const cpfLimpo = somenteNumeros(cpf)
+    const telefoneLimpo = somenteNumeros(telefone)
+
+    if (!validarCpf(cpfLimpo)) {
+      setErro('Informe um CPF válido para gerar PIX e confirmar reservas.')
+      setMensagem('❌ CPF inválido.')
+      return
+    }
+
+    if (!telefoneValido(telefoneLimpo)) {
+      setErro('Informe um telefone com DDD para contato e segurança da reserva.')
+      setMensagem('❌ Telefone inválido.')
+      return
+    }
+
+    setErro('')
+    setMensagem('')
+    setSalvandoDadosPagamento(true)
+
+    try {
+      const response = await fetch('/api/usuario/dados-pagamento', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          usuarioId: user.id,
+          usuario_id: user.id,
+          tipoUsuario: 'cliente',
+          tipo: 'cliente',
+          cpf: cpfLimpo,
+          cpf_cnpj: cpfLimpo,
+          documento: cpfLimpo,
+          telefone: telefoneLimpo,
+          celular: telefoneLimpo,
+          whatsapp: telefoneLimpo
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        throw new Error(
+          data?.erro ||
+            data?.error ||
+            data?.message ||
+            `Erro HTTP ${response.status} ao salvar dados de pagamento.`
+        )
+      }
+
+      const cpfSalvo = String(data?.cpf || data?.usuario?.cpf || cpfLimpo)
+      const telefoneSalvo = String(data?.telefone || data?.usuario?.telefone || telefoneLimpo)
+      const usuarioAtualizado = data?.usuario || data?.user || data?.data || {}
+
+      setCpf(formatarCpf(cpfSalvo))
+      setTelefone(formatarTelefone(telefoneSalvo))
+
+      atualizarLocalStorage({
+        ...usuarioAtualizado,
+        id: user.id,
+        tipo: 'cliente',
+        cpf: somenteNumeros(cpfSalvo),
+        cpf_cnpj: somenteNumeros(cpfSalvo),
+        documento: somenteNumeros(cpfSalvo),
+        cpf_formatado: formatarCpf(cpfSalvo),
+        telefone: somenteNumeros(telefoneSalvo),
+        celular: somenteNumeros(telefoneSalvo),
+        whatsapp: somenteNumeros(telefoneSalvo),
+        telefone_formatado: formatarTelefone(telefoneSalvo),
+        celular_formatado: formatarTelefone(telefoneSalvo)
+      })
+
+      setMensagem('✅ Dados para pagamento atualizados!')
+      setEditandoDadosPagamento(false)
+    } catch (error) {
+      console.error('Erro ao salvar dados de pagamento:', error)
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar CPF e telefone.'
+      setErro(message)
+      setMensagem('❌ Erro ao salvar dados de pagamento.')
+    } finally {
+      setSalvandoDadosPagamento(false)
       setTimeout(() => setMensagem(''), 3000)
     }
   }
@@ -1295,6 +1483,83 @@ export default function PerfilCliente() {
                   <p className="bioText">
                     {bio || 'Clique em editar para adicionar uma biografia simples ao seu Passaporte PrussikTrails.'}
                   </p>
+                )}
+              </div>
+            </section>
+
+            <section className="card paymentCard">
+              <div className="cardHeader">
+                <div>
+                  <h2>Dados para pagamento</h2>
+                  <span>Necessários para gerar PIX e confirmar reservas com segurança.</span>
+                </div>
+                {!editandoDadosPagamento && (
+                  <button type="button" onClick={() => setEditandoDadosPagamento(true)}>Editar</button>
+                )}
+              </div>
+
+              <div className="cardBody">
+                {editandoDadosPagamento ? (
+                  <>
+                    <div className="paymentGrid">
+                      <label className="paymentField">
+                        <span>CPF do cliente</span>
+                        <input
+                          value={cpf}
+                          onChange={(event) => setCpf(formatarCpf(event.target.value))}
+                          inputMode="numeric"
+                          autoComplete="off"
+                          placeholder="000.000.000-00"
+                        />
+                      </label>
+
+                      <label className="paymentField">
+                        <span>Telefone com DDD</span>
+                        <input
+                          value={telefone}
+                          onChange={(event) => setTelefone(formatarTelefone(event.target.value))}
+                          inputMode="tel"
+                          autoComplete="tel"
+                          placeholder="(11) 99999-9999"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="secureNotice">
+                      O CPF é usado para emissão do PIX pela PagHiper. Evite usar dados fictícios, pois isso pode impedir a confirmação correta do pagamento.
+                    </div>
+
+                    <div className="actionRow">
+                      <button type="button" className="primary" onClick={salvarDadosPagamento} disabled={salvandoDadosPagamento}>
+                        {salvandoDadosPagamento ? 'Salvando...' : 'Salvar dados'}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setEditandoDadosPagamento(false)
+                          carregarPerfilBasico(user.id)
+                        }}
+                        disabled={salvandoDadosPagamento}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="paymentSummary">
+                    <div>
+                      <span>CPF</span>
+                      <strong>{cpf ? formatarCpf(cpf) : 'Pendente'}</strong>
+                    </div>
+                    <div>
+                      <span>Telefone</span>
+                      <strong>{telefone ? formatarTelefone(telefone) : 'Pendente'}</strong>
+                    </div>
+                    {(!validarCpf(cpf) || !telefoneValido(telefone)) && (
+                      <p>Complete seus dados para evitar falha na geração do PIX.</p>
+                    )}
+                  </div>
                 )}
               </div>
             </section>
@@ -2285,6 +2550,101 @@ const styles = `
     font-weight: 650;
   }
 
+  .paymentCard {
+    background:
+      radial-gradient(circle at top right, rgba(132,204,22,0.07), transparent 34%),
+      rgba(255,255,255,0.92);
+  }
+
+  .paymentGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .paymentField {
+    display: grid;
+    gap: 7px;
+  }
+
+  .paymentField span {
+    color: #203c2e;
+    font-size: 12px;
+    font-weight: 950;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .paymentField input {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: #fffdf7;
+    border-radius: 18px;
+    padding: 13px 14px;
+    font-size: 14px;
+    color: #172018;
+    outline: none;
+    font-weight: 750;
+  }
+
+  .paymentField input:focus {
+    border-color: #84cc16;
+    box-shadow: 0 0 0 4px rgba(132,204,22,0.12);
+  }
+
+  .secureNotice {
+    margin-top: 12px;
+    border-radius: 18px;
+    background: rgba(32,60,46,0.06);
+    border: 1px solid rgba(32,60,46,0.10);
+    color: #203c2e;
+    padding: 11px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 800;
+  }
+
+  .paymentSummary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .paymentSummary div {
+    border-radius: 18px;
+    background: rgba(32,60,46,0.055);
+    padding: 12px;
+  }
+
+  .paymentSummary span {
+    display: block;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+
+  .paymentSummary strong {
+    display: block;
+    color: #172018;
+    font-size: 14px;
+    font-weight: 950;
+  }
+
+  .paymentSummary p {
+    grid-column: 1 / -1;
+    margin: 0;
+    border-radius: 16px;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 850;
+  }
+
   .unifiedMedalGrid {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2883,6 +3243,11 @@ const styles = `
 
     .cardBody {
       padding: 12px;
+    }
+
+    .paymentGrid,
+    .paymentSummary {
+      grid-template-columns: 1fr;
     }
 
     .tierGrid,
