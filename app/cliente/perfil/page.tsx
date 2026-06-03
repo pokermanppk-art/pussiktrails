@@ -26,6 +26,18 @@ type UsuarioLocal = {
   whatsapp?: string | null
 }
 
+
+type ResultadoComunidade = {
+  id: string
+  nome: string
+  tipo: 'cliente' | 'guia'
+  avatar_url?: string | null
+  bio?: string | null
+  cadastur?: string | null
+  nivel?: string | null
+  rota: string
+}
+
 type ReservaEstatistica = {
   id?: string
   status?: string | null
@@ -468,6 +480,10 @@ export default function PerfilCliente() {
 
   const [medalhasBanco, setMedalhasBanco] = useState<MedalhaBanco[]>([])
   const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
+  const [buscaComunidade, setBuscaComunidade] = useState('')
+  const [resultadosComunidade, setResultadosComunidade] = useState<ResultadoComunidade[]>([])
+  const [buscandoComunidade, setBuscandoComunidade] = useState(false)
+  const [erroBuscaComunidade, setErroBuscaComunidade] = useState('')
 
   const nivelAtual = useMemo(() => obterNivelAtual(totalKm), [totalKm])
   const proximoNivel = useMemo(() => obterProximoNivel(totalKm), [totalKm])
@@ -481,6 +497,29 @@ export default function PerfilCliente() {
     router.prefetch('/cliente/minhas-reservas')
     router.prefetch('/roteiros')
   }, [router])
+
+  useEffect(() => {
+    if (!user?.id) return
+
+    const termo = buscaComunidade.trim()
+
+    if (termo.length < 2) {
+      setResultadosComunidade([])
+      setErroBuscaComunidade('')
+      setBuscandoComunidade(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      void buscarComunidade(termo, controller.signal)
+    }, 320)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [buscaComunidade, user?.id])
 
   useEffect(() => {
     const userData = localStorage.getItem('user')
@@ -1153,6 +1192,59 @@ export default function PerfilCliente() {
     setFotoAtual((prev) => (prev - 1 + fotos.length) % fotos.length)
   }
 
+  async function buscarComunidade(termo: string, signal?: AbortSignal) {
+    try {
+      setBuscandoComunidade(true)
+      setErroBuscaComunidade('')
+
+      const params = new URLSearchParams({
+        q: termo,
+        excludeId: user?.id || ''
+      })
+
+      const response = await fetch(`/api/comunidade/buscar?${params.toString()}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache'
+        },
+        signal
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false || data?.success === false) {
+        throw new Error(data?.erro || data?.error || data?.message || 'Não foi possível buscar a comunidade agora.')
+      }
+
+      const lista = Array.isArray(data?.resultados)
+        ? data.resultados
+        : Array.isArray(data?.data)
+          ? data.data
+          : []
+
+      setResultadosComunidade(lista as ResultadoComunidade[])
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+
+      console.warn('Erro ao buscar comunidade:', error)
+      setResultadosComunidade([])
+      setErroBuscaComunidade(error instanceof Error ? error.message : 'Erro ao buscar pessoas.')
+    } finally {
+      setBuscandoComunidade(false)
+    }
+  }
+
+  function abrirPerfilComunidade(item: ResultadoComunidade) {
+    if (item.rota) {
+      router.push(item.rota)
+      return
+    }
+
+    router.push(item.tipo === 'guia' ? `/guia/publico/${item.id}` : `/cliente/publico/${item.id}`)
+  }
+
   function handleLogout() {
     localStorage.removeItem('user')
     router.push('/login')
@@ -1483,6 +1575,92 @@ export default function PerfilCliente() {
                   <p className="bioText">
                     {bio || 'Clique em editar para adicionar uma biografia simples ao seu Passaporte PrussikTrails.'}
                   </p>
+                )}
+              </div>
+            </section>
+
+            <section className="card communitySearchCard">
+              <div className="cardHeader">
+                <div>
+                  <h2>Encontrar pessoas</h2>
+                  <span>Busque guias ou aventureiros pelo nome.</span>
+                </div>
+              </div>
+
+              <div className="cardBody">
+                <div className="communitySearchBox">
+                  <input
+                    value={buscaComunidade}
+                    onChange={(event) => setBuscaComunidade(event.target.value)}
+                    placeholder="Digite o nome de um guia ou amigo..."
+                    autoComplete="off"
+                  />
+
+                  {buscaComunidade && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBuscaComunidade('')
+                        setResultadosComunidade([])
+                        setErroBuscaComunidade('')
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+
+                {buscaComunidade.trim().length < 2 && (
+                  <div className="communityHint">
+                    Digite pelo menos 2 letras para encontrar pessoas da comunidade.
+                  </div>
+                )}
+
+                {buscandoComunidade && (
+                  <div className="communityHint">Buscando na comunidade...</div>
+                )}
+
+                {erroBuscaComunidade && (
+                  <div className="communityError">{erroBuscaComunidade}</div>
+                )}
+
+                {!buscandoComunidade && buscaComunidade.trim().length >= 2 && resultadosComunidade.length === 0 && !erroBuscaComunidade && (
+                  <div className="communityHint">Nenhum guia ou aventureiro encontrado com esse nome.</div>
+                )}
+
+                {resultadosComunidade.length > 0 && (
+                  <div className="communityResults">
+                    {resultadosComunidade.map((item) => {
+                      const avatar = item.avatar_url || ''
+                      const inicial = (item.nome || 'P').charAt(0).toUpperCase()
+                      const tipoLabel = item.tipo === 'guia' ? 'Guia' : 'Aventureiro'
+
+                      return (
+                        <button
+                          key={`${item.tipo}-${item.id}`}
+                          type="button"
+                          className="communityResultItem"
+                          onClick={() => abrirPerfilComunidade(item)}
+                        >
+                          <span className="communityAvatar">
+                            {avatar ? <img src={avatar} alt={item.nome} /> : <strong>{inicial}</strong>}
+                          </span>
+
+                          <span className="communityInfo">
+                            <span className="communityName">{item.nome}</span>
+                            <span className="communityMeta">
+                              {tipoLabel}
+                              {item.tipo === 'guia' && item.cadastur ? ` · CADASTUR ${item.cadastur}` : ''}
+                              {item.tipo === 'cliente' && item.nivel ? ` · ${item.nivel}` : ''}
+                            </span>
+                            {item.bio && <span className="communityBio">{item.bio}</span>}
+                          </span>
+
+                          <span className="communityOpen">Ver</span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
             </section>
@@ -2550,6 +2728,159 @@ const styles = `
     font-weight: 650;
   }
 
+  .communitySearchCard {
+    background:
+      radial-gradient(circle at top right, rgba(132,204,22,0.08), transparent 34%),
+      rgba(255,255,255,0.92);
+  }
+
+  .communitySearchBox {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .communitySearchBox input {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: #fffdf7;
+    border-radius: 18px;
+    padding: 13px 14px;
+    font-size: 14px;
+    color: #172018;
+    outline: none;
+    font-weight: 750;
+  }
+
+  .communitySearchBox input:focus {
+    border-color: #84cc16;
+    box-shadow: 0 0 0 4px rgba(132,204,22,0.12);
+  }
+
+  .communitySearchBox button {
+    border: 0;
+    border-radius: 999px;
+    background: #eef2e5;
+    color: #334155;
+    padding: 11px 13px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 950;
+  }
+
+  .communityHint,
+  .communityError {
+    margin-top: 12px;
+    border-radius: 18px;
+    padding: 11px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 850;
+  }
+
+  .communityHint {
+    background: rgba(32,60,46,0.06);
+    border: 1px solid rgba(32,60,46,0.10);
+    color: #475569;
+  }
+
+  .communityError {
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+
+  .communityResults {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .communityResultItem {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,0.07);
+    background: #fffdf7;
+    border-radius: 22px;
+    padding: 11px;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 11px;
+    align-items: center;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+
+  .communityResultItem:hover {
+    transform: translateY(-1px);
+    border-color: rgba(132,204,22,0.28);
+    box-shadow: 0 12px 28px rgba(15,23,42,0.08);
+  }
+
+  .communityAvatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #e7f4d2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #203c2e;
+    font-size: 16px;
+    font-weight: 950;
+  }
+
+  .communityAvatar img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+
+  .communityInfo {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+  }
+
+  .communityName {
+    color: #172018;
+    font-size: 14px;
+    font-weight: 950;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .communityMeta {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
+    font-weight: 850;
+  }
+
+  .communityBio {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
+    font-weight: 700;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .communityOpen {
+    border-radius: 999px;
+    background: #dcfce7;
+    color: #166534;
+    padding: 7px 9px;
+    font-size: 11px;
+    font-weight: 950;
+  }
+
   .paymentCard {
     background:
       radial-gradient(circle at top right, rgba(132,204,22,0.07), transparent 34%),
@@ -3245,9 +3576,15 @@ const styles = `
       padding: 12px;
     }
 
+    .communitySearchBox,
+    .communityResultItem,
     .paymentGrid,
     .paymentSummary {
       grid-template-columns: 1fr;
+    }
+
+    .communityOpen {
+      width: fit-content;
     }
 
     .tierGrid,
