@@ -1292,8 +1292,8 @@ export default function PerfilPublicoCliente() {
           height: min(96px, 86%);
           display: grid;
           place-items: center;
-          background: rgba(248, 235, 213, 0.68);
-          overflow: hidden;
+          background: transparent;
+          overflow: visible;
         }
 
         .medalTileSvg {
@@ -1307,30 +1307,42 @@ export default function PerfilPublicoCliente() {
         }
 
         .medalTile.beta .medalTileSvg {
-          max-width: 74%;
-          max-height: 74%;
-          transform: translateY(-5%);
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-13%);
           transform-origin: center center;
         }
 
+        /* Ajustes independentes das medalhas especiais/Beta.
+           Mantém cada SVG totalmente dentro do wrapper para não cortar a arte. */
         .medalTile.medalKey-inicio-da-jornada-beta .medalTileSvg {
           max-width: 78%;
           max-height: 78%;
-          transform: translateY(-7%);
+          transform: translateY(-16%);
         }
 
         .medalTile.medalKey-aventureiro-pioneiro-beta .medalTileSvg {
-          max-width: 76%;
-          max-height: 76%;
-          transform: translateY(-6%);
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-14%);
         }
 
-        .medalTile.medalKey-voz-da-trilha-beta .medalTileSvg,
-        .medalTile.medalKey-guia-pioneiro-beta .medalTileSvg,
+        .medalTile.medalKey-voz-da-trilha-beta .medalTileSvg {
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-14%);
+        }
+
+        .medalTile.medalKey-guia-pioneiro-beta .medalTileSvg {
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-14%);
+        }
+
         .medalTile.medalKey-construtor-da-jornada-beta .medalTileSvg {
-          max-width: 76%;
-          max-height: 76%;
-          transform: translateY(-6%);
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-14%);
         }
 
         .medalTile.locked .medalTileSvg {
@@ -1387,8 +1399,8 @@ export default function PerfilPublicoCliente() {
           margin: 2px auto 12px;
           display: grid;
           place-items: center;
-          background: rgba(248, 235, 213, 0.70);
-          overflow: hidden;
+          background: transparent;
+          overflow: visible;
         }
 
         .medalDetailArt img {
@@ -1402,25 +1414,40 @@ export default function PerfilPublicoCliente() {
         }
 
         .medalDetailArt.beta img {
-          max-width: 74%;
-          max-height: 74%;
-          transform: translateY(-5%);
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-13%);
           transform-origin: center center;
         }
 
         .medalDetailArt.medalKey-inicio-da-jornada-beta img {
           max-width: 78%;
           max-height: 78%;
-          transform: translateY(-7%);
+          transform: translateY(-16%);
         }
 
-        .medalDetailArt.medalKey-aventureiro-pioneiro-beta img,
-        .medalDetailArt.medalKey-voz-da-trilha-beta img,
-        .medalDetailArt.medalKey-guia-pioneiro-beta img,
+        .medalDetailArt.medalKey-aventureiro-pioneiro-beta img {
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-14%);
+        }
+
+        .medalDetailArt.medalKey-voz-da-trilha-beta img {
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-14%);
+        }
+
+        .medalDetailArt.medalKey-guia-pioneiro-beta img {
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-14%);
+        }
+
         .medalDetailArt.medalKey-construtor-da-jornada-beta img {
-          max-width: 76%;
-          max-height: 76%;
-          transform: translateY(-6%);
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-14%);
         }
 
         .medalDetailArt span {
