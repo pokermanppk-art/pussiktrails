@@ -812,40 +812,6 @@ export default function ClienteDashboardPage() {
             >
               {avatar ? <img src={avatar} alt={nome} /> : <span>{nome.charAt(0).toUpperCase()}</span>}
             </button>
-
-            <div className="settingsWrap">
-              <button
-                type="button"
-                className="gearButton"
-                onClick={() => setMenuAberto((aberto) => !aberto)}
-                aria-label="Abrir configurações"
-              >
-                ⚙
-              </button>
-
-              {menuAberto && (
-                <div className="settingsMenu">
-                  <button type="button" onClick={() => router.push('/cliente/perfil')}>
-                    🎒 Meu Passaporte
-                  </button>
-                  <button type="button" onClick={() => router.push('/cliente/minhas-reservas')}>
-                    🎟️ Minhas reservas
-                  </button>
-                  <button type="button" onClick={() => abrirSuporte('suporte')}>
-                    🛟 Ajuda e suporte
-                  </button>
-                  <button type="button" onClick={() => abrirSuporte('bug')}>
-                    🐞 Reportar bug
-                  </button>
-                  <button type="button" onClick={abrirAlterarSenha}>
-                    🔐 Alterar senha
-                  </button>
-                  <button type="button" className="dangerItem" onClick={sair}>
-                    🚪 Sair
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </header>

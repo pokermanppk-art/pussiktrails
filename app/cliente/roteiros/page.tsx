@@ -308,12 +308,13 @@ export default function ClienteRoteirosPage() {
         }
 
         .roteiros-header {
-          background: #ffffff;
-          border-bottom: 1px solid #e5e7eb;
-          padding: 14px 18px;
           position: sticky;
           top: 0;
           z-index: 30;
+          background: rgba(255, 253, 247, 0.92);
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+          backdrop-filter: blur(18px);
+          padding: 10px 16px;
         }
 
         .roteiros-header-inner {
@@ -322,7 +323,76 @@ export default function ClienteRoteirosPage() {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 12px;
+          gap: 14px;
+        }
+
+        .brandStandard {
+          border: 0;
+          background: transparent;
+          padding: 0;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .brandMark {
+          width: 44px;
+          height: 44px;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.82);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          flex: 0 0 auto;
+        }
+
+        .brandMark img {
+          width: 36px;
+          height: 36px;
+          object-fit: contain;
+          display: block;
+        }
+
+        .brandCopy {
+          min-width: 0;
+          display: grid;
+          gap: 2px;
+        }
+
+        .brandCopy strong {
+          display: block;
+          color: #172018;
+          font-size: 18px;
+          line-height: 1;
+          font-weight: 950;
+          letter-spacing: -0.045em;
+          white-space: nowrap;
+        }
+
+        .brandCopy span {
+          display: block;
+          color: #7b8375;
+          font-size: 10px;
+          font-weight: 850;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .headerActions {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 8px;
+          flex: 0 0 auto;
         }
 
         .roteiros-main {
@@ -478,8 +548,41 @@ export default function ClienteRoteirosPage() {
         }
 
         @media (max-width: 640px) {
+          .roteiros-header {
+            padding: 8px 10px;
+          }
+
           .roteiros-header-inner {
-            align-items: flex-start;
+            align-items: center;
+            gap: 8px;
+          }
+
+          .brandStandard {
+            gap: 8px;
+            min-width: 0;
+            max-width: calc(100vw - 122px);
+          }
+
+          .brandMark {
+            width: 38px;
+            height: 38px;
+            border-radius: 14px;
+            box-shadow: none;
+          }
+
+          .brandMark img {
+            width: 31px;
+            height: 31px;
+          }
+
+          .brandCopy strong {
+            font-size: 16px;
+          }
+
+          .brandCopy span {
+            font-size: 8px;
+            letter-spacing: 0.11em;
+            max-width: calc(100vw - 170px);
           }
 
           .filters-card {
@@ -499,22 +602,31 @@ export default function ClienteRoteirosPage() {
       <div className="roteiros-page">
         <header className="roteiros-header">
           <div className="roteiros-header-inner">
-            <div>
-              <h1 style={{ margin: 0, color: '#dc2626', fontSize: '21px' }}>
-                PrussikTrails
-              </h1>
-
-              <p style={{ margin: '3px 0 0', color: '#6b7280', fontSize: '12px' }}>
-                Roteiros disponíveis
-              </p>
-            </div>
-
             <button
-              className="btn btn-light"
-              onClick={() => router.push('/cliente/dashboard')}
+              type="button"
+              className="brandStandard"
+              onClick={() => router.push('/')}
+              aria-label="Ir para a página inicial do PrussikTrails"
             >
-              ← Voltar
+              <span className="brandMark" aria-hidden="true">
+                <img src="/logo-prussik-display.png" alt="" />
+              </span>
+
+              <span className="brandCopy">
+                <strong>PrussikTrails</strong>
+                <span>Roteiros disponíveis</span>
+              </span>
             </button>
+
+            <div className="headerActions">
+              <button
+                type="button"
+                className="btn btn-light"
+                onClick={() => router.push('/cliente/dashboard')}
+              >
+                Voltar
+              </button>
+            </div>
           </div>
         </header>
 
