@@ -509,6 +509,13 @@ export default function PerfilPublicoCliente() {
     return Math.min(Math.round((atual / intervalo) * 100), 100)
   }, [proximaMedalha, totalKm])
 
+  const destinoLogo = useMemo(() => {
+    if (usuarioLogado?.tipo === 'cliente') return '/cliente/dashboard'
+    if (usuarioLogado?.tipo === 'guia') return '/guia/dashboard'
+    if (usuarioLogado?.tipo === 'admin') return '/admin/dashboard'
+    return '/'
+  }, [usuarioLogado?.tipo])
+
   if (carregando) {
     return (
       <main className="pageShell loadingShell">
@@ -606,55 +613,6 @@ export default function PerfilPublicoCliente() {
             font-weight: 950;
             cursor: pointer;
           }
-
-          .followArea {
-            margin-top: 14px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-          }
-
-          .followButton {
-            min-height: 42px;
-            border: 0;
-            border-radius: 999px;
-            padding: 0 18px;
-            background: #203c2e;
-            color: #fffdf7;
-            font-size: 13px;
-            font-weight: 950;
-            cursor: pointer;
-            box-shadow: 0 14px 28px rgba(32, 60, 46, 0.18);
-            transition: 0.18s ease;
-          }
-
-          .followButton:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 18px 34px rgba(32, 60, 46, 0.22);
-          }
-
-          .followButton.following {
-            background: rgba(255, 253, 247, 0.88);
-            color: #203c2e;
-            border: 1px solid rgba(32, 60, 46, 0.20);
-            box-shadow: none;
-          }
-
-          .followButton:disabled {
-            opacity: 0.62;
-            cursor: not-allowed;
-            transform: none;
-          }
-
-          .followError {
-            max-width: 280px;
-            color: #991b1b;
-            font-size: 12px;
-            font-weight: 800;
-            line-height: 1.35;
-          }
-
         `}</style>
       </main>
     )
@@ -669,16 +627,13 @@ export default function PerfilPublicoCliente() {
     <main className="publicProfilePage">
       <header className="appHeader">
         <div className="headerInner">
-          <button type="button" className="brandLockup" onClick={() => router.push('/roteiros')}>
-            <img src="/logo-prussik-display.png" alt="" className="brandLogo" />
-            <span className="brandCopy">
-              <strong>PrussikTrails</strong>
-              <small>Passaporte público</small>
-            </span>
-          </button>
-
-          <button type="button" className="backButton" onClick={() => router.back()}>
-            Voltar
+          <button
+            type="button"
+            className="brandLogoOnly"
+            onClick={() => router.push(destinoLogo)}
+            aria-label="Ir para a tela inicial"
+          >
+            <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
           </button>
         </div>
       </header>
@@ -786,8 +741,6 @@ export default function PerfilPublicoCliente() {
                       <div className="medalArt">
                         <img src={medalha.svg} alt={medalha.nome} />
                       </div>
-                      <strong>{medalha.nome}</strong>
-                      <span>{desbloqueada ? 'Conquistada' : 'Bloqueada'}</span>
                     </article>
                   )
                 })}
@@ -798,13 +751,11 @@ export default function PerfilPublicoCliente() {
                   return (
                     <article
                       key={medalha.nome}
-                      className={`medalCard betaMedal ${desbloqueada ? 'unlocked' : 'locked'}`}
+                      className={`medalCard betaMedal ${desbloqueada ? 'unlocked betaUnlocked' : 'locked betaLocked'}`}
                     >
-                      <div className="medalArt">
+                      <div className={`medalArt betaArt ${desbloqueada ? 'betaArtUnlocked' : 'betaArtLocked'}`}>
                         {medalha.svg ? <img src={medalha.svg} alt={medalha.nome} /> : <span>{medalha.icone}</span>}
                       </div>
-                      <strong>{medalha.nome}</strong>
-                      <span>{desbloqueada ? 'beta' : 'Bloqueada'}</span>
                     </article>
                   )
                 })}
@@ -843,35 +794,6 @@ export default function PerfilPublicoCliente() {
             </section>
           </div>
 
-          <aside className="rightColumn">
-            <section className="sideCard">
-              <span>Momento atual</span>
-              <img src={nivelAtual.svg} alt={nivelAtual.nome} />
-              <h3>{nivelAtual.nome}</h3>
-              <p>
-                Este é o marco visual atual do passaporte público de {nomeCliente}.
-              </p>
-            </section>
-
-            {proximaMedalha && (
-              <section className="sideCard nextCard">
-                <span>Próxima conquista</span>
-                <img src={proximaMedalha.svg} alt={proximaMedalha.nome} />
-                <h3>{proximaMedalha.nome}</h3>
-                <div className="progressBar">
-                  <i style={{ width: `${progressoAteProxima}%` }} />
-                </div>
-              </section>
-            )}
-
-            <section className="sideCard textCard">
-              <span>Leitura rápida</span>
-              <p>
-                {nomeCliente} está no nível <strong>{nivelAtual.nome}</strong>, com{' '}
-                <strong>{totalKm} km</strong> registrados e <strong>{totalTrilhas}</strong> trilha(s) realizadas.
-              </p>
-            </section>
-          </aside>
         </section>
       </section>
 
@@ -889,8 +811,8 @@ export default function PerfilPublicoCliente() {
           position: sticky;
           top: 0;
           z-index: 50;
-          padding: 10px 16px;
-          background: rgba(255, 253, 247, 0.84);
+          padding: 8px 12px;
+          background: rgba(255, 253, 247, 0.92);
           border-bottom: 1px solid rgba(62, 74, 45, 0.09);
           backdrop-filter: blur(18px);
         }
@@ -900,68 +822,26 @@ export default function PerfilPublicoCliente() {
           margin: 0 auto;
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 12px;
+          justify-content: center;
         }
 
-        .brandLockup {
-          min-width: 0;
+        .brandLogoOnly {
           border: 0;
           background: transparent;
-          display: inline-flex;
-          align-items: center;
-          gap: 12px;
           padding: 0;
           cursor: pointer;
-          text-align: left;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          max-width: min(260px, 62vw);
         }
 
         .brandLogo {
-          width: 42px;
-          height: 42px;
+          width: clamp(150px, 36vw, 250px);
+          height: auto;
+          max-height: 58px;
           object-fit: contain;
-          flex: 0 0 auto;
           display: block;
-        }
-
-        .brandCopy {
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          line-height: 1;
-        }
-
-        .brandCopy strong {
-          font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(31px, 4.5vw, 54px);
-          font-weight: 800;
-          color: #1f3d2d;
-          line-height: 0.88;
-          letter-spacing: -0.06em;
-          white-space: nowrap;
-        }
-
-        .brandCopy small {
-          margin-top: 7px;
-          color: #7c8574;
-          font-size: clamp(10px, 1.4vw, 16px);
-          font-weight: 900;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          white-space: nowrap;
-        }
-
-        .backButton {
-          border: 1px solid rgba(31, 61, 45, 0.12);
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.74);
-          color: #1f3d2d;
-          padding: 10px 16px;
-          font-size: 13px;
-          font-weight: 950;
-          cursor: pointer;
-          box-shadow: 0 10px 24px rgba(31, 61, 45, 0.08);
         }
 
         .profileWrap {
@@ -1099,7 +979,6 @@ export default function PerfilPublicoCliente() {
           font-weight: 900;
         }
 
-
         .followArea {
           margin-top: 14px;
           display: flex;
@@ -1233,7 +1112,7 @@ export default function PerfilPublicoCliente() {
 
         .contentGrid {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 320px;
+          grid-template-columns: minmax(0, 1fr);
           gap: 16px;
           align-items: start;
         }
@@ -1276,14 +1155,14 @@ export default function PerfilPublicoCliente() {
         }
 
         .medalCard {
-          min-height: 180px;
+          min-height: 184px;
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: flex-start;
-          gap: 7px;
+          justify-content: center;
+          gap: 0;
           border-radius: 24px;
-          padding: 12px 10px;
+          padding: 14px 10px;
           text-align: center;
           background: rgba(255, 255, 255, 0.66);
           border: 1px solid rgba(62, 74, 45, 0.1);
@@ -1299,7 +1178,17 @@ export default function PerfilPublicoCliente() {
         }
 
         .medalCard.locked {
-          opacity: 0.46;
+          opacity: 1;
+          justify-content: center;
+          background:
+            repeating-linear-gradient(
+              135deg,
+              rgba(23, 32, 24, 0.025) 0,
+              rgba(23, 32, 24, 0.025) 6px,
+              transparent 6px,
+              transparent 12px
+            ),
+            rgba(255, 253, 247, 0.72);
         }
 
         .medalCard.locked .medalArt img {
@@ -1313,32 +1202,79 @@ export default function PerfilPublicoCliente() {
         .medalArt {
           width: 104px;
           height: 104px;
+          flex: 0 0 auto;
           display: grid;
           place-items: center;
+          padding: 6px;
+          border-radius: 0;
+          background: rgba(248, 235, 213, 0.68);
         }
 
-        .betaMedal .medalArt {
-          width: 112px;
-          height: 112px;
+        .betaMedal .medalArt,
+        .betaArt {
+          width: 104px;
+          height: 104px;
+          margin-bottom: 12px;
+        }
+
+        .betaArtUnlocked {
+          width: 94px;
+          height: 94px;
+          margin-top: 2px;
+          margin-bottom: 24px;
+          padding: 4px;
+        }
+
+        .betaArtLocked {
+          width: 104px;
+          height: 104px;
+          margin-bottom: 0;
         }
 
         .medalArt img {
+          width: 100%;
+          height: 100%;
           max-width: 100%;
           max-height: 100%;
           object-fit: contain;
           display: block;
         }
 
+        .betaArtUnlocked img {
+          transform: scale(0.92);
+          transform-origin: center center;
+        }
+
         .medalArt span {
           font-size: 42px;
+        }
+
+        .medalLabel {
+          width: 100%;
+          min-height: 52px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 4px;
+          padding: 0 4px;
+        }
+
+        .betaLabel {
+          min-height: 60px;
         }
 
         .medalCard strong {
           color: #172018;
           font-size: 12px;
-          line-height: 1.16;
+          line-height: 1.18;
           font-weight: 950;
+          display: block;
+          width: 100%;
+          word-break: break-word;
+          overflow-wrap: anywhere;
         }
+
 
         .medalCard span {
           color: #64748b;
@@ -1495,10 +1431,6 @@ export default function PerfilPublicoCliente() {
             grid-template-columns: 1fr;
           }
 
-          .rightColumn {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-
           .sideCard img {
             width: 94px;
             height: 94px;
@@ -1511,33 +1443,16 @@ export default function PerfilPublicoCliente() {
 
         @media (max-width: 720px) {
           .appHeader {
-            padding: 8px 12px;
+            padding: 7px 10px;
           }
 
-          .headerInner {
-            gap: 8px;
+          .brandLogoOnly {
+            max-width: 70vw;
           }
 
           .brandLogo {
-            width: 34px;
-            height: 34px;
-          }
-
-          .brandCopy strong {
-            font-size: 30px;
-            line-height: 0.88;
-            letter-spacing: -0.055em;
-          }
-
-          .brandCopy small {
-            margin-top: 5px;
-            font-size: 9px;
-            letter-spacing: 0.12em;
-          }
-
-          .backButton {
-            padding: 9px 12px;
-            font-size: 12px;
+            width: clamp(142px, 52vw, 218px);
+            max-height: 50px;
           }
 
           .profileWrap {
@@ -1637,24 +1552,42 @@ export default function PerfilPublicoCliente() {
           }
 
           .medalCard {
-            min-height: 178px;
+            min-height: 172px;
             border-radius: 22px;
             padding: 10px;
           }
 
           .medalArt {
-            width: 106px;
-            height: 106px;
+            width: 104px;
+            height: 104px;
+            margin-bottom: 10px;
           }
 
-          .betaMedal .medalArt {
-            width: 112px;
-            height: 112px;
+          .betaMedal .medalArt,
+          .betaArt {
+            width: 104px;
+            height: 104px;
+            margin-bottom: 10px;
           }
 
-          .rightColumn {
-            display: none;
+          .betaArtUnlocked {
+            width: 92px;
+            height: 92px;
+            margin-bottom: 22px;
           }
+
+          .betaArtUnlocked img {
+            transform: scale(0.90);
+          }
+
+          .medalLabel {
+            min-height: 54px;
+          }
+
+          .betaLabel {
+            min-height: 60px;
+          }
+
 
           .photoGrid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1663,29 +1596,6 @@ export default function PerfilPublicoCliente() {
         }
 
         @media (max-width: 420px) {
-          .brandLockup {
-            gap: 8px;
-          }
-
-          .brandLogo {
-            width: 30px;
-            height: 30px;
-          }
-
-          .brandCopy strong {
-            font-size: 26px;
-          }
-
-          .brandCopy small {
-            font-size: 8px;
-            letter-spacing: 0.09em;
-          }
-
-          .backButton {
-            padding: 8px 10px;
-            font-size: 11px;
-          }
-
           .profileMain h1 {
             font-size: 36px;
           }
