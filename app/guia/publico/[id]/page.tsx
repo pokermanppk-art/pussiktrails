@@ -1632,56 +1632,58 @@ const estilos = `
   .medalTile.cadastur .medalSvg {
     max-width: 72%;
     max-height: 84%;
-    transform: translateY(-23%);
+    transform: translateY(-6%);
     transform-origin: center center;
   }
 
+  /* Grupo superior CADASTUR: não subir agressivamente. */
   .medalTile.medalKey-cadastur-preenchido .medalSvg {
     max-width: 72%;
     max-height: 84%;
-    transform: translateY(-24%);
+    transform: translateY(-6%);
   }
 
   .medalTile.medalKey-guia-verificado-cadastur .medalSvg {
     max-width: 72%;
     max-height: 84%;
-    transform: translateY(-24%);
+    transform: translateY(-6%);
   }
 
   .medalTile.medalKey-cadastur-ativo .medalSvg {
-    max-width: 70%;
-    max-height: 82%;
-    transform: translateY(-23%);
+    max-width: 68%;
+    max-height: 80%;
+    transform: translateY(-6%);
   }
 
+  /* Tiers CADASTUR: SVGs verticais, então ficam menores e mais centralizados. */
   .medalTile.medalKey-cadastur-bronze .medalSvg {
-    max-width: 70%;
-    max-height: 82%;
-    transform: translateY(-23%);
+    max-width: 56%;
+    max-height: 70%;
+    transform: translateY(-14%);
   }
 
   .medalTile.medalKey-cadastur-prata .medalSvg {
-    max-width: 70%;
-    max-height: 82%;
-    transform: translateY(-23%);
+    max-width: 56%;
+    max-height: 70%;
+    transform: translateY(-14%);
   }
 
   .medalTile.medalKey-cadastur-ouro .medalSvg {
-    max-width: 70%;
-    max-height: 82%;
-    transform: translateY(-23%);
+    max-width: 56%;
+    max-height: 70%;
+    transform: translateY(-14%);
   }
 
   .medalTile.medalKey-cadastur-platina .medalSvg {
-    max-width: 70%;
-    max-height: 82%;
-    transform: translateY(-23%);
+    max-width: 56%;
+    max-height: 70%;
+    transform: translateY(-14%);
   }
 
   .medalTile.medalKey-cadastur-onyx .medalSvg {
-    max-width: 70%;
-    max-height: 82%;
-    transform: translateY(-23%);
+    max-width: 56%;
+    max-height: 70%;
+    transform: translateY(-14%);
   }
 
   .medalTile.progressao .medalSvg,
@@ -1763,31 +1765,36 @@ const estilos = `
   .medalDetailArt.cadastur .medalSvg {
     max-width: 72%;
     max-height: 84%;
-    transform: translateY(-23%);
+    transform: translateY(-6%);
     transform-origin: center center;
   }
 
   .medalDetailArt.medalKey-cadastur-preenchido .medalSvg {
     max-width: 72%;
     max-height: 84%;
-    transform: translateY(-24%);
+    transform: translateY(-6%);
   }
 
   .medalDetailArt.medalKey-guia-verificado-cadastur .medalSvg {
     max-width: 72%;
     max-height: 84%;
-    transform: translateY(-24%);
+    transform: translateY(-6%);
   }
 
-  .medalDetailArt.medalKey-cadastur-ativo .medalSvg,
+  .medalDetailArt.medalKey-cadastur-ativo .medalSvg {
+    max-width: 68%;
+    max-height: 80%;
+    transform: translateY(-6%);
+  }
+
   .medalDetailArt.medalKey-cadastur-bronze .medalSvg,
   .medalDetailArt.medalKey-cadastur-prata .medalSvg,
   .medalDetailArt.medalKey-cadastur-ouro .medalSvg,
   .medalDetailArt.medalKey-cadastur-platina .medalSvg,
   .medalDetailArt.medalKey-cadastur-onyx .medalSvg {
-    max-width: 70%;
-    max-height: 82%;
-    transform: translateY(-23%);
+    max-width: 56%;
+    max-height: 70%;
+    transform: translateY(-14%);
   }
 
   .medalStatus {
@@ -2422,16 +2429,22 @@ const estilos = `
     }
 
     .medalTile.cadastur .medalSvg {
-      max-width: 70%;
-      max-height: 82%;
-      transform: translateY(-23%);
+      max-width: 56%;
+      max-height: 70%;
+      transform: translateY(-14%);
     }
 
     .medalTile.medalKey-cadastur-preenchido .medalSvg,
     .medalTile.medalKey-guia-verificado-cadastur .medalSvg {
       max-width: 72%;
       max-height: 84%;
-      transform: translateY(-24%);
+      transform: translateY(-6%);
+    }
+
+    .medalTile.medalKey-cadastur-ativo .medalSvg {
+      max-width: 68%;
+      max-height: 80%;
+      transform: translateY(-6%);
     }
 
     .medalOverlay {
