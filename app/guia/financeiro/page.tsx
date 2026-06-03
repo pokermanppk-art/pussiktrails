@@ -807,6 +807,18 @@ export default function GuiaFinanceiroPage() {
   const historicoVisivel = useMemo(() => historicoGeral.slice(0, 6), [historicoGeral])
 
   const saldoDisponivel = Math.max(0, Number(resumo.saldo_pendente || 0))
+  const taxaPercentualAtual = Number.isFinite(Number(resumo.taxa_percentual))
+    ? Number(resumo.taxa_percentual)
+    : 5
+  const taxaDecimalAtual = Math.max(0, Math.min(99, taxaPercentualAtual)) / 100
+  const brutoPendente = saldoDisponivel > 0 && taxaDecimalAtual < 1
+    ? saldoDisponivel / (1 - taxaDecimalAtual)
+    : 0
+  const taxaPendente = Math.max(0, brutoPendente - saldoDisponivel)
+
+  const abrirHistoricoFinanceiro = () => {
+    router.push('/guia/financeiro/historico')
+  }
 
   const saqueEmAnalise = useMemo(() => {
     return saques.some((saque) => {
@@ -897,26 +909,26 @@ export default function GuiaFinanceiroPage() {
         <section className="quickGrid">
           <article className="quickCard">
             <span className="quickIcon">R$</span>
-            <strong>{formatarMoeda(resumo.receita_bruta)}</strong>
-            <small>Bruto pago pelos clientes.</small>
+            <strong>{formatarMoeda(brutoPendente)}</strong>
+            <small>Bruto pendente referente ao saldo ainda disponível para saque.</small>
           </article>
 
           <article className="quickCard">
             <span className="quickIcon">%</span>
-            <strong>{formatarMoeda(resumo.taxa_plataforma)}</strong>
-            <small>Taxa PrussikTrails {resumo.taxa_percentual}%.</small>
+            <strong>{formatarMoeda(taxaPendente)}</strong>
+            <small>Taxa PrussikTrails {taxaPercentualAtual}% sobre o pendente.</small>
           </article>
 
           <article className="quickCard">
             <span className="quickIcon">✓</span>
-            <strong>{formatarMoeda(resumo.valor_pago)}</strong>
-            <small>Já repassado pelo Admin.</small>
+            <strong>{formatarMoeda(saldoDisponivel)}</strong>
+            <small>Líquido disponível atual. Zera quando o saque é pago pelo Admin.</small>
           </article>
 
           <button className="quickCard clickable" type="button" onClick={abrirSolicitarSaque} disabled={!podeSolicitarSaque}>
             <span className="quickIcon">PIX</span>
             <strong>{formatarMoeda(saldoDisponivel)}</strong>
-            <small>{saqueEmAnalise ? 'Existe uma solicitação em análise.' : 'Saldo líquido disponível para solicitação.'}</small>
+            <small>{saqueEmAnalise ? 'Existe uma solicitação em análise.' : 'Solicitar saque do saldo atual.'}</small>
           </button>
         </section>
 
@@ -942,8 +954,8 @@ export default function GuiaFinanceiroPage() {
               <section className="panel">
                 <div className="panelHeader">
                   <div>
-                    <h2>Histórico geral</h2>
-                    <p>Últimos 6 movimentos financeiros, para manter a tela mais limpa.</p>
+                    <h2>Movimentos recentes</h2>
+                    <p>Últimos 6 movimentos. O histórico geral completo fica na dashboard separada do financeiro.</p>
                   </div>
                   <button type="button" onClick={atualizar} disabled={atualizando}>{atualizando ? 'Atualizando...' : 'Atualizar'}</button>
                 </div>
@@ -1108,22 +1120,42 @@ export default function GuiaFinanceiroPage() {
           </div>
 
           <aside className="rightColumn">
-            <section className="financeBox">
+            <section
+              className="financeBox financeBoxClickable"
+              role="button"
+              tabIndex={0}
+              onClick={abrirHistoricoFinanceiro}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  abrirHistoricoFinanceiro()
+                }
+              }}
+              aria-label="Abrir histórico financeiro completo"
+            >
               <div className="financeLabel">Resumo financeiro</div>
               <div className="financeValue">{formatarMoeda(saldoDisponivel)}</div>
               <div className="financeText">
-                Saldo líquido disponível após descontar a taxa da plataforma e repasses já registrados pelo Admin.
+                Saldo líquido disponível para saque. O bruto e a taxa abaixo são calculados somente sobre o valor ainda pendente, não sobre o histórico total.
               </div>
 
               <div className="financeRows">
-                <div className="financeRow"><span>Bruto dos clientes</span><strong>{formatarMoeda(resumo.receita_bruta)}</strong></div>
-                <div className="financeRow"><span>Taxa Prussik {resumo.taxa_percentual}%</span><strong>{formatarMoeda(resumo.taxa_plataforma)}</strong></div>
-                <div className="financeRow"><span>Líquido do guia</span><strong>{formatarMoeda(resumo.valor_liquido_guia)}</strong></div>
-                <div className="financeRow"><span>Já repassado</span><strong>{formatarMoeda(resumo.valor_pago)}</strong></div>
-                <div className="financeRow"><span>Disponível</span><strong>{formatarMoeda(saldoDisponivel)}</strong></div>
+                <div className="financeRow"><span>Bruto pendente dos clientes</span><strong>{formatarMoeda(brutoPendente)}</strong></div>
+                <div className="financeRow"><span>Taxa Prussik {taxaPercentualAtual}%</span><strong>{formatarMoeda(taxaPendente)}</strong></div>
+                <div className="financeRow"><span>Líquido disponível</span><strong>{formatarMoeda(saldoDisponivel)}</strong></div>
               </div>
 
-              <button type="button" className="withdrawBtn" onClick={abrirSolicitarSaque} disabled={!podeSolicitarSaque}>
+              <div className="historyHint">Toque no card para ver o histórico financeiro completo →</div>
+
+              <button
+                type="button"
+                className="withdrawBtn"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  abrirSolicitarSaque()
+                }}
+                disabled={!podeSolicitarSaque}
+              >
                 {saqueEmAnalise ? 'Saque em análise' : 'Solicitar saque'}
               </button>
             </section>
@@ -1739,6 +1771,29 @@ const estilos = `
     color: #ffffff;
     border-radius: 28px;
     padding: 20px;
+  }
+
+  .financeBoxClickable {
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .financeBoxClickable:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 18px 44px rgba(15,23,42,0.16);
+  }
+
+  .historyHint {
+    margin-top: 13px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.82);
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.25;
+    font-weight: 900;
+    text-align: center;
   }
 
   .financeRows {

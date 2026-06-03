@@ -4,6 +4,8 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 're
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
+type AnyRecord = Record<string, any>
+
 type UsuarioLocal = {
   id: string
   nome?: string | null
@@ -63,11 +65,15 @@ type RepasseRow = {
   valor?: number | null
   valor_pago?: number | null
   valor_repassado?: number | null
+  valor_repasse?: number | null
+  valor_total?: number | null
   status?: string | null
   tipo?: string | null
   observacao?: string | null
   descricao?: string | null
   data_pagamento?: string | null
+  comprovante_url?: string | null
+  comprovante_referencia?: string | null
   created_at?: string | null
   updated_at?: string | null
   [key: string]: any
@@ -118,12 +124,18 @@ type GuiaFinanceiro = {
   pix_chave: string
   cadastur: string
   taxa_percentual: number
+
   receita_bruta: number
   taxa_plataforma: number
   liquido_guia: number
   valor_pago: number
+
   saldo_pendente: number
+  bruto_pendente: number
+  taxa_pendente: number
+  liquido_disponivel: number
   excesso_repasse: number
+
   reservas_confirmadas: number
   roteiros_total: number
   ultimo_pagamento_em?: string | null
@@ -136,7 +148,12 @@ type ResumoFinanceiro = {
   taxa_plataforma: number
   liquido_guias: number
   valor_pago: number
+
   saldo_pendente: number
+  bruto_pendente: number
+  taxa_pendente: number
+  liquido_disponivel: number
+
   excesso_repasse: number
   reservas_confirmadas: number
   repasses_total: number
@@ -149,6 +166,9 @@ const resumoInicial: ResumoFinanceiro = {
   liquido_guias: 0,
   valor_pago: 0,
   saldo_pendente: 0,
+  bruto_pendente: 0,
+  taxa_pendente: 0,
+  liquido_disponivel: 0,
   excesso_repasse: 0,
   reservas_confirmadas: 0,
   repasses_total: 0,
@@ -189,10 +209,10 @@ export default function AdminFinanceiroPage() {
   useEffect(() => {
     if (iniciouRef.current) return
     iniciouRef.current = true
-    iniciar()
+    void iniciar()
   }, [])
 
-  const iniciar = async () => {
+  async function iniciar() {
     setCarregando(true)
     setErro('')
     setAviso('')
@@ -223,11 +243,11 @@ export default function AdminFinanceiroPage() {
     }
   }
 
-  const limparTexto = (valor: any) => {
+  function limparTexto(valor: any) {
     return String(valor || '').trim()
   }
 
-  const normalizar = (valor: any) => {
+  function normalizar(valor: any) {
     return String(valor || '')
       .toLowerCase()
       .normalize('NFD')
@@ -235,10 +255,8 @@ export default function AdminFinanceiroPage() {
       .trim()
   }
 
-  const normalizarNumero = (valor: any, fallback = 0) => {
-    if (typeof valor === 'number') {
-      return Number.isFinite(valor) ? valor : fallback
-    }
+  function normalizarNumero(valor: any, fallback = 0) {
+    if (typeof valor === 'number') return Number.isFinite(valor) ? valor : fallback
 
     let texto = String(valor || '')
       .trim()
@@ -250,57 +268,50 @@ export default function AdminFinanceiroPage() {
     const temVirgula = texto.includes(',')
     const temPonto = texto.includes('.')
 
-    if (temVirgula && temPonto) {
-      texto = texto.replace(/\./g, '').replace(',', '.')
-    } else if (temVirgula) {
-      texto = texto.replace(',', '.')
-    }
+    if (temVirgula && temPonto) texto = texto.replace(/\./g, '').replace(',', '.')
+    else if (temVirgula) texto = texto.replace(',', '.')
 
     texto = texto.replace(/[^\d.]/g, '')
 
     const numero = Number(texto)
-
-    if (!Number.isFinite(numero)) return fallback
-
-    return numero
+    return Number.isFinite(numero) ? numero : fallback
   }
 
-  const arredondarMoeda = (valor: any) => {
+  function arredondarMoeda(valor: any) {
     return Math.round(Number(valor || 0) * 100) / 100
   }
 
-  const emCentavos = (valor: any) => {
+  function emCentavos(valor: any) {
     return Math.round(Number(valor || 0) * 100)
   }
 
-  const deCentavos = (valor: any) => {
+  function deCentavos(valor: any) {
     return Math.round(Number(valor || 0)) / 100
   }
 
-  const formatarMoeda = (valor: any) => {
+  function formatarMoeda(valor: any) {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
     }).format(Number(valor || 0))
   }
 
-  const formatarData = (valor?: string | null) => {
+  function formatarData(valor?: string | null) {
     if (!valor) return '-'
 
     const data = new Date(valor)
-
     if (Number.isNaN(data.getTime())) return '-'
 
     return data.toLocaleString('pt-BR')
   }
 
-  const formatarValorInput = (valor: any) => {
+  function formatarValorInput(valor: any) {
     return Number(valor || 0)
       .toFixed(2)
       .replace('.', ',')
   }
 
-  const pagamentoConfirmado = (reserva: ReservaRow) => {
+  function pagamentoConfirmado(reserva: ReservaRow) {
     const pagamento = normalizar(reserva.pagamento_status)
     const status = normalizar(reserva.status)
 
@@ -317,59 +328,79 @@ export default function AdminFinanceiroPage() {
     )
   }
 
-  const repasseCancelado = (repasse: RepasseRow) => {
+  function repasseCancelado(repasse: RepasseRow) {
     const status = normalizar(repasse.status)
 
     return (
       status === 'cancelado' ||
       status === 'cancelada' ||
       status === 'estornado' ||
-      status === 'estornada'
+      status === 'estornada' ||
+      status === 'recusado' ||
+      status === 'recusada'
     )
   }
 
-  const statusSaqueNormalizado = (saque?: SaqueGuiaRow | null) => {
+  function repassePagoOuLegado(repasse: RepasseRow) {
+    if (repasseCancelado(repasse)) return false
+
+    const status = normalizar(repasse.status)
+
+    if (!status) return true
+
+    return (
+      status === 'pago' ||
+      status === 'paga' ||
+      status === 'concluido' ||
+      status === 'concluida' ||
+      status === 'confirmado' ||
+      status === 'confirmada' ||
+      status === 'aprovado' ||
+      status === 'aprovada' ||
+      status === 'realizado' ||
+      status === 'realizada' ||
+      Boolean(repasse.data_pagamento) ||
+      Boolean(repasse.comprovante_url) ||
+      Boolean(repasse.comprovante_referencia)
+    )
+  }
+
+  function statusSaqueNormalizado(saque?: SaqueGuiaRow | null) {
     return normalizar(saque?.status || 'novo')
   }
 
-  const saquePendente = (saque?: SaqueGuiaRow | null) => {
+  function saquePendente(saque?: SaqueGuiaRow | null) {
     const status = statusSaqueNormalizado(saque)
-
-    return (
-      status === 'novo' ||
-      status === 'pendente' ||
-      status === 'solicitado' ||
-      status === 'em_analise'
-    )
+    return status === 'novo' || status === 'pendente' || status === 'solicitado' || status === 'em_analise'
   }
 
-  const saqueAprovado = (saque?: SaqueGuiaRow | null) => {
+  function saqueAprovado(saque?: SaqueGuiaRow | null) {
     const status = statusSaqueNormalizado(saque)
     return status === 'aprovado' || status === 'aprovada'
   }
 
-  const saquePago = (saque?: SaqueGuiaRow | null) => {
+  function saquePago(saque?: SaqueGuiaRow | null) {
     const status = statusSaqueNormalizado(saque)
     return status === 'pago' || status === 'paga' || status === 'concluido' || status === 'concluida'
   }
 
-  const saqueRecusado = (saque?: SaqueGuiaRow | null) => {
+  function saqueRecusado(saque?: SaqueGuiaRow | null) {
     const status = statusSaqueNormalizado(saque)
     return status === 'recusado' || status === 'recusada' || status === 'cancelado' || status === 'cancelada'
   }
 
-  const valorDoSaque = (saque?: SaqueGuiaRow | null) => {
+  function valorDoSaque(saque?: SaqueGuiaRow | null) {
     return Number(saque?.valor_solicitado || 0)
   }
 
-  const badgeSaque = (saque: SaqueGuiaRow) => {
+  function badgeSaque(saque: SaqueGuiaRow) {
     if (saquePago(saque)) return <span className="badge green">Pago</span>
     if (saqueAprovado(saque)) return <span className="badge blue">Aprovado</span>
     if (saqueRecusado(saque)) return <span className="badge red">Recusado</span>
     return <span className="badge yellow">Pendente</span>
   }
 
-  const guiaIdDoRoteiro = (roteiro?: RoteiroRow | null) => {
+  function guiaIdDoRoteiro(roteiro?: RoteiroRow | null) {
     return limparTexto(
       roteiro?.id_guia ||
         roteiro?.guia_id ||
@@ -379,7 +410,7 @@ export default function AdminFinanceiroPage() {
     )
   }
 
-  const guiaIdDaReserva = (reserva: ReservaRow, roteiro?: RoteiroRow | null) => {
+  function guiaIdDaReserva(reserva: ReservaRow, roteiro?: RoteiroRow | null) {
     return limparTexto(
       reserva.guia_id ||
         reserva.id_guia ||
@@ -389,7 +420,7 @@ export default function AdminFinanceiroPage() {
     )
   }
 
-  const guiaIdDoRepasse = (repasse: RepasseRow) => {
+  function guiaIdDoRepasse(repasse: RepasseRow) {
     return limparTexto(
       repasse.guia_id ||
         repasse.id_guia ||
@@ -400,36 +431,45 @@ export default function AdminFinanceiroPage() {
     )
   }
 
-  const valorDoRepasse = (repasse: RepasseRow) => {
+  function valorDoRepasse(repasse: RepasseRow) {
     return Number(
       repasse.valor_pago ??
         repasse.valor_repassado ??
+        repasse.valor_repasse ??
         repasse.valor ??
         repasse.valor_total ??
         0
     )
   }
 
-  const valorDaReserva = (reserva: ReservaRow, roteiro?: RoteiroRow | null) => {
+  function valorDaReserva(reserva: ReservaRow, roteiro?: RoteiroRow | null) {
     const valorTotal = Number(reserva.valor_total || 0)
-
     if (valorTotal > 0) return valorTotal
 
     const preco = Number(roteiro?.preco || roteiro?.valor || 0)
     const pessoas = Math.max(1, Number(reserva.quantidade_pessoas || 1))
-
     return preco * pessoas
   }
 
-  const nomeDoGuia = (guiaId: string, usuario?: UserRow | null) => {
-    return (
-      usuario?.nome ||
-      usuario?.email ||
-      `Guia ${guiaId.slice(0, 8)}`
-    )
+  function nomeDoGuia(guiaId: string, usuario?: UserRow | null) {
+    return usuario?.nome || usuario?.email || `Guia ${guiaId.slice(0, 8)}`
   }
 
-  const carregarRepassesViaBackend = async () => {
+  function calcularPendenciaPorLiquido(liquidoDisponivel: number, taxaPercentual: number) {
+    const liquido = arredondarMoeda(Math.max(0, liquidoDisponivel))
+    const taxaDecimal = Math.max(0, Math.min(0.9, Number(taxaPercentual || 0) / 100))
+    const bruto = liquido > 0 && taxaDecimal < 1 ? arredondarMoeda(liquido / (1 - taxaDecimal)) : 0
+    const taxa = arredondarMoeda(Math.max(0, bruto - liquido))
+
+    return {
+      bruto_pendente: bruto,
+      taxa_pendente: taxa,
+      liquido_disponivel: liquido,
+      saldo_pendente: liquido
+    }
+  }
+
+  async function carregarRepassesViaBackend() {
     try {
       const response = await fetch(`/api/admin/financeiro/repasses?_ts=${Date.now()}`, {
         method: 'GET',
@@ -450,24 +490,16 @@ export default function AdminFinanceiroPage() {
         return [] as RepasseRow[]
       }
 
-      const lista =
-        data?.repasses ||
-        data?.data ||
-        data?.registros ||
-        data?.items ||
-        data
-
+      const lista = data?.repasses || data?.data || data?.registros || data?.items || data
       return Array.isArray(lista) ? (lista as RepasseRow[]) : []
     } catch (error) {
       console.warn('Erro ao carregar repasses via backend:', error)
-      setAviso(
-        'A lista de repasses não pôde ser carregada agora. O registro de pagamento continuará usando a rota segura do backend.'
-      )
+      setAviso('A lista de repasses não pôde ser carregada agora. O registro de pagamento continuará usando a rota segura do backend.')
       return [] as RepasseRow[]
     }
   }
 
-  const carregarSaquesAdmin = async () => {
+  async function carregarSaquesAdmin() {
     try {
       const response = await fetch(`/api/admin/financeiro/saques?_ts=${Date.now()}`, {
         method: 'GET',
@@ -493,17 +525,11 @@ export default function AdminFinanceiroPage() {
     }
   }
 
-  const carregarFinanceiro = async () => {
+  async function carregarFinanceiro() {
     setErro('')
     setAviso('')
 
-    const [
-      usuariosResult,
-      roteirosResult,
-      reservasResult,
-      repassesBackend,
-      saquesBackend
-    ] = await Promise.all([
+    const [usuariosResult, roteirosResult, reservasResult, repassesBackend, saquesBackend] = await Promise.all([
       supabase.from('users').select('*'),
       supabase.from('roteiros').select('*'),
       supabase.from('reservas').select('*').order('created_at', { ascending: false }),
@@ -511,17 +537,9 @@ export default function AdminFinanceiroPage() {
       carregarSaquesAdmin()
     ])
 
-    if (usuariosResult.error) {
-      throw usuariosResult.error
-    }
-
-    if (roteirosResult.error) {
-      throw roteirosResult.error
-    }
-
-    if (reservasResult.error) {
-      throw reservasResult.error
-    }
+    if (usuariosResult.error) throw usuariosResult.error
+    if (roteirosResult.error) throw roteirosResult.error
+    if (reservasResult.error) throw reservasResult.error
 
     const usuarios = (usuariosResult.data || []) as UserRow[]
     const roteiros = (roteirosResult.data || []) as RoteiroRow[]
@@ -534,20 +552,6 @@ export default function AdminFinanceiroPage() {
       if (usuario?.id) usuariosPorId.set(usuario.id, usuario)
     })
 
-    const saquesEnriquecidos = saquesBase.map((saque) => {
-      const usuario = saque.guia_id ? usuariosPorId.get(String(saque.guia_id)) : null
-
-      return {
-        ...saque,
-        guia_nome: saque.guia_nome || usuario?.nome || usuario?.email || `Guia ${String(saque.guia_id || '').slice(0, 8)}`,
-        guia_email: saque.guia_email || usuario?.email || '',
-        guia_pix_tipo: saque.guia_pix_tipo || usuario?.pix_tipo || '',
-        guia_pix_chave: saque.guia_pix_chave || usuario?.pix_chave || ''
-      }
-    })
-
-    setSaques(saquesEnriquecidos)
-
     const roteirosPorId = new Map<string, RoteiroRow>()
     roteiros.forEach((roteiro) => {
       if (roteiro?.id) roteirosPorId.set(roteiro.id, roteiro)
@@ -557,15 +561,11 @@ export default function AdminFinanceiroPage() {
 
     const garantirGuia = (guiaId: string) => {
       const id = limparTexto(guiaId)
-
       if (!id) return null
 
-      if (guiasMap.has(id)) {
-        return guiasMap.get(id) as GuiaFinanceiro
-      }
+      if (guiasMap.has(id)) return guiasMap.get(id) as GuiaFinanceiro
 
       const usuario = usuariosPorId.get(id)
-
       const novo: GuiaFinanceiro = {
         guia_id: id,
         nome: nomeDoGuia(id, usuario),
@@ -579,6 +579,9 @@ export default function AdminFinanceiroPage() {
         liquido_guia: 0,
         valor_pago: 0,
         saldo_pendente: 0,
+        bruto_pendente: 0,
+        taxa_pendente: 0,
+        liquido_disponivel: 0,
         excesso_repasse: 0,
         reservas_confirmadas: 0,
         roteiros_total: 0,
@@ -598,10 +601,7 @@ export default function AdminFinanceiroPage() {
     roteiros.forEach((roteiro) => {
       const guiaId = guiaIdDoRoteiro(roteiro)
       const guia = garantirGuia(guiaId)
-
-      if (guia) {
-        guia.roteiros_total += 1
-      }
+      if (guia) guia.roteiros_total += 1
     })
 
     reservas.forEach((reserva) => {
@@ -610,18 +610,16 @@ export default function AdminFinanceiroPage() {
       const guia = garantirGuia(guiaId)
 
       if (!guia) return
-
       if (!pagamentoConfirmado(reserva)) return
 
       const valor = valorDaReserva(reserva, roteiro)
-
       guia.receita_bruta += valor
       guia.reservas_confirmadas += 1
       guia.reservas.push(reserva)
     })
 
     repasses
-      .filter((repasse) => !repasseCancelado(repasse))
+      .filter(repassePagoOuLegado)
       .forEach((repasse) => {
         const guiaId = guiaIdDoRepasse(repasse)
         const guia = garantirGuia(guiaId)
@@ -629,12 +627,10 @@ export default function AdminFinanceiroPage() {
         if (!guia) return
 
         const valor = valorDoRepasse(repasse)
-
         guia.valor_pago += valor
         guia.repasses.push(repasse)
 
         const dataRepasse = repasse.data_pagamento || repasse.created_at || repasse.updated_at || null
-
         if (!guia.ultimo_pagamento_em || (dataRepasse && new Date(dataRepasse) > new Date(guia.ultimo_pagamento_em))) {
           guia.ultimo_pagamento_em = dataRepasse
         }
@@ -645,8 +641,9 @@ export default function AdminFinanceiroPage() {
       const taxa = arredondarMoeda(receita * (guia.taxa_percentual / 100))
       const liquido = arredondarMoeda(Math.max(0, receita - taxa))
       const pago = arredondarMoeda(guia.valor_pago)
-
       const saldoCentavos = emCentavos(liquido) - emCentavos(pago)
+      const saldoLiquidoAtual = deCentavos(Math.max(0, saldoCentavos))
+      const pendente = calcularPendenciaPorLiquido(saldoLiquidoAtual, guia.taxa_percentual)
 
       return {
         ...guia,
@@ -654,46 +651,57 @@ export default function AdminFinanceiroPage() {
         taxa_plataforma: taxa,
         liquido_guia: liquido,
         valor_pago: pago,
-        saldo_pendente: deCentavos(Math.max(0, saldoCentavos)),
+        ...pendente,
         excesso_repasse: deCentavos(Math.max(0, Math.abs(Math.min(0, saldoCentavos))))
       }
     })
 
     listaGuias.sort((a, b) => {
-      if (b.saldo_pendente !== a.saldo_pendente) {
-        return b.saldo_pendente - a.saldo_pendente
-      }
-
+      if (b.saldo_pendente !== a.saldo_pendente) return b.saldo_pendente - a.saldo_pendente
       return b.receita_bruta - a.receita_bruta
     })
 
-    const resumoCalculado = listaGuias.reduce<ResumoFinanceiro>(
-      (acc, guia) => {
-        acc.receita_bruta += guia.receita_bruta
-        acc.taxa_plataforma += guia.taxa_plataforma
-        acc.liquido_guias += guia.liquido_guia
-        acc.valor_pago += guia.valor_pago
-        acc.saldo_pendente += guia.saldo_pendente
-        acc.excesso_repasse += guia.excesso_repasse
-        acc.reservas_confirmadas += guia.reservas_confirmadas
-        acc.repasses_total += guia.repasses.length
+    const saquesEnriquecidos = saquesBase.map((saque) => {
+      const usuario = saque.guia_id ? usuariosPorId.get(String(saque.guia_id)) : null
+      const guia = saque.guia_id ? listaGuias.find((item) => item.guia_id === saque.guia_id) : null
 
-        if (guia.saldo_pendente > 0) {
-          acc.guias_com_saldo += 1
-        }
+      return {
+        ...saque,
+        guia_nome: saque.guia_nome || usuario?.nome || usuario?.email || `Guia ${String(saque.guia_id || '').slice(0, 8)}`,
+        guia_email: saque.guia_email || usuario?.email || '',
+        guia_pix_tipo: saque.guia_pix_tipo || usuario?.pix_tipo || '',
+        guia_pix_chave: saque.guia_pix_chave || usuario?.pix_chave || '',
+        saldo_atual_guia: Number(guia?.saldo_pendente || saque.saldo_atual_guia || 0)
+      }
+    })
 
-        return acc
-      },
-      { ...resumoInicial }
-    )
+    const resumoCalculado = listaGuias.reduce<ResumoFinanceiro>((acc, guia) => {
+      acc.receita_bruta += guia.receita_bruta
+      acc.taxa_plataforma += guia.taxa_plataforma
+      acc.liquido_guias += guia.liquido_guia
+      acc.valor_pago += guia.valor_pago
+      acc.saldo_pendente += guia.saldo_pendente
+      acc.bruto_pendente += guia.bruto_pendente
+      acc.taxa_pendente += guia.taxa_pendente
+      acc.liquido_disponivel += guia.liquido_disponivel
+      acc.excesso_repasse += guia.excesso_repasse
+      acc.reservas_confirmadas += guia.reservas_confirmadas
+      acc.repasses_total += guia.repasses.length
+      if (guia.saldo_pendente > 0) acc.guias_com_saldo += 1
+      return acc
+    }, { ...resumoInicial })
 
     setGuias(listaGuias)
+    setSaques(saquesEnriquecidos)
     setResumo({
       receita_bruta: arredondarMoeda(resumoCalculado.receita_bruta),
       taxa_plataforma: arredondarMoeda(resumoCalculado.taxa_plataforma),
       liquido_guias: arredondarMoeda(resumoCalculado.liquido_guias),
       valor_pago: arredondarMoeda(resumoCalculado.valor_pago),
       saldo_pendente: arredondarMoeda(resumoCalculado.saldo_pendente),
+      bruto_pendente: arredondarMoeda(resumoCalculado.bruto_pendente),
+      taxa_pendente: arredondarMoeda(resumoCalculado.taxa_pendente),
+      liquido_disponivel: arredondarMoeda(resumoCalculado.liquido_disponivel),
       excesso_repasse: arredondarMoeda(resumoCalculado.excesso_repasse),
       reservas_confirmadas: resumoCalculado.reservas_confirmadas,
       repasses_total: resumoCalculado.repasses_total,
@@ -701,7 +709,7 @@ export default function AdminFinanceiroPage() {
     })
   }
 
-  const atualizar = async () => {
+  async function atualizar() {
     setAtualizando(true)
     setMensagem('')
     setErro('')
@@ -718,7 +726,7 @@ export default function AdminFinanceiroPage() {
     }
   }
 
-  const abrirModalRepasse = (guia: GuiaFinanceiro) => {
+  function abrirModalRepasse(guia: GuiaFinanceiro) {
     setErro('')
     setMensagem('')
     setGuiaSelecionado(guia)
@@ -727,9 +735,8 @@ export default function AdminFinanceiroPage() {
     setModalAberto(true)
   }
 
-  const fecharModal = () => {
+  function fecharModal() {
     if (registrando) return
-
     setModalAberto(false)
     setGuiaSelecionado(null)
     setValorPagamento('')
@@ -738,11 +745,10 @@ export default function AdminFinanceiroPage() {
 
   const valorInformado = normalizarNumero(valorPagamento, 0)
   const saldoDisponivel = Number(guiaSelecionado?.saldo_pendente || 0)
-  const valorMaiorQueSaldo =
-    guiaSelecionado && emCentavos(valorInformado) > emCentavos(saldoDisponivel)
+  const valorMaiorQueSaldo = guiaSelecionado && emCentavos(valorInformado) > emCentavos(saldoDisponivel)
   const valorInvalido = valorInformado <= 0 || !Number.isFinite(valorInformado)
 
-  const registrarPagamento = async (event?: FormEvent) => {
+  async function registrarPagamento(event?: FormEvent) {
     event?.preventDefault()
 
     if (!guiaSelecionado) {
@@ -755,6 +761,7 @@ export default function AdminFinanceiroPage() {
 
     const valorNumero = arredondarMoeda(normalizarNumero(valorPagamento, 0))
     const saldo = arredondarMoeda(guiaSelecionado.saldo_pendente)
+    const agora = new Date().toISOString()
 
     if (valorNumero <= 0) {
       setErro('Informe um valor maior que zero.')
@@ -767,9 +774,7 @@ export default function AdminFinanceiroPage() {
     }
 
     if (emCentavos(valorNumero) > emCentavos(saldo)) {
-      setErro(
-        `O valor informado é maior que o saldo disponível do guia. Valor máximo permitido: ${formatarMoeda(saldo)}.`
-      )
+      setErro(`O valor informado é maior que o saldo disponível do guia. Valor máximo permitido: ${formatarMoeda(saldo)}.`)
       return
     }
 
@@ -792,6 +797,11 @@ export default function AdminFinanceiroPage() {
           valorPago: valorNumero,
           valor_pago: valorNumero,
           valor: valorNumero,
+          valor_repasse: valorNumero,
+          status: 'pago',
+          tipo: 'repasse_guia',
+          data_pagamento: agora,
+          pago_em: agora,
           observacao: limparTexto(observacao) || 'Repasse ao guia'
         })
       })
@@ -819,7 +829,7 @@ export default function AdminFinanceiroPage() {
     }
   }
 
-  const abrirModalSaque = (saque: SaqueGuiaCompleto, acao: AcaoSaque) => {
+  function abrirModalSaque(saque: SaqueGuiaCompleto, acao: AcaoSaque) {
     setErro('')
     setMensagem('')
     setSaqueSelecionado(saque)
@@ -836,9 +846,8 @@ export default function AdminFinanceiroPage() {
     setModalSaqueAberto(true)
   }
 
-  const fecharModalSaque = () => {
+  function fecharModalSaque() {
     if (processandoSaque) return
-
     setModalSaqueAberto(false)
     setSaqueSelecionado(null)
     setAcaoSaque('aprovar')
@@ -847,7 +856,7 @@ export default function AdminFinanceiroPage() {
     setComprovanteSaqueArquivo(null)
   }
 
-  const selecionarComprovanteSaque = (event: ChangeEvent<HTMLInputElement>) => {
+  function selecionarComprovanteSaque(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] || null
     event.target.value = ''
 
@@ -861,7 +870,7 @@ export default function AdminFinanceiroPage() {
       'image/jpg',
       'image/webp',
       'image/heic',
-      'image/heif',
+      'image/heif'
     ]
 
     if (file.size > tamanhoMaximo) {
@@ -877,16 +886,14 @@ export default function AdminFinanceiroPage() {
     setErro('')
     setComprovanteSaqueArquivo(file)
 
-    if (!limparTexto(comprovanteSaqueUrl)) {
-      setComprovanteSaqueUrl(file.name)
-    }
+    if (!limparTexto(comprovanteSaqueUrl)) setComprovanteSaqueUrl(file.name)
   }
 
-  const removerComprovanteSaque = () => {
+  function removerComprovanteSaque() {
     setComprovanteSaqueArquivo(null)
   }
 
-  const enviarArquivoComprovanteSaque = async (saqueId: string) => {
+  async function enviarArquivoComprovanteSaque(saqueId: string) {
     if (!comprovanteSaqueArquivo) return null
 
     const formData = new FormData()
@@ -897,7 +904,7 @@ export default function AdminFinanceiroPage() {
 
     const response = await fetch('/api/admin/financeiro/saques/comprovante', {
       method: 'POST',
-      body: formData,
+      body: formData
     })
 
     const data = await response.json().catch(() => null)
@@ -911,11 +918,11 @@ export default function AdminFinanceiroPage() {
       path: String(data?.path || ''),
       nome: String(data?.filename || comprovanteSaqueArquivo.name || ''),
       mimeType: String(data?.mimeType || comprovanteSaqueArquivo.type || ''),
-      tamanhoBytes: Number(data?.size || comprovanteSaqueArquivo.size || 0),
+      tamanhoBytes: Number(data?.size || comprovanteSaqueArquivo.size || 0)
     }
   }
 
-  const atualizarStatusSaque = async (params: {
+  async function atualizarStatusSaque(params: {
     saqueId: string
     status: string
     observacaoAdmin?: string
@@ -926,7 +933,7 @@ export default function AdminFinanceiroPage() {
     comprovanteTamanhoBytes?: number
     comprovanteStoragePath?: string
     repasseId?: string | null
-  }) => {
+  }) {
     const response = await fetch('/api/admin/financeiro/saques', {
       method: 'PATCH',
       headers: {
@@ -957,7 +964,7 @@ export default function AdminFinanceiroPage() {
     return data
   }
 
-  const processarSaque = async (event?: FormEvent) => {
+  async function processarSaque(event?: FormEvent) {
     event?.preventDefault()
 
     if (!saqueSelecionado?.id) {
@@ -981,7 +988,6 @@ export default function AdminFinanceiroPage() {
           status: 'aprovado',
           observacaoAdmin: observacaoSaque || 'Saque aprovado pelo Admin.'
         })
-
         setMensagem('Solicitação de saque aprovada.')
       }
 
@@ -991,7 +997,6 @@ export default function AdminFinanceiroPage() {
           status: 'recusado',
           observacaoAdmin: observacaoSaque
         })
-
         setMensagem('Solicitação de saque recusada.')
       }
 
@@ -999,6 +1004,7 @@ export default function AdminFinanceiroPage() {
         const guia = guias.find((item) => item.guia_id === saqueSelecionado.guia_id) || null
         const valorSolicitado = arredondarMoeda(valorDoSaque(saqueSelecionado))
         const saldoAtual = arredondarMoeda(guia?.saldo_pendente || 0)
+        const agora = new Date().toISOString()
 
         if (!guia) {
           setErro('Guia não localizado na lista financeira atual. Recarregue a página.')
@@ -1035,6 +1041,13 @@ export default function AdminFinanceiroPage() {
             valorPago: valorSolicitado,
             valor_pago: valorSolicitado,
             valor: valorSolicitado,
+            valor_repasse: valorSolicitado,
+            status: 'pago',
+            tipo: 'repasse_saque_guia',
+            data_pagamento: agora,
+            pago_em: agora,
+            comprovante_url: comprovanteFinalUrl,
+            comprovante_referencia: comprovanteReferencia,
             observacao: limparTexto(observacaoSaque) || `Saque solicitado pelo guia. PIX: ${saqueSelecionado.pix_tipo || ''} ${saqueSelecionado.pix_chave || ''}. Titular: ${saqueSelecionado.titular_nome || ''}. ${comprovanteReferencia ? `Comprovante/referência: ${comprovanteReferencia}.` : ''}`
           })
         })
@@ -1080,20 +1093,10 @@ export default function AdminFinanceiroPage() {
 
   const guiasFiltrados = useMemo(() => {
     const termo = normalizar(busca)
-
     if (!termo) return guias
 
     return guias.filter((guia) => {
-      const texto = normalizar(
-        [
-          guia.nome,
-          guia.email,
-          guia.guia_id,
-          guia.pix_chave,
-          guia.cadastur
-        ].join(' ')
-      )
-
+      const texto = normalizar([guia.nome, guia.email, guia.guia_id, guia.pix_chave, guia.cadastur].join(' '))
       return texto.includes(termo)
     })
   }, [guias, busca])
@@ -1106,7 +1109,7 @@ export default function AdminFinanceiroPage() {
       pagos: saques.filter(saquePago).length,
       recusados: saques.filter(saqueRecusado).length,
       valorPendente: saques.filter(saquePendente).reduce((total, saque) => total + valorDoSaque(saque), 0),
-      valorPago: saques.filter(saquePago).reduce((total, saque) => total + valorDoSaque(saque), 0),
+      valorPago: saques.filter(saquePago).reduce((total, saque) => total + valorDoSaque(saque), 0)
     }
   }, [saques])
 
@@ -1116,37 +1119,13 @@ export default function AdminFinanceiroPage() {
     if (filtroSaque === 'aprovados') return saques.filter(saqueAprovado)
     if (filtroSaque === 'pagos') return saques.filter(saquePago)
     if (filtroSaque === 'recusados') return saques.filter(saqueRecusado)
-
     return saques
   }, [saques, filtroSaque])
 
-
-  if (carregando) {    return (
+  if (carregando) {
+    return (
       <main className="loading">
-        <style>{`
-          * { box-sizing: border-box; }
-          body { margin: 0; background: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-          .loading {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #f8fafc;
-            color: #0f172a;
-          }
-          .loadingCard {
-            background: #ffffff;
-            border-radius: 28px;
-            padding: 28px;
-            text-align: center;
-            box-shadow: 0 18px 50px rgba(15,23,42,0.08);
-          }
-          .loadingCard img {
-            height: 64px;
-            margin-bottom: 12px;
-          }
-        `}</style>
-
+        <style>{loadingStyles}</style>
         <div className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
           <div>Carregando financeiro...</div>
@@ -1157,827 +1136,12 @@ export default function AdminFinanceiroPage() {
 
   return (
     <main className="page">
-      <style>{`
-        * { box-sizing: border-box; }
-
-        body {
-          margin: 0;
-          background: #f8fafc;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        .page {
-          min-height: 100vh;
-          background:
-            radial-gradient(circle at top left, rgba(34,197,94,0.08), transparent 28%),
-            linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-          color: #0f172a;
-        }
-
-        .header {
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          background: rgba(255,255,255,0.90);
-          border-bottom: 1px solid rgba(15,23,42,0.08);
-          backdrop-filter: blur(16px);
-          padding: 12px 18px;
-        }
-
-        .headerInner {
-          max-width: 1180px;
-          margin: 0 auto;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          cursor: pointer;
-          min-width: 0;
-        }
-
-        .brand img {
-          height: 42px;
-          width: auto;
-          display: block;
-        }
-
-        .brandTitle {
-          font-size: 18px;
-          font-weight: 950;
-          color: #0f172a;
-          letter-spacing: -0.05em;
-          line-height: 1;
-        }
-
-        .brandSub {
-          margin-top: 3px;
-          font-size: 11px;
-          color: #64748b;
-          font-weight: 800;
-        }
-
-        .headerActions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        .iconBtn {
-          border: none;
-          border-radius: 999px;
-          padding: 10px 14px;
-          background: #e2e8f0;
-          color: #0f172a;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .iconBtn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 24px rgba(15,23,42,0.12);
-        }
-
-        .iconBtn.dark {
-          background: #0f172a;
-          color: #ffffff;
-        }
-
-        .iconBtn.green {
-          background: #16a34a;
-          color: #ffffff;
-        }
-
-        .iconBtn:disabled {
-          opacity: 0.62;
-          cursor: not-allowed;
-        }
-
-        .container {
-          max-width: 1180px;
-          margin: 0 auto;
-          padding: 22px 16px 56px;
-        }
-
-        .hero {
-          border-radius: 34px;
-          padding: 30px;
-          background:
-            radial-gradient(circle at top right, rgba(34,197,94,0.22), transparent 36%),
-            linear-gradient(135deg, #0f172a 0%, #1e293b 58%, #334155 100%);
-          color: #ffffff;
-          box-shadow: 0 24px 70px rgba(15,23,42,0.22);
-          margin-bottom: 16px;
-          overflow: hidden;
-        }
-
-        .heroGrid {
-          display: grid;
-          grid-template-columns: minmax(0,1fr) 300px;
-          gap: 22px;
-          align-items: end;
-        }
-
-        .eyebrow {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          padding: 8px 12px;
-          background: rgba(255,255,255,0.12);
-          border: 1px solid rgba(255,255,255,0.16);
-          color: #bbf7d0;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin-bottom: 12px;
-        }
-
-        .heroTitle {
-          margin: 0;
-          max-width: 760px;
-          font-size: clamp(42px, 6vw, 74px);
-          line-height: 0.92;
-          font-weight: 950;
-          letter-spacing: -0.085em;
-        }
-
-        .heroTitle span {
-          color: #86efac;
-        }
-
-        .heroText {
-          max-width: 680px;
-          margin: 14px 0 0;
-          color: rgba(255,255,255,0.76);
-          font-size: 14px;
-          line-height: 1.6;
-          font-weight: 650;
-        }
-
-        .heroCard {
-          border-radius: 28px;
-          padding: 18px;
-          background: rgba(255,255,255,0.12);
-          border: 1px solid rgba(255,255,255,0.16);
-          backdrop-filter: blur(14px);
-        }
-
-        .heroCardLabel {
-          color: rgba(255,255,255,0.68);
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-        }
-
-        .heroCardValue {
-          margin-top: 8px;
-          color: #86efac;
-          font-size: 32px;
-          font-weight: 950;
-          letter-spacing: -0.06em;
-        }
-
-        .heroCardText {
-          margin-top: 8px;
-          color: rgba(255,255,255,0.74);
-          font-size: 12px;
-          font-weight: 750;
-          line-height: 1.45;
-        }
-
-        .alert {
-          border-radius: 18px;
-          padding: 13px 15px;
-          margin-bottom: 16px;
-          font-size: 13px;
-          font-weight: 850;
-          line-height: 1.45;
-        }
-
-        .alert.success {
-          background: #dcfce7;
-          color: #166534;
-          border: 1px solid #bbf7d0;
-        }
-
-        .alert.error {
-          background: #fee2e2;
-          color: #991b1b;
-          border: 1px solid #fecaca;
-        }
-
-        .alert.warning {
-          background: #fef3c7;
-          color: #92400e;
-          border: 1px solid #fde68a;
-        }
-
-        .statsGrid {
-          display: grid;
-          grid-template-columns: repeat(6, minmax(0,1fr));
-          gap: 12px;
-          margin-bottom: 16px;
-        }
-
-        .statCard {
-          background: rgba(255,255,255,0.92);
-          border: 1px solid rgba(15,23,42,0.07);
-          border-radius: 26px;
-          padding: 16px;
-          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
-        }
-
-        .statIcon {
-          width: 40px;
-          height: 40px;
-          border-radius: 16px;
-          background: #ecfdf5;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 20px;
-          margin-bottom: 10px;
-        }
-
-        .statValue {
-          color: #0f172a;
-          font-size: 24px;
-          font-weight: 950;
-          letter-spacing: -0.06em;
-          line-height: 1;
-        }
-
-        .statLabel {
-          margin-top: 6px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 850;
-          line-height: 1.35;
-        }
-
-        .toolbar {
-          background: rgba(255,255,255,0.92);
-          border: 1px solid rgba(15,23,42,0.07);
-          border-radius: 28px;
-          padding: 14px;
-          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
-          display: grid;
-          grid-template-columns: minmax(0,1fr) auto;
-          gap: 10px;
-          align-items: center;
-          margin-bottom: 16px;
-        }
-
-        .input,
-        .textarea {
-          width: 100%;
-          border: 1px solid rgba(15,23,42,0.10);
-          background: #ffffff;
-          color: #0f172a;
-          border-radius: 18px;
-          padding: 13px 14px;
-          font-size: 14px;
-          font-weight: 750;
-          outline: none;
-        }
-
-        .input:focus,
-        .textarea:focus {
-          border-color: #16a34a;
-          box-shadow: 0 0 0 4px rgba(22,163,74,0.12);
-        }
-
-        .textarea {
-          min-height: 92px;
-          resize: vertical;
-          line-height: 1.5;
-        }
-
-        .panel {
-          background: rgba(255,255,255,0.92);
-          border: 1px solid rgba(15,23,42,0.07);
-          border-radius: 30px;
-          box-shadow: 0 12px 34px rgba(15,23,42,0.06);
-          overflow: hidden;
-        }
-
-        .panelHeader {
-          padding: 18px 20px;
-          border-bottom: 1px solid rgba(15,23,42,0.07);
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: center;
-          flex-wrap: wrap;
-        }
-
-        .panelTitle {
-          margin: 0;
-          color: #0f172a;
-          font-size: 20px;
-          font-weight: 950;
-          letter-spacing: -0.04em;
-        }
-
-        .panelSub {
-          margin-top: 3px;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 750;
-        }
-
-        .panelBody {
-          padding: 16px;
-        }
-
-        .guideList {
-          display: grid;
-          gap: 12px;
-        }
-
-        .guideCard {
-          border: 1px solid rgba(15,23,42,0.08);
-          background: #ffffff;
-          border-radius: 24px;
-          padding: 15px;
-        }
-
-        .guideTop {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: flex-start;
-          flex-wrap: wrap;
-        }
-
-        .guideName {
-          color: #0f172a;
-          font-size: 16px;
-          font-weight: 950;
-          letter-spacing: -0.03em;
-        }
-
-        .guideMeta {
-          margin-top: 4px;
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-        }
-
-        .badge {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          padding: 6px 10px;
-          font-size: 11px;
-          font-weight: 950;
-        }
-
-        .badge.green {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        .badge.yellow {
-          background: #fef3c7;
-          color: #92400e;
-        }
-
-        .badge.red {
-          background: #fee2e2;
-          color: #991b1b;
-        }
-        .badge.blue {
-          background: #dbeafe;
-          color: #1d4ed8;
-        }
-
-        .saqueTabs {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        .tabBtn {
-          border: 1px solid rgba(15,23,42,0.10);
-          background: #ffffff;
-          color: #475569;
-          border-radius: 999px;
-          padding: 9px 12px;
-          font-size: 11px;
-          font-weight: 950;
-          cursor: pointer;
-        }
-
-        .tabBtn.active {
-          background: #0f172a;
-          color: #ffffff;
-          border-color: #0f172a;
-        }
-
-        .saqueList {
-          display: grid;
-          gap: 10px;
-        }
-
-        .saqueCard {
-          border: 1px solid rgba(15,23,42,0.08);
-          background: #ffffff;
-          border-radius: 22px;
-          padding: 14px;
-          display: grid;
-          gap: 12px;
-        }
-
-        .saqueTop {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .saqueTitle {
-          color: #0f172a;
-          font-size: 15px;
-          font-weight: 950;
-          letter-spacing: -0.03em;
-        }
-
-        .saqueMeta {
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-          margin-top: 4px;
-        }
-
-        .saqueValue {
-          color: #16a34a;
-          font-size: 22px;
-          font-weight: 950;
-          letter-spacing: -0.05em;
-          text-align: right;
-        }
-
-        .saqueActions {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-
-        .guideMetrics {
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0,1fr));
-          gap: 10px;
-          margin-top: 14px;
-        }
-
-        .metric {
-          background: #f8fafc;
-          border: 1px solid rgba(15,23,42,0.06);
-          border-radius: 18px;
-          padding: 11px;
-        }
-
-        .metricLabel {
-          color: #64748b;
-          font-size: 10px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-        }
-
-        .metricValue {
-          margin-top: 6px;
-          color: #0f172a;
-          font-size: 14px;
-          font-weight: 950;
-        }
-
-        .guideActions {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-          margin-top: 14px;
-        }
-
-        .smallBtn {
-          border: none;
-          border-radius: 999px;
-          padding: 10px 13px;
-          font-size: 12px;
-          font-weight: 950;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .smallBtn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 10px 22px rgba(15,23,42,0.10);
-        }
-
-        .smallBtn.green {
-          background: #16a34a;
-          color: #ffffff;
-        }
-
-        .smallBtn.dark {
-          background: #0f172a;
-          color: #ffffff;
-        }
-
-        .smallBtn.light {
-          background: #e2e8f0;
-          color: #0f172a;
-        }
-
-        .smallBtn:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-        }
-
-        .history {
-          margin-top: 12px;
-          border-top: 1px solid rgba(15,23,42,0.07);
-          padding-top: 12px;
-          display: grid;
-          gap: 8px;
-        }
-
-        .historyItem {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          color: #475569;
-          font-size: 12px;
-          font-weight: 750;
-          background: #f8fafc;
-          border-radius: 14px;
-          padding: 9px 10px;
-        }
-
-        .empty {
-          border: 1px dashed rgba(15,23,42,0.16);
-          border-radius: 24px;
-          padding: 28px;
-          text-align: center;
-          color: #64748b;
-          font-weight: 750;
-          background: #ffffff;
-        }
-
-        .modalOverlay {
-          position: fixed;
-          inset: 0;
-          z-index: 100;
-          background: rgba(15,23,42,0.56);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 18px;
-        }
-
-        .modal {
-          width: 100%;
-          max-width: 520px;
-          background: #ffffff;
-          border-radius: 30px;
-          box-shadow: 0 28px 90px rgba(15,23,42,0.30);
-          overflow: hidden;
-        }
-
-        .modalHeader {
-          padding: 21px;
-          border-bottom: 1px solid rgba(15,23,42,0.08);
-        }
-
-        .modalTitle {
-          margin: 0;
-          color: #0f172a;
-          font-size: 21px;
-          font-weight: 950;
-          letter-spacing: -0.04em;
-        }
-
-        .modalSub {
-          margin-top: 5px;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 800;
-          line-height: 1.45;
-        }
-
-        .modalBody {
-          padding: 21px;
-          display: grid;
-          gap: 13px;
-        }
-
-        .field {
-          display: grid;
-          gap: 7px;
-        }
-
-        .label {
-          color: #475569;
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.07em;
-        }
-
-        .helperBox {
-          border-radius: 20px;
-          background: #f8fafc;
-          border: 1px solid rgba(15,23,42,0.07);
-          padding: 13px;
-          color: #475569;
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-        }
-
-        .fileUploadBox {
-          margin-top: 10px;
-          border: 1px dashed rgba(15, 23, 42, 0.18);
-          background: #f8fafc;
-          color: #0f172a;
-          border-radius: 18px;
-          padding: 12px 13px;
-          display: grid;
-          grid-template-columns: 38px minmax(0, 1fr);
-          gap: 10px;
-          align-items: center;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-
-        .fileUploadBox:hover {
-          border-color: rgba(22, 163, 74, 0.35);
-          background: #f0fdf4;
-        }
-
-        .fileUploadBox input {
-          display: none;
-        }
-
-        .fileUploadIcon {
-          width: 38px;
-          height: 38px;
-          border-radius: 14px;
-          background: #ffffff;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 8px 18px rgba(15,23,42,0.06);
-        }
-
-        .fileUploadBox strong {
-          display: block;
-          font-size: 12px;
-          font-weight: 950;
-        }
-
-        .fileUploadBox small {
-          display: block;
-          margin-top: 2px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 750;
-          line-height: 1.3;
-        }
-
-        .filePreviewLine {
-          margin-top: 8px;
-          border-radius: 14px;
-          background: #ecfdf5;
-          color: #166534;
-          padding: 9px 10px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          font-size: 12px;
-          font-weight: 850;
-        }
-
-        .filePreviewLine span {
-          min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .filePreviewLine button {
-          border: none;
-          background: transparent;
-          color: #991b1b;
-          font-size: 11px;
-          font-weight: 950;
-          cursor: pointer;
-        }
-
-        .modalActions {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          margin-top: 8px;
-        }
-
-        @media (max-width: 1100px) {
-          .heroGrid {
-            grid-template-columns: 1fr;
-          }
-
-          .statsGrid {
-            grid-template-columns: repeat(3, minmax(0,1fr));
-          }
-
-          .guideMetrics {
-            grid-template-columns: repeat(2, minmax(0,1fr));
-          }
-        }
-
-        @media (max-width: 760px) {
-          .header {
-            padding: 10px 12px;
-          }
-
-          .brandTitle,
-          .brandSub {
-            display: none;
-          }
-
-          .container {
-            padding: 16px 12px 44px;
-          }
-
-          .hero,
-          .panel {
-            border-radius: 26px;
-          }
-
-          .hero {
-            padding: 22px;
-          }
-
-          .heroTitle {
-            font-size: 40px;
-          }
-
-          .statsGrid,
-          .guideMetrics,
-          .toolbar {
-            grid-template-columns: 1fr;
-          }
-
-          .headerActions {
-            justify-content: flex-end;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .guideTop {
-            display: grid;
-          }
-
-          .guideActions,
-          .modalActions {
-            display: grid;
-          }
-
-          .smallBtn,
-          .iconBtn {
-            width: 100%;
-          }
-        }
-      `}</style>
+      <style>{styles}</style>
 
       <header className="header">
         <div className="headerInner">
           <div className="brand" onClick={() => router.push('/admin/dashboard')}>
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-
             <div>
               <div className="brandTitle">PrussikTrails</div>
               <div className="brandSub">Financeiro administrativo</div>
@@ -1985,20 +1149,10 @@ export default function AdminFinanceiroPage() {
           </div>
 
           <div className="headerActions">
-            <button
-              type="button"
-              className="iconBtn"
-              onClick={() => router.push('/admin/dashboard')}
-            >
+            <button type="button" className="iconBtn" onClick={() => router.push('/admin/dashboard')}>
               Dashboard
             </button>
-
-            <button
-              type="button"
-              className="iconBtn green"
-              onClick={atualizar}
-              disabled={atualizando}
-            >
+            <button type="button" className="iconBtn green" onClick={atualizar} disabled={atualizando}>
               {atualizando ? 'Atualizando...' : 'Atualizar'}
             </button>
           </div>
@@ -2010,22 +1164,19 @@ export default function AdminFinanceiroPage() {
           <div className="heroGrid">
             <div>
               <div className="eyebrow">Financeiro ADMIN</div>
-
               <h1 className="heroTitle">
-                Receita, taxa, repasses e saldo em <span>visão única.</span>
+                Saldo atual, repasses e histórico em <span>visão segura.</span>
               </h1>
-
               <p className="heroText">
-                Controle valores confirmados, taxa da plataforma, repasses aos guias e saldo pendente.
-                O sistema bloqueia repasses maiores que o saldo disponível para evitar pagamentos duplicados ou superiores ao devido.
+                O painel administrativo separa o saldo pendente para saque dos ganhos históricos. O repasse pago reduz o saldo atual do guia e preserva o histórico geral do app.
               </p>
             </div>
 
             <aside className="heroCard">
-              <div className="heroCardLabel">Saldo pendente geral</div>
-              <div className="heroCardValue">{formatarMoeda(resumo.saldo_pendente)}</div>
+              <div className="heroCardLabel">Líquido disponível geral</div>
+              <div className="heroCardValue">{formatarMoeda(resumo.liquido_disponivel)}</div>
               <div className="heroCardText">
-                {resumo.guias_com_saldo} guia(s) com saldo pendente · {resumo.repasses_total} repasse(s) registrado(s).
+                Bruto pendente: {formatarMoeda(resumo.bruto_pendente)} · Taxa pendente: {formatarMoeda(resumo.taxa_pendente)} · {resumo.guias_com_saldo} guia(s) com saldo.
               </div>
             </aside>
           </div>
@@ -2036,42 +1187,36 @@ export default function AdminFinanceiroPage() {
         {aviso && <div className="alert warning">{aviso}</div>}
 
         <section className="statsGrid">
+          <article className="statCard current">
+            <div className="statIcon">⏳</div>
+            <div className="statValue">{formatarMoeda(resumo.bruto_pendente)}</div>
+            <div className="statLabel">bruto pendente atual</div>
+          </article>
+          <article className="statCard current">
+            <div className="statIcon">🏷️</div>
+            <div className="statValue">{formatarMoeda(resumo.taxa_pendente)}</div>
+            <div className="statLabel">taxa pendente atual</div>
+          </article>
+          <article className="statCard current">
+            <div className="statIcon">🧭</div>
+            <div className="statValue">{formatarMoeda(resumo.liquido_disponivel)}</div>
+            <div className="statLabel">líquido disponível para repasse</div>
+          </article>
           <article className="statCard">
             <div className="statIcon">💰</div>
             <div className="statValue">{formatarMoeda(resumo.receita_bruta)}</div>
-            <div className="statLabel">receita bruta confirmada</div>
+            <div className="statLabel">receita bruta histórica</div>
           </article>
-
-          <article className="statCard">
-            <div className="statIcon">🏷️</div>
-            <div className="statValue">{formatarMoeda(resumo.taxa_plataforma)}</div>
-            <div className="statLabel">taxa plataforma</div>
-          </article>
-
-          <article className="statCard">
-            <div className="statIcon">🧭</div>
-            <div className="statValue">{formatarMoeda(resumo.liquido_guias)}</div>
-            <div className="statLabel">líquido dos guias</div>
-          </article>
-
           <article className="statCard">
             <div className="statIcon">✅</div>
             <div className="statValue">{formatarMoeda(resumo.valor_pago)}</div>
-            <div className="statLabel">já repassado</div>
+            <div className="statLabel">já repassado histórico</div>
           </article>
-
-          <article className="statCard">
-            <div className="statIcon">⏳</div>
-            <div className="statValue">{formatarMoeda(resumo.saldo_pendente)}</div>
-            <div className="statLabel">saldo pendente</div>
-          </article>
-
           <article className="statCard">
             <div className="statIcon">🏦</div>
             <div className="statValue">{resumoSaques.pendentes}</div>
-            <div className="statLabel">saque(s) pendente(s) · {formatarMoeda(resumoSaques.valorPendente)} solicitado(s)</div>
+            <div className="statLabel">saque(s) pendente(s) · {formatarMoeda(resumoSaques.valorPendente)}</div>
           </article>
-
           <article className="statCard">
             <div className="statIcon">⚠️</div>
             <div className="statValue">{formatarMoeda(resumo.excesso_repasse)}</div>
@@ -2089,20 +1234,11 @@ export default function AdminFinanceiroPage() {
 
           <div className="headerActions">
             {busca && (
-              <button
-                type="button"
-                className="iconBtn"
-                onClick={() => setBusca('')}
-              >
+              <button type="button" className="iconBtn" onClick={() => setBusca('')}>
                 Limpar busca
               </button>
             )}
-
-            <button
-              type="button"
-              className="iconBtn dark"
-              onClick={() => router.push('/admin/dashboard')}
-            >
+            <button type="button" className="iconBtn dark" onClick={() => router.push('/admin/dashboard')}>
               Voltar
             </button>
           </div>
@@ -2116,24 +1252,21 @@ export default function AdminFinanceiroPage() {
                 {resumoSaques.pendentes} pendente(s), {resumoSaques.aprovados} aprovado(s), {resumoSaques.pagos} pago(s).
               </div>
             </div>
-
             <div className="saqueTabs">
-              <button type="button" className={`tabBtn ${filtroSaque === 'pendentes' ? 'active' : ''}`} onClick={() => setFiltroSaque('pendentes')}>Pendentes</button>
-              <button type="button" className={`tabBtn ${filtroSaque === 'aprovados' ? 'active' : ''}`} onClick={() => setFiltroSaque('aprovados')}>Aprovados</button>
-              <button type="button" className={`tabBtn ${filtroSaque === 'pagos' ? 'active' : ''}`} onClick={() => setFiltroSaque('pagos')}>Pagos</button>
-              <button type="button" className={`tabBtn ${filtroSaque === 'recusados' ? 'active' : ''}`} onClick={() => setFiltroSaque('recusados')}>Recusados</button>
-              <button type="button" className={`tabBtn ${filtroSaque === 'todos' ? 'active' : ''}`} onClick={() => setFiltroSaque('todos')}>Todos</button>
+              {(['pendentes', 'aprovados', 'pagos', 'recusados', 'todos'] as FiltroSaque[]).map((filtro) => (
+                <button key={filtro} type="button" className={`tabBtn ${filtroSaque === filtro ? 'active' : ''}`} onClick={() => setFiltroSaque(filtro)}>
+                  {filtro.charAt(0).toUpperCase() + filtro.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
 
           <div className="panelBody">
             {saquesFiltrados.length === 0 ? (
-              <div className="empty">
-                Nenhuma solicitação de saque encontrada neste filtro.
-              </div>
+              <div className="empty">Nenhuma solicitação de saque encontrada neste filtro.</div>
             ) : (
               <div className="saqueList">
-                {saquesFiltrados.slice(0, 8).map((saque) => {
+                {saquesFiltrados.slice(0, 10).map((saque) => {
                   const guia = guias.find((item) => item.guia_id === saque.guia_id) || null
                   const saldoAtual = Number(guia?.saldo_pendente || saque.saldo_atual_guia || 0)
                   const valorSaque = valorDoSaque(saque)
@@ -2151,21 +1284,10 @@ export default function AdminFinanceiroPage() {
                             Titular informado: {saque.titular_nome || '-'}
                             <br />
                             Saldo líquido atual do guia: {formatarMoeda(saldoAtual)}
-                            {saque.observacao_guia && (
-                              <>
-                                <br />
-                                Observação do guia: {saque.observacao_guia}
-                              </>
-                            )}
-                            {saque.observacao_admin && (
-                              <>
-                                <br />
-                                Observação Admin: {saque.observacao_admin}
-                              </>
-                            )}
+                            {saque.observacao_guia && <><br />Observação do guia: {saque.observacao_guia}</>}
+                            {saque.observacao_admin && <><br />Observação Admin: {saque.observacao_admin}</>}
                           </div>
                         </div>
-
                         <div>
                           <div className="saqueValue">{formatarMoeda(valorSaque)}</div>
                           {badgeSaque(saque)}
@@ -2178,27 +1300,22 @@ export default function AdminFinanceiroPage() {
                             Aprovar
                           </button>
                         )}
-
                         {(saquePendente(saque) || saqueAprovado(saque)) && (
                           <button
                             type="button"
                             className="smallBtn dark"
-                            disabled={valorSaque <= 0 || valorSaque > saldoAtual}
+                            disabled={valorSaque <= 0 || emCentavos(valorSaque) > emCentavos(saldoAtual)}
                             onClick={() => abrirModalSaque(saque, 'pagar')}
                           >
                             Registrar pagamento
                           </button>
                         )}
-
                         {(saquePendente(saque) || saqueAprovado(saque)) && (
                           <button type="button" className="smallBtn light" onClick={() => abrirModalSaque(saque, 'recusar')}>
                             Recusar
                           </button>
                         )}
-
-                        {valorSaque > saldoAtual && !saquePago(saque) && (
-                          <span className="badge red">Valor acima do saldo atual</span>
-                        )}
+                        {emCentavos(valorSaque) > emCentavos(saldoAtual) && !saquePago(saque) && <span className="badge red">Valor acima do saldo atual</span>}
                       </div>
                     </article>
                   )
@@ -2211,18 +1328,16 @@ export default function AdminFinanceiroPage() {
         <section className="panel">
           <div className="panelHeader">
             <div>
-              <h2 className="panelTitle">Guias e valores a receber</h2>
+              <h2 className="panelTitle">Guias e valores a repassar</h2>
               <div className="panelSub">
-                {guiasFiltrados.length} guia(s) encontrado(s) no filtro atual.
+                {guiasFiltrados.length} guia(s) encontrado(s). O primeiro bloco de valores é sempre o saldo atual pendente.
               </div>
             </div>
           </div>
 
           <div className="panelBody">
             {guiasFiltrados.length === 0 ? (
-              <div className="empty">
-                Nenhum guia encontrado com os filtros atuais.
-              </div>
+              <div className="empty">Nenhum guia encontrado com os filtros atuais.</div>
             ) : (
               <div className="guideList">
                 {guiasFiltrados.map((guia) => (
@@ -2234,21 +1349,10 @@ export default function AdminFinanceiroPage() {
                           {guia.email || 'E-mail não informado'} · {guia.reservas_confirmadas} reserva(s) confirmada(s)
                           <br />
                           ID: {guia.guia_id}
-                          {guia.pix_chave && (
-                            <>
-                              <br />
-                              PIX: {guia.pix_tipo ? `${guia.pix_tipo} · ` : ''}{guia.pix_chave}
-                            </>
-                          )}
-                          {guia.cadastur && (
-                            <>
-                              <br />
-                              CADASTUR: {guia.cadastur}
-                            </>
-                          )}
+                          {guia.pix_chave && <><br />PIX: {guia.pix_tipo ? `${guia.pix_tipo} · ` : ''}{guia.pix_chave}</>}
+                          {guia.cadastur && <><br />CADASTUR: {guia.cadastur}</>}
                         </div>
                       </div>
-
                       <div>
                         {guia.excesso_repasse > 0 ? (
                           <span className="badge red">Excesso de repasse</span>
@@ -2260,65 +1364,44 @@ export default function AdminFinanceiroPage() {
                       </div>
                     </div>
 
-                    <div className="guideMetrics">
-                      <div className="metric">
-                        <div className="metricLabel">Receita bruta</div>
-                        <div className="metricValue">{formatarMoeda(guia.receita_bruta)}</div>
+                    <div className="guideMetrics currentMetrics">
+                      <div className="metric current">
+                        <div className="metricLabel">Bruto pendente</div>
+                        <div className="metricValue">{formatarMoeda(guia.bruto_pendente)}</div>
                       </div>
-
-                      <div className="metric">
-                        <div className="metricLabel">Taxa {guia.taxa_percentual}%</div>
-                        <div className="metricValue">{formatarMoeda(guia.taxa_plataforma)}</div>
+                      <div className="metric current">
+                        <div className="metricLabel">Taxa pendente {guia.taxa_percentual}%</div>
+                        <div className="metricValue">{formatarMoeda(guia.taxa_pendente)}</div>
                       </div>
-
-                      <div className="metric">
-                        <div className="metricLabel">Líquido guia</div>
-                        <div className="metricValue">{formatarMoeda(guia.liquido_guia)}</div>
+                      <div className="metric current strongMetric">
+                        <div className="metricLabel">Líquido disponível</div>
+                        <div className="metricValue">{formatarMoeda(guia.liquido_disponivel)}</div>
                       </div>
-
                       <div className="metric">
-                        <div className="metricLabel">Já pago</div>
+                        <div className="metricLabel">Já repassado</div>
                         <div className="metricValue">{formatarMoeda(guia.valor_pago)}</div>
                       </div>
-
                       <div className="metric">
-                        <div className="metricLabel">Saldo</div>
-                        <div className="metricValue">{formatarMoeda(guia.saldo_pendente)}</div>
+                        <div className="metricLabel">Bruto histórico</div>
+                        <div className="metricValue">{formatarMoeda(guia.receita_bruta)}</div>
                       </div>
                     </div>
 
                     <div className="guideActions">
-                      <button
-                        type="button"
-                        className="smallBtn green"
-                        disabled={guia.saldo_pendente <= 0}
-                        onClick={() => abrirModalRepasse(guia)}
-                      >
+                      <button type="button" className="smallBtn green" disabled={guia.saldo_pendente <= 0} onClick={() => abrirModalRepasse(guia)}>
                         Registrar pagamento
                       </button>
-
-                      <button
-                        type="button"
-                        className="smallBtn light"
-                        onClick={() => router.push(`/guias/${guia.guia_id}`)}
-                      >
+                      <button type="button" className="smallBtn light" onClick={() => router.push(`/guias/${guia.guia_id}`)}>
                         Ver perfil público
                       </button>
-
-                      <button
-                        type="button"
-                        className="smallBtn dark"
-                        onClick={() => {
-                          setBusca(guia.guia_id)
-                        }}
-                      >
+                      <button type="button" className="smallBtn dark" onClick={() => setBusca(guia.guia_id)}>
                         Filtrar histórico
                       </button>
                     </div>
 
                     {guia.repasses.length > 0 && (
                       <div className="history">
-                        {guia.repasses.slice(0, 2).map((repasse) => (
+                        {guia.repasses.slice(0, 3).map((repasse) => (
                           <div className="historyItem" key={repasse.id}>
                             <span>
                               {repasse.descricao || repasse.observacao || 'Repasse registrado'}
@@ -2362,7 +1445,7 @@ export default function AdminFinanceiroPage() {
                 <br />
                 Titular: {saqueSelecionado.titular_nome || '-'}
                 <br />
-                O Admin deve conferir se a chave PIX está no nome do guia antes de registrar o pagamento.
+                O Admin deve conferir se a chave PIX está correta antes de registrar o pagamento.
               </div>
 
               {acaoSaque === 'pagar' && (
@@ -2374,27 +1457,18 @@ export default function AdminFinanceiroPage() {
                     onChange={(event) => setComprovanteSaqueUrl(event.target.value)}
                     placeholder="Link, ID da transação, número do comprovante ou observação curta"
                   />
-
                   <label className="fileUploadBox">
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={selecionarComprovanteSaque}
-                      disabled={processandoSaque}
-                    />
+                    <input type="file" accept="image/*,application/pdf" onChange={selecionarComprovanteSaque} disabled={processandoSaque} />
                     <span className="fileUploadIcon">📎</span>
                     <span>
                       <strong>Anexar comprovante</strong>
                       <small>PDF, imagem ou print do pagamento · máximo 10 MB</small>
                     </span>
                   </label>
-
                   {comprovanteSaqueArquivo && (
                     <div className="filePreviewLine">
                       <span>{comprovanteSaqueArquivo.name}</span>
-                      <button type="button" onClick={removerComprovanteSaque} disabled={processandoSaque}>
-                        Remover
-                      </button>
+                      <button type="button" onClick={removerComprovanteSaque} disabled={processandoSaque}>Remover</button>
                     </div>
                   )}
                 </div>
@@ -2411,20 +1485,10 @@ export default function AdminFinanceiroPage() {
               </div>
 
               <div className="modalActions">
-                <button
-                  type="submit"
-                  className={acaoSaque === 'recusar' ? 'smallBtn light' : 'smallBtn dark'}
-                  disabled={processandoSaque}
-                >
+                <button type="submit" className={acaoSaque === 'recusar' ? 'smallBtn light' : 'smallBtn dark'} disabled={processandoSaque}>
                   {processandoSaque ? 'Processando...' : acaoSaque === 'aprovar' ? 'Confirmar aprovação' : acaoSaque === 'pagar' ? 'Confirmar pagamento' : 'Confirmar recusa'}
                 </button>
-
-                <button
-                  type="button"
-                  className="smallBtn light"
-                  disabled={processandoSaque}
-                  onClick={fecharModalSaque}
-                >
+                <button type="button" className="smallBtn light" disabled={processandoSaque} onClick={fecharModalSaque}>
                   Cancelar
                 </button>
               </div>
@@ -2439,11 +1503,21 @@ export default function AdminFinanceiroPage() {
             <div className="modalHeader">
               <h2 className="modalTitle">Registrar pagamento ao guia</h2>
               <div className="modalSub">
-                Guia: {guiaSelecionado.nome} · saldo atual: {formatarMoeda(guiaSelecionado.saldo_pendente)}
+                Guia: {guiaSelecionado.nome} · líquido disponível: {formatarMoeda(guiaSelecionado.saldo_pendente)}
               </div>
             </div>
 
             <div className="modalBody">
+              <div className="helperBox">
+                <strong>Saldo atual deste guia</strong>
+                <br />
+                Bruto pendente: {formatarMoeda(guiaSelecionado.bruto_pendente)}
+                <br />
+                Taxa Prussik pendente: {formatarMoeda(guiaSelecionado.taxa_pendente)}
+                <br />
+                Líquido disponível: {formatarMoeda(guiaSelecionado.liquido_disponivel)}
+              </div>
+
               <div className="field">
                 <label className="label">Valor pago</label>
                 <input
@@ -2455,75 +1529,40 @@ export default function AdminFinanceiroPage() {
                   }}
                   onBlur={() => {
                     const valor = normalizarNumero(valorPagamento, 0)
-
                     if (valor <= 0) {
                       setValorPagamento('')
                       return
                     }
-
                     if (emCentavos(valor) > emCentavos(saldoDisponivel)) {
                       setValorPagamento(formatarValorInput(saldoDisponivel))
-                      setErro(
-                        `Valor ajustado ao saldo disponível: ${formatarMoeda(saldoDisponivel)}.`
-                      )
+                      setErro(`Valor ajustado ao saldo disponível: ${formatarMoeda(saldoDisponivel)}.`)
                       return
                     }
-
                     setValorPagamento(formatarValorInput(valor))
                   }}
                   inputMode="decimal"
                   placeholder="0,00"
                 />
-
                 <div className="helperBox">
                   Valor máximo permitido para este guia: <strong>{formatarMoeda(saldoDisponivel)}</strong>.
-                  {valorMaiorQueSaldo && (
-                    <>
-                      <br />
-                      <strong style={{ color: '#991b1b' }}>
-                        O valor informado ultrapassa o saldo disponível e não será enviado.
-                      </strong>
-                    </>
-                  )}
+                  {valorMaiorQueSaldo && <><br /><strong style={{ color: '#991b1b' }}>O valor informado ultrapassa o saldo disponível e não será enviado.</strong></>}
                 </div>
               </div>
 
               <div className="field">
                 <label className="label">Observação</label>
-                <textarea
-                  className="textarea"
-                  value={observacao}
-                  onChange={(event) => setObservacao(event.target.value)}
-                  placeholder="Ex.: Pix, TED, pagamento parcial, comprovante..."
-                />
+                <textarea className="textarea" value={observacao} onChange={(event) => setObservacao(event.target.value)} placeholder="Ex.: Pix, TED, pagamento parcial, comprovante..." />
               </div>
 
               <div className="helperBox">
-                Este pagamento reduzirá o saldo pendente do guia. Para evitar duplicidade,
-                cada registro ficará no histórico de repasses. O backend também bloqueia
-                qualquer valor maior que o saldo disponível.
+                Este pagamento reduz o saldo pendente do guia. O histórico total permanece preservado no app e na tela financeira do guia.
               </div>
 
               <div className="modalActions">
-                <button
-                  type="submit"
-                  className="smallBtn dark"
-                  disabled={
-                    registrando ||
-                    valorInvalido ||
-                    Boolean(valorMaiorQueSaldo) ||
-                    saldoDisponivel <= 0
-                  }
-                >
+                <button type="submit" className="smallBtn dark" disabled={registrando || valorInvalido || Boolean(valorMaiorQueSaldo) || saldoDisponivel <= 0}>
                   {registrando ? 'Registrando...' : 'Confirmar pagamento'}
                 </button>
-
-                <button
-                  type="button"
-                  className="smallBtn light"
-                  disabled={registrando}
-                  onClick={fecharModal}
-                >
+                <button type="button" className="smallBtn light" disabled={registrando} onClick={fecharModal}>
                   Cancelar
                 </button>
               </div>
@@ -2534,3 +1573,109 @@ export default function AdminFinanceiroPage() {
     </main>
   )
 }
+
+const loadingStyles = `
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .loading { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f8fafc; color: #0f172a; }
+  .loadingCard { background: #ffffff; border-radius: 28px; padding: 28px; text-align: center; box-shadow: 0 18px 50px rgba(15,23,42,0.08); }
+  .loadingCard img { height: 64px; margin-bottom: 12px; }
+`
+
+const styles = `
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .page { min-height: 100vh; background: radial-gradient(circle at top left, rgba(34,197,94,0.08), transparent 28%), linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%); color: #0f172a; }
+  .header { position: sticky; top: 0; z-index: 40; background: rgba(255,255,255,0.90); border-bottom: 1px solid rgba(15,23,42,0.08); backdrop-filter: blur(16px); padding: 12px 18px; }
+  .headerInner { max-width: 1180px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; }
+  .brand img { height: 42px; width: auto; display: block; }
+  .brandTitle { font-size: 18px; font-weight: 950; color: #0f172a; letter-spacing: -0.05em; line-height: 1; }
+  .brandSub { margin-top: 3px; font-size: 11px; color: #64748b; font-weight: 800; }
+  .headerActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .iconBtn, .smallBtn { border: none; border-radius: 999px; padding: 10px 14px; background: #e2e8f0; color: #0f172a; font-size: 12px; font-weight: 950; cursor: pointer; transition: 0.2s ease; }
+  .smallBtn { padding: 10px 13px; }
+  .iconBtn:hover:not(:disabled), .smallBtn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(15,23,42,0.12); }
+  .iconBtn.dark, .smallBtn.dark { background: #0f172a; color: #ffffff; }
+  .iconBtn.green, .smallBtn.green { background: #16a34a; color: #ffffff; }
+  .smallBtn.light { background: #e2e8f0; color: #0f172a; }
+  .iconBtn:disabled, .smallBtn:disabled { opacity: 0.62; cursor: not-allowed; }
+  .container { max-width: 1180px; margin: 0 auto; padding: 22px 16px 56px; }
+  .hero { border-radius: 34px; padding: 30px; background: radial-gradient(circle at top right, rgba(34,197,94,0.22), transparent 36%), linear-gradient(135deg, #0f172a 0%, #1e293b 58%, #334155 100%); color: #ffffff; box-shadow: 0 24px 70px rgba(15,23,42,0.22); margin-bottom: 16px; overflow: hidden; }
+  .heroGrid { display: grid; grid-template-columns: minmax(0,1fr) 330px; gap: 22px; align-items: end; }
+  .eyebrow { display: inline-flex; width: fit-content; border-radius: 999px; padding: 8px 12px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.16); color: #bbf7d0; font-size: 11px; font-weight: 950; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
+  .heroTitle { margin: 0; max-width: 760px; font-size: clamp(42px, 6vw, 74px); line-height: 0.92; font-weight: 950; letter-spacing: -0.085em; }
+  .heroTitle span { color: #86efac; }
+  .heroText { max-width: 680px; margin: 14px 0 0; color: rgba(255,255,255,0.76); font-size: 14px; line-height: 1.6; font-weight: 650; }
+  .heroCard { border-radius: 28px; padding: 18px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.16); backdrop-filter: blur(14px); }
+  .heroCardLabel { color: rgba(255,255,255,0.68); font-size: 11px; font-weight: 950; letter-spacing: 0.10em; text-transform: uppercase; }
+  .heroCardValue { margin-top: 8px; color: #86efac; font-size: 32px; font-weight: 950; letter-spacing: -0.06em; }
+  .heroCardText { margin-top: 8px; color: rgba(255,255,255,0.74); font-size: 12px; font-weight: 750; line-height: 1.45; }
+  .alert { border-radius: 18px; padding: 13px 15px; margin-bottom: 16px; font-size: 13px; font-weight: 850; line-height: 1.45; }
+  .alert.success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+  .alert.error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+  .alert.warning { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .statsGrid { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 12px; margin-bottom: 16px; }
+  .statCard { background: rgba(255,255,255,0.92); border: 1px solid rgba(15,23,42,0.07); border-radius: 26px; padding: 16px; box-shadow: 0 12px 34px rgba(15,23,42,0.06); }
+  .statCard.current { border-color: rgba(22,163,74,0.18); background: linear-gradient(180deg, #f0fdf4, #ffffff); }
+  .statIcon { width: 40px; height: 40px; border-radius: 16px; background: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 10px; }
+  .statValue { color: #0f172a; font-size: 22px; font-weight: 950; letter-spacing: -0.06em; line-height: 1; }
+  .statLabel { margin-top: 6px; color: #64748b; font-size: 11px; font-weight: 850; line-height: 1.35; }
+  .toolbar { background: rgba(255,255,255,0.92); border: 1px solid rgba(15,23,42,0.07); border-radius: 28px; padding: 14px; box-shadow: 0 12px 34px rgba(15,23,42,0.06); display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; margin-bottom: 16px; }
+  .input, .textarea { width: 100%; border: 1px solid rgba(15,23,42,0.10); background: #ffffff; color: #0f172a; border-radius: 18px; padding: 13px 14px; font-size: 14px; font-weight: 750; outline: none; }
+  .input:focus, .textarea:focus { border-color: #16a34a; box-shadow: 0 0 0 4px rgba(22,163,74,0.12); }
+  .textarea { min-height: 92px; resize: vertical; line-height: 1.5; }
+  .panel { background: rgba(255,255,255,0.92); border: 1px solid rgba(15,23,42,0.07); border-radius: 30px; box-shadow: 0 12px 34px rgba(15,23,42,0.06); overflow: hidden; }
+  .panelHeader { padding: 18px 20px; border-bottom: 1px solid rgba(15,23,42,0.07); display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .panelTitle { margin: 0; color: #0f172a; font-size: 20px; font-weight: 950; letter-spacing: -0.04em; }
+  .panelSub { margin-top: 3px; color: #64748b; font-size: 12px; font-weight: 750; }
+  .panelBody { padding: 16px; }
+  .guideList, .saqueList { display: grid; gap: 12px; }
+  .guideCard, .saqueCard { border: 1px solid rgba(15,23,42,0.08); background: #ffffff; border-radius: 24px; padding: 15px; }
+  .saqueCard { display: grid; gap: 12px; }
+  .guideTop, .saqueTop { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  .guideName, .saqueTitle { color: #0f172a; font-size: 16px; font-weight: 950; letter-spacing: -0.03em; }
+  .saqueTitle { font-size: 15px; }
+  .guideMeta, .saqueMeta { margin-top: 4px; color: #64748b; font-size: 12px; line-height: 1.45; font-weight: 750; }
+  .saqueValue { color: #16a34a; font-size: 22px; font-weight: 950; letter-spacing: -0.05em; text-align: right; }
+  .badge { display: inline-flex; width: fit-content; border-radius: 999px; padding: 6px 10px; font-size: 11px; font-weight: 950; }
+  .badge.green { background: #dcfce7; color: #166534; }
+  .badge.yellow { background: #fef3c7; color: #92400e; }
+  .badge.red { background: #fee2e2; color: #991b1b; }
+  .badge.blue { background: #dbeafe; color: #1d4ed8; }
+  .saqueTabs, .saqueActions, .guideActions, .modalActions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tabBtn { border: 1px solid rgba(15,23,42,0.10); background: #ffffff; color: #475569; border-radius: 999px; padding: 9px 12px; font-size: 11px; font-weight: 950; cursor: pointer; }
+  .tabBtn.active { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+  .guideMetrics { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+  .metric { background: #f8fafc; border: 1px solid rgba(15,23,42,0.06); border-radius: 18px; padding: 11px; }
+  .metric.current { background: #f0fdf4; border-color: rgba(22,163,74,0.14); }
+  .metric.strongMetric { background: #dcfce7; border-color: rgba(22,163,74,0.25); }
+  .metricLabel { color: #64748b; font-size: 10px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.05em; }
+  .metricValue { margin-top: 6px; color: #0f172a; font-size: 14px; font-weight: 950; }
+  .guideActions { margin-top: 14px; }
+  .history { margin-top: 12px; border-top: 1px solid rgba(15,23,42,0.07); padding-top: 12px; display: grid; gap: 8px; }
+  .historyItem { display: flex; justify-content: space-between; gap: 10px; color: #475569; font-size: 12px; font-weight: 750; background: #f8fafc; border-radius: 14px; padding: 9px 10px; }
+  .empty { border: 1px dashed rgba(15,23,42,0.16); border-radius: 24px; padding: 28px; text-align: center; color: #64748b; font-weight: 750; background: #ffffff; }
+  .modalOverlay { position: fixed; inset: 0; z-index: 100; background: rgba(15,23,42,0.56); display: flex; justify-content: center; align-items: center; padding: 18px; }
+  .modal { width: 100%; max-width: 520px; background: #ffffff; border-radius: 30px; box-shadow: 0 28px 90px rgba(15,23,42,0.30); overflow: hidden; }
+  .modalHeader { padding: 21px; border-bottom: 1px solid rgba(15,23,42,0.08); }
+  .modalTitle { margin: 0; color: #0f172a; font-size: 21px; font-weight: 950; letter-spacing: -0.04em; }
+  .modalSub { margin-top: 5px; color: #64748b; font-size: 12px; font-weight: 800; line-height: 1.45; }
+  .modalBody { padding: 21px; display: grid; gap: 13px; }
+  .field { display: grid; gap: 7px; }
+  .label { color: #475569; font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.07em; }
+  .helperBox { border-radius: 20px; background: #f8fafc; border: 1px solid rgba(15,23,42,0.07); padding: 13px; color: #475569; font-size: 12px; line-height: 1.45; font-weight: 750; }
+  .fileUploadBox { margin-top: 10px; border: 1px dashed rgba(15, 23, 42, 0.18); background: #f8fafc; color: #0f172a; border-radius: 18px; padding: 12px 13px; display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 10px; align-items: center; cursor: pointer; transition: 0.2s ease; }
+  .fileUploadBox:hover { border-color: rgba(22, 163, 74, 0.35); background: #f0fdf4; }
+  .fileUploadBox input { display: none; }
+  .fileUploadIcon { width: 38px; height: 38px; border-radius: 14px; background: #ffffff; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 8px 18px rgba(15,23,42,0.06); }
+  .fileUploadBox strong { display: block; font-size: 12px; font-weight: 950; }
+  .fileUploadBox small { display: block; margin-top: 2px; color: #64748b; font-size: 11px; font-weight: 750; line-height: 1.3; }
+  .filePreviewLine { margin-top: 8px; border-radius: 14px; background: #ecfdf5; color: #166534; padding: 9px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 850; }
+  .filePreviewLine span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filePreviewLine button { border: none; background: transparent; color: #991b1b; font-size: 11px; font-weight: 950; cursor: pointer; }
+
+  @media (max-width: 1120px) { .heroGrid { grid-template-columns: 1fr; } .statsGrid { grid-template-columns: repeat(3, minmax(0,1fr)); } .guideMetrics { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  @media (max-width: 760px) { .header { padding: 10px 12px; } .brandTitle, .brandSub { display: none; } .container { padding: 16px 12px 44px; } .hero, .panel { border-radius: 26px; } .hero { padding: 22px; } .heroTitle { font-size: 40px; } .statsGrid, .guideMetrics, .toolbar { grid-template-columns: 1fr; } .headerActions { justify-content: flex-end; } }
+  @media (max-width: 480px) { .guideTop, .saqueTop { display: grid; } .guideActions, .modalActions, .saqueActions { display: grid; } .smallBtn, .iconBtn { width: 100%; } }
+`
