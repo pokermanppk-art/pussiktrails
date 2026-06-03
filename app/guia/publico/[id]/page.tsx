@@ -68,14 +68,39 @@ type Roteiro = {
   embarque_data_hora?: string | null
   saida_data_hora?: string | null
   data_realizacao?: string | null
+  [key: string]: unknown
 }
 
 type Reserva = {
   id: string
   roteiro_id?: string | null
+  id_roteiro?: string | null
+  roteiroId?: string | null
   cliente_id?: string | null
+  id_cliente?: string | null
+  clienteId?: string | null
+  usuario_cliente_id?: string | null
   status?: string | null
   pagamento_status?: string | null
+  status_pagamento?: string | null
+  payment_status?: string | null
+  pix_status?: string | null
+  status_pix?: string | null
+  paghiper_status?: string | null
+  transaction_status?: string | null
+  status_transacao?: string | null
+  guia_id?: string | null
+  id_guia?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  data?: string | null
+  data_roteiro?: string | null
+  data_evento?: string | null
+  data_realizacao?: string | null
+  data_hora?: string | null
+  realizado_em?: string | null
+  executado_em?: string | null
+  [key: string]: unknown
 }
 
 type Avaliacao = {
@@ -245,21 +270,87 @@ function anosDesde(valor?: string | null): number {
   return Math.max(0, anos)
 }
 
+function valorNormalizadoRegistro(registro: Record<string, unknown>, campos: string[]): string {
+  for (const campo of campos) {
+    const valor = registro[campo]
+    if (valor === null || valor === undefined) continue
+
+    const normalizado = normalizar(String(valor))
+    if (normalizado) return normalizado
+  }
+
+  return ''
+}
+
 function pagamentoConfirmado(reserva: Reserva): boolean {
-  const pagamento = normalizar(reserva.pagamento_status)
+  const registro = reserva as Record<string, unknown>
+
+  const pagamento = valorNormalizadoRegistro(registro, [
+    'pagamento_status',
+    'status_pagamento',
+    'payment_status',
+    'pix_status',
+    'status_pix',
+    'paghiper_status',
+    'transaction_status',
+    'status_transacao',
+    'status_paghiper'
+  ])
+
   const status = normalizar(reserva.status)
 
-  return (
-    pagamento === 'pago' ||
-    pagamento === 'confirmado' ||
-    pagamento === 'aprovado' ||
-    pagamento === 'paid' ||
-    pagamento === 'approved' ||
-    status === 'confirmada' ||
-    status === 'realizada' ||
-    status === 'pago' ||
-    status === 'paga'
-  )
+  const statusConfirmados = [
+    'pago',
+    'paga',
+    'pagamento_confirmado',
+    'confirmado',
+    'confirmada',
+    'aprovado',
+    'aprovada',
+    'approved',
+    'paid',
+    'completed',
+    'complete',
+    'succeeded',
+    'success',
+    'sucesso',
+    'liquidado',
+    'liquidada',
+    'settled',
+    'realizado',
+    'realizada',
+    'executado',
+    'executada',
+    'concluido',
+    'concluida',
+    'concluído',
+    'concluída'
+  ]
+
+  return statusConfirmados.includes(pagamento) || statusConfirmados.includes(status)
+}
+
+function reservaRoteiroId(reserva: Reserva): string {
+  const registro = reserva as Record<string, unknown>
+  return String(
+    reserva.roteiro_id ||
+      reserva.id_roteiro ||
+      reserva.roteiroId ||
+      registro.roteiro ||
+      ''
+  ).trim()
+}
+
+function reservaClienteId(reserva: Reserva): string {
+  const registro = reserva as Record<string, unknown>
+  return String(
+    reserva.cliente_id ||
+      reserva.id_cliente ||
+      reserva.clienteId ||
+      reserva.usuario_cliente_id ||
+      registro.cliente ||
+      ''
+  ).trim()
 }
 
 function roteiroAtivo(roteiro: Roteiro): boolean {
@@ -274,6 +365,51 @@ function roteiroAtivo(roteiro: Roteiro): boolean {
     status === 'publicado' ||
     status === 'publicada'
   )
+}
+
+function roteiroStatusExecutado(roteiro: Roteiro): boolean {
+  const status = normalizar(roteiro.status)
+
+  return (
+    status === 'realizado' ||
+    status === 'realizada' ||
+    status === 'executado' ||
+    status === 'executada' ||
+    status === 'concluido' ||
+    status === 'concluida' ||
+    status === 'concluído' ||
+    status === 'concluída' ||
+    status === 'finalizado' ||
+    status === 'finalizada' ||
+    status === 'encerrado' ||
+    status === 'encerrada'
+  )
+}
+
+function roteiroVisivelNoPerfil(roteiro: Roteiro): boolean {
+  const status = normalizar(roteiro.status)
+
+  if (!status) return true
+
+  const ocultos = [
+    'rascunho',
+    'cancelado',
+    'cancelada',
+    'excluido',
+    'excluida',
+    'excluído',
+    'excluída',
+    'rejeitado',
+    'rejeitada',
+    'arquivado',
+    'arquivada',
+    'inativo',
+    'inativa'
+  ]
+
+  if (ocultos.includes(status)) return false
+
+  return roteiroAtivo(roteiro) || roteiroStatusExecutado(roteiro)
 }
 
 function fotoRoteiro(roteiro: Roteiro): string {
@@ -302,28 +438,105 @@ function classeVisualMedalha(valor?: string | null): string {
     .replace(/^-+|-+$/g, '')
 }
 
-function dataExecucaoRoteiro(roteiro: Roteiro): Date | null {
-  const candidatos = [
-    roteiro.embarque_data_hora,
-    roteiro.saida_data_hora,
-    roteiro.data_hora,
-    roteiro.data_roteiro,
-    roteiro.data_inicio,
-    roteiro.data_saida,
-    roteiro.data_evento,
-    roteiro.data_realizacao,
-    roteiro.inicio_em,
-    roteiro.data
+function dataSegura(valor: unknown): Date | null {
+  if (!valor) return null
+
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) return valor
+
+  const texto = String(valor).trim()
+  if (!texto) return null
+
+  const matchDataBR = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/)
+  if (matchDataBR) {
+    const [, dia, mes, ano, hora = '12', minuto = '00'] = matchDataBR
+    const dataBR = new Date(Number(ano), Number(mes) - 1, Number(dia), Number(hora), Number(minuto))
+    if (!Number.isNaN(dataBR.getTime())) return dataBR
+  }
+
+  const data = new Date(texto)
+  if (Number.isNaN(data.getTime())) return null
+
+  const ano = data.getFullYear()
+  if (ano < 2020 || ano > 2100) return null
+
+  return data
+}
+
+function dataExecucaoRegistro(registro: Record<string, unknown>): Date | null {
+  const camposPreferidos = [
+    'embarque_data_hora',
+    'saida_data_hora',
+    'data_hora',
+    'data_roteiro',
+    'data_trilha',
+    'data_inicio',
+    'data_saida',
+    'data_evento',
+    'data_realizacao',
+    'data_execucao',
+    'data_agendada',
+    'data_agendamento',
+    'inicio_em',
+    'realizado_em',
+    'executado_em',
+    'start_date',
+    'starts_at',
+    'data'
   ]
 
-  for (const valor of candidatos) {
-    if (!valor) continue
+  for (const campo of camposPreferidos) {
+    const data = dataSegura(registro[campo])
+    if (data) return data
+  }
 
-    const data = new Date(valor)
-    if (!Number.isNaN(data.getTime())) return data
+  const dataSeparada =
+    registro.data ||
+    registro.data_roteiro ||
+    registro.data_trilha ||
+    registro.data_inicio ||
+    registro.data_saida ||
+    registro.data_evento
+
+  const horaSeparada =
+    registro.hora ||
+    registro.horario ||
+    registro.horario_saida ||
+    registro.hora_saida ||
+    registro.hora_inicio
+
+  if (dataSeparada && horaSeparada) {
+    const dataComHora = dataSegura(`${String(dataSeparada).trim()} ${String(horaSeparada).trim()}`)
+    if (dataComHora) return dataComHora
+  }
+
+  for (const [chave, valor] of Object.entries(registro)) {
+    const chaveNormalizada = normalizar(chave)
+
+    if (
+      chaveNormalizada === 'created_at' ||
+      chaveNormalizada === 'updated_at' ||
+      chaveNormalizada.includes('cadastur')
+    ) {
+      continue
+    }
+
+    const pareceCampoDeData =
+      chaveNormalizada.includes('data') ||
+      chaveNormalizada.includes('date') ||
+      chaveNormalizada.endsWith('_em') ||
+      chaveNormalizada.endsWith('_at')
+
+    if (!pareceCampoDeData) continue
+
+    const data = dataSegura(valor)
+    if (data) return data
   }
 
   return null
+}
+
+function dataExecucaoRoteiro(roteiro: Roteiro): Date | null {
+  return dataExecucaoRegistro(roteiro as Record<string, unknown>)
 }
 
 function roteiroJaExecutadoPorData(roteiro: Roteiro): boolean {
@@ -339,15 +552,49 @@ function roteiroJaExecutadoPorData(roteiro: Roteiro): boolean {
 
 function reservaRealizada(reserva: Reserva): boolean {
   const status = normalizar(reserva.status)
-  return status === 'realizada' || status === 'executada' || status === 'concluida' || status === 'concluída'
+  return (
+    status === 'realizada' ||
+    status === 'executada' ||
+    status === 'concluida' ||
+    status === 'concluída' ||
+    status === 'finalizada' ||
+    status === 'finalizado' ||
+    status === 'encerrada' ||
+    status === 'encerrado'
+  )
 }
 
-function reservaContaParaProgressao(reserva: Reserva, roteiro?: Roteiro): boolean {
+function reservaJaExecutadaPorData(reserva: Reserva): boolean {
+  const data = dataExecucaoRegistro(reserva as Record<string, unknown>)
+
+  if (!data) return false
+
+  const fimDoDia = new Date(data)
+  fimDoDia.setHours(23, 59, 59, 999)
+
+  return fimDoDia.getTime() < Date.now()
+}
+
+function reservaContaParaProgressao(
+  reserva: Reserva,
+  roteiro?: Roteiro,
+  clientesComAvaliacao?: Set<string>
+): boolean {
   if (reservaRealizada(reserva)) return true
+
+  const clienteId = reservaClienteId(reserva)
+  if (clienteId && clientesComAvaliacao?.has(clienteId)) return true
+
   if (!pagamentoConfirmado(reserva)) return false
+
+  if (reservaJaExecutadaPorData(reserva)) return true
   if (!roteiro) return false
 
-  return roteiroJaExecutadoPorData(roteiro)
+  return roteiroStatusExecutado(roteiro) || roteiroJaExecutadoPorData(roteiro)
+}
+
+function roteiroContaParaProgressao(roteiro: Roteiro): boolean {
+  return roteiroStatusExecutado(roteiro) || roteiroJaExecutadoPorData(roteiro)
 }
 
 function primeiroNome(nome?: string | null): string {
@@ -533,7 +780,7 @@ export default function PerfilPublicoGuiaPage() {
         .from('roteiros')
         .select('*')
         .eq(campo, id)
-        .limit(100)
+        .limit(200)
 
       if (!error && data) {
         ;(data as Roteiro[]).forEach((roteiro: Roteiro) => {
@@ -542,7 +789,63 @@ export default function PerfilPublicoGuiaPage() {
       }
     }
 
-    return Array.from(mapa.values()).filter(roteiroAtivo)
+    return Array.from(mapa.values()).filter(roteiroVisivelNoPerfil)
+  }
+
+  const buscarReservasDoGuia = async (id: string, roteiroIds: string[]) => {
+    const mapa = new Map<string, Reserva>()
+
+    if (roteiroIds.length > 0) {
+      const camposRoteiro = ['roteiro_id', 'id_roteiro']
+
+      for (const campo of camposRoteiro) {
+        const { data, error } = await supabase
+          .from('reservas')
+          .select('*')
+          .in(campo, roteiroIds)
+          .limit(2000)
+
+        if (!error && data) {
+          ;(data as Reserva[]).forEach((reserva: Reserva) => {
+            if (reserva?.id) mapa.set(reserva.id, reserva)
+          })
+        }
+      }
+    }
+
+    const camposGuia = ['guia_id', 'id_guia', 'user_id', 'usuario_id']
+
+    for (const campo of camposGuia) {
+      const { data, error } = await supabase
+        .from('reservas')
+        .select('*')
+        .eq(campo, id)
+        .limit(2000)
+
+      if (!error && data) {
+        ;(data as Reserva[]).forEach((reserva: Reserva) => {
+          if (reserva?.id) mapa.set(reserva.id, reserva)
+        })
+      }
+    }
+
+    return Array.from(mapa.values())
+  }
+
+  const buscarRoteirosPorIds = async (ids: string[]) => {
+    const idsUnicos = Array.from(new Set(ids.filter(Boolean)))
+
+    if (idsUnicos.length === 0) return []
+
+    const { data, error } = await supabase
+      .from('roteiros')
+      .select('*')
+      .in('id', idsUnicos)
+      .limit(200)
+
+    if (error || !data) return []
+
+    return data as Roteiro[]
   }
 
   const buscarAvaliacoesDoGuia = async (id: string) => {
@@ -595,6 +898,39 @@ export default function PerfilPublicoGuiaPage() {
     })
   }
 
+  const carregarMetricasPublicas = async (id: string): Promise<Stats | null> => {
+    try {
+      const response = await fetch(`/api/guia/publico/${encodeURIComponent(id)}/metricas`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache'
+        }
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.sucesso || !data?.stats) {
+        console.warn('Métricas públicas do guia indisponíveis:', data)
+        return null
+      }
+
+      return {
+        totalKm: Number(data.stats.totalKm || 0),
+        totalRoteiros: Number(data.stats.totalRoteiros || 0),
+        totalReservas: Number(data.stats.totalReservas || 0),
+        reservasConfirmadas: Number(data.stats.reservasConfirmadas || 0),
+        totalClientes: Number(data.stats.totalClientes || 0),
+        avaliacaoMedia: Number(data.stats.avaliacaoMedia || 0),
+        totalAvaliacoes: Number(data.stats.totalAvaliacoes || 0)
+      }
+    } catch (error) {
+      console.warn('Erro ao carregar métricas públicas do guia pela API:', error)
+      return null
+    }
+  }
+
   const carregarPerfil = async () => {
     setCarregando(true)
     setErro('')
@@ -623,16 +959,7 @@ export default function PerfilPublicoGuiaPage() {
       setRoteiros(roteirosDoGuia)
 
       const roteiroIds = roteirosDoGuia.map((roteiro: Roteiro) => roteiro.id).filter(Boolean)
-      let reservas: Reserva[] = []
-
-      if (roteiroIds.length > 0) {
-        const { data: reservasData, error: reservasError } = await supabase
-          .from('reservas')
-          .select('*')
-          .in('roteiro_id', roteiroIds)
-
-        if (!reservasError && reservasData) reservas = reservasData as Reserva[]
-      }
+      const reservas = await buscarReservasDoGuia(guiaId, roteiroIds)
 
       const avaliacoesDoGuia = await buscarAvaliacoesDoGuia(guiaId)
       setAvaliacoes(avaliacoesDoGuia)
@@ -641,19 +968,50 @@ export default function PerfilPublicoGuiaPage() {
         roteirosDoGuia.map((roteiro: Roteiro) => [roteiro.id, roteiro])
       )
 
-      const reservasExecutadas = reservas.filter((reserva: Reserva) => {
-        const roteiro = reserva.roteiro_id ? roteirosPorId.get(reserva.roteiro_id) : undefined
-        return reservaContaParaProgressao(reserva, roteiro)
-      })
+      const roteiroIdsReservas = Array.from(
+        new Set(reservas.map((reserva: Reserva) => reservaRoteiroId(reserva)).filter(Boolean))
+      )
 
-      const roteiroIdsExecutados = new Set(
-        reservasExecutadas
-          .map((reserva: Reserva) => reserva.roteiro_id)
+      const roteirosFaltantes = roteiroIdsReservas.filter((idRoteiro) => !roteirosPorId.has(idRoteiro))
+
+      if (roteirosFaltantes.length > 0) {
+        const roteirosExtras = await buscarRoteirosPorIds(roteirosFaltantes)
+        roteirosExtras.forEach((roteiro: Roteiro) => {
+          if (roteiro?.id) roteirosPorId.set(roteiro.id, roteiro)
+        })
+      }
+
+      const todosRoteirosDoCalculo = Array.from(roteirosPorId.values())
+
+      const clientesComAvaliacao = new Set(
+        avaliacoesDoGuia
+          .map((avaliacao: Avaliacao) => avaliacao.cliente_id)
           .filter(Boolean) as string[]
       )
 
-      const roteirosExecutados = roteirosDoGuia.filter((roteiro: Roteiro) =>
-        roteiroIdsExecutados.has(roteiro.id)
+      const reservasPagas = reservas.filter((reserva: Reserva) => pagamentoConfirmado(reserva))
+
+      const reservasExecutadas = reservas.filter((reserva: Reserva) => {
+        const roteiroId = reservaRoteiroId(reserva)
+        const roteiro = roteiroId ? roteirosPorId.get(roteiroId) : undefined
+        return reservaContaParaProgressao(reserva, roteiro, clientesComAvaliacao)
+      })
+
+      const reservasComerciais = reservasPagas.length > 0 ? reservasPagas : reservasExecutadas
+
+      const roteiroIdsComerciais = new Set<string>()
+
+      todosRoteirosDoCalculo.forEach((roteiro: Roteiro) => {
+        if (roteiroContaParaProgressao(roteiro)) roteiroIdsComerciais.add(roteiro.id)
+      })
+
+      reservasComerciais.forEach((reserva: Reserva) => {
+        const roteiroId = reservaRoteiroId(reserva)
+        if (roteiroId) roteiroIdsComerciais.add(roteiroId)
+      })
+
+      const roteirosExecutados = todosRoteirosDoCalculo.filter((roteiro: Roteiro) =>
+        roteiroIdsComerciais.has(roteiro.id)
       )
 
       const totalKm = roteirosExecutados.reduce(
@@ -661,9 +1019,16 @@ export default function PerfilPublicoGuiaPage() {
         0
       )
 
-      const clientesUnicos = new Set(
-        reservasExecutadas.map((reserva: Reserva) => reserva.cliente_id).filter(Boolean)
-      )
+      const clientesUnicos = new Set<string>()
+
+      reservasComerciais.forEach((reserva: Reserva) => {
+        const clienteId = reservaClienteId(reserva)
+        if (clienteId) clientesUnicos.add(clienteId)
+      })
+
+      clientesComAvaliacao.forEach((clienteId) => {
+        if (clienteId) clientesUnicos.add(clienteId)
+      })
 
       const avaliacaoMedia =
         avaliacoesDoGuia.length > 0
@@ -675,11 +1040,17 @@ export default function PerfilPublicoGuiaPage() {
         totalKm,
         totalRoteiros: roteirosExecutados.length,
         totalReservas: reservas.length,
-        reservasConfirmadas: reservasExecutadas.length,
+        reservasConfirmadas: reservasComerciais.length,
         totalClientes: clientesUnicos.size,
         avaliacaoMedia,
         totalAvaliacoes: avaliacoesDoGuia.length
       })
+
+      const metricasPublicas = await carregarMetricasPublicas(guiaId)
+
+      if (metricasPublicas) {
+        setStats(metricasPublicas)
+      }
     } catch (error) {
       console.error('Erro inesperado ao carregar perfil público:', error)
       setErro('Erro inesperado ao carregar este perfil.')
@@ -690,7 +1061,7 @@ export default function PerfilPublicoGuiaPage() {
 
   const progressoKm = useMemo(() => calcularProgressoKm(stats.totalKm), [stats.totalKm])
   const nivelAtual = useMemo(() => nivelPorKm(stats.totalKm), [stats.totalKm])
-  const principaisRoteiros = useMemo(() => roteiros.slice(0, 3), [roteiros])
+  const principaisRoteiros = useMemo(() => roteiros.filter(roteiroAtivo).slice(0, 3), [roteiros])
 
   const cadasturNumero = String(
     guia?.cadastur_numero ||
