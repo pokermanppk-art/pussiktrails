@@ -61,6 +61,7 @@ type MedalhaVisual = {
   icone?: string
   desbloqueada: boolean
   categoria: 'progressao' | 'beta'
+  classeVisual: string
 }
 
 const niveisCurtidas = [
@@ -209,6 +210,12 @@ function normalizarNome(valor?: string | null) {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
+}
+
+function criarClasseMedalha(valor?: string | null) {
+  return normalizarNome(valor)
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 function getNivelPorKm(totalKm: number) {
@@ -551,7 +558,8 @@ export default function PerfilPublicoCliente() {
       descricao: medalha.descricao,
       svg: medalha.svg,
       desbloqueada: totalKm >= medalha.km,
-      categoria: 'progressao' as const
+      categoria: 'progressao' as const,
+      classeVisual: criarClasseMedalha(medalha.nome)
     }))
 
     const especiais = medalhasEspeciais.map((medalha, index) => ({
@@ -561,7 +569,8 @@ export default function PerfilPublicoCliente() {
       svg: medalha.svg,
       icone: medalha.icone,
       desbloqueada: medalha.desbloqueado,
-      categoria: 'beta' as const
+      categoria: 'beta' as const,
+      classeVisual: criarClasseMedalha(medalha.nome)
     }))
 
     return [...progressao, ...especiais]
@@ -788,7 +797,7 @@ export default function PerfilPublicoCliente() {
                   <button
                     key={medalha.id}
                     type="button"
-                    className={`medalTile ${medalha.categoria} ${medalha.desbloqueada ? 'unlocked' : 'locked'}`}
+                    className={`medalTile ${medalha.categoria} medalKey-${medalha.classeVisual} ${medalha.desbloqueada ? 'unlocked' : 'locked'}`}
                     onClick={() => setMedalhaSelecionada(medalha)}
                     aria-label={medalha.desbloqueada ? `Ver conquista ${medalha.nome}` : 'Ver conquista bloqueada'}
                   >
@@ -855,7 +864,7 @@ export default function PerfilPublicoCliente() {
               ×
             </button>
 
-            <div className={`medalDetailArt ${medalhaSelecionada.categoria}`}>
+            <div className={`medalDetailArt ${medalhaSelecionada.categoria} medalKey-${medalhaSelecionada.classeVisual}`}>
               {medalhaSelecionada.svg ? (
                 <img src={medalhaSelecionada.svg} alt="" />
               ) : (
@@ -1298,8 +1307,30 @@ export default function PerfilPublicoCliente() {
         }
 
         .medalTile.beta .medalTileSvg {
-          max-width: 70%;
-          max-height: 70%;
+          max-width: 74%;
+          max-height: 74%;
+          transform: translateY(-5%);
+          transform-origin: center center;
+        }
+
+        .medalTile.medalKey-inicio-da-jornada-beta .medalTileSvg {
+          max-width: 78%;
+          max-height: 78%;
+          transform: translateY(-7%);
+        }
+
+        .medalTile.medalKey-aventureiro-pioneiro-beta .medalTileSvg {
+          max-width: 76%;
+          max-height: 76%;
+          transform: translateY(-6%);
+        }
+
+        .medalTile.medalKey-voz-da-trilha-beta .medalTileSvg,
+        .medalTile.medalKey-guia-pioneiro-beta .medalTileSvg,
+        .medalTile.medalKey-construtor-da-jornada-beta .medalTileSvg {
+          max-width: 76%;
+          max-height: 76%;
+          transform: translateY(-6%);
         }
 
         .medalTile.locked .medalTileSvg {
@@ -1371,8 +1402,25 @@ export default function PerfilPublicoCliente() {
         }
 
         .medalDetailArt.beta img {
-          max-width: 72%;
-          max-height: 72%;
+          max-width: 74%;
+          max-height: 74%;
+          transform: translateY(-5%);
+          transform-origin: center center;
+        }
+
+        .medalDetailArt.medalKey-inicio-da-jornada-beta img {
+          max-width: 78%;
+          max-height: 78%;
+          transform: translateY(-7%);
+        }
+
+        .medalDetailArt.medalKey-aventureiro-pioneiro-beta img,
+        .medalDetailArt.medalKey-voz-da-trilha-beta img,
+        .medalDetailArt.medalKey-guia-pioneiro-beta img,
+        .medalDetailArt.medalKey-construtor-da-jornada-beta img {
+          max-width: 76%;
+          max-height: 76%;
+          transform: translateY(-6%);
         }
 
         .medalDetailArt span {
