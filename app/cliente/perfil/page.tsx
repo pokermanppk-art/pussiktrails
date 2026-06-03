@@ -76,6 +76,20 @@ type MedalhaBanco = {
   } | null
 }
 
+type MedalhaVisual = {
+  id: string
+  nome: string
+  descricao: string
+  categoria: string
+  status: string
+  svg?: string
+  fallbackSvg?: string
+  icone?: string
+  cor?: string
+  desbloqueada: boolean
+  especial?: boolean
+}
+
 type TierJornada = {
   key: string
   nome: string
@@ -219,6 +233,10 @@ function normalizarChaveMedalha(valor?: string | null) {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
+}
+
+function classeVisualMedalha(valor?: string | null) {
+  return normalizarChaveMedalha(valor).replace(/_/g, '-')
 }
 
 function obterSvgMedalhaBeta(medalha?: MedalhaBanco['medalhas'] | null) {
@@ -474,6 +492,13 @@ export default function PerfilCliente() {
   const [prioridadeSuporte, setPrioridadeSuporte] = useState<'baixa' | 'normal' | 'alta' | 'urgente'>('normal')
   const [enviandoSuporte, setEnviandoSuporte] = useState(false)
   const [erroSuporte, setErroSuporte] = useState('')
+  const [modalPerfilAberto, setModalPerfilAberto] = useState(false)
+  const [nomePerfil, setNomePerfil] = useState('')
+  const [bioPerfil, setBioPerfil] = useState('')
+  const [telefonePerfil, setTelefonePerfil] = useState('')
+  const [salvandoPerfil, setSalvandoPerfil] = useState(false)
+  const [erroPerfil, setErroPerfil] = useState('')
+  const [medalhaSelecionada, setMedalhaSelecionada] = useState<MedalhaVisual | null>(null)
 
   const [linhas, setLinhas] = useState<FotoComDimensao[][]>([])
   const [carregandoFotos, setCarregandoFotos] = useState(true)
@@ -491,6 +516,47 @@ export default function PerfilCliente() {
   const fotosLiberadas = useMemo(() => calcularFotosLiberadas(totalKm), [totalKm])
   const faltamKm = Math.max(0, proximoNivel.km - totalKm)
   const medalhasKmConquistadas = METAS_JORNADA.filter((meta) => totalKm >= meta.km).length
+
+  const medalhasVisuais = useMemo<MedalhaVisual[]>(() => {
+    const progressao = METAS_JORNADA.map((meta) => {
+      const desbloqueada = totalKm >= meta.km
+
+      return {
+        id: `progressao-${meta.key}`,
+        nome: meta.titulo,
+        descricao: meta.descricao,
+        categoria: 'progressao',
+        status: desbloqueada ? 'Conquistada' : 'Bloqueada',
+        svg: meta.svg,
+        cor: meta.cor,
+        desbloqueada
+      }
+    })
+
+    const especiais = medalhasBanco.slice(0, 12).map((item) => {
+      const medalha = item.medalhas
+      const svgBeta = obterSvgMedalhaBeta(medalha)
+      const fallbackSvgBeta = obterFallbackSvgMedalhaBeta(svgBeta)
+      const nomeMedalha = medalha?.nome || 'Medalha'
+      const categoria = medalha?.categoria || 'Especial'
+
+      return {
+        id: `especial-${item.id}`,
+        nome: nomeMedalha,
+        descricao: medalha?.descricao || 'Conquista especial do Passaporte PrussikTrails.',
+        categoria,
+        status: 'Conquistada',
+        svg: svgBeta || medalha?.icone || '',
+        fallbackSvg: fallbackSvgBeta || undefined,
+        icone: svgBeta ? undefined : medalha?.icone || '🏅',
+        cor: medalha?.cor || '#991b1b',
+        desbloqueada: true,
+        especial: true
+      }
+    })
+
+    return [...progressao, ...especiais]
+  }, [totalKm, medalhasBanco])
 
   useEffect(() => {
     router.prefetch('/cliente/dashboard')
@@ -822,20 +888,64 @@ export default function PerfilCliente() {
   }
 
   async function carregarEstatisticas(userId: string) {
+    try {
+      const response = await fetch(`/api/cliente/perfil/metricas?userId=${encodeURIComponent(userId)}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache'
+        }
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (response.ok && data?.sucesso !== false && data?.stats) {
+        setTotalKm(numeroSeguro(data.stats.totalKm))
+        setTotalTrilhas(numeroSeguro(data.stats.totalTrilhas))
+        return
+      }
+
+      console.warn('Métricas do cliente pela API indisponíveis. Usando fallback local:', data)
+    } catch (error) {
+      console.warn('Erro ao carregar métricas do cliente pela API. Usando fallback local:', error)
+    }
+
     const { data: reservas } = await supabase
       .from('reservas')
       .select('*, roteiro:roteiro_id(km, distancia_km)')
       .eq('cliente_id', userId)
-      .eq('status', 'realizada')
 
     const lista = ((reservas || []) as unknown as ReservaEstatistica[])
 
-    const km = lista.reduce((total, reserva) => {
+    const reservasValidas = lista.filter((reserva) => {
+      const status = normalizar(reserva.status)
+      const pagamento = normalizar(reserva.pagamento_status)
+
+      return (
+        status === 'realizada' ||
+        status === 'realizado' ||
+        status === 'executada' ||
+        status === 'executado' ||
+        status === 'concluida' ||
+        status === 'concluída' ||
+        status === 'confirmada' ||
+        status === 'paga' ||
+        status === 'pago' ||
+        pagamento === 'pago' ||
+        pagamento === 'confirmado' ||
+        pagamento === 'aprovado' ||
+        pagamento === 'paid' ||
+        pagamento === 'approved'
+      )
+    })
+
+    const km = reservasValidas.reduce((total, reserva) => {
       return total + numeroSeguro(reserva.roteiro?.km ?? reserva.roteiro?.distancia_km)
     }, 0)
 
     setTotalKm(km)
-    setTotalTrilhas(lista.length)
+    setTotalTrilhas(reservasValidas.length)
   }
 
   async function carregarBio(userId: string) {
@@ -1245,6 +1355,110 @@ export default function PerfilCliente() {
     router.push(item.tipo === 'guia' ? `/guia/publico/${item.id}` : `/cliente/publico/${item.id}`)
   }
 
+  function abrirModalEditarPerfil() {
+    setMenuConfiguracoesAberto(false)
+    setErroPerfil('')
+    setNomePerfil(nome || user?.nome || '')
+    setBioPerfil(bio || user?.bio || '')
+    setTelefonePerfil(formatarTelefone(telefone || user?.telefone || user?.celular || user?.whatsapp || ''))
+    setModalPerfilAberto(true)
+  }
+
+  async function salvarPerfilConfiguracoes() {
+    if (!user?.id) return
+
+    const nomeLimpo = nomePerfil.trim()
+    const bioLimpa = bioPerfil.trim()
+    const telefoneLimpo = somenteNumeros(telefonePerfil)
+
+    if (!nomeLimpo) {
+      setErroPerfil('Informe seu nome para atualizar o perfil.')
+      return
+    }
+
+    if (telefoneLimpo && !telefoneValido(telefoneLimpo)) {
+      setErroPerfil('Informe um telefone com DDD ou deixe o campo em branco.')
+      return
+    }
+
+    try {
+      setSalvandoPerfil(true)
+      setErroPerfil('')
+      setErro('')
+      setMensagem('')
+
+      const payloadUsuario: Record<string, unknown> = {
+        nome: nomeLimpo,
+        updated_at: new Date().toISOString()
+      }
+
+      if (telefoneLimpo) {
+        payloadUsuario.telefone = telefoneLimpo
+        payloadUsuario.celular = telefoneLimpo
+        payloadUsuario.whatsapp = telefoneLimpo
+        payloadUsuario.telefone_formatado = formatarTelefone(telefoneLimpo)
+        payloadUsuario.celular_formatado = formatarTelefone(telefoneLimpo)
+      }
+
+      const usuarioAtualizado = await atualizarUsuarioComFallback(user.id, payloadUsuario)
+
+      const responseBio = await fetch('/api/usuario/bio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          usuarioId: user.id,
+          usuario_id: user.id,
+          tipoUsuario: 'cliente',
+          tipo: 'cliente',
+          bio: bioLimpa
+        })
+      })
+
+      const dataBio = await responseBio.json().catch(() => null)
+
+      if (!responseBio.ok || dataBio?.sucesso === false || dataBio?.success === false) {
+        throw new Error(
+          dataBio?.erro ||
+            dataBio?.error ||
+            dataBio?.message ||
+            `Erro HTTP ${responseBio.status} ao salvar biografia.`
+        )
+      }
+
+      const bioSalva = String(dataBio?.bio ?? dataBio?.usuario?.bio ?? bioLimpa)
+
+      setNome(nomeLimpo)
+      setBio(bioSalva)
+      if (telefoneLimpo) setTelefone(formatarTelefone(telefoneLimpo))
+
+      atualizarLocalStorage({
+        ...(usuarioAtualizado || {}),
+        ...(dataBio?.usuario || dataBio?.user || dataBio?.data || {}),
+        id: user.id,
+        tipo: 'cliente',
+        nome: nomeLimpo,
+        bio: bioSalva,
+        telefone: telefoneLimpo || undefined,
+        celular: telefoneLimpo || undefined,
+        whatsapp: telefoneLimpo || undefined,
+        telefone_formatado: telefoneLimpo ? formatarTelefone(telefoneLimpo) : undefined,
+        celular_formatado: telefoneLimpo ? formatarTelefone(telefoneLimpo) : undefined
+      })
+
+      setModalPerfilAberto(false)
+      setMensagem('✅ Perfil atualizado!')
+      setTimeout(() => setMensagem(''), 3000)
+    } catch (error: unknown) {
+      console.error('Erro ao salvar perfil:', error)
+      setErroPerfil(error instanceof Error ? error.message : 'Não foi possível atualizar o perfil.')
+    } finally {
+      setSalvandoPerfil(false)
+    }
+  }
+
   function handleLogout() {
     localStorage.removeItem('user')
     router.push('/login')
@@ -1422,6 +1636,10 @@ export default function PerfilCliente() {
 
               {menuConfiguracoesAberto && (
                 <div className="settingsMenu">
+                  <button type="button" onClick={abrirModalEditarPerfil}>
+                    ✏️ Editar perfil
+                  </button>
+
                   <button type="button" onClick={() => abrirModalSuporte('suporte')}>
                     🛟 Ajuda e suporte
                   </button>
@@ -1467,30 +1685,12 @@ export default function PerfilCliente() {
           <div className="heroTextBlock">
             <div className="kicker">Passaporte PrussikTrails</div>
 
-            {editandoNome ? (
-              <div className="nameEditRow">
-                <input value={nome} onChange={(event) => setNome(event.target.value)} autoFocus />
-                <button type="button" onClick={salvarNome}>Salvar</button>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => {
-                    setEditandoNome(false)
-                    carregarNome(user.id)
-                  }}
-                >
-                  Cancelar
-                </button>
-              </div>
-            ) : (
-              <div className="nameRow">
-                <h1>{nome || user.email}</h1>
-                <button type="button" onClick={() => setEditandoNome(true)}>✏️</button>
-              </div>
-            )}
+            <div className="nameRow cleanNameRow">
+              <h1>{nome || user.email}</h1>
+            </div>
 
-            <p>
-              Seu perfil de jornada outdoor: quilômetros, trilhas, fotos e medalhas reunidos em um só lugar.
+            <p className="heroBioText">
+              {bio || 'Seu perfil de jornada outdoor: quilômetros, trilhas, fotos e medalhas reunidos em um só lugar.'}
             </p>
 
             <div className="heroStats">
@@ -1537,53 +1737,10 @@ export default function PerfilCliente() {
 
         <section className="grid">
           <div className="leftStack">
-            <section className="card bioCard">
-              <div className="cardHeader">
-                <div>
-                  <h2>Sobre minha jornada</h2>
-                  <span>Um espaço curto para contar seu estilo de aventura.</span>
-                </div>
-                {!editandoBio && (
-                  <button type="button" onClick={() => setEditandoBio(true)}>Editar</button>
-                )}
-              </div>
-
-              <div className="cardBody">
-                {editandoBio ? (
-                  <>
-                    <textarea
-                      value={bio}
-                      onChange={(event) => setBio(event.target.value)}
-                      rows={4}
-                      placeholder="Conte algo sobre você, seu ritmo, o que gosta de viver nas trilhas..."
-                    />
-                    <div className="actionRow">
-                      <button type="button" className="primary" onClick={salvarBio} disabled={salvandoBio}>{salvandoBio ? 'Salvando...' : 'Salvar bio'}</button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => {
-                          setEditandoBio(false)
-                          carregarBio(user.id)
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <p className="bioText">
-                    {bio || 'Clique em editar para adicionar uma biografia simples ao seu Passaporte PrussikTrails.'}
-                  </p>
-                )}
-              </div>
-            </section>
-
             <section className="card communitySearchCard">
               <div className="cardHeader">
                 <div>
                   <h2>Encontrar pessoas</h2>
-                  <span>Busque guias ou aventureiros pelo nome.</span>
                 </div>
               </div>
 
@@ -1592,7 +1749,7 @@ export default function PerfilCliente() {
                   <input
                     value={buscaComunidade}
                     onChange={(event) => setBuscaComunidade(event.target.value)}
-                    placeholder="Digite o nome de um guia ou amigo..."
+                    placeholder="Busque guias ou aventureiros"
                     autoComplete="off"
                   />
 
@@ -1609,12 +1766,6 @@ export default function PerfilCliente() {
                     </button>
                   )}
                 </div>
-
-                {buscaComunidade.trim().length < 2 && (
-                  <div className="communityHint">
-                    Digite pelo menos 2 letras para encontrar pessoas da comunidade.
-                  </div>
-                )}
 
                 {buscandoComunidade && (
                   <div className="communityHint">Buscando na comunidade...</div>
@@ -1665,149 +1816,47 @@ export default function PerfilCliente() {
               </div>
             </section>
 
-            <section className="card paymentCard">
-              <div className="cardHeader">
-                <div>
-                  <h2>Dados para pagamento</h2>
-                  <span>Necessários para gerar PIX e confirmar reservas com segurança.</span>
-                </div>
-                {!editandoDadosPagamento && (
-                  <button type="button" onClick={() => setEditandoDadosPagamento(true)}>Editar</button>
-                )}
-              </div>
-
-              <div className="cardBody">
-                {editandoDadosPagamento ? (
-                  <>
-                    <div className="paymentGrid">
-                      <label className="paymentField">
-                        <span>CPF do cliente</span>
-                        <input
-                          value={cpf}
-                          onChange={(event) => setCpf(formatarCpf(event.target.value))}
-                          inputMode="numeric"
-                          autoComplete="off"
-                          placeholder="000.000.000-00"
-                        />
-                      </label>
-
-                      <label className="paymentField">
-                        <span>Telefone com DDD</span>
-                        <input
-                          value={telefone}
-                          onChange={(event) => setTelefone(formatarTelefone(event.target.value))}
-                          inputMode="tel"
-                          autoComplete="tel"
-                          placeholder="(11) 99999-9999"
-                        />
-                      </label>
-                    </div>
-
-                    <div className="secureNotice">
-                      O CPF é usado para emissão do PIX pela PagHiper. Evite usar dados fictícios, pois isso pode impedir a confirmação correta do pagamento.
-                    </div>
-
-                    <div className="actionRow">
-                      <button type="button" className="primary" onClick={salvarDadosPagamento} disabled={salvandoDadosPagamento}>
-                        {salvandoDadosPagamento ? 'Salvando...' : 'Salvar dados'}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => {
-                          setEditandoDadosPagamento(false)
-                          carregarPerfilBasico(user.id)
-                        }}
-                        disabled={salvandoDadosPagamento}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="paymentSummary">
-                    <div>
-                      <span>CPF</span>
-                      <strong>{cpf ? formatarCpf(cpf) : 'Pendente'}</strong>
-                    </div>
-                    <div>
-                      <span>Telefone</span>
-                      <strong>{telefone ? formatarTelefone(telefone) : 'Pendente'}</strong>
-                    </div>
-                    {(!validarCpf(cpf) || !telefoneValido(telefone)) && (
-                      <p>Complete seus dados para evitar falha na geração do PIX.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="card">
+            <section className="card medalCollectionCard">
               <div className="cardHeader compactHeader">
                 <div>
+                  <span>Coleção visual</span>
                   <h2>Medalhas</h2>
                 </div>
               </div>
 
               <div className="cardBody">
-                <div className="unifiedMedalGrid">
-                  {METAS_JORNADA.map((meta) => {
-                    const desbloqueado = totalKm >= meta.km
-                    return (
-                      <article key={meta.key} className={desbloqueado ? 'tierCard unlocked' : 'tierCard'}>
-                        <div className="hexMedal svgMedalWrap" style={{ borderColor: meta.cor }}>
+                <div className="unifiedMedalGrid compactMedalGrid">
+                  {medalhasVisuais.map((medalha) => (
+                    <button
+                      key={medalha.id}
+                      type="button"
+                      className={`medalTile ${medalha.especial ? 'especial' : 'progressao'} medalKey-${classeVisualMedalha(medalha.nome)} ${medalha.desbloqueada ? 'unlocked' : 'locked'}`}
+                      onClick={() => setMedalhaSelecionada(medalha)}
+                      aria-label={medalha.desbloqueada ? `Ver conquista ${medalha.nome}` : 'Ver medalha bloqueada'}
+                    >
+                      <span className="medalTileFrame">
+                        {medalha.svg && medalha.svg.startsWith('/medalhas/') ? (
                           <img
-                            src={meta.svg}
-                            alt={meta.titulo}
-                            className={desbloqueado ? 'medalSvg' : 'medalSvg lockedSvg'}
+                            src={medalha.svg}
+                            alt={medalha.desbloqueada ? medalha.nome : 'Medalha bloqueada'}
+                            className="medalSvg"
                             loading="lazy"
                             decoding="async"
+                            data-fallback={medalha.fallbackSvg || ''}
+                            onError={(event) => {
+                              const fallback = event.currentTarget.dataset.fallback
+                              if (fallback) {
+                                event.currentTarget.src = fallback
+                                event.currentTarget.dataset.fallback = ''
+                              }
+                            }}
                           />
-                        </div>
-                        <strong>{meta.titulo}</strong>
-                        <small>{desbloqueado ? 'Conquistada' : 'Bloqueada'}</small>
-                      </article>
-                    )
-                  })}
-
-                  {medalhasBanco.slice(0, 12).map((item) => {
-                    const medalha = item.medalhas
-                    const svgBeta = obterSvgMedalhaBeta(medalha)
-                    const fallbackSvgBeta = obterFallbackSvgMedalhaBeta(svgBeta)
-
-                    return (
-                      <article
-                        key={item.id}
-                        className={svgBeta ? 'tierCard unlocked specialUnified betaUnified' : 'tierCard unlocked specialUnified'}
-                      >
-                        {svgBeta ? (
-                          <div className="hexMedal svgMedalWrap betaSvgMedalWrap" style={{ borderColor: medalha?.cor || '#991b1b' }}>
-                            <img
-                              src={svgBeta}
-                              alt={medalha?.nome || 'Medalha Beta'}
-                              className="medalSvg betaMedalSvg"
-                              loading="lazy"
-                              decoding="async"
-                              data-fallback={fallbackSvgBeta}
-                              onError={(event) => {
-                                const fallback = event.currentTarget.dataset.fallback
-                                if (fallback) {
-                                  event.currentTarget.src = fallback
-                                  event.currentTarget.dataset.fallback = ''
-                                }
-                              }}
-                            />
-                          </div>
                         ) : (
-                          <div className="hexMedal" style={{ borderColor: medalha?.cor || '#991b1b' }}>
-                            <span>{medalha?.icone || '🏅'}</span>
-                          </div>
+                          <span className="medalFallback">{medalha.icone || '🏅'}</span>
                         )}
-                        <strong>{medalha?.nome || 'Medalha'}</strong>
-                        <small>{medalha?.categoria || 'Especial'}</small>
-                      </article>
-                    )
-                  })}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
             </section>
@@ -1949,6 +1998,118 @@ export default function PerfilCliente() {
           </aside>
         </section>
       </div>
+
+      {modalPerfilAberto && (
+        <div className="passwordOverlay" onClick={() => !salvandoPerfil && setModalPerfilAberto(false)}>
+          <section className="passwordSheet profileEditSheet" onClick={(event) => event.stopPropagation()}>
+            <div className="passwordHeader">
+              <div>
+                <span>Configurações</span>
+                <h2>Editar perfil</h2>
+              </div>
+              <button type="button" onClick={() => setModalPerfilAberto(false)} disabled={salvandoPerfil}>
+                ×
+              </button>
+            </div>
+
+            <label>
+              Nome público
+              <input
+                type="text"
+                value={nomePerfil}
+                onChange={(event) => setNomePerfil(event.target.value)}
+                placeholder="Seu nome no Passaporte"
+                autoComplete="name"
+              />
+            </label>
+
+            <label>
+              Bio
+              <textarea
+                value={bioPerfil}
+                onChange={(event) => setBioPerfil(event.target.value)}
+                placeholder="Conte brevemente seu estilo de aventura..."
+              />
+            </label>
+
+            <label>
+              Telefone / WhatsApp
+              <input
+                type="tel"
+                value={telefonePerfil}
+                onChange={(event) => setTelefonePerfil(formatarTelefone(event.target.value))}
+                placeholder="(11) 99999-9999"
+                autoComplete="tel"
+              />
+            </label>
+
+            <p className="privacyNote">
+              CPF e e-mail ficam vinculados à sua conta única e não são editados por este modal.
+            </p>
+
+            {erroPerfil && <p className="passwordError">{erroPerfil}</p>}
+
+            <div className="passwordActions">
+              <button type="button" className="secondary" onClick={() => setModalPerfilAberto(false)} disabled={salvandoPerfil}>
+                Cancelar
+              </button>
+              <button type="button" className="primary" onClick={salvarPerfilConfiguracoes} disabled={salvandoPerfil}>
+                {salvandoPerfil ? 'Salvando...' : 'Salvar perfil'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {medalhaSelecionada && (
+        <div
+          className="medalOverlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setMedalhaSelecionada(null)}
+        >
+          <section className="medalDetailCard" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="medalDetailClose"
+              onClick={() => setMedalhaSelecionada(null)}
+              aria-label="Fechar detalhes da medalha"
+            >
+              ×
+            </button>
+
+            <div className={`medalDetailArt ${medalhaSelecionada.especial ? 'especial' : 'progressao'} medalKey-${classeVisualMedalha(medalhaSelecionada.nome)}`}>
+              {medalhaSelecionada.svg && medalhaSelecionada.svg.startsWith('/medalhas/') ? (
+                <img
+                  src={medalhaSelecionada.svg}
+                  alt={medalhaSelecionada.desbloqueada ? medalhaSelecionada.nome : 'Medalha bloqueada'}
+                  data-fallback={medalhaSelecionada.fallbackSvg || ''}
+                  onError={(event) => {
+                    const fallback = event.currentTarget.dataset.fallback
+                    if (fallback) {
+                      event.currentTarget.src = fallback
+                      event.currentTarget.dataset.fallback = ''
+                    }
+                  }}
+                />
+              ) : (
+                <span className="medalFallback">{medalhaSelecionada.icone || '🏅'}</span>
+              )}
+            </div>
+
+            <span className={medalhaSelecionada.desbloqueada ? 'medalStatus unlocked' : 'medalStatus locked'}>
+              {medalhaSelecionada.status}
+            </span>
+
+            <h3>{medalhaSelecionada.desbloqueada ? medalhaSelecionada.nome : 'Conquista bloqueada'}</h3>
+            <p>
+              {medalhaSelecionada.desbloqueada
+                ? medalhaSelecionada.descricao
+                : 'Continue sua jornada para revelar os detalhes desta conquista.'}
+            </p>
+          </section>
+        </div>
+      )}
 
       {modalSenhaAberto && (
         <div className="passwordOverlay" onClick={() => !salvandoSenha && setModalSenhaAberto(false)}>
@@ -2305,6 +2466,23 @@ const styles = `
     line-height: 1.45;
   }
 
+  .profileEditSheet textarea {
+    min-height: 104px;
+    resize: vertical;
+  }
+
+  .privacyNote {
+    margin: 2px 0 0;
+    border-radius: 16px;
+    background: rgba(32,60,46,0.06);
+    border: 1px solid rgba(32,60,46,0.10);
+    color: #203c2e;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 800;
+  }
+
   .pillButton {
     border: 0;
     border-radius: 999px;
@@ -2427,6 +2605,14 @@ const styles = `
     width: 36px;
     height: 36px;
     cursor: pointer;
+  }
+
+  .cleanNameRow h1 {
+    max-width: 100%;
+  }
+
+  .heroBioText {
+    max-width: 640px;
   }
 
   .nameEditRow {
@@ -2976,127 +3162,202 @@ const styles = `
     font-weight: 850;
   }
 
+  .medalCollectionCard {
+    background:
+      radial-gradient(circle at top right, rgba(251,146,60,0.07), transparent 34%),
+      rgba(255,255,255,0.92);
+  }
+
   .unifiedMedalGrid {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 10px;
+    gap: 12px;
   }
 
-  .tierCard {
-    background: #fffdf7;
+  .compactMedalGrid {
+    padding-top: 2px;
+  }
+
+  .medalTile {
+    aspect-ratio: 1 / 1;
     border: 1px solid rgba(15,23,42,0.06);
-    border-radius: 22px;
-    padding: 12px 8px;
-    text-align: center;
-    opacity: 1;
-    display: grid;
-    justify-items: center;
-    align-content: start;
-  }
-
-  .tierCard:not(.unlocked) {
-    background: rgba(255,253,247,0.64);
-  }
-
-  .tierCard.unlocked {
-    opacity: 1;
-    filter: none;
-  }
-
-  .tierCard.specialUnified {
+    border-radius: 24px;
     background:
-      radial-gradient(circle at top right, rgba(251,146,60,0.10), transparent 34%),
+      radial-gradient(circle at 50% 0%, rgba(251,146,60,0.10), transparent 52%),
+      rgba(255,253,247,0.86);
+    display: grid;
+    place-items: center;
+    padding: 12px;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+
+  .medalTile:hover {
+    transform: translateY(-2px);
+    border-color: rgba(153,27,27,0.18);
+    box-shadow: 0 14px 28px rgba(42,55,36,0.10);
+  }
+
+  .medalTile.unlocked {
+    border-color: rgba(153,27,27,0.14);
+    background:
+      radial-gradient(circle at 50% 0%, rgba(251,146,60,0.16), transparent 54%),
       #fffdf7;
   }
 
-  .tierCard.betaUnified {
-    border-color: rgba(153,27,27,0.10);
+  .medalTile.locked {
     background:
-      radial-gradient(circle at 50% 0%, rgba(245,158,11,0.10), transparent 34%),
-      radial-gradient(circle at 100% 0%, rgba(153,27,27,0.055), transparent 34%),
-      rgba(255,253,247,0.92);
+      repeating-linear-gradient(
+        135deg,
+        rgba(23,32,24,0.025) 0,
+        rgba(23,32,24,0.025) 6px,
+        transparent 6px,
+        transparent 12px
+      ),
+      rgba(255,253,247,0.72);
   }
 
-
-  .tierCard.betaUnified .tierCard,
-  .tierCard.betaUnified {
+  .medalTileFrame {
+    width: min(96px, 86%);
+    height: min(96px, 86%);
+    display: grid;
+    place-items: center;
+    background: transparent;
     overflow: visible;
   }
 
-  .tierCard.betaUnified strong {
-    margin-top: -2px;
-  }
-
-  .hexMedal {
-    width: 74px;
-    height: 74px;
-    margin: 0 auto 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .hexMedal span {
-    font-size: 23px;
-    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.16));
-  }
-
-  .svgMedalWrap {
-    width: 104px;
-    height: 104px;
-    margin-bottom: 6px;
-  }
-
-  .betaSvgMedalWrap {
-    width: 112px;
-    height: 112px;
-    margin-top: -4px;
-    margin-bottom: 2px;
-  }
-
-  .nextSvgMedal {
-    width: 126px;
-    height: 126px;
-  }
-
   .medalSvg {
-    width: 100%;
-    height: 100%;
+    width: auto;
+    height: auto;
+    max-width: 86%;
+    max-height: 86%;
     object-fit: contain;
     display: block;
     transform: translateZ(0);
-    filter: drop-shadow(0 10px 18px rgba(15,23,42,0.16));
+    filter: drop-shadow(0 8px 12px rgba(23,32,24,0.10));
   }
 
-  .betaMedalSvg {
-    width: 116%;
-    height: 116%;
-    max-width: none;
-    transform: translateY(-4px);
-    filter: drop-shadow(0 12px 22px rgba(80,36,12,0.20));
+  .medalTile.especial .medalSvg {
+    max-width: 78%;
+    max-height: 78%;
+    transform: translateY(-10%);
+    transform-origin: center center;
   }
 
-  .lockedSvg {
-    opacity: 0.22;
-    filter: grayscale(1) saturate(0.12) contrast(0.82) brightness(1.08);
+  .medalTile.locked .medalSvg {
+    filter: grayscale(1) brightness(1.12) opacity(0.72);
   }
 
-  .tierCard strong {
-    display: block;
-    color: #172018;
-    font-size: 12px;
-    font-weight: 950;
-    line-height: 1.18;
+  .medalFallback {
+    font-size: 34px;
+  }
+
+  .medalOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 980;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8,13,7,0.48);
+    backdrop-filter: blur(10px);
+  }
+
+  .medalDetailCard {
+    position: relative;
+    width: min(360px, 100%);
+    border-radius: 30px;
+    border: 1px solid rgba(255,255,255,0.62);
+    background:
+      radial-gradient(circle at 50% 0%, rgba(251,146,60,0.14), transparent 45%),
+      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 100%);
+    box-shadow: 0 32px 90px rgba(15,23,42,0.26);
+    padding: 24px 22px 22px;
     text-align: center;
-    max-width: 100%;
   }
 
-  .tierCard small {
+  .medalDetailClose {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: rgba(255,255,255,0.78);
+    color: #172018;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .medalDetailArt {
+    width: 132px;
+    height: 132px;
+    margin: 2px auto 12px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    overflow: visible;
+  }
+
+  .medalDetailArt img {
+    width: auto;
+    height: auto;
+    max-width: 86%;
+    max-height: 86%;
+    object-fit: contain;
     display: block;
-    margin-top: 4px;
-    color: #64748b;
+    filter: drop-shadow(0 12px 18px rgba(23,32,24,0.14));
+  }
+
+  .medalDetailArt.especial img {
+    max-width: 78%;
+    max-height: 78%;
+    transform: translateY(-10%);
+  }
+
+  .medalStatus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 6px 10px;
     font-size: 10px;
-    font-weight: 850;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .medalStatus.unlocked {
+    background: rgba(153,27,27,0.08);
+    color: #991b1b;
+    border: 1px solid rgba(153,27,27,0.14);
+  }
+
+  .medalStatus.locked {
+    background: rgba(100,116,139,0.08);
+    color: #64748b;
+    border: 1px solid rgba(100,116,139,0.12);
+  }
+
+  .medalDetailCard h3 {
+    margin: 12px 0 0;
+    color: #172018;
+    font-size: 22px;
+    line-height: 1.05;
+    letter-spacing: -0.045em;
+    font-weight: 950;
+  }
+
+  .medalDetailCard p {
+    margin: 10px auto 0;
+    max-width: 290px;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 750;
   }
 
   .photoMilestones {
@@ -3587,48 +3848,37 @@ const styles = `
       width: fit-content;
     }
 
-    .tierGrid,
-    .specialGrid,
     .unifiedMedalGrid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 9px;
     }
 
-    .tierCard {
-      min-height: 176px;
-      padding: 10px 7px 12px;
-      border-radius: 22px;
-      justify-content: start;
+    .medalTile {
+      border-radius: 18px;
+      padding: 8px;
     }
 
-    .svgMedalWrap {
-      width: 104px;
-      height: 104px;
-      margin-bottom: 5px;
+    .medalTileFrame {
+      width: 82%;
+      height: 82%;
     }
 
-    .betaSvgMedalWrap {
-      width: 108px;
-      height: 108px;
-      margin-top: -2px;
-      margin-bottom: 4px;
+    .medalDetailCard {
+      border-radius: 28px;
+      width: 100%;
+      max-height: calc(100dvh - 22px);
+      overflow: auto;
+    }
+
+    .medalDetailArt {
+      width: 118px;
+      height: 118px;
     }
 
     .nextSvgMedal,
     .rankSvgMedal {
       width: 92px;
       height: 92px;
-    }
-
-    .tierCard strong {
-      font-size: 13px;
-      line-height: 1.12;
-      max-width: 126px;
-    }
-
-    .tierCard small {
-      font-size: 10px;
-      margin-top: 5px;
     }
 
     .photoMilestones {
