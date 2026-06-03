@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 type AnyRecord = Record<string, any>
+type AnySupabaseClient = any
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey =
@@ -322,7 +323,7 @@ function erroDeColunaAusente(error: AnyRecord | null | undefined) {
 }
 
 async function buscarPorCampos(
-  supabase: ReturnType<typeof createClient>,
+  supabase: AnySupabaseClient,
   tabela: string,
   campos: string[],
   valor: string
@@ -352,7 +353,7 @@ async function buscarPorCampos(
 }
 
 async function buscarReservasPorRoteiros(
-  supabase: ReturnType<typeof createClient>,
+  supabase: AnySupabaseClient,
   roteiroIds: string[]
 ) {
   const ids = Array.from(new Set(roteiroIds.filter(Boolean)))
@@ -385,7 +386,7 @@ async function buscarReservasPorRoteiros(
 }
 
 async function buscarRoteirosPorIds(
-  supabase: ReturnType<typeof createClient>,
+  supabase: AnySupabaseClient,
   roteiroIds: string[]
 ) {
   const ids = Array.from(new Set(roteiroIds.filter(Boolean)))
