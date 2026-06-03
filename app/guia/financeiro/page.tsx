@@ -1293,8 +1293,10 @@ const estilos = `
     position: sticky;
     top: 0;
     z-index: 50;
-    background: rgba(255,253,247,0.92);
-    border-bottom: 1px solid rgba(15,23,42,0.06);
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132,204,22,0.10), transparent 32%),
+      rgba(255,253,247,0.94);
+    border-bottom: 1px solid rgba(32,60,46,0.08);
     backdrop-filter: blur(18px);
     padding: 9px 14px;
   }
@@ -1302,71 +1304,79 @@ const estilos = `
   .topbarInner {
     max-width: 1180px;
     margin: 0 auto;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
   }
 
   .brandHeader {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 11px;
     min-width: 0;
+    width: fit-content;
+    max-width: 100%;
     border: 0;
     background: transparent;
     padding: 0;
     text-align: left;
     cursor: pointer;
-    color: #172018;
+    color: #203c2e;
   }
 
   .brandLogo {
-    width: 42px;
-    height: 42px;
+    width: 74px;
+    height: 46px;
     object-fit: contain;
-    flex: 0 0 42px;
+    flex: 0 0 auto;
+    display: block;
   }
 
   .brandTextBlock {
     min-width: 0;
     display: grid;
+    gap: 2px;
   }
 
   .brandName {
-    color: #1f3f2d;
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: clamp(28px, 3.6vw, 48px);
-    font-weight: 800;
-    line-height: 0.88;
-    letter-spacing: -0.06em;
+    color: #203c2e;
+    font-size: clamp(22px, 3vw, 34px);
+    font-weight: 950;
+    line-height: 0.96;
+    letter-spacing: -0.07em;
     white-space: nowrap;
   }
 
   .brandSubtitle {
-    color: #7b8375;
-    font-size: clamp(9px, 1.15vw, 13px);
-    font-weight: 850;
-    letter-spacing: 0.18em;
+    color: #7b8372;
+    font-size: clamp(8px, 1vw, 11px);
+    font-weight: 950;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    margin-top: 5px;
     white-space: nowrap;
   }
 
   .profileButton {
     width: 42px;
     height: 42px;
-    border: 1px solid rgba(15,23,42,0.08);
-    background: rgba(255,255,255,0.86);
-    color: #1f3f2d;
+    border: 1px solid rgba(32,60,46,0.10);
+    background: rgba(255,255,255,0.88);
+    color: #203c2e;
     border-radius: 999px;
-    box-shadow: 0 10px 22px rgba(15,23,42,0.08);
+    box-shadow: 0 10px 22px rgba(32,60,46,0.09);
     cursor: pointer;
     overflow: hidden;
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .profileButton:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 26px rgba(32,60,46,0.13);
   }
 
   .profileButton img {
@@ -2030,23 +2040,31 @@ const estilos = `
       padding: 7px 10px;
     }
 
+    .topbarInner {
+      gap: 8px;
+    }
+
+    .brandHeader {
+      gap: 8px;
+      max-width: calc(100vw - 64px);
+    }
+
     .brandLogo {
-      width: 32px;
-      height: 32px;
-      flex-basis: 32px;
+      width: 58px;
+      height: 36px;
     }
 
     .brandName {
-      font-size: clamp(25px, 8vw, 33px);
-      max-width: calc(100vw - 96px);
+      font-size: clamp(21px, 6.4vw, 28px);
+      max-width: calc(100vw - 136px);
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .brandSubtitle {
-      font-size: 8px;
-      letter-spacing: 0.12em;
-      max-width: calc(100vw - 96px);
+      font-size: 7.5px;
+      letter-spacing: 0.10em;
+      max-width: calc(100vw - 136px);
       overflow: hidden;
       text-overflow: ellipsis;
     }
