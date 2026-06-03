@@ -57,6 +57,17 @@ type Roteiro = {
   guia_id?: string | null
   user_id?: string | null
   usuario_id?: string | null
+  created_at?: string | null
+  data?: string | null
+  data_roteiro?: string | null
+  data_inicio?: string | null
+  data_saida?: string | null
+  data_evento?: string | null
+  data_hora?: string | null
+  inicio_em?: string | null
+  embarque_data_hora?: string | null
+  saida_data_hora?: string | null
+  data_realizacao?: string | null
 }
 
 type Reserva = {
@@ -285,6 +296,60 @@ function valorRoteiro(roteiro: Roteiro): number {
   return Number(roteiro.preco || roteiro.valor || 0)
 }
 
+function classeVisualMedalha(valor?: string | null): string {
+  return normalizar(valor)
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function dataExecucaoRoteiro(roteiro: Roteiro): Date | null {
+  const candidatos = [
+    roteiro.embarque_data_hora,
+    roteiro.saida_data_hora,
+    roteiro.data_hora,
+    roteiro.data_roteiro,
+    roteiro.data_inicio,
+    roteiro.data_saida,
+    roteiro.data_evento,
+    roteiro.data_realizacao,
+    roteiro.inicio_em,
+    roteiro.data
+  ]
+
+  for (const valor of candidatos) {
+    if (!valor) continue
+
+    const data = new Date(valor)
+    if (!Number.isNaN(data.getTime())) return data
+  }
+
+  return null
+}
+
+function roteiroJaExecutadoPorData(roteiro: Roteiro): boolean {
+  const data = dataExecucaoRoteiro(roteiro)
+
+  if (!data) return false
+
+  const fimDoDia = new Date(data)
+  fimDoDia.setHours(23, 59, 59, 999)
+
+  return fimDoDia.getTime() < Date.now()
+}
+
+function reservaRealizada(reserva: Reserva): boolean {
+  const status = normalizar(reserva.status)
+  return status === 'realizada' || status === 'executada' || status === 'concluida' || status === 'concluída'
+}
+
+function reservaContaParaProgressao(reserva: Reserva, roteiro?: Roteiro): boolean {
+  if (reservaRealizada(reserva)) return true
+  if (!pagamentoConfirmado(reserva)) return false
+  if (!roteiro) return false
+
+  return roteiroJaExecutadoPorData(roteiro)
+}
+
 function primeiroNome(nome?: string | null): string {
   const limpo = String(nome || '').trim()
   if (!limpo) return 'Guia'
@@ -362,6 +427,7 @@ export default function PerfilPublicoGuiaPage() {
   const [seguidoresTotal, setSeguidoresTotal] = useState(0)
   const [seguindoSalvando, setSeguindoSalvando] = useState(false)
   const [seguindoErro, setSeguindoErro] = useState('')
+  const [medalhaSelecionada, setMedalhaSelecionada] = useState<MedalhaGuia | null>(null)
 
   useEffect(() => {
     if (!guiaId) return
@@ -571,12 +637,34 @@ export default function PerfilPublicoGuiaPage() {
       const avaliacoesDoGuia = await buscarAvaliacoesDoGuia(guiaId)
       setAvaliacoes(avaliacoesDoGuia)
 
-      const totalKm = roteirosDoGuia.reduce(
+      const roteirosPorId = new Map<string, Roteiro>(
+        roteirosDoGuia.map((roteiro: Roteiro) => [roteiro.id, roteiro])
+      )
+
+      const reservasExecutadas = reservas.filter((reserva: Reserva) => {
+        const roteiro = reserva.roteiro_id ? roteirosPorId.get(reserva.roteiro_id) : undefined
+        return reservaContaParaProgressao(reserva, roteiro)
+      })
+
+      const roteiroIdsExecutados = new Set(
+        reservasExecutadas
+          .map((reserva: Reserva) => reserva.roteiro_id)
+          .filter(Boolean) as string[]
+      )
+
+      const roteirosExecutados = roteirosDoGuia.filter((roteiro: Roteiro) =>
+        roteiroIdsExecutados.has(roteiro.id)
+      )
+
+      const totalKm = roteirosExecutados.reduce(
         (total: number, roteiro: Roteiro) => total + kmRoteiro(roteiro),
         0
       )
-      const reservasConfirmadas = reservas.filter((reserva: Reserva) => pagamentoConfirmado(reserva))
-      const clientesUnicos = new Set(reservas.map((reserva: Reserva) => reserva.cliente_id).filter(Boolean))
+
+      const clientesUnicos = new Set(
+        reservasExecutadas.map((reserva: Reserva) => reserva.cliente_id).filter(Boolean)
+      )
+
       const avaliacaoMedia =
         avaliacoesDoGuia.length > 0
           ? avaliacoesDoGuia.reduce((total: number, avaliacao: Avaliacao) => total + Number(avaliacao.nota || 0), 0) /
@@ -585,9 +673,9 @@ export default function PerfilPublicoGuiaPage() {
 
       setStats({
         totalKm,
-        totalRoteiros: roteirosDoGuia.length,
+        totalRoteiros: roteirosExecutados.length,
         totalReservas: reservas.length,
-        reservasConfirmadas: reservasConfirmadas.length,
+        reservasConfirmadas: reservasExecutadas.length,
         totalClientes: clientesUnicos.size,
         avaliacaoMedia,
         totalAvaliacoes: avaliacoesDoGuia.length
@@ -826,29 +914,12 @@ export default function PerfilPublicoGuiaPage() {
       <header className="header">
         <div className="headerInner">
           <button
-            type="button"
-            className="headerBtn ghost leftAction"
-            onClick={() => router.push('/roteiros')}
-          >
-            Roteiros
-          </button>
-
-          <button
-            className="brand"
+            className="brand brandLogoOnly"
             type="button"
             onClick={() => router.push('/roteiros')}
             aria-label="Voltar para roteiros"
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <span>Perfil público do guia</span>
-          </button>
-
-          <button
-            type="button"
-            className="headerBtn rightAction"
-            onClick={() => setReportAberto(true)}
-          >
-            Reportar
           </button>
         </div>
       </header>
@@ -897,15 +968,15 @@ export default function PerfilPublicoGuiaPage() {
         <section className="quickStats">
           <article>
             <strong>{stats.totalRoteiros}</strong>
-            <span>roteiros</span>
+            <span>roteiros realizados</span>
           </article>
           <article>
             <strong>{stats.totalKm.toFixed(0)}</strong>
-            <span>km publicados</span>
+            <span>km realizados</span>
           </article>
           <article>
             <strong>{stats.totalClientes}</strong>
-            <span>clientes</span>
+            <span>clientes atendidos</span>
           </article>
           <article>
             <strong>{stats.totalAvaliacoes}</strong>
@@ -919,24 +990,23 @@ export default function PerfilPublicoGuiaPage() {
               <div className="panelHeader">
                 <div>
                   <h2>Medalhas do guia</h2>
-                  <p>Conquistas, presença Beta e reputação outdoor em uma única coleção.</p>
+                  <p>Toque em uma medalha para ver detalhes da conquista.</p>
                 </div>
               </div>
 
-              <div className="medalGrid">
+              <div className="medalGrid compactMedalGrid">
                 {medalhas.map((medalha: MedalhaGuia) => (
-                  <article
+                  <button
                     key={medalha.codigo}
-                    className={`medalCard ${medalha.categoria || ''} ${medalha.desbloqueada ? 'unlocked' : 'locked'} ${medalha.destaque ? 'featured' : ''}`}
+                    type="button"
+                    className={`medalTile ${medalha.categoria || ''} medalKey-${classeVisualMedalha(medalha.codigo || medalha.nome)} ${medalha.desbloqueada ? 'unlocked' : 'locked'} ${medalha.destaque ? 'featured' : ''}`}
+                    onClick={() => setMedalhaSelecionada(medalha)}
+                    aria-label={medalha.desbloqueada ? `Ver conquista ${medalha.nome}` : 'Ver conquista bloqueada'}
                   >
-                    <div className="medalImageWrap">
-                      <MedalhaImagem src={medalha.svg} fallback={medalha.fallbackSvg} alt={medalha.nome} />
-                    </div>
-                    <div className="medalName">{medalha.nome}</div>
-                    <div className="medalDesc">
-                      {medalha.desbloqueada ? medalha.descricao : 'Conquista ainda não desbloqueada.'}
-                    </div>
-                  </article>
+                    <span className="medalTileFrame">
+                      <MedalhaImagem src={medalha.svg} fallback={medalha.fallbackSvg} alt={medalha.desbloqueada ? medalha.nome : 'Medalha bloqueada'} />
+                    </span>
+                  </button>
                 ))}
               </div>
             </section>
@@ -1005,6 +1075,10 @@ export default function PerfilPublicoGuiaPage() {
                   <div style={{ width: `${progressoKm}%` }} />
                 </div>
               </div>
+
+              <button type="button" className="reportInlineButton" onClick={() => setReportAberto(true)}>
+                Reportar perfil
+              </button>
             </section>
 
             <section className="panel reviewsPanel">
@@ -1050,6 +1124,45 @@ export default function PerfilPublicoGuiaPage() {
           </aside>
         </section>
       </div>
+
+      {medalhaSelecionada && (
+        <div
+          className="medalOverlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setMedalhaSelecionada(null)}
+        >
+          <section className="medalDetailCard" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="medalDetailClose"
+              onClick={() => setMedalhaSelecionada(null)}
+              aria-label="Fechar detalhes da medalha"
+            >
+              ×
+            </button>
+
+            <div className={`medalDetailArt ${medalhaSelecionada.categoria || ''} medalKey-${classeVisualMedalha(medalhaSelecionada.codigo || medalhaSelecionada.nome)}`}>
+              <MedalhaImagem
+                src={medalhaSelecionada.svg}
+                fallback={medalhaSelecionada.fallbackSvg}
+                alt={medalhaSelecionada.desbloqueada ? medalhaSelecionada.nome : 'Medalha bloqueada'}
+              />
+            </div>
+
+            <span className={medalhaSelecionada.desbloqueada ? 'medalStatus unlocked' : 'medalStatus locked'}>
+              {medalhaSelecionada.desbloqueada ? 'Conquistada' : 'Bloqueada'}
+            </span>
+
+            <h3>{medalhaSelecionada.desbloqueada ? medalhaSelecionada.nome : 'Conquista bloqueada'}</h3>
+            <p>
+              {medalhaSelecionada.desbloqueada
+                ? medalhaSelecionada.descricao
+                : 'Continue acumulando experiências executadas para revelar esta conquista.'}
+            </p>
+          </section>
+        </div>
+      )}
 
       {reportAberto && (
         <div className="modalOverlay" role="dialog" aria-modal="true">
@@ -1181,82 +1294,42 @@ const estilos = `
     position: sticky;
     top: 0;
     z-index: 50;
-    background: rgba(255,253,247,0.90);
+    background: rgba(255,253,247,0.92);
     border-bottom: 1px solid rgba(15,23,42,0.06);
     backdrop-filter: blur(18px);
-    padding: 8px 14px;
+    padding: 8px 12px;
   }
 
   .headerInner {
     max-width: 1180px;
     margin: 0 auto;
-    display: grid;
-    grid-template-columns: 92px minmax(0, 1fr) 92px;
+    display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
   }
 
   .brand {
-    min-width: 0;
-    max-width: min(540px, calc(100vw - 210px));
-    justify-self: center;
     border: 0;
     background: transparent;
     padding: 0;
     cursor: pointer;
     text-align: center;
     display: inline-flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
   }
 
+  .brandLogoOnly {
+    max-width: min(260px, 62vw);
+  }
+
   .brand img {
-    width: clamp(154px, 36vw, 260px);
+    width: clamp(150px, 36vw, 250px);
     max-width: 100%;
-    max-height: 60px;
+    max-height: 58px;
     height: auto;
     object-fit: contain;
     display: block;
-  }
-
-  .brand span {
-    display: block;
-    color: #7b8372;
-    font-size: clamp(8px, 1.05vw, 12px);
-    font-weight: 850;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-top: -2px;
-  }
-
-  .headerBtn {
-    border: 1px solid rgba(15,23,42,0.08);
-    background: #172018;
-    color: #fffdf7;
-    border-radius: 999px;
-    padding: 10px 13px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 950;
-    white-space: nowrap;
-  }
-
-  .headerBtn.ghost {
-    background: rgba(255,255,255,0.84);
-    color: #172018;
-  }
-
-  .leftAction {
-    justify-self: start;
-  }
-
-  .rightAction {
-    justify-self: end;
   }
 
   .container {
@@ -1474,75 +1547,289 @@ const estilos = `
   .medalGrid {
     padding: 16px;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 12px;
   }
 
-  .medalCard {
-    min-height: 232px;
-    border-radius: 26px;
+  .compactMedalGrid {
+    padding-top: 14px;
+  }
+
+  .medalTile {
+    aspect-ratio: 1 / 1;
     border: 1px solid rgba(15,23,42,0.06);
+    border-radius: 24px;
     background:
-      radial-gradient(circle at top right, rgba(251,146,60,0.08), transparent 30%),
-      #fffdf7;
+      radial-gradient(circle at 50% 0%, rgba(251,146,60,0.10), transparent 52%),
+      rgba(255,253,247,0.86);
+    display: grid;
+    place-items: center;
     padding: 12px;
-    text-align: center;
-    transition: 0.2s ease;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
   }
 
-  .medalCard.featured {
+  .medalTile:hover {
+    transform: translateY(-2px);
+    border-color: rgba(153,27,27,0.18);
+    box-shadow: 0 14px 28px rgba(42,55,36,0.10);
+  }
+
+  .medalTile.unlocked {
+    border-color: rgba(153,27,27,0.14);
+    background:
+      radial-gradient(circle at 50% 0%, rgba(251,146,60,0.16), transparent 54%),
+      #fffdf7;
+  }
+
+  .medalTile.featured {
     border-color: rgba(153,27,27,0.22);
-    background:
-      radial-gradient(circle at top right, rgba(153,27,27,0.12), transparent 32%),
-      #fffdf7;
   }
 
-  .medalCard.cadastur {
+  .medalTile.cadastur {
     border-color: rgba(37,99,235,0.16);
+  }
+
+  .medalTile.locked {
     background:
-      radial-gradient(circle at top right, rgba(219,234,254,0.80), transparent 34%),
-      #fffdf7;
+      repeating-linear-gradient(
+        135deg,
+        rgba(23,32,24,0.025) 0,
+        rgba(23,32,24,0.025) 6px,
+        transparent 6px,
+        transparent 12px
+      ),
+      rgba(255,253,247,0.72);
   }
 
-    .medalCard.locked {
-    opacity: 0.48;
-    filter: grayscale(0.74);
-  }
-
-  .medalImageWrap {
-    width: 118px;
-    height: 118px;
-    margin: 0 auto 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .medalTileFrame {
+    width: min(96px, 86%);
+    height: min(96px, 86%);
+    display: grid;
+    place-items: center;
+    background: transparent;
+    overflow: visible;
   }
 
   .medalSvg {
-    width: 118px;
-    height: 118px;
+    width: auto;
+    height: auto;
+    max-width: 86%;
+    max-height: 86%;
     object-fit: contain;
     display: block;
+    mix-blend-mode: multiply;
+    filter: drop-shadow(0 8px 12px rgba(23,32,24,0.10));
+  }
+
+  .medalTile.beta .medalSvg {
+    max-width: 82%;
+    max-height: 82%;
+    transform: translateY(-10%);
+    transform-origin: center center;
+  }
+
+  .medalTile.cadastur .medalSvg {
+    max-width: 72%;
+    max-height: 84%;
+    transform: translateY(-23%);
+    transform-origin: center center;
+  }
+
+  .medalTile.medalKey-cadastur-preenchido .medalSvg {
+    max-width: 72%;
+    max-height: 84%;
+    transform: translateY(-24%);
+  }
+
+  .medalTile.medalKey-guia-verificado-cadastur .medalSvg {
+    max-width: 72%;
+    max-height: 84%;
+    transform: translateY(-24%);
+  }
+
+  .medalTile.medalKey-cadastur-ativo .medalSvg {
+    max-width: 70%;
+    max-height: 82%;
+    transform: translateY(-23%);
+  }
+
+  .medalTile.medalKey-cadastur-bronze .medalSvg {
+    max-width: 70%;
+    max-height: 82%;
+    transform: translateY(-23%);
+  }
+
+  .medalTile.medalKey-cadastur-prata .medalSvg {
+    max-width: 70%;
+    max-height: 82%;
+    transform: translateY(-23%);
+  }
+
+  .medalTile.medalKey-cadastur-ouro .medalSvg {
+    max-width: 70%;
+    max-height: 82%;
+    transform: translateY(-23%);
+  }
+
+  .medalTile.medalKey-cadastur-platina .medalSvg {
+    max-width: 70%;
+    max-height: 82%;
+    transform: translateY(-23%);
+  }
+
+  .medalTile.medalKey-cadastur-onyx .medalSvg {
+    max-width: 70%;
+    max-height: 82%;
+    transform: translateY(-23%);
+  }
+
+  .medalTile.progressao .medalSvg,
+  .medalTile.atuacao .medalSvg {
+    max-width: 84%;
+    max-height: 84%;
+  }
+
+  .medalTile.locked .medalSvg {
+    filter: grayscale(1) brightness(1.12) opacity(0.76);
   }
 
   .medalFallback {
-    font-size: 48px;
+    font-size: 34px;
   }
 
-  .medalName {
+  .medalOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 105;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8,13,7,0.48);
+    backdrop-filter: blur(10px);
+  }
+
+  .medalDetailCard {
+    position: relative;
+    width: min(360px, 100%);
+    border-radius: 30px;
+    border: 1px solid rgba(255,255,255,0.62);
+    background:
+      radial-gradient(circle at 50% 0%, rgba(251,146,60,0.14), transparent 45%),
+      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 100%);
+    box-shadow: 0 32px 90px rgba(15,23,42,0.26);
+    padding: 24px 22px 22px;
+    text-align: center;
+  }
+
+  .medalDetailClose {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(15,23,42,0.08);
+    background: rgba(255,255,255,0.78);
     color: #172018;
-    font-size: 13px;
-    font-weight: 950;
-    line-height: 1.22;
-    letter-spacing: -0.02em;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
   }
 
-  .medalDesc {
-    margin-top: 5px;
+  .medalDetailArt {
+    width: 132px;
+    height: 132px;
+    margin: 2px auto 12px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    overflow: visible;
+  }
+
+  .medalDetailArt .medalSvg {
+    max-width: 86%;
+    max-height: 86%;
+    filter: drop-shadow(0 12px 18px rgba(23,32,24,0.14));
+  }
+
+  .medalDetailArt.beta .medalSvg {
+    max-width: 82%;
+    max-height: 82%;
+    transform: translateY(-10%);
+  }
+
+  .medalDetailArt.cadastur .medalSvg {
+    max-width: 72%;
+    max-height: 84%;
+    transform: translateY(-23%);
+    transform-origin: center center;
+  }
+
+  .medalDetailArt.medalKey-cadastur-preenchido .medalSvg {
+    max-width: 72%;
+    max-height: 84%;
+    transform: translateY(-24%);
+  }
+
+  .medalDetailArt.medalKey-guia-verificado-cadastur .medalSvg {
+    max-width: 72%;
+    max-height: 84%;
+    transform: translateY(-24%);
+  }
+
+  .medalDetailArt.medalKey-cadastur-ativo .medalSvg,
+  .medalDetailArt.medalKey-cadastur-bronze .medalSvg,
+  .medalDetailArt.medalKey-cadastur-prata .medalSvg,
+  .medalDetailArt.medalKey-cadastur-ouro .medalSvg,
+  .medalDetailArt.medalKey-cadastur-platina .medalSvg,
+  .medalDetailArt.medalKey-cadastur-onyx .medalSvg {
+    max-width: 70%;
+    max-height: 82%;
+    transform: translateY(-23%);
+  }
+
+  .medalStatus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .medalStatus.unlocked {
+    background: rgba(153,27,27,0.08);
+    color: #991b1b;
+    border: 1px solid rgba(153,27,27,0.14);
+  }
+
+  .medalStatus.locked {
+    background: rgba(100,116,139,0.08);
     color: #64748b;
-    font-size: 11px;
-    line-height: 1.35;
-    font-weight: 700;
+    border: 1px solid rgba(100,116,139,0.12);
+  }
+
+  .medalDetailCard h3 {
+    margin: 12px 0 0;
+    color: #172018;
+    font-size: 22px;
+    line-height: 1.05;
+    letter-spacing: -0.045em;
+    font-weight: 950;
+  }
+
+  .medalDetailCard p {
+    margin: 10px auto 0;
+    max-width: 290px;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 750;
   }
 
   .routesPanel,
@@ -1692,6 +1979,19 @@ const estilos = `
     height: 100%;
     border-radius: inherit;
     background: linear-gradient(90deg, #365314, #84cc16, #f97316);
+  }
+
+  .reportInlineButton {
+    width: 100%;
+    margin-top: 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(153,27,27,0.14);
+    background: rgba(255,253,247,0.82);
+    color: #991b1b;
+    padding: 10px 12px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
   }
 
   .reviewList {
@@ -1981,7 +2281,7 @@ const estilos = `
     }
 
     .medalGrid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 
@@ -1990,49 +2290,13 @@ const estilos = `
       padding: 7px 10px;
     }
 
-    .headerInner {
-      grid-template-columns: 40px minmax(0, 1fr) 40px;
-      gap: 8px;
-    }
-
-    .brand {
-      max-width: calc(100vw - 96px);
+    .brandLogoOnly {
+      max-width: 70vw;
     }
 
     .brand img {
-      width: clamp(136px, 48vw, 214px);
+      width: clamp(142px, 52vw, 218px);
       max-height: 50px;
-    }
-
-    .brand span {
-      font-size: 7.5px;
-      letter-spacing: 0.10em;
-      max-width: calc(100vw - 112px);
-    }
-
-    .headerBtn {
-      width: 36px;
-      height: 36px;
-      border-radius: 999px;
-      padding: 0;
-      font-size: 0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .headerBtn.ghost::before {
-      content: '‹';
-      font-size: 23px;
-      line-height: 1;
-      font-weight: 950;
-    }
-
-    .rightAction::before {
-      content: '!';
-      font-size: 14px;
-      line-height: 1;
-      font-weight: 950;
     }
 
     .container {
@@ -2143,23 +2407,48 @@ const estilos = `
 
     .medalGrid {
       padding: 12px;
-      gap: 10px;
+      gap: 9px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
-    .medalCard {
-      min-height: 196px;
-      border-radius: 22px;
-      padding: 9px;
+    .medalTile {
+      border-radius: 18px;
+      padding: 8px;
     }
 
-    .medalImageWrap,
-    .medalSvg {
-      width: 108px;
-      height: 108px;
+    .medalTileFrame {
+      width: 82%;
+      height: 82%;
     }
 
-    .medalDesc {
-      display: none;
+    .medalTile.cadastur .medalSvg {
+      max-width: 70%;
+      max-height: 82%;
+      transform: translateY(-23%);
+    }
+
+    .medalTile.medalKey-cadastur-preenchido .medalSvg,
+    .medalTile.medalKey-guia-verificado-cadastur .medalSvg {
+      max-width: 72%;
+      max-height: 84%;
+      transform: translateY(-24%);
+    }
+
+    .medalOverlay {
+      align-items: flex-end;
+      padding: 10px;
+    }
+
+    .medalDetailCard {
+      border-radius: 28px;
+      width: 100%;
+      max-height: calc(100dvh - 22px);
+      overflow: auto;
+    }
+
+    .medalDetailArt {
+      width: 118px;
+      height: 118px;
     }
 
     .routeCard {
