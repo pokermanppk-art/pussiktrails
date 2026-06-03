@@ -35,6 +35,7 @@ type ProgressoMedalha = {
 
 type MedalhaEspecial = {
   nome: string
+  descricao: string
   icone: string
   meta: number
   progresso: number
@@ -46,9 +47,20 @@ type MedalhaProgressao = {
   nivel: number
   nome: string
   tituloCurto: string
+  descricao: string
   km: number
   fotosLiberadas: number
   svg: string
+}
+
+type MedalhaVisual = {
+  id: string
+  nome: string
+  descricao: string
+  svg?: string
+  icone?: string
+  desbloqueada: boolean
+  categoria: 'progressao' | 'beta'
 }
 
 const niveisCurtidas = [
@@ -63,30 +75,35 @@ const niveisCurtidas = [
 const MEDALHAS_ESPECIAIS_BASE = [
   {
     nome: 'Início da Jornada Beta',
+    descricao: 'Reconhecimento por iniciar a jornada durante a fase Beta da PrussikTrails.',
     icone: '🥾',
     meta: 1,
     svg: '/medalhas/iniciais_jornada/01_botinha_beta_oficial.svg',
   },
   {
     nome: 'Aventureiro Pioneiro Beta',
+    descricao: 'Participação pioneira na comunidade inicial do app e na construção da jornada.',
     icone: '🏔️',
     meta: 1,
     svg: '/medalhas/iniciais_jornada/02_aventureiro_pioneiro_beta.svg',
   },
   {
     nome: 'Voz da Trilha Beta',
+    descricao: 'Reconhecimento por contribuir com feedbacks úteis para melhorar a experiência.',
     icone: '🎙️',
     meta: 1,
     svg: '/medalhas/iniciais_jornada/03_voz_da_trilha_beta.svg',
   },
   {
     nome: 'Guia Pioneiro Beta',
+    descricao: 'Medalha especial da fase Beta para presença pioneira na comunidade.',
     icone: '🧭',
     meta: 1,
     svg: '/medalhas/iniciais_jornada/04_guia_pioneiro_beta.svg',
   },
   {
     nome: 'Construtor da Jornada Beta',
+    descricao: 'Reconhecimento por ajudar a construir e aperfeiçoar a jornada PrussikTrails.',
     icone: '🛠️',
     meta: 1,
     svg: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg',
@@ -98,6 +115,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 0,
     nome: 'Mochila de Partida',
     tituloCurto: 'Partida',
+    descricao: 'Marco inicial da jornada pública no Passaporte PrussikTrails.',
     km: 0,
     fotosLiberadas: 0,
     svg: '/medalhas/progressao/01_mochila_de_partida.svg',
@@ -106,6 +124,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 1,
     nome: 'Barraca Base',
     tituloCurto: 'Base',
+    descricao: 'Primeiros registros e presença outdoor começam a formar histórico.',
     km: 32,
     fotosLiberadas: 5,
     svg: '/medalhas/progressao/02_barraca_base.svg',
@@ -114,6 +133,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 2,
     nome: 'Fogueira da Jornada',
     tituloCurto: 'Fogueira',
+    descricao: 'A jornada começa a reunir memória, constância e experiências.',
     km: 96,
     fotosLiberadas: 15,
     svg: '/medalhas/progressao/03_fogueira_da_jornada.svg',
@@ -122,6 +142,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 3,
     nome: 'Lanterna da Serra',
     tituloCurto: 'Lanterna',
+    descricao: 'Avanço com direção, ritmo e presença nas trilhas.',
     km: 192,
     fotosLiberadas: 30,
     svg: '/medalhas/progressao/04_lanterna_da_serra.svg',
@@ -130,6 +151,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 4,
     nome: 'Rumo Certo',
     tituloCurto: 'Rumo',
+    descricao: 'Caminho consolidado com escolhas, evolução e identidade.',
     km: 384,
     fotosLiberadas: 60,
     svg: '/medalhas/progressao/05_rumo_certo.svg',
@@ -138,6 +160,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 5,
     nome: 'Prussik',
     tituloCurto: 'Prussik',
+    descricao: 'Símbolo de técnica, cuidado e progressão na aventura.',
     km: 768,
     fotosLiberadas: 120,
     svg: '/medalhas/progressao/06_prussik.svg',
@@ -146,6 +169,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 6,
     nome: 'Cachoeira Viva',
     tituloCurto: 'Cachoeira',
+    descricao: 'Experiências que atravessam paisagens e viram memória.',
     km: 1152,
     fotosLiberadas: 200,
     svg: '/medalhas/progressao/07_cachoeira_viva.svg',
@@ -154,6 +178,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 7,
     nome: 'Amanhecer no Cume',
     tituloCurto: 'Cume',
+    descricao: 'Conquista rara de continuidade e evolução outdoor.',
     km: 1920,
     fotosLiberadas: 400,
     svg: '/medalhas/progressao/08_amanhecer_no_cume.svg',
@@ -162,6 +187,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 8,
     nome: 'Mirante do Explorador',
     tituloCurto: 'Mirante',
+    descricao: 'Olhar amplo sobre a jornada já construída nas trilhas.',
     km: 3840,
     fotosLiberadas: 1000,
     svg: '/medalhas/progressao/09_mirante_do_explorador.svg',
@@ -170,6 +196,7 @@ const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [
     nivel: 9,
     nome: 'Mapa Lendário',
     tituloCurto: 'Lenda',
+    descricao: 'Marco lendário da jornada PrussikTrails.',
     km: 7680,
     fotosLiberadas: 2000,
     svg: '/medalhas/progressao/10_mapa_lendario.svg',
@@ -225,6 +252,7 @@ export default function PerfilPublicoCliente() {
   const [seguidoresTotal, setSeguidoresTotal] = useState(0)
   const [seguindoSalvando, setSeguindoSalvando] = useState(false)
   const [seguindoErro, setSeguindoErro] = useState('')
+  const [medalhaSelecionada, setMedalhaSelecionada] = useState<MedalhaVisual | null>(null)
 
   useEffect(() => {
     try {
@@ -516,6 +544,29 @@ export default function PerfilPublicoCliente() {
     return '/'
   }, [usuarioLogado?.tipo])
 
+  const medalhasVisuais = useMemo<MedalhaVisual[]>(() => {
+    const progressao = MEDALHAS_PROGRESSAO.map((medalha) => ({
+      id: `progressao-${medalha.nivel}`,
+      nome: medalha.nome,
+      descricao: medalha.descricao,
+      svg: medalha.svg,
+      desbloqueada: totalKm >= medalha.km,
+      categoria: 'progressao' as const
+    }))
+
+    const especiais = medalhasEspeciais.map((medalha, index) => ({
+      id: `beta-${index}-${normalizarNome(medalha.nome)}`,
+      nome: medalha.nome,
+      descricao: medalha.descricao,
+      svg: medalha.svg,
+      icone: medalha.icone,
+      desbloqueada: medalha.desbloqueado,
+      categoria: 'beta' as const
+    }))
+
+    return [...progressao, ...especiais]
+  }, [medalhasEspeciais, totalKm])
+
   if (carregando) {
     return (
       <main className="pageShell loadingShell">
@@ -732,33 +783,28 @@ export default function PerfilPublicoCliente() {
                 </div>
               </div>
 
-              <div className="medalGrid">
-                {MEDALHAS_PROGRESSAO.map((medalha) => {
-                  const desbloqueada = totalKm >= medalha.km
-
-                  return (
-                    <article key={medalha.nivel} className={`medalCard ${desbloqueada ? 'unlocked' : 'locked'}`}>
-                      <div className="medalArt">
-                        <img src={medalha.svg} alt={medalha.nome} />
-                      </div>
-                    </article>
-                  )
-                })}
-
-                {medalhasEspeciais.map((medalha) => {
-                  const desbloqueada = medalha.desbloqueado
-
-                  return (
-                    <article
-                      key={medalha.nome}
-                      className={`medalCard betaMedal ${desbloqueada ? 'unlocked betaUnlocked' : 'locked betaLocked'}`}
-                    >
-                      <div className={`medalArt betaArt ${desbloqueada ? 'betaArtUnlocked' : 'betaArtLocked'}`}>
-                        {medalha.svg ? <img src={medalha.svg} alt={medalha.nome} /> : <span>{medalha.icone}</span>}
-                      </div>
-                    </article>
-                  )
-                })}
+              <div className="medalGrid compactMedalGrid">
+                {medalhasVisuais.map((medalha) => (
+                  <button
+                    key={medalha.id}
+                    type="button"
+                    className={`medalTile ${medalha.categoria} ${medalha.desbloqueada ? 'unlocked' : 'locked'}`}
+                    onClick={() => setMedalhaSelecionada(medalha)}
+                    aria-label={medalha.desbloqueada ? `Ver conquista ${medalha.nome}` : 'Ver conquista bloqueada'}
+                  >
+                    <span className="medalTileFrame">
+                      {medalha.svg ? (
+                        <img
+                          className="medalTileSvg"
+                          src={medalha.svg}
+                          alt={medalha.desbloqueada ? medalha.nome : 'Medalha bloqueada'}
+                        />
+                      ) : (
+                        <span className="medalTileFallback">{medalha.icone || '🏅'}</span>
+                      )}
+                    </span>
+                  </button>
+                ))}
               </div>
             </section>
 
@@ -796,6 +842,40 @@ export default function PerfilPublicoCliente() {
 
         </section>
       </section>
+
+      {medalhaSelecionada && (
+        <div className="medalOverlay" onClick={() => setMedalhaSelecionada(null)} role="dialog" aria-modal="true">
+          <section className="medalDetailCard" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="medalDetailClose"
+              onClick={() => setMedalhaSelecionada(null)}
+              aria-label="Fechar detalhes da medalha"
+            >
+              ×
+            </button>
+
+            <div className={`medalDetailArt ${medalhaSelecionada.categoria}`}>
+              {medalhaSelecionada.svg ? (
+                <img src={medalhaSelecionada.svg} alt="" />
+              ) : (
+                <span>{medalhaSelecionada.icone || '🏅'}</span>
+              )}
+            </div>
+
+            <span className={medalhaSelecionada.desbloqueada ? 'medalStatus unlocked' : 'medalStatus locked'}>
+              {medalhaSelecionada.desbloqueada ? 'Conquistada' : 'Bloqueada'}
+            </span>
+
+            <h3>{medalhaSelecionada.desbloqueada ? medalhaSelecionada.nome : 'Conquista bloqueada'}</h3>
+            <p>
+              {medalhaSelecionada.desbloqueada
+                ? medalhaSelecionada.descricao
+                : 'Continue sua jornada para revelar esta medalha no Passaporte PrussikTrails.'}
+            </p>
+          </section>
+        </div>
+      )}
 
       <style jsx>{`
         .publicProfilePage {
@@ -1150,36 +1230,43 @@ export default function PerfilPublicoCliente() {
 
         .medalGrid {
           display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
+          grid-template-columns: repeat(6, minmax(0, 1fr));
           gap: 12px;
         }
 
-        .medalCard {
-          min-height: 184px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 0;
-          border-radius: 24px;
-          padding: 14px 10px;
-          text-align: center;
-          background: rgba(255, 255, 255, 0.66);
-          border: 1px solid rgba(62, 74, 45, 0.1);
-          transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+        .compactMedalGrid {
+          padding-top: 4px;
         }
 
-        .medalCard.unlocked {
+        .medalTile {
+          aspect-ratio: 1 / 1;
+          min-height: 0;
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 24px;
+          background:
+            radial-gradient(circle at 50% 0%, rgba(251, 146, 60, 0.10), transparent 52%),
+            rgba(255, 253, 247, 0.86);
+          display: grid;
+          place-items: center;
+          padding: 12px;
+          cursor: pointer;
+          transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        .medalTile:hover {
+          transform: translateY(-2px);
+          border-color: rgba(153, 27, 27, 0.18);
+          box-shadow: 0 14px 28px rgba(42, 55, 36, 0.10);
+        }
+
+        .medalTile.unlocked {
           border-color: rgba(153, 27, 27, 0.14);
           background:
-            radial-gradient(circle at 50% 0%, rgba(251, 146, 60, 0.13), transparent 52%),
-            rgba(255, 253, 247, 0.86);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            radial-gradient(circle at 50% 0%, rgba(251, 146, 60, 0.16), transparent 54%),
+            #fffdf7;
         }
 
-        .medalCard.locked {
-          opacity: 1;
-          justify-content: center;
+        .medalTile.locked {
           background:
             repeating-linear-gradient(
               135deg,
@@ -1191,98 +1278,147 @@ export default function PerfilPublicoCliente() {
             rgba(255, 253, 247, 0.72);
         }
 
-        .medalCard.locked .medalArt img {
-          filter: grayscale(1) brightness(1.12) opacity(0.82);
-        }
-
-        .medalCard:hover {
-          transform: translateY(-2px);
-        }
-
-        .medalArt {
-          width: 104px;
-          height: 104px;
-          flex: 0 0 auto;
+        .medalTileFrame {
+          width: min(96px, 86%);
+          height: min(96px, 86%);
           display: grid;
           place-items: center;
-          padding: 6px;
-          border-radius: 0;
           background: rgba(248, 235, 213, 0.68);
+          overflow: hidden;
         }
 
-        .betaMedal .medalArt,
-        .betaArt {
-          width: 104px;
-          height: 104px;
-          margin-bottom: 12px;
-        }
-
-        .betaArtUnlocked {
-          width: 94px;
-          height: 94px;
-          margin-top: 2px;
-          margin-bottom: 24px;
-          padding: 4px;
-        }
-
-        .betaArtLocked {
-          width: 104px;
-          height: 104px;
-          margin-bottom: 0;
-        }
-
-        .medalArt img {
-          width: 100%;
-          height: 100%;
-          max-width: 100%;
-          max-height: 100%;
+        .medalTileSvg {
+          width: auto;
+          height: auto;
+          max-width: 86%;
+          max-height: 86%;
           object-fit: contain;
           display: block;
+          filter: drop-shadow(0 8px 12px rgba(23, 32, 24, 0.10));
         }
 
-        .betaArtUnlocked img {
-          transform: scale(0.92);
-          transform-origin: center center;
+        .medalTile.beta .medalTileSvg {
+          max-width: 70%;
+          max-height: 70%;
         }
 
-        .medalArt span {
-          font-size: 42px;
+        .medalTile.locked .medalTileSvg {
+          filter: grayscale(1) brightness(1.12) opacity(0.76);
         }
 
-        .medalLabel {
-          width: 100%;
-          min-height: 52px;
+        .medalTileFallback {
+          font-size: 34px;
+        }
+
+        .medalOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 900;
           display: flex;
-          flex-direction: column;
           align-items: center;
-          justify-content: flex-start;
-          gap: 4px;
-          padding: 0 4px;
+          justify-content: center;
+          padding: 18px;
+          background: rgba(8, 13, 7, 0.48);
+          backdrop-filter: blur(10px);
         }
 
-        .betaLabel {
-          min-height: 60px;
+        .medalDetailCard {
+          position: relative;
+          width: min(360px, 100%);
+          border-radius: 30px;
+          border: 1px solid rgba(255, 255, 255, 0.62);
+          background:
+            radial-gradient(circle at 50% 0%, rgba(251, 146, 60, 0.14), transparent 45%),
+            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 100%);
+          box-shadow: 0 32px 90px rgba(15, 23, 42, 0.26);
+          padding: 24px 22px 22px;
+          text-align: center;
         }
 
-        .medalCard strong {
+        .medalDetailClose {
+          position: absolute;
+          top: 12px;
+          right: 12px;
+          width: 34px;
+          height: 34px;
+          border-radius: 999px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: rgba(255, 255, 255, 0.78);
           color: #172018;
-          font-size: 12px;
-          line-height: 1.18;
-          font-weight: 950;
-          display: block;
-          width: 100%;
-          word-break: break-word;
-          overflow-wrap: anywhere;
+          font-size: 24px;
+          line-height: 1;
+          cursor: pointer;
         }
 
+        .medalDetailArt {
+          width: 132px;
+          height: 132px;
+          margin: 2px auto 12px;
+          display: grid;
+          place-items: center;
+          background: rgba(248, 235, 213, 0.70);
+          overflow: hidden;
+        }
 
-        .medalCard span {
-          color: #64748b;
+        .medalDetailArt img {
+          width: auto;
+          height: auto;
+          max-width: 86%;
+          max-height: 86%;
+          object-fit: contain;
+          display: block;
+          filter: drop-shadow(0 12px 18px rgba(23, 32, 24, 0.14));
+        }
+
+        .medalDetailArt.beta img {
+          max-width: 72%;
+          max-height: 72%;
+        }
+
+        .medalDetailArt span {
+          font-size: 52px;
+        }
+
+        .medalStatus {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          padding: 6px 10px;
           font-size: 10px;
-          line-height: 1.1;
           font-weight: 950;
+          letter-spacing: 0.12em;
           text-transform: uppercase;
-          letter-spacing: 0.04em;
+        }
+
+        .medalStatus.unlocked {
+          background: rgba(153, 27, 27, 0.08);
+          color: #991b1b;
+          border: 1px solid rgba(153, 27, 27, 0.14);
+        }
+
+        .medalStatus.locked {
+          background: rgba(100, 116, 139, 0.08);
+          color: #64748b;
+          border: 1px solid rgba(100, 116, 139, 0.12);
+        }
+
+        .medalDetailCard h3 {
+          margin: 12px 0 0;
+          color: #172018;
+          font-size: 22px;
+          line-height: 1.05;
+          letter-spacing: -0.045em;
+          font-weight: 950;
+        }
+
+        .medalDetailCard p {
+          margin: 10px auto 0;
+          max-width: 290px;
+          color: #64748b;
+          font-size: 13px;
+          line-height: 1.45;
+          font-weight: 750;
         }
 
         .photoGrid {
@@ -1547,45 +1683,35 @@ export default function PerfilPublicoCliente() {
           }
 
           .medalGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 9px;
           }
 
-          .medalCard {
-            min-height: 172px;
-            border-radius: 22px;
+          .medalTile {
+            border-radius: 18px;
+            padding: 8px;
+          }
+
+          .medalTileFrame {
+            width: 82%;
+            height: 82%;
+          }
+
+          .medalOverlay {
+            align-items: flex-end;
             padding: 10px;
           }
 
-          .medalArt {
-            width: 104px;
-            height: 104px;
-            margin-bottom: 10px;
+          .medalDetailCard {
+            border-radius: 28px;
+            width: 100%;
+            max-height: calc(100dvh - 22px);
+            overflow: auto;
           }
 
-          .betaMedal .medalArt,
-          .betaArt {
-            width: 104px;
-            height: 104px;
-            margin-bottom: 10px;
-          }
-
-          .betaArtUnlocked {
-            width: 92px;
-            height: 92px;
-            margin-bottom: 22px;
-          }
-
-          .betaArtUnlocked img {
-            transform: scale(0.90);
-          }
-
-          .medalLabel {
-            min-height: 54px;
-          }
-
-          .betaLabel {
-            min-height: 60px;
+          .medalDetailArt {
+            width: 118px;
+            height: 118px;
           }
 
 
@@ -1605,7 +1731,7 @@ export default function PerfilPublicoCliente() {
           }
 
           .medalGrid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
           }
         }
       `}</style>
