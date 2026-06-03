@@ -261,6 +261,38 @@ export default function ClienteRoteirosPage() {
     return `${restantes} vaga(s)`
   }
 
+  const irPeloLogo = () => {
+    try {
+      const userData = typeof window !== 'undefined' ? localStorage.getItem('user') : null
+
+      if (!userData) {
+        router.push('/')
+        return
+      }
+
+      const usuario = JSON.parse(userData) as { tipo?: string | null }
+
+      if (usuario.tipo === 'cliente') {
+        router.push('/cliente/dashboard')
+        return
+      }
+
+      if (usuario.tipo === 'guia') {
+        router.push('/guia/dashboard')
+        return
+      }
+
+      if (usuario.tipo === 'admin') {
+        router.push('/admin/dashboard')
+        return
+      }
+
+      router.push('/')
+    } catch {
+      router.push('/')
+    }
+  }
+
   if (carregando) {
     return (
       <div className="roteiros-loading">
@@ -314,85 +346,35 @@ export default function ClienteRoteirosPage() {
           background: rgba(255, 253, 247, 0.92);
           border-bottom: 1px solid rgba(15, 23, 42, 0.06);
           backdrop-filter: blur(18px);
-          padding: 10px 16px;
+          padding: 8px 12px;
         }
 
         .roteiros-header-inner {
           max-width: 1180px;
           margin: 0 auto;
           display: flex;
-          justify-content: space-between;
           align-items: center;
-          gap: 14px;
+          justify-content: center;
         }
 
-        .brandStandard {
+        .brandLogoOnly {
           border: 0;
           background: transparent;
           padding: 0;
           display: inline-flex;
           align-items: center;
-          gap: 10px;
-          min-width: 0;
-          cursor: pointer;
-          text-align: left;
-        }
-
-        .brandMark {
-          width: 44px;
-          height: 44px;
-          border-radius: 16px;
-          background: rgba(255, 255, 255, 0.82);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
-          display: inline-flex;
-          align-items: center;
           justify-content: center;
-          overflow: hidden;
-          flex: 0 0 auto;
+          min-width: 0;
+          max-width: min(280px, 64vw);
+          cursor: pointer;
         }
 
-        .brandMark img {
-          width: 36px;
-          height: 36px;
+        .brandLogoOnly img {
+          width: clamp(150px, 36vw, 250px);
+          height: auto;
+          max-height: 58px;
           object-fit: contain;
           display: block;
-        }
-
-        .brandCopy {
-          min-width: 0;
-          display: grid;
-          gap: 2px;
-        }
-
-        .brandCopy strong {
-          display: block;
-          color: #172018;
-          font-size: 18px;
-          line-height: 1;
-          font-weight: 950;
-          letter-spacing: -0.045em;
-          white-space: nowrap;
-        }
-
-        .brandCopy span {
-          display: block;
-          color: #7b8375;
-          font-size: 10px;
-          font-weight: 850;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .headerActions {
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          gap: 8px;
-          flex: 0 0 auto;
         }
 
         .roteiros-main {
@@ -549,40 +531,16 @@ export default function ClienteRoteirosPage() {
 
         @media (max-width: 640px) {
           .roteiros-header {
-            padding: 8px 10px;
+            padding: 7px 10px;
           }
 
-          .roteiros-header-inner {
-            align-items: center;
-            gap: 8px;
+          .brandLogoOnly {
+            max-width: 72vw;
           }
 
-          .brandStandard {
-            gap: 8px;
-            min-width: 0;
-            max-width: calc(100vw - 122px);
-          }
-
-          .brandMark {
-            width: 38px;
-            height: 38px;
-            border-radius: 14px;
-            box-shadow: none;
-          }
-
-          .brandMark img {
-            width: 31px;
-            height: 31px;
-          }
-
-          .brandCopy strong {
-            font-size: 16px;
-          }
-
-          .brandCopy span {
-            font-size: 8px;
-            letter-spacing: 0.11em;
-            max-width: calc(100vw - 170px);
+          .brandLogoOnly img {
+            width: clamp(142px, 52vw, 218px);
+            max-height: 50px;
           }
 
           .filters-card {
@@ -604,29 +562,12 @@ export default function ClienteRoteirosPage() {
           <div className="roteiros-header-inner">
             <button
               type="button"
-              className="brandStandard"
-              onClick={() => router.push('/')}
-              aria-label="Ir para a página inicial do PrussikTrails"
+              className="brandLogoOnly"
+              onClick={irPeloLogo}
+              aria-label="Voltar para o início do PrussikTrails"
             >
-              <span className="brandMark" aria-hidden="true">
-                <img src="/logo-prussik-display.png" alt="" />
-              </span>
-
-              <span className="brandCopy">
-                <strong>PrussikTrails</strong>
-                <span>Roteiros disponíveis</span>
-              </span>
+              <img src="/logo-prussik-display.png" alt="PrussikTrails" />
             </button>
-
-            <div className="headerActions">
-              <button
-                type="button"
-                className="btn btn-light"
-                onClick={() => router.push('/cliente/dashboard')}
-              >
-                Voltar
-              </button>
-            </div>
           </div>
         </header>
 
