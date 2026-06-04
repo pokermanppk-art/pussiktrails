@@ -1,1928 +1,1154 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+
+type AnyRecord = Record<string, any>
 
 type UsuarioLocal = {
   id: string
   nome?: string | null
   name?: string | null
   email?: string | null
-  cpf?: string | null
-  telefone?: string | null
-  celular?: string | null
   tipo?: string | null
   avatar_url?: string | null
   foto_url?: string | null
   imagem_url?: string | null
 }
 
-type Reserva = {
-  id: string
-  cliente_id?: string | null
-  roteiro_id?: string | null
-  quantidade_pessoas?: number | null
-  valor_total?: number | null
-  status?: string | null
-  pagamento_status?: string | null
-  order_id?: string | null
-  transaction_id?: string | null
-  pix_code?: string | null
-  pix_qr_code?: string | null
-  saldo_utilizado?: number | null
-  pago_em?: string | null
-  forma_pagamento?: string | null
-  created_at?: string | null
-}
-
-type Roteiro = {
-  id: string
-  titulo?: string | null
-  nome?: string | null
-  preco?: number | null
-  valor?: number | null
-  local?: string | null
-  localizacao?: string | null
-  data_roteiro?: string | null
-  data_saida?: string | null
-  data?: string | null
-  hora_roteiro?: string | null
-  hora_saida?: string | null
-  hora?: string | null
-  foto_capa?: string | null
-  foto_url?: string | null
-  imagem_url?: string | null
-}
-
-type PixData = {
+type PixInfo = {
   order_id?: string
   transaction_id?: string
-  digitable_line?: string
   pix_code?: string
-  qr_code?: string
-  qrcode?: string
   qr_code_base64?: string
-  pix_qr_code?: string
-  url_slip?: string
-  url?: string
-  [key: string]: any
+  qr_code_image?: string
+  status?: string
 }
 
-type SaldoCliente = {
-  cliente_id?: string | null
-  saldo_disponivel?: number | null
-  saldo_reservado?: number | null
-  saldo_utilizado?: number | null
-  saldo_expirado?: number | null
-  moeda?: string | null
+function texto(valor: unknown) {
+  return String(valor || '').trim()
 }
 
-type MovimentacaoSaldo = {
-  id: string
-  tipo?: string | null
-  valor?: number | null
-  descricao?: string | null
-  motivo?: string | null
-  created_at?: string | null
+function normalizar(valor: unknown) {
+  return texto(valor)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
 }
 
-export default function ClientePagamentoPage() {
-  const router = useRouter()
+function numeroSeguro(valor: unknown, fallback = 0) {
+  const numero = Number(valor)
+  return Number.isFinite(numero) ? numero : fallback
+}
+
+function formatarMoeda(valor: unknown) {
+  return numeroSeguro(valor).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  })
+}
+
+function formatarData(valor?: unknown) {
+  const raw = texto(valor)
+  if (!raw) return 'Data a confirmar'
+
+  const data = raw.length <= 10 ? new Date(`${raw.slice(0, 10)}T12:00:00`) : new Date(raw)
+  if (Number.isNaN(data.getTime())) return 'Data a confirmar'
+
+  return data.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function formatarDataHora(valor?: unknown) {
+  const raw = texto(valor)
+  if (!raw) return ''
+
+  const data = new Date(raw)
+  if (Number.isNaN(data.getTime())) return formatarData(raw)
+
+  return data.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function primeiroTexto(...valores: unknown[]) {
+  for (const valor of valores) {
+    const item = texto(valor)
+    if (item) return item
+  }
+
+  return ''
+}
+
+function primeiroNumero(...valores: unknown[]) {
+  for (const valor of valores) {
+    const numero = numeroSeguro(valor, NaN)
+    if (Number.isFinite(numero) && numero > 0) return numero
+  }
+
+  return 0
+}
+
+function tituloRoteiro(roteiro?: AnyRecord | null) {
+  return primeiroTexto(roteiro?.titulo, roteiro?.nome, roteiro?.nome_roteiro) || 'Roteiro PrussikTrails'
+}
+
+function fotoRoteiro(roteiro?: AnyRecord | null) {
+  return primeiroTexto(
+    roteiro?.foto_capa,
+    roteiro?.foto_url,
+    roteiro?.imagem_url,
+    roteiro?.image_url,
+    roteiro?.capa_url
+  )
+}
+
+function localRoteiro(roteiro?: AnyRecord | null) {
+  return primeiroTexto(
+    roteiro?.local,
+    roteiro?.localizacao,
+    roteiro?.cidade,
+    roteiro?.destino,
+    roteiro?.endereco_formatado,
+    roteiro?.endereco_local,
+    roteiro?.ponto_encontro
+  ) || 'Local a confirmar'
+}
+
+function dataRoteiro(roteiro?: AnyRecord | null, reserva?: AnyRecord | null) {
+  return primeiroTexto(
+    reserva?.data_trilha,
+    reserva?.data_reserva,
+    roteiro?.data_disponivel,
+    roteiro?.proxima_data,
+    roteiro?.data_trilha,
+    roteiro?.embarque_data_hora,
+    roteiro?.embarque_data,
+    roteiro?.data_saida,
+    roteiro?.data_inicio,
+    roteiro?.data_evento
+  )
+}
+
+function nomeGuia(guia?: AnyRecord | null, roteiro?: AnyRecord | null) {
+  return primeiroTexto(
+    guia?.nome_agencia,
+    guia?.agencia_nome,
+    guia?.empresa_nome,
+    guia?.nome_empresa,
+    guia?.nome_fantasia,
+    guia?.razao_social,
+    guia?.empresa,
+    guia?.nome,
+    guia?.name,
+    guia?.email,
+    roteiro?.guia_nome,
+    roteiro?.nome_guia
+  ) || 'Guia PrussikTrails'
+}
+
+function guiaIdDoRoteiro(roteiro?: AnyRecord | null) {
+  return primeiroTexto(
+    roteiro?.id_guia,
+    roteiro?.guia_id,
+    roteiro?.user_id,
+    roteiro?.usuario_id,
+    roteiro?.criado_por,
+    roteiro?.created_by,
+    roteiro?.owner_id
+  )
+}
+
+function statusLabel(valor?: unknown) {
+  const status = normalizar(valor)
+
+  if (!status) return 'Pendente'
+  if (status.includes('pago') || status.includes('confirmado')) return 'Pago'
+  if (status.includes('cancel')) return 'Cancelado'
+  if (status.includes('aguardando')) return 'Aguardando pagamento'
+  if (status.includes('pendente')) return 'Pendente'
+
+  return texto(valor)
+}
+
+function statusClasse(valor?: unknown) {
+  const status = normalizar(valor)
+
+  if (status.includes('pago') || status.includes('confirmado')) return 'paid'
+  if (status.includes('cancel')) return 'danger'
+  return 'pending'
+}
+
+function extrairPixDaReserva(reserva?: AnyRecord | null): PixInfo {
+  if (!reserva) return {}
+
+  return {
+    order_id: primeiroTexto(reserva.paghiper_order_id, reserva.order_id),
+    transaction_id: primeiroTexto(reserva.paghiper_transaction_id, reserva.transaction_id),
+    pix_code: primeiroTexto(reserva.paghiper_pix_code, reserva.pix_code, reserva.qr_code_text, reserva.pix_copia_cola),
+    qr_code_base64: primeiroTexto(
+      reserva.paghiper_qrcode_base64,
+      reserva.pix_qrcode,
+      reserva.pix_qrcode_base64,
+      reserva.qr_code_base64,
+      reserva.qrcode_base64
+    ),
+    qr_code_image: primeiroTexto(reserva.qr_code_image, reserva.qrcode_image, reserva.paghiper_qrcode_image),
+    status: primeiroTexto(reserva.paghiper_status, reserva.pagamento_status, reserva.status_pagamento),
+  }
+}
+
+function normalizarPixResposta(data: AnyRecord): PixInfo {
+  const reserva = data?.reserva || {}
+
+  return {
+    order_id: primeiroTexto(data?.order_id, reserva?.paghiper_order_id, reserva?.order_id),
+    transaction_id: primeiroTexto(data?.transaction_id, reserva?.paghiper_transaction_id, reserva?.transaction_id),
+    pix_code: primeiroTexto(
+      data?.pix_code,
+      data?.qr_code_text,
+      data?.pix_copia_cola,
+      reserva?.paghiper_pix_code,
+      reserva?.pix_code,
+      reserva?.qr_code_text
+    ),
+    qr_code_base64: primeiroTexto(
+      data?.qr_code_base64,
+      data?.pix_qrcode,
+      data?.pix_qrcode_base64,
+      data?.qrcode_base64,
+      reserva?.paghiper_qrcode_base64,
+      reserva?.pix_qrcode,
+      reserva?.qr_code_base64
+    ),
+    qr_code_image: primeiroTexto(data?.qr_code_image, data?.qrcode_image, reserva?.qrcode_image),
+    status: primeiroTexto(data?.status, reserva?.paghiper_status, reserva?.pagamento_status),
+  }
+}
+
+function qrImageSrc(pix: PixInfo) {
+  const imagem = primeiroTexto(pix.qr_code_image)
+  if (imagem.startsWith('http') || imagem.startsWith('data:image')) return imagem
+
+  const base64 = primeiroTexto(pix.qr_code_base64)
+  if (!base64) return ''
+  if (base64.startsWith('data:image')) return base64
+
+  return `data:image/png;base64,${base64}`
+}
+
+function calcularValorTotal(reserva?: AnyRecord | null, roteiro?: AnyRecord | null) {
+  const valorReserva = primeiroNumero(reserva?.valor_total, reserva?.valor, reserva?.preco_total)
+  if (valorReserva > 0) return valorReserva
+
+  const quantidade = Math.max(1, Math.floor(numeroSeguro(reserva?.quantidade_pessoas ?? reserva?.quantidade, 1)))
+  const preco = primeiroNumero(roteiro?.preco, roteiro?.valor, roteiro?.preco_total, roteiro?.preco_por_pessoa)
+
+  return preco * quantidade
+}
+
+export default function ClientePagamentoReservaPage() {
   const params = useParams()
+  const router = useRouter()
   const iniciouRef = useRef(false)
-  const verificandoRef = useRef(false)
 
-  const reservaId = String(params?.reservaId || '')
+  const reservaId = texto(params?.reservaId)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [reserva, setReserva] = useState<Reserva | null>(null)
-  const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
-  const [pix, setPix] = useState<PixData | null>(null)
-  const [saldoCliente, setSaldoCliente] = useState<SaldoCliente | null>(null)
-  const [movimentacoesSaldo, setMovimentacoesSaldo] = useState<MovimentacaoSaldo[]>([])
-
+  const [reserva, setReserva] = useState<AnyRecord | null>(null)
+  const [roteiro, setRoteiro] = useState<AnyRecord | null>(null)
+  const [guia, setGuia] = useState<AnyRecord | null>(null)
+  const [pix, setPix] = useState<PixInfo>({})
   const [carregando, setCarregando] = useState(true)
   const [gerandoPix, setGerandoPix] = useState(false)
-  const [aplicandoSaldo, setAplicandoSaldo] = useState(false)
-  const [verificando, setVerificando] = useState(false)
-  const [pagamentoConfirmado, setPagamentoConfirmado] = useState(false)
-  const [redirecionandoGrupo, setRedirecionandoGrupo] = useState(false)
-
+  const [copiado, setCopiado] = useState(false)
   const [mensagem, setMensagem] = useState('')
-  const [erro, setErro] = useState('')
-  const [ultimaVerificacao, setUltimaVerificacao] = useState('')
 
   useEffect(() => {
     if (iniciouRef.current) return
-
     iniciouRef.current = true
     iniciar()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservaId])
 
-  useEffect(() => {
-    if (!reserva?.id || pagamentoConfirmado) return
+  const quantidade = useMemo(() => {
+    return Math.max(1, Math.floor(numeroSeguro(reserva?.quantidade_pessoas ?? reserva?.quantidade, 1)))
+  }, [reserva])
 
-    const interval = setInterval(() => {
-      verificarPagamento(true)
-    }, 9000)
+  const valorTotal = useMemo(() => calcularValorTotal(reserva, roteiro), [reserva, roteiro])
+  const precoPessoa = useMemo(() => (quantidade > 0 ? valorTotal / quantidade : valorTotal), [valorTotal, quantidade])
+  const pixImage = useMemo(() => qrImageSrc(pix), [pix])
+  const temPix = Boolean(pix.pix_code || pixImage)
 
-    return () => clearInterval(interval)
-  }, [reserva?.id, pagamentoConfirmado])
-
-  const iniciar = async () => {
+  async function iniciar() {
     setCarregando(true)
-    setErro('')
     setMensagem('')
 
     try {
-      const userData = localStorage.getItem('user')
+      const salvo = localStorage.getItem('user')
+      const usuario = salvo ? (JSON.parse(salvo) as UsuarioLocal) : null
 
-      if (!userData) {
+      if (!usuario?.id || normalizar(usuario.tipo) !== 'cliente') {
         router.replace('/login')
         return
       }
 
-      const parsedUser = JSON.parse(userData) as UsuarioLocal
-
-      if (parsedUser.tipo !== 'cliente') {
-        router.replace('/login')
+      if (!reservaId) {
+        setMensagem('Reserva não identificada.')
         return
       }
 
-      let usuarioAtualizado = parsedUser
-
-      try {
-        const { data: perfilCliente } = await supabase
-          .from('users')
-          .select('nome, name, email, avatar_url, foto_url, imagem_url')
-          .eq('id', parsedUser.id)
-          .maybeSingle()
-
-        if (perfilCliente) {
-          usuarioAtualizado = {
-            ...parsedUser,
-            nome: perfilCliente.nome || parsedUser.nome || null,
-            name: perfilCliente.name || parsedUser.name || null,
-            email: perfilCliente.email || parsedUser.email || null,
-            avatar_url: perfilCliente.avatar_url || parsedUser.avatar_url || null,
-            foto_url: perfilCliente.foto_url || parsedUser.foto_url || null,
-            imagem_url: perfilCliente.imagem_url || parsedUser.imagem_url || null,
-          }
-
-          localStorage.setItem('user', JSON.stringify(usuarioAtualizado))
-        }
-      } catch (error) {
-        console.warn('Não foi possível sincronizar avatar do cliente:', error)
-      }
-
-      setUser(usuarioAtualizado)
-
-      const saldoAtual = await carregarSaldoCliente(usuarioAtualizado.id)
-      const reservaAtual = await carregarReserva(usuarioAtualizado.id)
-
-      if (reservaAtual) {
-        const jaPago = pagamentoEstaConfirmado(reservaAtual)
-
-        if (jaPago) {
-          setPagamentoConfirmado(true)
-          await direcionarParaGrupo(reservaAtual.id)
-          return
-        }
-
-        const valorPendente = valorAPagarReserva(reservaAtual)
-
-        if (valorPendente <= 0) {
-          setPagamentoConfirmado(true)
-          await direcionarParaGrupo(reservaAtual.id)
-          return
-        }
-
-        const temSaldoParaEscolher =
-          Number(saldoAtual?.saldo_disponivel || 0) > 0 &&
-          Number(reservaAtual.saldo_utilizado || 0) <= 0
-
-        if (temSaldoParaEscolher) {
-          setMensagem('Você possui Saldo de Jornada disponível. Aplique antes de gerar o PIX, se desejar.')
-          return
-        }
-
-        await gerarPixSeNecessario(reservaAtual, usuarioAtualizado)
-        await verificarPagamento(true)
-      }
+      setUser(usuario)
+      await carregarReserva(usuario.id)
     } catch (error) {
       console.error('Erro ao iniciar pagamento:', error)
-      setErro('Não foi possível carregar o pagamento agora.')
+      setMensagem(error instanceof Error ? error.message : 'Não foi possível carregar o pagamento.')
     } finally {
       setCarregando(false)
     }
   }
 
-  const normalizar = (valor?: string | null) => {
-    return String(valor || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-  }
-
-  const somenteNumeros = (valor?: string | null) => {
-    return String(valor || '').replace(/\D/g, '')
-  }
-
-  const nomeUsuario = (usuario?: UsuarioLocal | null) => {
-    return usuario?.nome || usuario?.name || 'Cliente'
-  }
-
-  const tituloRoteiro = (item?: Roteiro | null) => {
-    return item?.titulo || item?.nome || 'Roteiro'
-  }
-
-  const imagemRoteiro = (item?: Roteiro | null) => {
-    return item?.foto_capa || item?.foto_url || item?.imagem_url || ''
-  }
-
-  const localRoteiro = (item?: Roteiro | null) => {
-    return item?.local || item?.localizacao || 'Local a confirmar'
-  }
-
-  const dataRoteiro = (item?: Roteiro | null) => {
-    return item?.data_roteiro || item?.data_saida || item?.data || null
-  }
-
-  const horaRoteiro = (item?: Roteiro | null) => {
-    return item?.hora_roteiro || item?.hora_saida || item?.hora || ''
-  }
-
-  const formatarMoeda = (valor: any) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(Number(valor || 0))
-  }
-
-  const numero = (valor: any) => {
-    const n = Number(valor || 0)
-    return Number.isFinite(n) ? n : 0
-  }
-
-  const valorTotalReserva = (item?: Reserva | null) => {
-    const quantidade = Math.max(1, numero(item?.quantidade_pessoas) || 1)
-
-    return Number((
-      numero(item?.valor_total) ||
-      numero(roteiro?.preco) * quantidade ||
-      numero(roteiro?.valor) * quantidade ||
-      0
-    ).toFixed(2))
-  }
-
-  const saldoUtilizadoReserva = (item?: Reserva | null) => {
-    return Number((numero(item?.saldo_utilizado)).toFixed(2))
-  }
-
-  const valorAPagarReserva = (item?: Reserva | null) => {
-    return Math.max(0, Number((valorTotalReserva(item) - saldoUtilizadoReserva(item)).toFixed(2)))
-  }
-
-  const saldoDisponivel = () => {
-    return Number((numero(saldoCliente?.saldo_disponivel)).toFixed(2))
-  }
-
-  const podeAplicarSaldo = () => {
-    return Boolean(
-      reserva?.id &&
-      user?.id &&
-      saldoDisponivel() > 0 &&
-      saldoUtilizadoReserva(reserva) <= 0 &&
-      !pagamentoEstaConfirmado(reserva)
-    )
-  }
-
-  const avatarCliente = () => {
-    return user?.avatar_url || user?.foto_url || user?.imagem_url || ''
-  }
-
-  const inicialCliente = () => {
-    const nome = String(user?.nome || user?.name || user?.email || 'C').trim()
-    return (nome.slice(0, 1) || 'C').toUpperCase()
-  }
-
-  const formatarData = (valor?: string | null) => {
-    if (!valor) return '-'
-
-    const data = new Date(valor)
-
-    if (Number.isNaN(data.getTime())) return valor
-
-    return data.toLocaleDateString('pt-BR')
-  }
-
-  const pagamentoEstaConfirmado = (item?: Reserva | null) => {
-    const pagamento = normalizar(item?.pagamento_status)
-    const status = normalizar(item?.status)
-
-    return (
-      pagamento === 'pago' ||
-      pagamento === 'confirmado' ||
-      pagamento === 'aprovado' ||
-      pagamento === 'paid' ||
-      pagamento === 'approved' ||
-      status === 'confirmada' ||
-      status === 'realizada' ||
-      status === 'pago' ||
-      status === 'paga'
-    )
-  }
-
-  const carregarSaldoCliente = async (clienteId: string) => {
-    if (!clienteId) return null
-
-    try {
-      const response = await fetch(`/api/cliente/saldo?clienteId=${encodeURIComponent(clienteId)}`)
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || !data?.sucesso) {
-        console.warn('Não foi possível carregar Saldo de Jornada:', data)
-        return null
-      }
-
-      setSaldoCliente(data.saldo || null)
-      setMovimentacoesSaldo(Array.isArray(data.movimentacoes) ? data.movimentacoes : [])
-
-      return data.saldo as SaldoCliente
-    } catch (error) {
-      console.warn('Erro ao carregar Saldo de Jornada:', error)
-      return null
-    }
-  }
-
-  const carregarReserva = async (clienteId: string) => {
-    if (!reservaId) {
-      setErro('Reserva não identificada.')
-      return null
-    }
-
-    const { data, error } = await supabase
+  async function carregarReserva(clienteIdAtual: string) {
+    const { data: reservaData, error: reservaError } = await supabase
       .from('reservas')
       .select('*')
       .eq('id', reservaId)
       .maybeSingle()
 
-    if (error) {
-      console.error('Erro ao buscar reserva:', error)
-      setErro('Não foi possível localizar a reserva.')
-      return null
+    if (reservaError) throw reservaError
+
+    if (!reservaData) {
+      setMensagem('Reserva não encontrada.')
+      return
     }
 
-    if (!data?.id) {
-      setErro('Reserva não encontrada.')
-      return null
+    const clienteDaReserva = primeiroTexto(
+      reservaData.cliente_id,
+      reservaData.id_cliente,
+      reservaData.usuario_id,
+      reservaData.user_id,
+      reservaData.comprador_id
+    )
+
+    if (clienteDaReserva && clienteDaReserva !== clienteIdAtual) {
+      setMensagem('Esta reserva não pertence ao cliente logado.')
+      return
     }
 
-    if (data.cliente_id && data.cliente_id !== clienteId) {
-      setErro('Esta reserva não pertence ao cliente logado.')
-      return null
-    }
-
-    const reservaData = data as Reserva
     setReserva(reservaData)
+    setPix(extrairPixDaReserva(reservaData))
 
-    if (reservaData.roteiro_id) {
+    const roteiroId = primeiroTexto(reservaData.roteiro_id, reservaData.id_roteiro)
+
+    if (roteiroId) {
       const { data: roteiroData, error: roteiroError } = await supabase
         .from('roteiros')
         .select('*')
-        .eq('id', reservaData.roteiro_id)
+        .eq('id', roteiroId)
         .maybeSingle()
 
       if (!roteiroError && roteiroData) {
-        setRoteiro(roteiroData as Roteiro)
+        setRoteiro(roteiroData)
+
+        const guiaId = guiaIdDoRoteiro(roteiroData)
+
+        if (guiaId) {
+          const { data: guiaData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', guiaId)
+            .maybeSingle()
+
+          if (guiaData) setGuia(guiaData)
+        }
       }
     }
-
-    if (
-      reservaData.pix_code ||
-      reservaData.pix_qr_code ||
-      reservaData.transaction_id ||
-      reservaData.order_id
-    ) {
-      setPix({
-        order_id: reservaData.order_id || '',
-        transaction_id: reservaData.transaction_id || '',
-        pix_code: reservaData.pix_code || '',
-        pix_qr_code: reservaData.pix_qr_code || '',
-        qr_code: reservaData.pix_qr_code || ''
-      })
-    }
-
-    return reservaData
   }
 
-  const extrairPixDaResposta = (data: any): PixData => {
-    const raiz = data || {}
-    const response = raiz.response || raiz.data || raiz.pix || raiz.invoice || raiz.result || raiz
-
-    return {
-      order_id:
-        raiz.order_id ||
-        response.order_id ||
-        response.orderId ||
-        response.order ||
-        '',
-      transaction_id:
-        raiz.transaction_id ||
-        response.transaction_id ||
-        response.transactionId ||
-        response.transaction ||
-        '',
-      digitable_line:
-        raiz.digitable_line ||
-        response.digitable_line ||
-        response.pix_code ||
-        response.emv ||
-        '',
-      pix_code:
-        raiz.pix_code ||
-        response.pix_code ||
-        response.digitable_line ||
-        response.emv ||
-        response.qr_code_text ||
-        '',
-      qr_code:
-        raiz.qr_code ||
-        raiz.qrcode ||
-        response.qr_code ||
-        response.qrcode ||
-        response.qr_code_base64 ||
-        response.pix_qr_code ||
-        '',
-      qrcode:
-        raiz.qrcode ||
-        response.qrcode ||
-        '',
-      qr_code_base64:
-        raiz.qr_code_base64 ||
-        response.qr_code_base64 ||
-        '',
-      pix_qr_code:
-        raiz.pix_qr_code ||
-        response.pix_qr_code ||
-        response.qr_code_base64 ||
-        response.qr_code ||
-        '',
-      url_slip:
-        raiz.url_slip ||
-        response.url_slip ||
-        response.url ||
-        '',
-      raw: raiz
-    }
-  }
-
-  const atualizarReservaComPix = async (
-    reservaAtual: Reserva,
-    pixData: PixData
-  ) => {
-    const payloads: Record<string, any>[] = [
-      {
-        order_id: pixData.order_id || `RESERVA-${reservaAtual.id}`,
-        transaction_id: pixData.transaction_id || null,
-        pix_code: pixData.pix_code || pixData.digitable_line || null,
-        pix_qr_code:
-          pixData.pix_qr_code ||
-          pixData.qr_code_base64 ||
-          pixData.qr_code ||
-          pixData.qrcode ||
-          null,
-        updated_at: new Date().toISOString()
-      },
-      {
-        order_id: pixData.order_id || `RESERVA-${reservaAtual.id}`,
-        transaction_id: pixData.transaction_id || null,
-        updated_at: new Date().toISOString()
-      },
-      {
-        updated_at: new Date().toISOString()
-      }
-    ]
-
-    for (const payload of payloads) {
-      const { error } = await supabase
-        .from('reservas')
-        .update(payload)
-        .eq('id', reservaAtual.id)
-
-      if (!error) return
-
-      console.warn('Não foi possível atualizar alguns dados PIX na reserva:', error)
-    }
-  }
-
-  const gerarPixSeNecessario = async (
-    reservaAtual: Reserva,
-    usuarioAtual: UsuarioLocal,
-    ignorarPixExistente = false
-  ) => {
-    if (pagamentoEstaConfirmado(reservaAtual)) return
-
-    if (!ignorarPixExistente && (pix?.pix_code || pix?.qr_code || pix?.pix_qr_code)) return
-
-    setGerandoPix(true)
+  async function gerarPix() {
+    if (!reserva?.id) return
 
     try {
-      const valor = valorAPagarReserva(reservaAtual)
-
-      if (valor <= 0) {
-        setPagamentoConfirmado(true)
-        setMensagem('Reserva confirmada integralmente com Saldo de Jornada.')
-        await direcionarParaGrupo(reservaAtual.id)
-        return
-      }
+      setGerandoPix(true)
+      setMensagem('')
+      setCopiado(false)
 
       const response = await fetch('/api/paghiper/create-pix', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          reservaId: reservaAtual.id,
-          reserva_id: reservaAtual.id,
-          order_id: `RESERVA-${reservaAtual.id}-${Date.now()}`,
-          valor,
-          nome: nomeUsuario(usuarioAtual),
-          email: usuarioAtual.email || '',
-          cpf: somenteNumeros(usuarioAtual.cpf),
-          telefone: somenteNumeros(usuarioAtual.telefone || usuarioAtual.celular),
-          descricao: `Reserva PrussikTrails - ${tituloRoteiro(roteiro)}`
-        })
+          reservaId: reserva.id,
+          reserva_id: reserva.id,
+          valor: valorTotal,
+          descricao: tituloRoteiro(roteiro),
+        }),
       })
 
       const data = await response.json().catch(() => null)
 
-      if (!response.ok || data?.sucesso === false) {
-        console.warn('Erro ao gerar PIX:', data)
-        setErro(data?.erro || data?.message || 'Não foi possível gerar o PIX.')
-        return
+      if (!response.ok || data?.success === false || data?.error === true) {
+        throw new Error(data?.message || data?.erro || data?.error || 'Não foi possível gerar o PIX.')
       }
 
-      const pixData = extrairPixDaResposta(data)
+      const pixNovo = normalizarPixResposta(data || {})
+      setPix(pixNovo)
 
-      setPix(pixData)
-      await atualizarReservaComPix(reservaAtual, pixData)
-
-      setMensagem('PIX gerado. Após o pagamento, o sistema verificará automaticamente.')
+      if (data?.reserva) {
+        setReserva(data.reserva)
+      } else {
+        await carregarReserva(user?.id || '')
+      }
     } catch (error) {
       console.error('Erro ao gerar PIX:', error)
-      setErro('Erro ao gerar PIX.')
+      setMensagem(error instanceof Error ? error.message : 'Não foi possível gerar o PIX agora.')
     } finally {
       setGerandoPix(false)
     }
   }
 
-  const aplicarSaldoNaReserva = async () => {
-    if (!reserva?.id || !user?.id) return
-
-    setAplicandoSaldo(true)
-    setErro('')
-    setMensagem('')
-
-    try {
-      const response = await fetch('/api/reservas/aplicar-saldo', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          reservaId: reserva.id,
-          clienteId: user.id
-        })
-      })
-
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || !data?.sucesso) {
-        throw new Error(data?.erro || 'Não foi possível aplicar o saldo agora.')
-      }
-
-      const reservaAtualizada = data.reserva || await recarregarReserva()
-
-      setReserva(reservaAtualizada as Reserva)
-      setPix(null)
-
-      if (data.saldo) {
-        setSaldoCliente(data.saldo)
-      } else {
-        await carregarSaldoCliente(user.id)
-      }
-
-      if (data.pagoIntegralComSaldo || valorAPagarReserva(reservaAtualizada) <= 0) {
-        setPagamentoConfirmado(true)
-        setMensagem('Reserva confirmada integralmente com Saldo de Jornada. Preparando o grupo da sua aventura...')
-        await direcionarParaGrupo(reserva.id)
-        return
-      }
-
-      setMensagem(`Saldo aplicado: ${formatarMoeda(data.saldoAplicado)}. Gere o PIX apenas do valor restante.`)
-      await gerarPixSeNecessario(reservaAtualizada as Reserva, user, true)
-    } catch (error) {
-      console.error('Erro ao aplicar saldo:', error)
-      setErro(error instanceof Error ? error.message : 'Erro ao aplicar saldo.')
-    } finally {
-      setAplicandoSaldo(false)
-    }
-  }
-
-  const gerarPixSemSaldo = async () => {
-    if (!reserva || !user) return
-
-    setMensagem('Gerando PIX sem usar Saldo de Jornada.')
-    await gerarPixSeNecessario(reserva, user, true)
-  }
-
-  const verificarPagamento = async (silencioso = false) => {
-    if (!reserva?.id && !reservaId) return
-    if (verificandoRef.current) return
-
-    verificandoRef.current = true
-
-    if (!silencioso) {
-      setVerificando(true)
-      setMensagem('Verificando pagamento...')
-      setErro('')
-    }
-
-    try {
-      const response = await fetch('/api/paghiper/reconciliar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          reservaId: reserva?.id || reservaId
-        })
-      })
-
-      const data = await response.json().catch(() => null)
-
-      setUltimaVerificacao(new Date().toLocaleTimeString('pt-BR'))
-
-      if (!response.ok || data?.sucesso === false) {
-        if (!silencioso) {
-          setErro(data?.erro || data?.message || 'Pagamento ainda não confirmado.')
-        }
-
-        return
-      }
-
-      const reservaAtualizada = await recarregarReserva()
-
-      if (pagamentoEstaConfirmado(reservaAtualizada)) {
-        setPagamentoConfirmado(true)
-        setMensagem('Pagamento confirmado. Preparando o grupo da sua aventura...')
-        await direcionarParaGrupo(reservaAtualizada?.id || reserva?.id || reservaId)
-        return
-      }
-
-      const atualizadas = Number(data?.atualizadas || 0)
-      const jaConfirmadas = Number(data?.jaConfirmadas || 0)
-
-      if (atualizadas > 0 || jaConfirmadas > 0) {
-        const novaReserva = await recarregarReserva()
-
-        if (pagamentoEstaConfirmado(novaReserva)) {
-          setPagamentoConfirmado(true)
-          setMensagem('Pagamento confirmado. Preparando o grupo da sua aventura...')
-          await direcionarParaGrupo(novaReserva?.id || reserva?.id || reservaId)
-          return
-        }
-      }
-
-      if (!silencioso) {
-        setMensagem('Ainda não encontramos a confirmação. Tente novamente em alguns instantes.')
-      }
-    } catch (error) {
-      console.error('Erro ao verificar pagamento:', error)
-
-      if (!silencioso) {
-        setErro('Não foi possível verificar o pagamento agora.')
-      }
-    } finally {
-      verificandoRef.current = false
-
-      if (!silencioso) {
-        setVerificando(false)
-      }
-    }
-  }
-
-  const recarregarReserva = async () => {
-    const { data, error } = await supabase
-      .from('reservas')
-      .select('*')
-      .eq('id', reserva?.id || reservaId)
-      .maybeSingle()
-
-    if (!error && data) {
-      setReserva(data as Reserva)
-      return data as Reserva
-    }
-
-    return reserva
-  }
-
-  const direcionarParaGrupo = async (idReserva: string) => {
-    if (!idReserva) return
-
-    setRedirecionandoGrupo(true)
-
-    try {
-      const response = await fetch('/api/grupos/garantir-acesso', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          reservaId: idReserva
-        })
-      })
-
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok || !data?.sucesso) {
-        console.warn('Não foi possível garantir acesso ao grupo:', data)
-        setMensagem(
-          'Pagamento confirmado. O grupo será liberado em instantes nas suas reservas.'
-        )
-
-        setTimeout(() => {
-          router.push('/cliente/minhas-reservas')
-        }, 1400)
-
-        return
-      }
-
-      const redirectUrl =
-        data?.redirectUrl ||
-        (data?.grupo?.id ? `/cliente/grupos/${data.grupo.id}` : '')
-
-      if (redirectUrl) {
-        router.push(redirectUrl)
-        return
-      }
-
-      router.push('/cliente/minhas-reservas')
-    } catch (error) {
-      console.error('Erro ao direcionar para grupo:', error)
-
-      setMensagem(
-        'Pagamento confirmado. Não foi possível abrir o grupo agora, mas ele ficará disponível nas suas reservas.'
-      )
-
-      setTimeout(() => {
-        router.push('/cliente/minhas-reservas')
-      }, 1400)
-    } finally {
-      setRedirecionandoGrupo(false)
-    }
-  }
-
-  const copiarPix = async () => {
-    const codigo =
-      pix?.pix_code ||
-      pix?.digitable_line ||
-      pix?.qr_code ||
-      pix?.qrcode ||
-      ''
-
-    if (!codigo) {
-      setErro('Código PIX não disponível para copiar.')
-      return
-    }
+  async function copiarPix() {
+    const codigo = texto(pix.pix_code)
+    if (!codigo) return
 
     try {
       await navigator.clipboard.writeText(codigo)
-      setMensagem('Código PIX copiado.')
+      setCopiado(true)
+      window.setTimeout(() => setCopiado(false), 1800)
     } catch {
-      setErro('Não foi possível copiar automaticamente. Selecione e copie manualmente.')
+      setMensagem('Não foi possível copiar automaticamente. Selecione e copie o código PIX.')
     }
   }
 
-  const qrCodeImagem = () => {
-    const base =
-      pix?.pix_qr_code ||
-      pix?.qr_code_base64 ||
-      pix?.qr_code ||
-      pix?.qrcode ||
-      ''
-
-    if (!base) return ''
-
-    if (String(base).startsWith('data:image')) return base
-
-    if (String(base).length > 200 && !String(base).startsWith('http')) {
-      return `data:image/png;base64,${base}`
-    }
-
-    return String(base)
-  }
-
-  const codigoPix = () => {
-    return pix?.pix_code || pix?.digitable_line || ''
+  function voltarDashboard() {
+    router.push('/cliente/dashboard')
   }
 
   if (carregando) {
     return (
-      <main className="loading">
-        <style>{`
-          * { box-sizing: border-box; }
-
-          body {
-            margin: 0;
-            background: #f6f7f1;
-            font-family:
-              Inter,
-              ui-sans-serif,
-              system-ui,
-              -apple-system,
-              BlinkMacSystemFont,
-              "Segoe UI",
-              sans-serif;
-          }
-
-          .loading {
-            min-height: 100vh;
-            min-height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background:
-              radial-gradient(circle at top left, rgba(132, 204, 22, 0.18), transparent 30%),
-              linear-gradient(180deg, #fffdf7 0%, #eef2e5 100%);
-            color: #374151;
-          }
-
-          .loadingCard {
-            background: #ffffff;
-            border: 1px solid rgba(15, 23, 42, 0.06);
-            border-radius: 30px;
-            padding: 28px;
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-            text-align: center;
-          }
-
-          .loadingCard img {
-            height: 68px;
-            width: auto;
-            margin-bottom: 12px;
-          }
-        `}</style>
-
-        <div className="loadingCard">
+      <main className="page loadingPage">
+        <style>{styles}</style>
+        <section className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <div>Preparando pagamento...</div>
-        </div>
+          <p>Carregando detalhes do pagamento...</p>
+        </section>
       </main>
     )
   }
 
-  const foto = imagemRoteiro(roteiro)
-  const imagemQr = qrCodeImagem()
-  const codigo = codigoPix()
-
   return (
     <main className="page">
-      <style>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        body {
-          margin: 0;
-          background: #f6f7f1;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        .page {
-          min-height: 100vh;
-          min-height: 100dvh;
-          background:
-            radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
-            radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
-            linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
-          color: #172018;
-        }
-
-        .header {
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          background: rgba(255, 253, 247, 0.88);
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-          backdrop-filter: blur(18px);
-          padding: 8px 12px;
-        }
-
-        .headerInner {
-          max-width: 1180px;
-          margin: 0 auto;
-          display: grid;
-          grid-template-columns: 42px minmax(0, 1fr) 42px;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .headerSpacer {
-          width: 42px;
-          height: 42px;
-        }
-
-        .brand {
-          justify-self: center;
-          display: inline-flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 3px;
-          min-width: 0;
-          max-width: 100%;
-          border: 0;
-          background: transparent;
-          padding: 0;
-          cursor: pointer;
-          text-align: center;
-        }
-
-        .brand img {
-          width: clamp(152px, 42vw, 235px);
-          max-width: 100%;
-          height: auto;
-          max-height: 52px;
-          object-fit: contain;
-          display: block;
-        }
-
-        .brandSub {
-          color: #7b8372;
-          font-size: clamp(8px, 1.6vw, 10px);
-          font-weight: 900;
-          letter-spacing: clamp(0.08em, 0.8vw, 0.16em);
-          text-transform: uppercase;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: min(68vw, 420px);
-        }
-
-        .profileAvatarBtn {
-          justify-self: end;
-          width: 42px;
-          height: 42px;
-          border-radius: 999px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          background: rgba(255,255,255,0.86);
-          color: #1f3f2d;
-          box-shadow: 0 10px 22px rgba(15,23,42,0.08);
-          cursor: pointer;
-          overflow: hidden;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0;
-          transition: 0.2s ease;
-        }
-
-        .profileAvatarBtn:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 14px 30px rgba(15, 23, 42, 0.13);
-        }
-
-        .profileAvatarBtn img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-        }
-
-        .profileAvatarBtn span {
-          font-size: 15px;
-          font-weight: 950;
-          letter-spacing: -0.04em;
-        }
-
-        .container {
-          max-width: 1180px;
-          margin: 0 auto;
-          padding: 22px 16px 48px;
-        }
-
-        .hero {
-          position: relative;
-          overflow: hidden;
-          border-radius: 38px;
-          padding: 30px;
-          min-height: 300px;
-          background:
-            linear-gradient(135deg, rgba(23, 32, 24, 0.76), rgba(23, 32, 24, 0.34)),
-            radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 34%),
-            linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
-          color: #ffffff;
-          box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
-          margin-bottom: 16px;
-        }
-
-        .hero::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background:
-            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-          background-size: 46px 46px;
-          mask-image: linear-gradient(to bottom, black, transparent);
-          pointer-events: none;
-        }
-
-        .heroContent {
-          position: relative;
-          z-index: 2;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 280px;
-          gap: 24px;
-          align-items: end;
-          min-height: 240px;
-        }
-
-        .eyebrow {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.26);
-          background: rgba(255, 255, 255, 0.12);
-          color: #f7fee7;
-          padding: 8px 12px;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin-bottom: 14px;
-        }
-
-        .heroTitle {
-          margin: 0;
-          max-width: 760px;
-          font-size: clamp(40px, 6vw, 70px);
-          line-height: 0.92;
-          font-weight: 950;
-          letter-spacing: -0.085em;
-        }
-
-        .heroTitle span {
-          color: #bef264;
-          text-shadow: 0 0 28px rgba(190, 242, 100, 0.32);
-        }
-
-        .heroText {
-          max-width: 650px;
-          color: rgba(255,255,255,0.82);
-          line-height: 1.62;
-          margin: 16px 0 0;
-          font-size: 14px;
-        }
-
-        .heroCard {
-          background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          border-radius: 30px;
-          padding: 20px;
-          backdrop-filter: blur(16px);
-        }
-
-        .heroCardLabel {
-          color: rgba(255,255,255,0.76);
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-        }
-
-        .heroCardValue {
-          margin-top: 9px;
-          color: #ffffff;
-          font-size: 30px;
-          line-height: 1.05;
-          font-weight: 950;
-          letter-spacing: -0.07em;
-        }
-
-        .heroCardText {
-          margin-top: 8px;
-          color: rgba(255,255,255,0.78);
-          font-size: 12px;
-          line-height: 1.45;
-          font-weight: 750;
-        }
-
-        .alert {
-          border-radius: 18px;
-          padding: 13px 15px;
-          margin-bottom: 16px;
-          font-size: 13px;
-          font-weight: 800;
-          line-height: 1.45;
-        }
-
-        .alert.success {
-          background: #ecfdf5;
-          color: #166534;
-          border: 1px solid #bbf7d0;
-        }
-
-        .alert.error {
-          background: #fee2e2;
-          color: #991b1b;
-          border: 1px solid #fecaca;
-        }
-
-        .mainGrid {
-          display: grid;
-          grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
-          gap: 16px;
-          align-items: start;
-        }
-
-        .panel {
-          background: rgba(255,255,255,0.88);
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 32px;
-          box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
-          overflow: hidden;
-        }
-
-        .panelHeader {
-          padding: 18px 20px;
-          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-        }
-
-        .panelTitle {
-          margin: 0;
-          font-size: 19px;
-          font-weight: 950;
-          color: #172018;
-          letter-spacing: -0.04em;
-        }
-
-        .panelSub {
-          margin-top: 3px;
-          color: #64748b;
-          font-size: 12px;
-          font-weight: 700;
-          line-height: 1.45;
-        }
-
-        .panelBody {
-          padding: 18px;
-        }
-
-        .roteiroCard {
-          display: grid;
-          gap: 14px;
-        }
-
-        .imageBox {
-          width: 100%;
-          min-height: 230px;
-          background:
-            radial-gradient(circle at top right, rgba(251, 146, 60, 0.20), transparent 38%),
-            linear-gradient(135deg, #dbe7c8, #aebf8d);
-          border-radius: 26px;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #64748b;
-          font-weight: 950;
-        }
-
-        .imageBox img {
-          width: 100%;
-          height: 100%;
-          min-height: 230px;
-          object-fit: cover;
-          display: block;
-        }
-
-        .infoRows {
-          display: grid;
-          gap: 10px;
-        }
-
-        .infoRow {
-          display: flex;
-          justify-content: space-between;
-          gap: 14px;
-          background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 20px;
-          padding: 12px 14px;
-          color: #475569;
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        .infoRow strong {
-          color: #172018;
-          text-align: right;
-        }
-
-        .paymentBox {
-          background:
-            radial-gradient(circle at top right, rgba(190, 242, 100, 0.20), transparent 38%),
-            #172018;
-          color: #ffffff;
-          border-radius: 30px;
-          padding: 22px;
-          margin-bottom: 16px;
-        }
-
-        .paymentLabel {
-          color: rgba(255,255,255,0.70);
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.10em;
-        }
-
-        .paymentValue {
-          color: #bef264;
-          font-size: 38px;
-          font-weight: 950;
-          letter-spacing: -0.08em;
-          margin-top: 8px;
-        }
-
-        .paymentText {
-          margin-top: 8px;
-          color: rgba(255,255,255,0.74);
-          font-size: 13px;
-          line-height: 1.55;
-          font-weight: 700;
-        }
-
-        .saldoBox {
-          background: rgba(255, 253, 247, 0.92);
-          border: 1px solid rgba(32, 60, 46, 0.10);
-          border-radius: 28px;
-          padding: 18px;
-          margin-bottom: 16px;
-          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
-        }
-
-        .saldoTop {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 14px;
-          margin-bottom: 12px;
-        }
-
-        .saldoLabel {
-          color: #7b8372;
-          font-size: 11px;
-          font-weight: 950;
-          letter-spacing: 0.10em;
-          text-transform: uppercase;
-        }
-
-        .saldoValue {
-          margin-top: 6px;
-          color: #203c2e;
-          font-size: 28px;
-          line-height: 1;
-          font-weight: 950;
-          letter-spacing: -0.07em;
-        }
-
-        .saldoBadge {
-          border-radius: 999px;
-          background: rgba(132, 204, 22, 0.14);
-          color: #365314;
-          padding: 8px 10px;
-          font-size: 11px;
-          font-weight: 950;
-          white-space: nowrap;
-        }
-
-        .saldoText {
-          color: #64748b;
-          font-size: 12px;
-          line-height: 1.5;
-          font-weight: 700;
-          margin: 0 0 12px;
-        }
-
-        .saldoResumo {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 8px;
-          margin: 12px 0;
-        }
-
-        .saldoMini {
-          border-radius: 18px;
-          background: #f6f7f1;
-          border: 1px solid rgba(15, 23, 42, 0.05);
-          padding: 10px;
-          min-width: 0;
-        }
-
-        .saldoMini span {
-          display: block;
-          color: #7b8372;
-          font-size: 10px;
-          font-weight: 950;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-        }
-
-        .saldoMini strong {
-          display: block;
-          margin-top: 4px;
-          color: #172018;
-          font-size: 13px;
-          font-weight: 950;
-          overflow-wrap: anywhere;
-        }
-
-        .saldoMovs {
-          margin-top: 12px;
-          border-top: 1px solid rgba(15, 23, 42, 0.06);
-          padding-top: 10px;
-          display: grid;
-          gap: 7px;
-        }
-
-        .saldoMov {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          color: #64748b;
-          font-size: 11px;
-          font-weight: 750;
-        }
-
-        .saldoMov strong {
-          color: #203c2e;
-          white-space: nowrap;
-        }
-
-        .qrBox {
-          background: #fffdf7;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 26px;
-          padding: 16px;
-          text-align: center;
-        }
-
-        .qrImage {
-          width: 230px;
-          max-width: 100%;
-          height: auto;
-          border-radius: 18px;
-          background: #ffffff;
-          padding: 8px;
-          margin: 0 auto;
-          display: block;
-        }
-
-        .pixCode {
-          margin-top: 14px;
-          background: #f6f7f1;
-          border: 1px solid rgba(15, 23, 42, 0.06);
-          border-radius: 18px;
-          padding: 12px;
-          color: #475569;
-          font-size: 12px;
-          line-height: 1.45;
-          word-break: break-all;
-          max-height: 120px;
-          overflow: auto;
-          text-align: left;
-        }
-
-        .actions {
-          display: grid;
-          gap: 10px;
-          margin-top: 16px;
-        }
-
-        .btn {
-          border: none;
-          border-radius: 999px;
-          padding: 14px 18px;
-          font-size: 13px;
-          font-weight: 950;
-          cursor: pointer;
-          transition: 0.2s ease;
-          width: 100%;
-        }
-
-        .btn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 26px rgba(15, 23, 42, 0.10);
-        }
-
-        .btn:disabled {
-          opacity: 0.65;
-          cursor: not-allowed;
-        }
-
-        .btn.primary {
-          background: #16a34a;
-          color: #ffffff;
-        }
-
-        .btn.dark {
-          background: #172018;
-          color: #ffffff;
-        }
-
-        .btn.light {
-          background: #eef2e5;
-          color: #475569;
-        }
-
-        .btn.gold {
-          background: linear-gradient(135deg, #d4b35a, #8b5e34);
-          color: #fffdf7;
-        }
-
-        .btn.outline {
-          background: transparent;
-          border: 1px solid rgba(32, 60, 46, 0.20);
-          color: #203c2e;
-        }
-
-        .statusPill {
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          padding: 8px 11px;
-          font-size: 11px;
-          font-weight: 950;
-          margin-top: 14px;
-        }
-
-        .statusPill.pending {
-          background: #fef3c7;
-          color: #92400e;
-        }
-
-        .statusPill.success {
-          background: #dcfce7;
-          color: #166534;
-        }
-
-        @media (max-width: 1040px) {
-          .mainGrid,
-          .heroContent {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 720px) {
-          .header {
-            padding: 7px 10px;
-          }
-
-          .headerInner {
-            grid-template-columns: 38px minmax(0, 1fr) 38px;
-          }
-
-          .headerSpacer,
-          .profileAvatarBtn {
-            width: 38px;
-            height: 38px;
-          }
-
-          .brand img {
-            width: clamp(142px, 50vw, 205px);
-            max-height: 46px;
-          }
-
-          .brandSub {
-            max-width: 66vw;
-            font-size: 8px;
-            letter-spacing: 0.09em;
-          }
-
-          .container {
-            padding: 16px 12px 42px;
-          }
-
-          .hero,
-          .panel {
-            border-radius: 28px;
-          }
-
-          .hero {
-            padding: 22px;
-            min-height: auto;
-          }
-
-          .heroContent {
-            min-height: auto;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .heroTitle {
-            font-size: 40px;
-          }
-
-          .brand img {
-            width: clamp(132px, 54vw, 190px);
-            max-height: 42px;
-          }
-
-          .brandSub {
-            max-width: 62vw;
-          }
-
-          .paymentValue {
-            font-size: 32px;
-          }
-
-          .saldoResumo {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
-
-      <header className="header">
-        <div className="headerInner">
-          <div className="headerSpacer" aria-hidden="true" />
-
-          <button
-            type="button"
-            className="brand"
-            onClick={() => router.push('/cliente/dashboard')}
-            aria-label="Voltar para a dashboard do cliente"
-          >
+      <style>{styles}</style>
+
+      <header className="topbar">
+        <div className="topbarInner">
+          <button type="button" className="brandLogo" onClick={voltarDashboard} aria-label="Voltar para dashboard">
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <span className="brandSub">Pagamento seguro do seu passaporte outdoor</span>
           </button>
 
-          <button
-            type="button"
-            className="profileAvatarBtn"
-            onClick={() => router.push('/cliente/perfil')}
-            title="Perfil"
-            aria-label="Abrir perfil e configurações"
-          >
-            {avatarCliente() ? (
-              <img src={avatarCliente()} alt={user?.nome || user?.email || 'Perfil'} />
-            ) : (
-              <span>{inicialCliente()}</span>
-            )}
+          <button type="button" className="ghostTopButton" onClick={() => router.push('/cliente/minhas-reservas')}>
+            Minhas reservas
           </button>
         </div>
       </header>
 
-      <div className="container">
+      <section className="shell">
         <section className="hero">
-          <div className="heroContent">
-            <div>
-              <div className="eyebrow">
-                {pagamentoConfirmado ? 'Pagamento confirmado' : 'Pagamento PIX'}
-              </div>
+          <div>
+            <p className="eyebrow">Pagamento seguro</p>
+            <h1>Confira sua reserva antes de pagar.</h1>
+            <p className="heroText">
+              Revise os dados da experiência, quantidade de pessoas e valor total. Depois gere o PIX para concluir a reserva.
+            </p>
+          </div>
 
-              <h1 className="heroTitle">
-                {pagamentoConfirmado
-                  ? (
-                    <>
-                      Tudo certo.
-                      <br />
-                      Agora você entra no <span>grupo da aventura.</span>
-                    </>
-                  )
-                  : (
-                    <>
-                      Falta pouco para sua <span>próxima jornada.</span>
-                    </>
-                  )}
-              </h1>
-
-              <p className="heroText">
-                Pague pelo PIX e aguarde a confirmação automática. Assim que o sistema
-                confirmar o pagamento, você será direcionado para o grupo interno do roteiro.
-              </p>
-            </div>
-
-            <aside className="heroCard">
-              <div className="heroCardLabel">Reserva</div>
-              <div className="heroCardValue">
-                {reserva?.id ? reserva.id.slice(0, 8).toUpperCase() : '-'}
-              </div>
-              <div className="heroCardText">
-                {ultimaVerificacao
-                  ? `Última verificação às ${ultimaVerificacao}.`
-                  : 'Verificação automática ativada.'}
-              </div>
-            </aside>
+          <div className="statusBox">
+            <span>Status da reserva</span>
+            <strong className={statusClasse(reserva?.pagamento_status || reserva?.status_pagamento || reserva?.status)}>
+              {statusLabel(reserva?.pagamento_status || reserva?.status_pagamento || reserva?.status)}
+            </strong>
+            <small>{reserva?.created_at ? `Criada em ${formatarDataHora(reserva.created_at)}` : 'Reserva em andamento'}</small>
           </div>
         </section>
 
-        {mensagem && (
-          <div className="alert success">{mensagem}</div>
-        )}
+        {mensagem && <div className="alert">❌ {mensagem}</div>}
 
-        {erro && (
-          <div className="alert error">{erro}</div>
-        )}
-
-        <section className="mainGrid">
-          <section className="panel">
-            <div className="panelHeader">
-              <h2 className="panelTitle">Resumo da reserva</h2>
-              <div className="panelSub">
-                Confira os dados principais antes de pagar.
+        <section className="layoutGrid">
+          <div className="mainColumn">
+            <article className="routeCard">
+              <div className="routeImage">
+                {fotoRoteiro(roteiro) ? <img src={fotoRoteiro(roteiro)} alt={tituloRoteiro(roteiro)} /> : <span>🏞️</span>}
               </div>
-            </div>
 
-            <div className="panelBody">
-              <div className="roteiroCard">
-                <div className="imageBox">
-                  {foto ? (
-                    <img src={foto} alt={tituloRoteiro(roteiro)} />
-                  ) : (
-                    'Roteiro'
-                  )}
-                </div>
-
-                <div>
-                  <h3
-                    style={{
-                      margin: 0,
-                      color: '#172018',
-                      fontSize: 24,
-                      lineHeight: 1.05,
-                      fontWeight: 950,
-                      letterSpacing: '-0.06em'
-                    }}
-                  >
-                    {tituloRoteiro(roteiro)}
-                  </h3>
-
-                  <div
-                    style={{
-                      marginTop: 8,
-                      color: '#64748b',
-                      fontSize: 13,
-                      fontWeight: 750,
-                      lineHeight: 1.5
-                    }}
-                  >
-                    {localRoteiro(roteiro)}
+              <div className="routeBody">
+                <div className="routeHeader">
+                  <div>
+                    <span>Roteiro reservado</span>
+                    <h2>{tituloRoteiro(roteiro)}</h2>
+                    <p>{roteiro?.descricao || reserva?.descricao || 'Experiência outdoor PrussikTrails.'}</p>
                   </div>
                 </div>
 
-                <div className="infoRows">
-                  <div className="infoRow">
-                    <span>Data</span>
-                    <strong>{formatarData(dataRoteiro(roteiro))}</strong>
+                <div className="infoGrid">
+                  <div>
+                    <small>Local</small>
+                    <strong>{localRoteiro(roteiro)}</strong>
                   </div>
-
-                  <div className="infoRow">
-                    <span>Hora</span>
-                    <strong>{horaRoteiro(roteiro) || '-'}</strong>
+                  <div>
+                    <small>Data</small>
+                    <strong>{formatarData(dataRoteiro(roteiro, reserva))}</strong>
                   </div>
-
-                  <div className="infoRow">
-                    <span>Pessoas</span>
-                    <strong>{reserva?.quantidade_pessoas || 1}</strong>
+                  <div>
+                    <small>Nível</small>
+                    <strong>{primeiroTexto(roteiro?.dificuldade, roteiro?.nivel, roteiro?.intensidade) || 'Informado pelo guia'}</strong>
                   </div>
-
-                  <div className="infoRow">
-                    <span>Status</span>
-                    <strong>{reserva?.status || 'pendente'}</strong>
-                  </div>
-
-                  <div className="infoRow">
-                    <span>Pagamento</span>
-                    <strong>{reserva?.pagamento_status || 'pendente'}</strong>
+                  <div>
+                    <small>Guia</small>
+                    <strong>{nomeGuia(guia, roteiro)}</strong>
                   </div>
                 </div>
-              </div>
-            </div>
-          </section>
 
-          <aside>
-            <section className="paymentBox">
-              <div className="paymentLabel">Valor a pagar agora</div>
-
-              <div className="paymentValue">
-                {formatarMoeda(valorAPagarReserva(reserva))}
-              </div>
-
-              <div className="paymentText">
-                Valor total da reserva: {formatarMoeda(valorTotalReserva(reserva))}.
-                {saldoUtilizadoReserva(reserva) > 0
-                  ? ` Saldo aplicado: ${formatarMoeda(saldoUtilizadoReserva(reserva))}.`
-                  : ' Você pode usar Saldo de Jornada antes de gerar o PIX, se tiver saldo disponível.'}
-              </div>
-
-              <div
-                className={`statusPill ${pagamentoConfirmado ? 'success' : 'pending'}`}
-              >
-                {pagamentoConfirmado
-                  ? 'Pagamento confirmado'
-                  : valorAPagarReserva(reserva) <= 0
-                    ? 'Coberto por saldo'
-                    : 'Aguardando pagamento'}
-              </div>
-            </section>
-
-            <section className="saldoBox">
-              <div className="saldoTop">
-                <div>
-                  <div className="saldoLabel">Saldo de Jornada</div>
-                  <div className="saldoValue">{formatarMoeda(saldoDisponivel())}</div>
-                </div>
-
-                <div className="saldoBadge">Crédito de Jornada</div>
-              </div>
-
-              <p className="saldoText">
-                Use créditos de cancelamentos ou ajustes administrativos para abater
-                o valor desta nova aventura.
-              </p>
-
-              <div className="saldoResumo">
-                <div className="saldoMini">
-                  <span>Total</span>
-                  <strong>{formatarMoeda(valorTotalReserva(reserva))}</strong>
-                </div>
-
-                <div className="saldoMini">
-                  <span>Saldo usado</span>
-                  <strong>{formatarMoeda(saldoUtilizadoReserva(reserva))}</strong>
-                </div>
-
-                <div className="saldoMini">
-                  <span>Restante</span>
-                  <strong>{formatarMoeda(valorAPagarReserva(reserva))}</strong>
-                </div>
-              </div>
-
-              {movimentacoesSaldo.length > 0 && (
-                <div className="saldoMovs">
-                  {movimentacoesSaldo.slice(0, 3).map((mov) => (
-                    <div key={mov.id} className="saldoMov">
-                      <span>{mov.descricao || mov.motivo || mov.tipo || 'Movimentação'}</span>
-                      <strong>{formatarMoeda(mov.valor || 0)}</strong>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn gold"
-                  onClick={aplicarSaldoNaReserva}
-                  disabled={!podeAplicarSaldo() || aplicandoSaldo || pagamentoConfirmado}
-                >
-                  {aplicandoSaldo
-                    ? 'Aplicando saldo...'
-                    : saldoUtilizadoReserva(reserva) > 0
-                      ? 'Saldo já aplicado'
-                      : 'Usar saldo nesta jornada'}
-                </button>
-
-                {podeAplicarSaldo() && !pix && (
-                  <button
-                    type="button"
-                    className="btn outline"
-                    onClick={gerarPixSemSaldo}
-                    disabled={gerandoPix}
-                  >
-                    Gerar PIX sem usar saldo
+                {guiaIdDoRoteiro(roteiro) && (
+                  <button type="button" className="outlineButton" onClick={() => router.push(`/guia/publico/${guiaIdDoRoteiro(roteiro)}`)}>
+                    Ver perfil do guia
                   </button>
                 )}
               </div>
-            </section>
+            </article>
 
-            <section className="panel">
-              <div className="panelHeader">
-                <h2 className="panelTitle">PIX</h2>
-                <div className="panelSub">
-                  Copie o código ou use o QR Code. O PIX será gerado apenas do valor restante.
+            <article className="detailsCard">
+              <div className="sectionHeader">
+                <span>Resumo financeiro</span>
+                <h2>Detalhes antes do pagamento</h2>
+              </div>
+
+              <div className="summaryRows">
+                <div>
+                  <span>Preço por pessoa</span>
+                  <strong>{formatarMoeda(precoPessoa)}</strong>
+                </div>
+                <div>
+                  <span>Quantidade de pessoas</span>
+                  <strong>{quantidade}</strong>
+                </div>
+                <div>
+                  <span>Total da reserva</span>
+                  <strong>{formatarMoeda(valorTotal)}</strong>
+                </div>
+                <div>
+                  <span>Forma de pagamento</span>
+                  <strong>PIX PagHiper</strong>
                 </div>
               </div>
 
-              <div className="panelBody">
-                {pagamentoConfirmado ? (
-                  <div className="qrBox">
-                    <div
-                      style={{
-                        fontSize: 46,
-                        marginBottom: 10
-                      }}
-                    >
-                      ✅
-                    </div>
+              <p className="safeNote">
+                O pagamento será processado via PIX. Após a confirmação, sua reserva poderá ser liberada conforme o fluxo do PrussikTrails.
+              </p>
+            </article>
+          </div>
 
-                    <strong>Pagamento confirmado</strong>
+          <aside className="paymentCard">
+            <div className="paymentHeader">
+              <span>Pagamento PIX</span>
+              <h2>{temPix ? 'PIX gerado' : 'Gerar PIX'}</h2>
+              <p>{temPix ? 'Escaneie o QR Code ou copie o código.' : 'Clique para gerar o QR Code somente após conferir os dados.'}</p>
+            </div>
 
-                    <p
-                      style={{
-                        color: '#64748b',
-                        fontSize: 13,
-                        lineHeight: 1.5,
-                        fontWeight: 700
-                      }}
-                    >
-                      Estamos preparando seu acesso ao grupo do roteiro.
-                    </p>
-                  </div>
-                ) : gerandoPix ? (
-                  <div className="qrBox">
-                    Gerando PIX...
-                  </div>
+            {temPix ? (
+              <div className="pixArea">
+                {pixImage ? (
+                  <img className="qrImage" src={pixImage} alt="QR Code PIX" />
                 ) : (
-                  <>
-                    <div className="qrBox">
-                      {imagemQr ? (
-                        <img
-                          className="qrImage"
-                          src={imagemQr}
-                          alt="QR Code PIX"
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            color: '#64748b',
-                            fontSize: 13,
-                            fontWeight: 700,
-                            lineHeight: 1.5
-                          }}
-                        >
-                          {podeAplicarSaldo() ? 'Aplique seu Saldo de Jornada ou gere o PIX sem saldo.' : 'QR Code ainda não disponível. Use o botão para verificar ou gerar novamente.'}
-                        </div>
-                      )}
-
-                      {codigo && (
-                        <div className="pixCode">
-                          {codigo}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="actions">
-                      <button
-                        type="button"
-                        className="btn dark"
-                        onClick={copiarPix}
-                        disabled={!codigo}
-                      >
-                        Copiar código PIX
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn primary"
-                        onClick={() => verificarPagamento(false)}
-                        disabled={verificando || redirecionandoGrupo}
-                      >
-                        {verificando
-                          ? 'Verificando...'
-                          : redirecionandoGrupo
-                            ? 'Abrindo grupo...'
-                            : 'Já paguei'}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn light"
-                        onClick={() => router.push('/cliente/minhas-reservas')}
-                      >
-                        Voltar para reservas
-                      </button>
-                    </div>
-                  </>
+                  <div className="qrFallback">QR Code indisponível</div>
                 )}
+
+                <label className="pixCodeBox">
+                  <span>PIX copia e cola</span>
+                  <textarea value={pix.pix_code || ''} readOnly />
+                </label>
+
+                <button type="button" className="primaryButton" onClick={copiarPix} disabled={!pix.pix_code}>
+                  {copiado ? 'PIX copiado!' : 'Copiar PIX'}
+                </button>
+
+                <button type="button" className="secondaryButton" onClick={() => router.push('/cliente/minhas-reservas')}>
+                  Ver minhas reservas
+                </button>
               </div>
-            </section>
+            ) : (
+              <>
+                <div className="totalBox">
+                  <span>Total a pagar</span>
+                  <strong>{formatarMoeda(valorTotal)}</strong>
+                </div>
+
+                <button type="button" className="primaryButton" onClick={gerarPix} disabled={gerandoPix || valorTotal <= 0}>
+                  {gerandoPix ? 'Gerando PIX...' : 'Gerar PIX agora'}
+                </button>
+
+                <button type="button" className="secondaryButton" onClick={() => router.push(`/roteiros/${roteiro?.id || reserva?.roteiro_id || ''}`)}>
+                  Voltar ao roteiro
+                </button>
+              </>
+            )}
           </aside>
         </section>
-      </div>
+      </section>
     </main>
   )
 }
+
+const styles = `
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #f6f7f1;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button, input, textarea { font: inherit; }
+
+  .page {
+    min-height: 100vh;
+    min-height: 100dvh;
+    color: #172018;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
+      radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
+      linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
+  }
+
+  .loadingPage {
+    display: grid;
+    place-items: center;
+    padding: 20px;
+  }
+
+  .loadingCard {
+    width: min(430px, 100%);
+    border-radius: 30px;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(15,23,42,0.08);
+    box-shadow: 0 22px 60px rgba(15,23,42,0.12);
+    padding: 28px;
+    text-align: center;
+    color: #203c2e;
+    font-weight: 900;
+  }
+
+  .loadingCard img {
+    width: 160px;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    background: rgba(255,253,247,0.90);
+    border-bottom: 1px solid rgba(15,23,42,0.06);
+    backdrop-filter: blur(18px);
+    padding: 8px 14px;
+  }
+
+  .topbarInner {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .brandLogo {
+    grid-column: 2;
+    justify-self: center;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+  }
+
+  .brandLogo img {
+    width: clamp(142px, 34vw, 238px);
+    max-height: 58px;
+    object-fit: contain;
+    display: block;
+  }
+
+  .ghostTopButton {
+    grid-column: 3;
+    justify-self: end;
+    border: 1px solid rgba(32,60,46,0.10);
+    background: rgba(255,255,255,0.82);
+    color: #203c2e;
+    border-radius: 999px;
+    padding: 10px 13px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px 16px 54px;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 310px;
+    gap: 18px;
+    align-items: stretch;
+    margin-bottom: 16px;
+  }
+
+  .hero > div:first-child,
+  .statusBox {
+    border-radius: 36px;
+    box-shadow: 0 24px 60px rgba(23,32,24,0.14);
+  }
+
+  .hero > div:first-child {
+    padding: 30px;
+    color: #fff;
+    background:
+      linear-gradient(135deg, rgba(23,32,24,0.82), rgba(23,32,24,0.46)),
+      radial-gradient(circle at top right, rgba(190,242,100,0.30), transparent 34%),
+      linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    width: fit-content;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.24);
+    background: rgba(255,255,255,0.12);
+    color: #f7fee7;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: 0 0 12px;
+  }
+
+  .hero h1 {
+    margin: 0;
+    font-size: clamp(42px, 6vw, 72px);
+    line-height: 0.92;
+    font-weight: 950;
+    letter-spacing: -0.085em;
+  }
+
+  .heroText {
+    max-width: 760px;
+    margin: 14px 0 0;
+    color: rgba(255,255,255,0.82);
+    line-height: 1.6;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .statusBox {
+    background: rgba(255,255,255,0.90);
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 24px;
+    display: grid;
+    align-content: center;
+    gap: 8px;
+  }
+
+  .statusBox span,
+  .sectionHeader span,
+  .paymentHeader span,
+  .routeBody > .routeHeader span {
+    color: #991b1b;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .statusBox strong {
+    width: fit-content;
+    border-radius: 999px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .statusBox strong.pending { background: #fef3c7; color: #92400e; }
+  .statusBox strong.paid { background: #dcfce7; color: #166534; }
+  .statusBox strong.danger { background: #fee2e2; color: #991b1b; }
+
+  .statusBox small {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.4;
+  }
+
+  .alert {
+    border-radius: 18px;
+    padding: 13px 15px;
+    margin-bottom: 16px;
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    font-size: 13px;
+    font-weight: 850;
+  }
+
+  .layoutGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 370px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .mainColumn {
+    display: grid;
+    gap: 16px;
+  }
+
+  .routeCard,
+  .detailsCard,
+  .paymentCard {
+    background: rgba(255,255,255,0.90);
+    border: 1px solid rgba(15,23,42,0.06);
+    box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+    border-radius: 30px;
+    overflow: hidden;
+  }
+
+  .routeCard {
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr);
+  }
+
+  .routeImage {
+    min-height: 270px;
+    background: #eef2e5;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 44px;
+  }
+
+  .routeImage img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .routeBody {
+    padding: 22px;
+    display: grid;
+    gap: 18px;
+    align-content: start;
+  }
+
+  .routeBody h2,
+  .sectionHeader h2,
+  .paymentHeader h2 {
+    margin: 5px 0 0;
+    color: #172018;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.055em;
+  }
+
+  .routeBody h2 { font-size: 31px; }
+  .sectionHeader h2, .paymentHeader h2 { font-size: 26px; }
+
+  .routeBody p,
+  .paymentHeader p,
+  .safeNote {
+    margin: 8px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.55;
+    font-weight: 750;
+  }
+
+  .infoGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .infoGrid div {
+    border-radius: 20px;
+    padding: 13px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.06);
+  }
+
+  .infoGrid small {
+    display: block;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+
+  .infoGrid strong {
+    color: #172018;
+    font-size: 13px;
+    line-height: 1.3;
+    font-weight: 900;
+  }
+
+  .outlineButton,
+  .secondaryButton,
+  .primaryButton {
+    border: 0;
+    border-radius: 999px;
+    padding: 12px 15px;
+    font-size: 12px;
+    font-weight: 950;
+    cursor: pointer;
+    transition: 0.18s ease;
+  }
+
+  .outlineButton {
+    width: fit-content;
+    background: #eef2e5;
+    color: #203c2e;
+  }
+
+  .detailsCard,
+  .paymentCard {
+    padding: 22px;
+  }
+
+  .summaryRows {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .summaryRows div,
+  .totalBox {
+    border-radius: 20px;
+    padding: 14px;
+    background: #fffdf7;
+    border: 1px solid rgba(15,23,42,0.06);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .summaryRows span,
+  .totalBox span,
+  .pixCodeBox span {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .summaryRows strong,
+  .totalBox strong {
+    color: #203c2e;
+    font-size: 17px;
+    font-weight: 950;
+    text-align: right;
+  }
+
+  .paymentCard {
+    position: sticky;
+    top: 86px;
+    display: grid;
+    gap: 15px;
+  }
+
+  .paymentHeader {
+    display: grid;
+    gap: 3px;
+  }
+
+  .totalBox {
+    display: grid;
+    justify-items: start;
+  }
+
+  .totalBox strong {
+    font-size: 30px;
+    letter-spacing: -0.06em;
+  }
+
+  .primaryButton {
+    width: 100%;
+    background: #203c2e;
+    color: #fffdf7;
+    box-shadow: 0 14px 28px rgba(32,60,46,0.16);
+  }
+
+  .primaryButton:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .secondaryButton {
+    width: 100%;
+    background: #eef2e5;
+    color: #203c2e;
+  }
+
+  .primaryButton:hover:not(:disabled),
+  .secondaryButton:hover,
+  .outlineButton:hover,
+  .ghostTopButton:hover {
+    transform: translateY(-1px);
+  }
+
+  .pixArea {
+    display: grid;
+    gap: 13px;
+  }
+
+  .qrImage,
+  .qrFallback {
+    width: min(260px, 100%);
+    aspect-ratio: 1 / 1;
+    margin: 0 auto;
+    border-radius: 22px;
+    background: #ffffff;
+    border: 1px solid rgba(15,23,42,0.08);
+    padding: 10px;
+    object-fit: contain;
+    box-shadow: 0 14px 34px rgba(15,23,42,0.08);
+  }
+
+  .qrFallback {
+    display: grid;
+    place-items: center;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 850;
+    text-align: center;
+  }
+
+  .pixCodeBox {
+    display: grid;
+    gap: 7px;
+  }
+
+  .pixCodeBox textarea {
+    width: 100%;
+    min-height: 112px;
+    resize: vertical;
+    border: 1px solid rgba(15,23,42,0.10);
+    background: #fffdf7;
+    color: #172018;
+    border-radius: 18px;
+    padding: 12px;
+    font-size: 11px;
+    line-height: 1.45;
+    font-weight: 700;
+    outline: none;
+  }
+
+  @media (max-width: 980px) {
+    .hero,
+    .layoutGrid,
+    .routeCard {
+      grid-template-columns: 1fr;
+    }
+
+    .paymentCard {
+      position: static;
+    }
+
+    .routeImage {
+      min-height: 250px;
+      aspect-ratio: 4 / 3;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .topbar {
+      padding: 7px 10px;
+    }
+
+    .topbarInner {
+      grid-template-columns: 1fr auto;
+    }
+
+    .brandLogo {
+      grid-column: 1;
+      justify-self: start;
+    }
+
+    .brandLogo img {
+      width: clamp(130px, 50vw, 205px);
+      max-height: 50px;
+    }
+
+    .ghostTopButton {
+      grid-column: 2;
+      padding: 9px 11px;
+      font-size: 11px;
+    }
+
+    .shell {
+      padding: 12px 9px 40px;
+    }
+
+    .hero > div:first-child,
+    .statusBox,
+    .routeCard,
+    .detailsCard,
+    .paymentCard {
+      border-radius: 24px;
+    }
+
+    .hero > div:first-child,
+    .statusBox,
+    .detailsCard,
+    .paymentCard,
+    .routeBody {
+      padding: 18px;
+    }
+
+    .hero h1 {
+      font-size: 40px;
+    }
+
+    .infoGrid {
+      grid-template-columns: 1fr;
+    }
+
+    .summaryRows div {
+      display: grid;
+      justify-content: initial;
+    }
+
+    .summaryRows strong {
+      text-align: left;
+    }
+  }
+`

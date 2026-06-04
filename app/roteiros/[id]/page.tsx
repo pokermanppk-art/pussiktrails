@@ -322,9 +322,6 @@ export default function DetalhesRoteiro() {
   const [usuarioLogado, setUsuarioLogado] = useState<AnyRecord | null>(null);
   const [clima, setClima] = useState<Clima | null>(null);
   const [modalClimaAberto, setModalClimaAberto] = useState(false);
-  const [mostrarPix, setMostrarPix] = useState(false);
-  const [pixCode, setPixCode] = useState("");
-  const [pixQrCode, setPixQrCode] = useState("");
 
   useEffect(() => {
     const userData = localStorage.getItem("user");
@@ -432,186 +429,6 @@ export default function DetalhesRoteiro() {
     throw new Error("Não foi possível criar a reserva após ajustar colunas.");
   }
 
-  function extrairPixDaResposta(data: AnyRecord) {
-    const procurar = (obj: any, nomes: string[]): string => {
-      if (!obj || typeof obj !== "object") return "";
-
-      for (const nome of nomes) {
-        const valor = obj[nome];
-        if (typeof valor === "string" && valor.trim()) return valor;
-        if (typeof valor === "number") return String(valor);
-      }
-
-      for (const key of Object.keys(obj)) {
-        const encontrado = procurar(obj[key], nomes);
-        if (encontrado) return encontrado;
-      }
-
-      return "";
-    };
-
-    return {
-      transactionId: procurar(data, [
-        "transaction_id",
-        "transactionId",
-        "id_transacao",
-        "idTransacao",
-        "hash",
-      ]),
-      pixCode: procurar(data, [
-        "pix_code",
-        "qr_code_text",
-        "qrcode_text",
-        "pix_copia_cola",
-        "codigo_pix",
-        "copia_cola",
-        "copy_paste",
-        "emv",
-      ]),
-      qrCodeBase64: procurar(data, [
-        "qr_code_base64",
-        "qrCodeBase64",
-        "qrcode_base64",
-        "pix_qrcode",
-        "pix_qrcode_base64",
-        "qr_code_image",
-      ]),
-    };
-  }
-
-  async function atualizarReservaComFallback(
-    reservaId: string,
-    payloadOriginal: AnyRecord,
-  ) {
-    let payload: AnyRecord = { ...payloadOriginal };
-
-    for (let tentativa = 0; tentativa < 18; tentativa++) {
-      const { error } = await supabase
-        .from("reservas")
-        .update(payload)
-        .eq("id", reservaId);
-
-      if (!error) return;
-
-      if (!erroDeColunaAusente(error)) throw error;
-
-      const coluna = extrairColunaAusente(error);
-
-      if (!coluna || !(coluna in payload)) {
-        console.warn(
-          "Coluna ausente não mapeada ao atualizar PIX da reserva:",
-          error,
-        );
-        return;
-      }
-
-      delete payload[coluna];
-
-      if (Object.keys(payload).length === 0) return;
-    }
-  }
-
-  async function gerarPixParaReserva(reserva: AnyRecord, valorTotal: number) {
-    const payloadCreatePix: AnyRecord = {
-      reservaId: reserva.id,
-      reserva_id: reserva.id,
-      valor: valorTotal,
-      amount: valorTotal,
-      descricao: tituloRoteiro(roteiro),
-      description: tituloRoteiro(roteiro),
-      clienteId: usuarioLogado?.id,
-      nome: texto(usuarioLogado?.nome || usuarioLogado?.name),
-      email: texto(usuarioLogado?.email),
-      cpf: texto(
-        usuarioLogado?.cpf ||
-          usuarioLogado?.cpf_cnpj ||
-          usuarioLogado?.documento,
-      ),
-      cpf_cnpj: texto(
-        usuarioLogado?.cpf_cnpj ||
-          usuarioLogado?.cpf ||
-          usuarioLogado?.documento,
-      ),
-      telefone: texto(
-        usuarioLogado?.telefone ||
-          usuarioLogado?.celular ||
-          usuarioLogado?.whatsapp,
-      ),
-    };
-
-    // Restaura o fluxo que já funcionava antes da atualização: tenta primeiro /api/paghiper.
-    // Se o projeto estiver usando a rota nova, cai automaticamente para /api/paghiper/create-pix.
-    const legacyPayload = {
-      amount: valorTotal,
-      email: texto(usuarioLogado?.email),
-      description: tituloRoteiro(roteiro),
-      reservationId: reserva.id,
-      reservaId: reserva.id,
-    };
-
-    let response = await fetch("/api/paghiper", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(legacyPayload),
-    });
-
-    let data = await response.json().catch(() => null);
-
-    if (
-      !response.ok ||
-      data?.success === false ||
-      data?.sucesso === false ||
-      data?.error === true
-    ) {
-      const erroLegacy = data;
-
-      response = await fetch("/api/paghiper/create-pix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payloadCreatePix),
-      });
-
-      data = await response.json().catch(() => null);
-
-      if (
-        !response.ok ||
-        data?.success === false ||
-        data?.sucesso === false ||
-        data?.error === true
-      ) {
-        throw new Error(
-          data?.message ||
-            data?.erro ||
-            data?.error ||
-            erroLegacy?.message ||
-            erroLegacy?.erro ||
-            erroLegacy?.error ||
-            "Erro ao gerar PIX.",
-        );
-      }
-    }
-
-    const pix = extrairPixDaResposta(data || {});
-
-    if (!pix.pixCode && !pix.qrCodeBase64) {
-      throw new Error("O PagHiper respondeu, mas não retornou o código PIX.");
-    }
-
-    await atualizarReservaComFallback(String(reserva.id), {
-      transaction_id: pix.transactionId || data?.transaction_id || null,
-      paghiper_transaction_id:
-        pix.transactionId || data?.transaction_id || null,
-      pix_code: pix.pixCode || null,
-      pix_qrcode: pix.qrCodeBase64 || null,
-      paghiper_pix_code: pix.pixCode || null,
-      paghiper_qrcode_base64: pix.qrCodeBase64 || null,
-      status_pagamento: "pendente",
-      pagamento_status: "pendente",
-    });
-
-    return pix;
-  }
-
   async function handleReservar() {
     if (!usuarioLogado?.id) {
       router.push("/login");
@@ -622,20 +439,19 @@ export default function DetalhesRoteiro() {
 
     setReservando(true);
     setMensagem("");
-    setPixCode("");
-    setPixQrCode("");
-    setMostrarPix(false);
 
     try {
       const valorTotal = precoRoteiro(roteiro) * quantidadePessoas;
       const dataTrilhaReserva = dataBase(roteiro) || hojeISO();
 
       if (valorTotal <= 0) {
-        throw new Error("Valor do roteiro inválido para gerar PIX.");
+        throw new Error("Valor do roteiro inválido para criar a reserva.");
       }
 
-      // Payload mínimo e compatível com a tabela atual.
-      // data_trilha é obrigatória em reservas; data_reserva é mantida como fallback operacional.
+      // Fluxo restaurado:
+      // 1) cria a reserva com payload mínimo e compatível;
+      // 2) envia o cliente para a página de pagamento;
+      // 3) o PIX só é gerado em /cliente/pagamento/[reservaId].
       // Não enviamos data_roteiro nem updated_at porque essas colunas não existem em reservas.
       const payloadReserva: AnyRecord = {
         cliente_id: usuarioLogado.id,
@@ -650,11 +466,6 @@ export default function DetalhesRoteiro() {
       };
 
       const reserva = await inserirReservaComFallback(payloadReserva);
-      const pix = await gerarPixParaReserva(reserva, valorTotal);
-
-      setPixCode(pix.pixCode);
-      setPixQrCode(pix.qrCodeBase64);
-      setMostrarPix(true);
 
       const primeiroNome =
         usuarioLogado.nome?.split(" ")[0] ||
@@ -667,14 +478,16 @@ export default function DetalhesRoteiro() {
           "cliente",
           primeiroNome,
           "reservou",
-          `${primeiroNome} iniciou pagamento PIX do roteiro "${tituloRoteiro(roteiro)}"`,
+          `${primeiroNome} iniciou uma reserva do roteiro "${tituloRoteiro(roteiro)}"`,
           roteiro.id,
         );
       } catch (logError) {
         console.warn("Log de reserva não registrado:", logError);
       }
+
+      router.push(`/cliente/pagamento/${reserva.id}`);
     } catch (err: any) {
-      setMensagem(`❌ ${err.message || "Erro ao gerar PIX"}`);
+      setMensagem(`❌ ${err.message || "Erro ao criar reserva"}`);
     } finally {
       setReservando(false);
     }
@@ -798,7 +611,7 @@ export default function DetalhesRoteiro() {
               onClick={handleReservar}
               disabled={reservando}
             >
-              {reservando ? "Gerando PIX..." : "Reservar via PIX"}
+              {reservando ? "Criando reserva..." : "Continuar para pagamento"}
             </button>
 
             <div className="guideMini">
@@ -909,65 +722,6 @@ export default function DetalhesRoteiro() {
           </article>
         </section>
       </section>
-
-      {mostrarPix && (
-        <div className="modalOverlay" onClick={() => setMostrarPix(false)}>
-          <section
-            className="pixModal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="close"
-              onClick={() => setMostrarPix(false)}
-            >
-              ×
-            </button>
-            <div className="eyebrow">Pagamento PIX</div>
-            <h2>PIX gerado com sucesso</h2>
-            <p>
-              Copie o código PIX ou escaneie o QR Code para concluir a reserva.
-            </p>
-
-            {pixQrCode && (
-              <div className="pixQrWrap">
-                <img
-                  src={
-                    pixQrCode.startsWith("data:")
-                      ? pixQrCode
-                      : `data:image/png;base64,${pixQrCode}`
-                  }
-                  alt="QR Code PIX"
-                />
-              </div>
-            )}
-
-            <textarea className="pixText" value={pixCode} readOnly />
-
-            <button
-              type="button"
-              className="copyButton"
-              onClick={async () => {
-                await navigator.clipboard.writeText(pixCode);
-                setMensagem("PIX copiado. Abra o app do seu banco para pagar.");
-              }}
-            >
-              Copiar PIX
-            </button>
-
-            <button
-              type="button"
-              className="pixSecondaryButton"
-              onClick={() => {
-                setMostrarPix(false);
-                router.push("/cliente/minhas-reservas");
-              }}
-            >
-              Ver minhas reservas
-            </button>
-          </section>
-        </div>
-      )}
 
       {modalClimaAberto && (
         <div
