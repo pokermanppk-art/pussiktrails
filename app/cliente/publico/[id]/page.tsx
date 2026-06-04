@@ -112,6 +112,12 @@ const MEDALHAS_ESPECIAIS_BASE = [
     meta: 1,
     svg: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg',
   },
+  {
+    nome: 'Memórias do Beta',
+    descricao: 'Publicou 3 fotos durante o Beta de testes e ajudou a dar vida ao passaporte.',
+    icone: '📷',
+    meta: 3,
+  },
 ]
 
 const MEDALHAS_PROGRESSAO: MedalhaProgressao[] = [

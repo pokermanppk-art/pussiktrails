@@ -499,6 +499,9 @@ export default function PerfilCliente() {
   const [salvandoPerfil, setSalvandoPerfil] = useState(false)
   const [erroPerfil, setErroPerfil] = useState('')
   const [medalhaSelecionada, setMedalhaSelecionada] = useState<MedalhaVisual | null>(null)
+  const [bonusFotosBeta, setBonusFotosBeta] = useState(0)
+  const [fotosBetaPublicadas, setFotosBetaPublicadas] = useState(0)
+  const [medalhaFotosBetaConquistada, setMedalhaFotosBetaConquistada] = useState(false)
 
   const [linhas, setLinhas] = useState<FotoComDimensao[][]>([])
   const [carregandoFotos, setCarregandoFotos] = useState(true)
@@ -513,7 +516,11 @@ export default function PerfilCliente() {
   const nivelAtual = useMemo(() => obterNivelAtual(totalKm), [totalKm])
   const proximoNivel = useMemo(() => obterProximoNivel(totalKm), [totalKm])
   const progressoParaProximoMarco = useMemo(() => calcularProgressoTier(totalKm), [totalKm])
-  const fotosLiberadas = useMemo(() => calcularFotosLiberadas(totalKm), [totalKm])
+  const fotosLiberadasPorKm = useMemo(() => calcularFotosLiberadas(totalKm), [totalKm])
+  const fotosLiberadas = useMemo(
+    () => fotosLiberadasPorKm + bonusFotosBeta,
+    [fotosLiberadasPorKm, bonusFotosBeta]
+  )
   const faltamKm = Math.max(0, proximoNivel.km - totalKm)
   const medalhasKmConquistadas = METAS_JORNADA.filter((meta) => totalKm >= meta.km).length
 
@@ -611,13 +618,54 @@ export default function PerfilCliente() {
     void carregarDados(parsedUser.id)
   }, [router])
 
+  async function sincronizarBeneficioFotosBeta(userId: string, metodo: 'GET' | 'POST' = 'GET') {
+    try {
+      const response =
+        metodo === 'POST'
+          ? await fetch('/api/cliente/fotos/beta', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ clienteId: userId })
+            })
+          : await fetch(`/api/cliente/fotos/beta?clienteId=${encodeURIComponent(userId)}`, {
+              method: 'GET',
+              cache: 'no-store',
+              headers: {
+                'Cache-Control': 'no-store',
+                Pragma: 'no-cache'
+              }
+            })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Benefício Beta de fotos indisponível:', data)
+        return null
+      }
+
+      const beneficio = data?.beneficio || {}
+
+      setBonusFotosBeta(Number(beneficio?.bonusFotosBeta || 0))
+      setFotosBetaPublicadas(Number(data?.fotosBetaPublicadas || beneficio?.usado || 0))
+      setMedalhaFotosBetaConquistada(Boolean(data?.medalhaConcedida || data?.medalhaJaExistia))
+
+      return data
+    } catch (error) {
+      console.warn('Erro ao sincronizar benefício Beta de fotos:', error)
+      return null
+    }
+  }
+
   async function carregarDados(userId: string) {
     setCarregandoFotos(true)
     setCarregandoMedalhas(true)
 
     await Promise.allSettled([
       carregarPerfilBasico(userId),
-      carregarEstatisticas(userId)
+      carregarEstatisticas(userId),
+      sincronizarBeneficioFotosBeta(userId)
     ])
 
     agendarTarefaLeve(() => {
@@ -1243,7 +1291,11 @@ export default function PerfilCliente() {
     if (!user?.id || files.length === 0) return
 
     if (fotos.length + files.length > fotosLiberadas) {
-      setMensagem(`⚠️ Limite de ${fotosLiberadas} fotos.`)
+      setMensagem(
+        bonusFotosBeta > 0
+          ? `⚠️ Limite de ${fotosLiberadas} fotos, incluindo ${bonusFotosBeta} foto(s) grátis do Beta.`
+          : `⚠️ Limite de ${fotosLiberadas} fotos.`
+      )
       setTimeout(() => setMensagem(''), 4000)
       return
     }
@@ -1272,9 +1324,18 @@ export default function PerfilCliente() {
     await atualizarUsuarioComFallback(user.id, { fotos_aventuras: novasFotos })
     setFotos(novasFotos)
     await carregarLayoutJustificado(novasFotos.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
-    setMensagem(`✅ ${novasUrls.length} foto(s) adicionada(s)!`)
+
+    const beta = await sincronizarBeneficioFotosBeta(user.id, 'POST')
+
+    if (beta?.medalhaConcedida) {
+      await carregarMedalhas(user.id)
+      setMensagem('✅ Fotos adicionadas! Medalha “Memórias do Beta” desbloqueada.')
+    } else {
+      setMensagem(`✅ ${novasUrls.length} foto(s) adicionada(s)!`)
+    }
+
     setUploading(false)
-    setTimeout(() => setMensagem(''), 3000)
+    setTimeout(() => setMensagem(''), 4000)
   }
 
   async function removerFoto(index: number) {
@@ -1889,7 +1950,10 @@ export default function PerfilCliente() {
               <div className="cardHeader">
                 <div>
                   <h2>Fotos das aventuras</h2>
-                  <span>{fotos.length}/{fotosLiberadas} fotos liberadas no seu nível atual.</span>
+                  <span>
+                    {fotos.length}/{fotosLiberadas} fotos liberadas
+                    {bonusFotosBeta > 0 ? ` · ${bonusFotosBeta} grátis no Beta` : ' no seu nível atual'}
+                  </span>
                 </div>
                 <button type="button" onClick={() => fotosInputRef.current?.click()} disabled={uploading || fotosLiberadas <= 0}>
                   {uploading ? 'Enviando...' : 'Enviar fotos'}
@@ -1913,6 +1977,17 @@ export default function PerfilCliente() {
                     </span>
                   ))}
                 </div>
+
+                {bonusFotosBeta > 0 && (
+                  <div className="betaPhotosBox">
+                    <strong>Beta: 3 fotos grátis para começar</strong>
+                    <span>
+                      {medalhaFotosBetaConquistada
+                        ? 'Medalha “Memórias do Beta” desbloqueada.'
+                        : `${Math.min(fotosBetaPublicadas, 3)}/3 fotos publicadas para desbloquear a medalha “Memórias do Beta”.`}
+                    </span>
+                  </div>
+                )}
 
                 {carregandoFotos ? (
                   <div className="emptyBox">Carregando fotos...</div>
@@ -1977,6 +2052,7 @@ export default function PerfilCliente() {
                 <div className="summaryLine">
                   <span>Fotos liberadas</span>
                   <strong>{fotosLiberadas}</strong>
+                  {bonusFotosBeta > 0 && <small className="summaryHint">+{bonusFotosBeta} Beta</small>}
                 </div>
                 <div className="summaryLine">
                   <span>Fotos usadas</span>
@@ -3382,6 +3458,41 @@ const styles = `
     font-size: 13px;
     line-height: 1.45;
     font-weight: 750;
+  }
+
+  .betaPhotosBox {
+    margin: 0 0 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(153,27,27,0.12);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(251,146,60,0.12), transparent 40%),
+      rgba(255,253,247,0.82);
+    padding: 12px 14px;
+    display: grid;
+    gap: 4px;
+  }
+
+  .betaPhotosBox strong {
+    color: #203c2e;
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .betaPhotosBox span {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 780;
+  }
+
+  .summaryHint {
+    display: block;
+    margin-top: 3px;
+    color: #991b1b;
+    font-size: 10px;
+    font-weight: 950;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
   .photoMilestones {
