@@ -1387,20 +1387,34 @@ export default function PerfilCliente() {
       setErro('')
       setMensagem('')
 
-      const payloadUsuario: Record<string, unknown> = {
-        nome: nomeLimpo,
-        updated_at: new Date().toISOString()
-      }
+      const responsePerfil = await fetch('/api/usuario/perfil', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          usuarioId: user.id,
+          usuario_id: user.id,
+          tipoUsuario: 'cliente',
+          tipo: 'cliente',
+          nome: nomeLimpo,
+          telefone: telefoneLimpo || undefined,
+          celular: telefoneLimpo || undefined,
+          whatsapp: telefoneLimpo || undefined
+        })
+      })
 
-      if (telefoneLimpo) {
-        payloadUsuario.telefone = telefoneLimpo
-        payloadUsuario.celular = telefoneLimpo
-        payloadUsuario.whatsapp = telefoneLimpo
-        payloadUsuario.telefone_formatado = formatarTelefone(telefoneLimpo)
-        payloadUsuario.celular_formatado = formatarTelefone(telefoneLimpo)
-      }
+      const dataPerfil = await responsePerfil.json().catch(() => null)
 
-      const usuarioAtualizado = await atualizarUsuarioComFallback(user.id, payloadUsuario)
+      if (!responsePerfil.ok || dataPerfil?.sucesso === false || dataPerfil?.success === false) {
+        throw new Error(
+          dataPerfil?.erro ||
+            dataPerfil?.error ||
+            dataPerfil?.message ||
+            `Erro HTTP ${responsePerfil.status} ao salvar dados do perfil.`
+        )
+      }
 
       const responseBio = await fetch('/api/usuario/bio', {
         method: 'POST',
@@ -1428,24 +1442,34 @@ export default function PerfilCliente() {
         )
       }
 
-      const bioSalva = String(dataBio?.bio ?? dataBio?.usuario?.bio ?? bioLimpa)
+      const usuarioPerfil = dataPerfil?.usuario || dataPerfil?.user || dataPerfil?.data || {}
+      const usuarioBio = dataBio?.usuario || dataBio?.user || dataBio?.data || {}
+      const nomeSalvo = String(dataPerfil?.nome ?? usuarioPerfil?.nome ?? nomeLimpo)
+      const bioSalva = String(dataBio?.bio ?? usuarioBio?.bio ?? bioLimpa)
+      const telefoneSalvo = String(
+        dataPerfil?.telefone ||
+          usuarioPerfil?.telefone ||
+          usuarioPerfil?.celular ||
+          telefoneLimpo ||
+          ''
+      )
 
-      setNome(nomeLimpo)
+      setNome(nomeSalvo)
       setBio(bioSalva)
-      if (telefoneLimpo) setTelefone(formatarTelefone(telefoneLimpo))
+      if (telefoneSalvo) setTelefone(formatarTelefone(telefoneSalvo))
 
       atualizarLocalStorage({
-        ...(usuarioAtualizado || {}),
-        ...(dataBio?.usuario || dataBio?.user || dataBio?.data || {}),
+        ...usuarioPerfil,
+        ...usuarioBio,
         id: user.id,
         tipo: 'cliente',
-        nome: nomeLimpo,
+        nome: nomeSalvo,
         bio: bioSalva,
-        telefone: telefoneLimpo || undefined,
-        celular: telefoneLimpo || undefined,
-        whatsapp: telefoneLimpo || undefined,
-        telefone_formatado: telefoneLimpo ? formatarTelefone(telefoneLimpo) : undefined,
-        celular_formatado: telefoneLimpo ? formatarTelefone(telefoneLimpo) : undefined
+        telefone: telefoneSalvo ? somenteNumeros(telefoneSalvo) : undefined,
+        celular: telefoneSalvo ? somenteNumeros(telefoneSalvo) : undefined,
+        whatsapp: telefoneSalvo ? somenteNumeros(telefoneSalvo) : undefined,
+        telefone_formatado: telefoneSalvo ? formatarTelefone(telefoneSalvo) : undefined,
+        celular_formatado: telefoneSalvo ? formatarTelefone(telefoneSalvo) : undefined
       })
 
       setModalPerfilAberto(false)

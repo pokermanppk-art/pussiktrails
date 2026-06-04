@@ -261,18 +261,98 @@ function destinoPorPerfil(usuarioId: string, tipoUsuario?: string | null) {
   return `/cliente/publico/${usuarioId}`
 }
 
+function metadataNotificacao(item: AnyRecord) {
+  return item?.metadata || item?.detalhes || item?.extra || {}
+}
+
+function nomePessoaNotificacao(item: AnyRecord) {
+  const metadata = metadataNotificacao(item)
+
+  return texto(
+    item?.nome_usuario ||
+      item?.usuario_nome ||
+      item?.nome ||
+      item?.actor_nome ||
+      item?.ator_nome ||
+      item?.nome_actor ||
+      item?.nome_ator ||
+      item?.nome_origem ||
+      item?.guia_nome ||
+      metadata?.nome_usuario ||
+      metadata?.usuario_nome ||
+      metadata?.nome ||
+      metadata?.actor_nome ||
+      metadata?.ator_nome ||
+      metadata?.nome_actor ||
+      metadata?.nome_ator ||
+      metadata?.nome_origem ||
+      metadata?.guia_nome
+  )
+}
+
+function eventoOcultaNomeCliente(item: AnyRecord) {
+  const tipo = tipoEventoNotificacao(item)
+  const titulo = normalizar(item?.titulo || item?.descricao || item?.mensagem || item?.texto)
+  const metadata = metadataNotificacao(item)
+  const categoria = normalizar(metadata?.tipo || metadata?.categoria || metadata?.evento)
+
+  return (
+    tipo.includes('medalha') ||
+    tipo.includes('conquista') ||
+    tipo.includes('reserva') ||
+    categoria.includes('medalha') ||
+    categoria.includes('conquista') ||
+    categoria.includes('reserva') ||
+    titulo.includes('conquista desbloqueada') ||
+    titulo.includes('medalha desbloqueada') ||
+    titulo.includes('reserva feita') ||
+    titulo.includes('nova reserva') ||
+    titulo.includes('reserva confirmada')
+  )
+}
+
+function eventoMedalhaOuConquista(item: AnyRecord) {
+  const tipo = tipoEventoNotificacao(item)
+  const titulo = normalizar(item?.titulo || item?.descricao || item?.mensagem || item?.texto)
+
+  return (
+    tipo.includes('medalha') ||
+    tipo.includes('conquista') ||
+    titulo.includes('conquista desbloqueada') ||
+    titulo.includes('medalha desbloqueada') ||
+    titulo.includes('medalha')
+  )
+}
+
+function eventoReserva(item: AnyRecord) {
+  const tipo = tipoEventoNotificacao(item)
+  const titulo = normalizar(item?.titulo || item?.descricao || item?.mensagem || item?.texto)
+
+  return (
+    tipo.includes('reserva') ||
+    titulo.includes('reserva feita') ||
+    titulo.includes('nova reserva') ||
+    titulo.includes('reserva confirmada')
+  )
+}
+
 function destinoNotificacao(item: AnyRecord, fallback = '/cliente/dashboard') {
-  const metadata = item?.metadata || item?.detalhes || {}
+  const metadata = metadataNotificacao(item)
+  const actorId = texto(item?.actor_id || item?.ator_id || item?.usuario_origem_id || metadata?.actor_id || metadata?.ator_id)
+  const usuarioId = texto(item?.usuario_id || metadata?.usuario_id || metadata?.user_id)
+
+  if (!eventoOcultaNomeCliente(item)) {
+    if (actorId) return destinoPorPerfil(actorId, item?.actor_tipo || item?.tipo_actor || metadata?.tipo_usuario || metadata?.actor_tipo)
+    if (usuarioId) return destinoPorPerfil(usuarioId, item?.tipo_usuario || metadata?.tipo_usuario)
+  }
+
   const direto = texto(item?.destino_url || item?.destino || item?.rota || item?.url || metadata?.destino_url || metadata?.destino || metadata?.rota || metadata?.url)
   if (direto) return direto
 
   const roteiroId = texto(item?.roteiro_id || metadata?.roteiro_id || metadata?.roteiroId)
   if (roteiroId) return `/roteiros/${roteiroId}`
 
-  const actorId = texto(item?.actor_id || item?.ator_id || item?.usuario_origem_id || metadata?.actor_id || metadata?.ator_id)
   if (actorId) return destinoPorPerfil(actorId, item?.actor_tipo || item?.tipo_actor || metadata?.tipo_usuario || metadata?.actor_tipo)
-
-  const usuarioId = texto(item?.usuario_id || metadata?.usuario_id || metadata?.user_id)
   if (usuarioId) return destinoPorPerfil(usuarioId, item?.tipo_usuario || metadata?.tipo_usuario)
 
   return fallback
@@ -308,64 +388,104 @@ function emojiCom(item: AnyRecord) {
 }
 
 function tituloAll(item: AnyRecord) {
+  const tipo = tipoEventoNotificacao(item)
+  const metadata = metadataNotificacao(item)
+  const nome = nomePessoaNotificacao(item)
+  const medalha = texto(item?.nome_medalha || metadata?.nome_medalha || metadata?.medalha_nome)
+
+  if (eventoMedalhaOuConquista(item)) {
+    return medalha ? `Conquista desbloqueada: ${medalha}` : 'Conquista desbloqueada'
+  }
+
+  if (eventoReserva(item)) {
+    const roteiro = texto(item?.roteiro_titulo || item?.nome_roteiro || metadata?.roteiro_titulo || metadata?.nome_roteiro)
+    return roteiro ? `Reserva feita em ${roteiro}` : 'Reserva feita'
+  }
+
   const titulo = texto(item?.titulo)
   if (titulo) return titulo
 
-  const tipo = tipoEventoNotificacao(item)
-  const metadata = item?.metadata || item?.detalhes || {}
-  const nome = texto(item?.nome_usuario || metadata?.nome_usuario || metadata?.usuario_nome || item?.usuario_nome)
-  const medalha = texto(item?.nome_medalha || metadata?.nome_medalha || metadata?.medalha_nome)
+  if (tipo.includes('roteiro')) {
+    const roteiro = texto(item?.roteiro_titulo || item?.nome_roteiro || metadata?.roteiro_titulo || metadata?.nome_roteiro)
+    if (nome && roteiro) return `${nome} publicou ${roteiro}`
+    if (nome) return `${nome} publicou um roteiro`
+    return 'Novo roteiro publicado'
+  }
 
-  if (tipo.includes('medalha')) return medalha ? `${nome || 'Aventureiro'} conquistou ${medalha}` : 'Nova medalha conquistada'
-  if (tipo.includes('roteiro')) return 'Novo roteiro publicado'
-  if (tipo.includes('cadastro')) return 'Novo aventureiro na comunidade'
+  if (tipo.includes('cadastro')) {
+    return nome ? `${nome} chegou à comunidade` : 'Novo aventureiro na comunidade'
+  }
 
-  return texto(item?.descricao || item?.mensagem) || 'Movimento na comunidade'
+  if (tipo.includes('avaliacao')) {
+    return nome ? `${nome} avaliou uma experiência` : 'Nova avaliação na comunidade'
+  }
+
+  if (tipo.includes('seguir')) {
+    return nome ? `${nome} começou a seguir alguém` : 'Novo vínculo na comunidade'
+  }
+
+  return nome || texto(item?.descricao || item?.mensagem) || 'Movimento na comunidade'
 }
 
 function textoAll(item: AnyRecord) {
+  const metadata = metadataNotificacao(item)
+  const tipo = tipoEventoNotificacao(item)
+  const nome = nomePessoaNotificacao(item)
+
+  if (eventoMedalhaOuConquista(item)) {
+    const medalha = texto(item?.nome_medalha || metadata?.nome_medalha || metadata?.medalha_nome)
+    return medalha ? `Uma nova conquista apareceu na comunidade: ${medalha}.` : 'Uma nova conquista apareceu na comunidade.'
+  }
+
+  if (eventoReserva(item)) {
+    return 'Uma nova reserva foi feita no PrussikTrails.'
+  }
+
   const mensagem = texto(item?.texto || item?.mensagem)
   if (mensagem) return mensagem
 
   const descricao = texto(item?.descricao)
   if (descricao) return descricao
 
-  const tipo = tipoEventoNotificacao(item)
-  const metadata = item?.metadata || item?.detalhes || {}
+  if (tipo.includes('roteiro')) return nome ? `Toque para ver o perfil público de ${nome}.` : 'Um novo roteiro foi publicado no PrussikTrails.'
+  if (tipo.includes('cadastro')) return nome ? 'Toque para abrir o perfil público.' : 'Uma nova pessoa entrou na comunidade outdoor.'
 
-  if (tipo.includes('medalha')) {
-    const medalha = texto(item?.nome_medalha || metadata?.nome_medalha || metadata?.medalha_nome)
-    return medalha ? `Uma nova conquista apareceu na comunidade: ${medalha}.` : 'Uma nova conquista apareceu na comunidade.'
-  }
-
-  if (tipo.includes('roteiro')) return 'Um novo roteiro foi publicado no PrussikTrails.'
-  if (tipo.includes('cadastro')) return 'Uma nova pessoa entrou na comunidade outdoor.'
-
-  return 'A comunidade PrussikTrails teve uma nova movimentação.'
+  return nome ? 'Toque para abrir o perfil público.' : 'A comunidade PrussikTrails teve uma nova movimentação.'
 }
 
 function tituloCom(item: AnyRecord) {
+  const nome = nomePessoaNotificacao(item)
+  const tipo = tipoEventoNotificacao(item)
+
+  if (eventoMedalhaOuConquista(item)) return 'Conquista desbloqueada'
+  if (eventoReserva(item)) return 'Reserva feita'
+
   const titulo = texto(item?.titulo)
   if (titulo) return titulo
 
-  const tipo = tipoEventoNotificacao(item)
-  if (tipo.includes('roteiro')) return 'Guia que você segue publicou um roteiro'
-  if (tipo.includes('seguir')) return 'Novo seguidor na COM'
-  if (tipo.includes('curtida')) return 'Nova curtida na COM'
+  if (tipo.includes('roteiro')) return nome ? `${nome} publicou um roteiro` : 'Guia que você segue publicou um roteiro'
+  if (tipo.includes('seguir')) return nome ? `${nome} começou a seguir você` : 'Novo seguidor na COM'
+  if (tipo.includes('curtida') || tipo.includes('like')) return nome ? `${nome} curtiu sua jornada` : 'Nova curtida na COM'
+  if (tipo.includes('comentario')) return nome ? `${nome} comentou na sua jornada` : 'Novo comentário na COM'
 
-  return 'Interação na COM'
+  return nome ? `${nome} interagiu com você` : 'Interação na COM'
 }
 
 function textoCom(item: AnyRecord) {
+  const nome = nomePessoaNotificacao(item)
+  const tipo = tipoEventoNotificacao(item)
+
+  if (eventoMedalhaOuConquista(item)) return 'Uma conquista foi desbloqueada. Toque para ver os detalhes.'
+  if (eventoReserva(item)) return 'Uma reserva foi feita no PrussikTrails.'
+
   const mensagem = texto(item?.mensagem || item?.texto || item?.descricao)
   if (mensagem) return mensagem
 
-  const tipo = tipoEventoNotificacao(item)
-  if (tipo.includes('roteiro')) return 'Um guia que você segue publicou uma nova experiência. Toque para ver o roteiro.'
-  if (tipo.includes('seguir')) return 'Alguém começou a seguir você. Abra o perfil para seguir de volta.'
-  if (tipo.includes('curtida')) return 'Alguém curtiu seu perfil ou uma foto sua.'
+  if (tipo.includes('roteiro')) return nome ? `Toque para abrir o perfil público de ${nome}.` : 'Um guia que você segue publicou uma nova experiência.'
+  if (tipo.includes('seguir')) return nome ? 'Toque para abrir o perfil público.' : 'Alguém começou a seguir você.'
+  if (tipo.includes('curtida') || tipo.includes('like')) return nome ? 'Toque para abrir o perfil público.' : 'Alguém curtiu seu perfil ou uma foto sua.'
 
-  return 'Alguém interagiu com você na comunidade.'
+  return nome ? 'Toque para abrir o perfil público.' : 'Alguém interagiu com você na comunidade.'
 }
 
 function normalizarNotificacaoAll(item: AnyRecord, index: number): Notificacao {
@@ -446,6 +566,17 @@ export default function ClienteDashboardPage() {
   }, [])
 
   useEffect(() => {
+    try {
+      const abaSalva = localStorage.getItem('cliente_dashboard_notificacoes_aba')
+      if (abaSalva === 'all' || abaSalva === 'com') {
+        setAbaNotificacoes(abaSalva)
+      }
+    } catch {
+      // Mantém ALL como padrão se o navegador bloquear storage.
+    }
+  }, [])
+
+  useEffect(() => {
     router.prefetch('/cliente/perfil')
     router.prefetch('/cliente/minhas-reservas')
     router.prefetch('/roteiros')
@@ -457,7 +588,6 @@ export default function ClienteDashboardPage() {
     return lista
   }, [abaNotificacoes, notificacoesAll, notificacoesCom])
 
-  const primeiroRoteiroQuente = roteirosQuentes[0] || null
   const avatar = avatarUsuario(user)
   const nome = nomeUsuario(user)
 
@@ -624,6 +754,16 @@ export default function ClienteDashboardPage() {
     } finally {
       reconciliandoRef.current = false
       if (!silencioso) setReconciliando(false)
+    }
+  }
+
+  function definirAbaNotificacoes(aba: 'all' | 'com') {
+    setAbaNotificacoes(aba)
+
+    try {
+      localStorage.setItem('cliente_dashboard_notificacoes_aba', aba)
+    } catch {
+      // Sem ação: a aba continua fixa durante a sessão atual.
     }
   }
 
@@ -822,41 +962,42 @@ export default function ClienteDashboardPage() {
             <div className="eyebrow">Dashboard do aventureiro</div>
             <h1>Olá, {nome.split(' ')[0] || 'aventureiro'}.</h1>
             <p>
-              Acompanhe suas reservas, conquistas, notificações da comunidade e os roteiros que estão movimentando o PrussikTrails.
+              Acompanhe suas reservas, conquistas e movimentos da comunidade outdoor em um espaço mais leve e direto.
             </p>
-
-            <div className="heroActions">
-              <button type="button" className="btn primary" onClick={() => router.push('/roteiros')}>
-                Explorar roteiros
-              </button>
-              <button type="button" className="btn light" onClick={() => router.push('/cliente/minhas-reservas')}>
-                Minhas reservas
-              </button>
-              <button
-                type="button"
-                className="btn soft"
-                onClick={() => user?.id && reconciliarPagamentosPendentesInterno(user.id)}
-                disabled={reconciliando}
-              >
-                {reconciliando ? 'Verificando...' : 'Verificar pagamentos'}
-              </button>
-            </div>
           </div>
 
-          <aside className="heroCard">
-            <span>Próxima experiência</span>
-            <strong>{proximasReservas.length > 0 ? tituloReserva(proximasReservas[0]) : 'Escolha uma trilha'}</strong>
-            <p>
-              {proximasReservas.length > 0
-                ? `Reserva para ${formatarData(dataReserva(proximasReservas[0]))}.`
-                : 'Encontre um roteiro e comece sua jornada outdoor.'}
-            </p>
-            <button
-              type="button"
-              onClick={() => router.push(proximasReservas.length > 0 ? '/cliente/minhas-reservas' : '/roteiros')}
-            >
-              {proximasReservas.length > 0 ? 'Ver reservas' : 'Explorar agora'}
-            </button>
+          <aside className="heroCard carouselHeroCard">
+            <div className="carouselHeroHeader">
+              <span>Roteiros em destaque</span>
+              <button type="button" onClick={() => router.push('/roteiros')}>Ver todos</button>
+            </div>
+
+            {roteirosQuentes.length === 0 ? (
+              <div className="emptyBox small">Assim que novos roteiros forem aprovados, eles aparecerão aqui.</div>
+            ) : (
+              <div className="routeCarousel" aria-label="Carrossel de roteiros em destaque">
+                {roteirosQuentes.slice(0, 6).map((roteiro) => {
+                  const foto = fotoRoteiro(roteiro)
+
+                  return (
+                    <button
+                      type="button"
+                      className="carouselRouteCard"
+                      key={roteiro.id}
+                      onClick={() => router.push(`/roteiros/${roteiro.id}`)}
+                    >
+                      <span className="carouselImage">
+                        {foto ? <img src={foto} alt={tituloRoteiro(roteiro)} loading="lazy" /> : <span>🏞️</span>}
+                      </span>
+                      <span className="carouselText">
+                        <strong>{tituloRoteiro(roteiro)}</strong>
+                        <small>{localRoteiro(roteiro)}</small>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </aside>
         </section>
 
@@ -907,14 +1048,14 @@ export default function ClienteDashboardPage() {
                 <button
                   type="button"
                   className={abaNotificacoes === 'all' ? 'active' : ''}
-                  onClick={() => setAbaNotificacoes('all')}
+                  onClick={() => definirAbaNotificacoes('all')}
                 >
                   ALL <span>{notificacoesAll.length}</span>
                 </button>
                 <button
                   type="button"
                   className={abaNotificacoes === 'com' ? 'active' : ''}
-                  onClick={() => setAbaNotificacoes('com')}
+                  onClick={() => definirAbaNotificacoes('com')}
                 >
                   COM <span>{notificacoesCom.length}</span>
                 </button>
@@ -939,83 +1080,19 @@ export default function ClienteDashboardPage() {
               </div>
             </section>
 
-            <section className="panel">
-              <div className="panelHeader">
-                <div>
-                  <h2>Roteiros em destaque</h2>
-                  <p>Experiências recentes e com movimento dentro da plataforma.</p>
-                </div>
-                <button type="button" className="smallButton" onClick={() => router.push('/roteiros')}>
-                  Ver todos
-                </button>
-              </div>
 
-              {roteirosQuentes.length === 0 ? (
-                <div className="emptyBox">Assim que novos roteiros forem aprovados, eles aparecerão aqui.</div>
-              ) : (
-                <div className="routesGrid">
-                  {roteirosQuentes.slice(0, 4).map((roteiro) => {
-                    const foto = fotoRoteiro(roteiro)
-
-                    return (
-                      <article className="routeCard" key={roteiro.id}>
-                        <button type="button" className="routeImage" onClick={() => router.push(`/roteiros/${roteiro.id}`)}>
-                          {foto ? <img src={foto} alt={tituloRoteiro(roteiro)} loading="lazy" /> : <span>🏞️</span>}
-                        </button>
-                        <div className="routeBody">
-                          <h3>{tituloRoteiro(roteiro)}</h3>
-                          <p>{localRoteiro(roteiro)}</p>
-                          <div className="routeMeta">
-                            <span>{roteiro.dificuldade || 'Nível a confirmar'}</span>
-                            <strong>{formatarMoeda(precoRoteiro(roteiro))}</strong>
-                          </div>
-                          <button type="button" onClick={() => router.push(`/roteiros/${roteiro.id}`)}>
-                            Ver roteiro
-                          </button>
-                        </div>
-                      </article>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
           </div>
 
           <aside className="rightColumn">
-            <section className="panel hotPanel">
+            <section className="panel compactPanel minhasReservasPanel">
               <div className="panelHeader compact">
                 <div>
-                  <h2>Roteiro quente</h2>
-                  <p>Um convite para sair do feed e entrar na trilha.</p>
+                  <h2>Minhas reservas</h2>
+                  <p>Acompanhe suas próximas experiências.</p>
                 </div>
-              </div>
-
-              {primeiroRoteiroQuente ? (
-                <article className="hotRoute">
-                  <div className="hotImage">
-                    {fotoRoteiro(primeiroRoteiroQuente) ? (
-                      <img src={fotoRoteiro(primeiroRoteiroQuente)} alt={tituloRoteiro(primeiroRoteiroQuente)} loading="lazy" />
-                    ) : (
-                      <span>🧭</span>
-                    )}
-                  </div>
-                  <strong>{tituloRoteiro(primeiroRoteiroQuente)}</strong>
-                  <p>{localRoteiro(primeiroRoteiroQuente)}</p>
-                  <button type="button" onClick={() => router.push(`/roteiros/${primeiroRoteiroQuente.id}`)}>
-                    Abrir roteiro
-                  </button>
-                </article>
-              ) : (
-                <div className="emptyBox small">Nenhum roteiro quente no momento.</div>
-              )}
-            </section>
-
-            <section className="panel compactPanel">
-              <div className="panelHeader compact">
-                <div>
-                  <h2>Próximas reservas</h2>
-                  <p>O que vem pela frente.</p>
-                </div>
+                <button type="button" className="smallButton" onClick={() => router.push('/cliente/minhas-reservas')}>
+                  Abrir
+                </button>
               </div>
 
               {proximasReservas.length === 0 ? (
@@ -1031,45 +1108,6 @@ export default function ClienteDashboardPage() {
                       </span>
                     </button>
                   ))}
-                </div>
-              )}
-            </section>
-
-            <section className="panel compactPanel">
-              <div className="panelHeader compact">
-                <div>
-                  <h2>Passaporte</h2>
-                  <p>Medalhas e evolução.</p>
-                </div>
-                <button type="button" className="smallButton" onClick={() => router.push('/cliente/perfil')}>
-                  Abrir
-                </button>
-              </div>
-
-              <div className="medalList">
-                {medalhasConquistadas.slice(0, 4).map((item) => {
-                  const medalha = normalizarMedalha(item)
-
-                  return (
-                    <div className="medalMini" key={item.id}>
-                      <span>{medalha?.icone || '🏅'}</span>
-                      <strong>{medalha?.nome || 'Medalha conquistada'}</strong>
-                    </div>
-                  )
-                })}
-
-                {medalhasConquistadas.length === 0 && (
-                  <div className="emptyBox small">Suas medalhas aparecerão aqui.</div>
-                )}
-              </div>
-
-              {proximaMedalha && (
-                <div className="nextMedalBox">
-                  <span>{proximaMedalha.icone || '🏅'}</span>
-                  <div>
-                    <strong>{proximaMedalha.nome || 'Próxima medalha'}</strong>
-                    <small>{proximaMedalha.descricao || 'Continue sua jornada para desbloquear a próxima conquista.'}</small>
-                  </div>
                 </div>
               )}
             </section>
@@ -1506,6 +1544,107 @@ const styles = `
     font-size: 13px;
     line-height: 1.5;
     font-weight: 750;
+  }
+
+  .carouselHeroCard {
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .carouselHeroHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .carouselHeroHeader span {
+    margin: 0;
+  }
+
+  .carouselHeroHeader button {
+    border: 0;
+    border-radius: 999px;
+    padding: 9px 12px;
+    background: #eef2e5;
+    color: #203c2e;
+    font-size: 11px;
+    font-weight: 950;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .routeCarousel {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(210px, 78%);
+    gap: 10px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    padding: 2px 2px 8px;
+    scrollbar-width: thin;
+  }
+
+  .carouselRouteCard {
+    scroll-snap-align: start;
+    border: 1px solid rgba(15,23,42,0.06);
+    border-radius: 22px;
+    background: #fffdf7;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    text-align: left;
+    display: grid;
+    grid-template-rows: 130px auto;
+    box-shadow: 0 10px 22px rgba(15,23,42,0.05);
+  }
+
+  .carouselImage {
+    width: 100%;
+    height: 100%;
+    background: #eef2e5;
+    display: grid;
+    place-items: center;
+    color: #64748b;
+    font-size: 34px;
+    overflow: hidden;
+  }
+
+  .carouselImage img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .carouselText {
+    display: grid;
+    gap: 4px;
+    padding: 11px 12px 12px;
+    min-width: 0;
+  }
+
+  .carouselText strong {
+    color: #172018;
+    font-size: 14px;
+    line-height: 1.15;
+    font-weight: 950;
+    letter-spacing: -0.035em;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .carouselText small {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.3;
+    font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .notice {
@@ -2030,20 +2169,7 @@ const styles = `
     }
 
     .rightColumn {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .hotPanel {
-      grid-column: 1 / -1;
-    }
-
-    .hotRoute {
-      grid-template-columns: 180px minmax(0, 1fr);
-      align-items: center;
-    }
-
-    .hotImage {
-      aspect-ratio: 4 / 3;
+      grid-template-columns: 1fr;
     }
   }
 
@@ -2114,6 +2240,20 @@ const styles = `
 
     .heroText p {
       font-size: 13px;
+    }
+
+    .carouselHeroCard {
+      padding: 14px;
+    }
+
+    .routeCarousel {
+      grid-auto-columns: minmax(184px, 78%);
+      gap: 9px;
+    }
+
+    .carouselRouteCard {
+      grid-template-rows: 112px auto;
+      border-radius: 19px;
     }
 
     .heroActions,

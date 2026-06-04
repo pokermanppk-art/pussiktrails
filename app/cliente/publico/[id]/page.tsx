@@ -17,8 +17,11 @@ type ClientePublico = {
 
 type ReservaRealizada = {
   id?: string
+  status?: string | null
+  pagamento_status?: string | null
   roteiro?: {
     km?: number | null
+    distancia_km?: number | null
   } | null
 }
 
@@ -299,19 +302,97 @@ export default function PerfilPublicoCliente() {
         setBio(clientePublico.bio || '')
         setAvaliacaoMedia(Number(clientePublico.avaliacao_media_cliente || 0))
 
-        const { data: reservas } = await supabase
-          .from('reservas')
-          .select('id, roteiro:roteiro_id(km)')
-          .eq('cliente_id', id)
-          .eq('status', 'realizada')
+        try {
+          const responseMetricas = await fetch(`/api/cliente/perfil/metricas?userId=${encodeURIComponent(id)}`, {
+            method: 'GET',
+            cache: 'no-store',
+            headers: {
+              'Cache-Control': 'no-store',
+              Pragma: 'no-cache'
+            }
+          })
 
-        const reservasRealizadas = (reservas || []) as ReservaRealizada[]
-        const kmTotal = reservasRealizadas.reduce((acc, reserva) => {
-          return acc + Number(reserva.roteiro?.km || 0)
-        }, 0)
+          const metricas = await responseMetricas.json().catch(() => null)
 
-        setTotalKm(kmTotal)
-        setTotalTrilhas(reservasRealizadas.length)
+          if (responseMetricas.ok && metricas?.sucesso !== false && metricas?.stats) {
+            setTotalKm(Number(metricas.stats.totalKm || 0))
+            setTotalTrilhas(Number(metricas.stats.totalTrilhas || 0))
+          } else {
+            console.warn('Métricas públicas do cliente indisponíveis. Usando fallback local:', metricas)
+
+            const { data: reservas } = await supabase
+              .from('reservas')
+              .select('id, status, pagamento_status, roteiro:roteiro_id(km, distancia_km)')
+              .eq('cliente_id', id)
+
+            const reservasLista = (reservas || []) as ReservaRealizada[]
+            const reservasValidas = reservasLista.filter((reserva) => {
+              const status = normalizarNome(reserva.status)
+              const pagamento = normalizarNome(reserva.pagamento_status)
+
+              return (
+                status === 'realizada' ||
+                status === 'realizado' ||
+                status === 'executada' ||
+                status === 'executado' ||
+                status === 'concluida' ||
+                status === 'concluída' ||
+                status === 'confirmada' ||
+                status === 'paga' ||
+                status === 'pago' ||
+                pagamento === 'pago' ||
+                pagamento === 'confirmado' ||
+                pagamento === 'aprovado' ||
+                pagamento === 'paid' ||
+                pagamento === 'approved'
+              )
+            })
+
+            const kmTotal = reservasValidas.reduce((acc, reserva) => {
+              return acc + Number(reserva.roteiro?.km || reserva.roteiro?.distancia_km || 0)
+            }, 0)
+
+            setTotalKm(kmTotal)
+            setTotalTrilhas(reservasValidas.length)
+          }
+        } catch (error) {
+          console.warn('Erro ao carregar métricas públicas do cliente. Usando fallback local:', error)
+
+          const { data: reservas } = await supabase
+            .from('reservas')
+            .select('id, status, pagamento_status, roteiro:roteiro_id(km, distancia_km)')
+            .eq('cliente_id', id)
+
+          const reservasLista = (reservas || []) as ReservaRealizada[]
+          const reservasValidas = reservasLista.filter((reserva) => {
+            const status = normalizarNome(reserva.status)
+            const pagamento = normalizarNome(reserva.pagamento_status)
+
+            return (
+              status === 'realizada' ||
+              status === 'realizado' ||
+              status === 'executada' ||
+              status === 'executado' ||
+              status === 'concluida' ||
+              status === 'concluída' ||
+              status === 'confirmada' ||
+              status === 'paga' ||
+              status === 'pago' ||
+              pagamento === 'pago' ||
+              pagamento === 'confirmado' ||
+              pagamento === 'aprovado' ||
+              pagamento === 'paid' ||
+              pagamento === 'approved'
+            )
+          })
+
+          const kmTotal = reservasValidas.reduce((acc, reserva) => {
+            return acc + Number(reserva.roteiro?.km || reserva.roteiro?.distancia_km || 0)
+          }, 0)
+
+          setTotalKm(kmTotal)
+          setTotalTrilhas(reservasValidas.length)
+        }
 
         const fotosPublicas = Array.isArray(clientePublico.fotos_aventuras) ? clientePublico.fotos_aventuras : []
 
