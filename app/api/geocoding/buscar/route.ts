@@ -60,6 +60,15 @@ function calcularConfianca(resultado: OpenMeteoGeoResult, consulta: string) {
   return 'aproximada'
 }
 
+export async function GET() {
+  return NextResponse.json({
+    sucesso: true,
+    rota: '/api/geocoding/buscar',
+    provider: 'open-meteo',
+    message: 'Rota ativa. Use POST com endereco e/ou pontoReferencia.',
+  })
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => null)

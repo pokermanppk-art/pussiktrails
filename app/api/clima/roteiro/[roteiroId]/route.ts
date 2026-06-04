@@ -1,52 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 type AnyRecord = Record<string, any>
-
-type OpenMeteoDaily = {
-  time?: string[]
-  weather_code?: number[]
-  temperature_2m_max?: number[]
-  temperature_2m_min?: number[]
-  precipitation_probability_max?: number[]
-  precipitation_sum?: number[]
-  wind_speed_10m_max?: number[]
-  uv_index_max?: number[]
-}
-
-type OpenMeteoForecast = {
-  latitude?: number
-  longitude?: number
-  timezone?: string
-  daily?: OpenMeteoDaily
-}
 
 type OpenMeteoGeoResult = {
   id?: number
   name?: string
   latitude?: number
   longitude?: number
+  country_code?: string
+  country?: string
   admin1?: string
   admin2?: string
-  country?: string
-  country_code?: string
   timezone?: string
 }
 
-function getSupabaseServer() {
+function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const key = serviceRoleKey || anonKey
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  if (!supabaseUrl || !key) {
+  if (!supabaseUrl || !serviceRoleKey) {
     throw new Error('Credenciais Supabase ausentes no servidor.')
   }
 
-  return createClient(supabaseUrl, key, {
+  return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -58,313 +41,191 @@ function texto(valor: unknown) {
   return String(valor || '').trim()
 }
 
-function numero(valor: unknown): number | null {
-  if (valor === null || valor === undefined || valor === '') return null
-
-  const normalizado = String(valor)
-    .trim()
-    .replace(',', '.')
-
-  const n = Number(normalizado)
+function numero(valor: unknown) {
+  const n = Number(valor)
   return Number.isFinite(n) ? n : null
 }
 
-function dataIsoHoje() {
-  const agora = new Date()
-  const yyyy = agora.getFullYear()
-  const mm = String(agora.getMonth() + 1).padStart(2, '0')
-  const dd = String(agora.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
+function normalizar(valor: unknown) {
+  return texto(valor)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
 }
 
-function extrairDataIso(valor: unknown) {
+function dataISO(valor: unknown) {
   const raw = texto(valor)
   if (!raw) return ''
 
-  const match = raw.match(/\d{4}-\d{2}-\d{2}/)
-  if (match?.[0]) return match[0]
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10)
 
   const data = new Date(raw)
   if (Number.isNaN(data.getTime())) return ''
 
-  const yyyy = data.getFullYear()
-  const mm = String(data.getMonth() + 1).padStart(2, '0')
-  const dd = String(data.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
+  return data.toISOString().slice(0, 10)
 }
 
-function dataDoRoteiro(roteiro: AnyRecord, dataQuery: string) {
+function hojeISO() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function dataDoRoteiro(roteiro: AnyRecord) {
   return (
-    extrairDataIso(dataQuery) ||
-    extrairDataIso(roteiro.data_disponivel) ||
-    extrairDataIso(roteiro.proxima_data) ||
-    extrairDataIso(roteiro.data_trilha) ||
-    extrairDataIso(roteiro.embarque_data_hora) ||
-    extrairDataIso(roteiro.embarque_data) ||
-    extrairDataIso(roteiro.data_saida) ||
-    extrairDataIso(roteiro.data_inicio) ||
-    extrairDataIso(roteiro.data_evento) ||
-    extrairDataIso(roteiro.created_at) ||
-    dataIsoHoje()
+    dataISO(roteiro.data_disponivel) ||
+    dataISO(roteiro.proxima_data) ||
+    dataISO(roteiro.embarque_data_hora) ||
+    dataISO(roteiro.embarque_data) ||
+    dataISO(roteiro.data_trilha) ||
+    dataISO(roteiro.data_saida) ||
+    dataISO(roteiro.data_inicio) ||
+    dataISO(roteiro.data_evento) ||
+    hojeISO()
   )
 }
 
-function dataDentroDaJanelaOpenMeteo(dataIso: string) {
-  const hoje = new Date(`${dataIsoHoje()}T00:00:00`)
-  const alvo = new Date(`${dataIso}T00:00:00`)
+function iconePorCodigo(codigo: unknown) {
+  const code = Number(codigo)
 
-  if (Number.isNaN(alvo.getTime())) {
-    return {
-      dataConsulta: dataIsoHoje(),
-      dentro: false,
-      aviso: 'Data inválida. Exibindo previsão atual.',
-    }
-  }
+  if ([0, 1].includes(code)) return '🌤️'
+  if ([2, 3].includes(code)) return '⛅'
+  if ([45, 48].includes(code)) return '🌫️'
+  if ([51, 53, 55, 56, 57].includes(code)) return '🌦️'
+  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return '🌧️'
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return '❄️'
+  if ([95, 96, 99].includes(code)) return '⛈️'
 
-  const diffMs = alvo.getTime() - hoje.getTime()
-  const diffDias = Math.round(diffMs / 86_400_000)
-
-  if (diffDias < 0) {
-    return {
-      dataConsulta: dataIsoHoje(),
-      dentro: false,
-      aviso: 'Data do roteiro já passou. Exibindo previsão atual.',
-    }
-  }
-
-  if (diffDias > 15) {
-    return {
-      dataConsulta: dataIsoHoje(),
-      dentro: false,
-      aviso: 'A previsão por data ainda não está disponível. Exibindo previsão atual.',
-    }
-  }
-
-  return {
-    dataConsulta: dataIso,
-    dentro: true,
-    aviso: '',
-  }
+  return '🌤️'
 }
 
-function primeiroNumero(...valores: unknown[]) {
-  for (const valor of valores) {
-    const n = numero(valor)
-    if (n !== null) return n
-  }
-
-  return null
-}
-
-function coordenadasDoRoteiro(roteiro: AnyRecord) {
-  const latitude = primeiroNumero(
-    roteiro.latitude,
-    roteiro.lat,
-    roteiro.coordenada_latitude,
-    roteiro.geo_latitude
-  )
-
-  const longitude = primeiroNumero(
-    roteiro.longitude,
-    roteiro.lng,
-    roteiro.lon,
-    roteiro.coordenada_longitude,
-    roteiro.geo_longitude
-  )
-
-  if (latitude === null || longitude === null) return null
-
-  return { latitude, longitude }
-}
-
-function termosGeocoding(roteiro: AnyRecord) {
-  const candidatos = [
+function montarTermosGeocoding(roteiro: AnyRecord) {
+  const termos = [
     texto(roteiro.endereco_formatado),
     texto(roteiro.endereco_local),
     texto(roteiro.localizacao),
     texto(roteiro.local),
-    texto(roteiro.cidade && roteiro.uf ? `${roteiro.cidade}, ${roteiro.uf}` : ''),
+    [roteiro.cidade, roteiro.uf].map(texto).filter(Boolean).join('/'),
+    [roteiro.cidade, roteiro.uf].map(texto).filter(Boolean).join(', '),
     texto(roteiro.cidade),
+    texto(roteiro.ponto_referencia),
     texto(roteiro.ponto_encontro),
     texto(roteiro.embarque_local),
-  ].filter(Boolean)
+  ]
+    .filter(Boolean)
+    .map((item) => item.replace(/\s+/g, ' ').trim())
 
-  return Array.from(new Set(candidatos)).filter((item) => item.length >= 3)
+  const extras: string[] = []
+
+  termos.forEach((termo) => {
+    extras.push(termo)
+    termo.split(',').forEach((parte) => {
+      const limpa = parte.trim()
+      if (limpa.length >= 3) extras.push(limpa)
+    })
+  })
+
+  return Array.from(new Set(extras)).filter((item) => item.length >= 3)
 }
 
-async function geocodificarPorOpenMeteo(roteiro: AnyRecord) {
-  const termos = termosGeocoding(roteiro)
-
+async function buscarCoordenadasPorTexto(termos: string[]) {
   for (const termo of termos) {
-    const params = new URLSearchParams({
-      name: termo,
-      count: '3',
-      language: 'pt',
-      format: 'json',
-      countryCode: 'BR',
-    })
-
     try {
-      const response = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`, {
-        method: 'GET',
-        cache: 'no-store',
-        headers: { Accept: 'application/json' },
+      const params = new URLSearchParams({
+        name: termo,
+        count: '5',
+        language: 'pt',
+        format: 'json',
+        countryCode: 'BR',
       })
+
+      const response = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        }
+      )
 
       const data = await response.json().catch(() => null)
       const resultados = Array.isArray(data?.results) ? (data.results as OpenMeteoGeoResult[]) : []
-      const resultado = resultados.find((item) => texto(item.country_code) === 'BR') || resultados[0]
+
+      const resultado =
+        resultados.find((item) => texto(item.country_code) === 'BR') ||
+        resultados[0]
 
       const latitude = numero(resultado?.latitude)
       const longitude = numero(resultado?.longitude)
 
-      if (response.ok && latitude !== null && longitude !== null) {
+      if (latitude !== null && longitude !== null) {
         return {
           latitude,
           longitude,
-          origem: 'open-meteo-geocoding',
-          endereco: [resultado?.name, resultado?.admin2, resultado?.admin1, resultado?.country]
-            .map(texto)
-            .filter(Boolean)
-            .filter((item, index, array) => array.indexOf(item) === index)
-            .join(', '),
+          termo,
+          cidade: texto(resultado?.name),
+          uf: texto(resultado?.admin1),
+          timezone: texto(resultado?.timezone) || 'America/Sao_Paulo',
         }
       }
     } catch (error) {
-      console.warn('[clima/roteiro] Falha ao geocodificar termo:', termo, error)
+      console.warn('[api/clima/roteiro] Falha no geocoding fallback:', {
+        termo,
+        message: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 
   return null
 }
 
-function resumoPorCodigoClima(codigo: number | null) {
-  if (codigo === null) return { icone: '🌤️', resumo: 'Previsão disponível' }
-
-  if ([0].includes(codigo)) return { icone: '☀️', resumo: 'Céu limpo' }
-  if ([1, 2].includes(codigo)) return { icone: '🌤️', resumo: 'Parcialmente nublado' }
-  if ([3].includes(codigo)) return { icone: '☁️', resumo: 'Nublado' }
-  if ([45, 48].includes(codigo)) return { icone: '🌫️', resumo: 'Neblina' }
-  if ([51, 53, 55, 56, 57].includes(codigo)) return { icone: '🌦️', resumo: 'Garoa' }
-  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(codigo)) return { icone: '🌧️', resumo: 'Chuva' }
-  if ([71, 73, 75, 77, 85, 86].includes(codigo)) return { icone: '❄️', resumo: 'Neve' }
-  if ([95, 96, 99].includes(codigo)) return { icone: '⛈️', resumo: 'Tempestade' }
-
-  return { icone: '🌤️', resumo: 'Previsão disponível' }
-}
-
-function arredondar(valor: unknown) {
-  const n = numero(valor)
-  if (n === null) return null
-  return Math.round(n)
-}
-
-async function buscarPrevisao(params: {
-  latitude: number
-  longitude: number
+function respostaIndisponivel(params: {
+  codigo: string
+  mensagem: string
+  status?: number
+  roteiroId?: string
+  termosTentados?: string[]
 }) {
-  const query = new URLSearchParams({
-    latitude: String(params.latitude),
-    longitude: String(params.longitude),
-    daily: [
-      'weather_code',
-      'temperature_2m_max',
-      'temperature_2m_min',
-      'precipitation_probability_max',
-      'precipitation_sum',
-      'wind_speed_10m_max',
-      'uv_index_max',
-    ].join(','),
-    timezone: 'America/Sao_Paulo',
-    forecast_days: '16',
-  })
-
-  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${query.toString()}`, {
-    method: 'GET',
-    cache: 'no-store',
-    headers: { Accept: 'application/json' },
-  })
-
-  const data = (await response.json().catch(() => null)) as OpenMeteoForecast | null
-
-  if (!response.ok || !data?.daily?.time?.length) {
-    throw new Error('Não foi possível consultar a previsão do tempo agora.')
-  }
-
-  return data
+  return NextResponse.json(
+    {
+      sucesso: true,
+      disponivel: false,
+      codigo: params.codigo,
+      mensagem: params.mensagem,
+      roteiro_id: params.roteiroId || null,
+      termos_tentados: params.termosTentados || [],
+      badge: null,
+      clima: null,
+      previsao: null,
+    },
+    { status: params.status || 200 }
+  )
 }
 
-function montarClima(data: OpenMeteoForecast, dataConsulta: string) {
-  const daily = data.daily || {}
-  const datas = daily.time || []
-  let index = datas.findIndex((item) => item === dataConsulta)
-
-  if (index < 0) index = 0
-
-  const codigo = numero(daily.weather_code?.[index])
-  const visual = resumoPorCodigoClima(codigo)
-
-  const temperaturaMax = arredondar(daily.temperature_2m_max?.[index])
-  const temperaturaMin = arredondar(daily.temperature_2m_min?.[index])
-  const temperatura = temperaturaMax ?? temperaturaMin ?? null
-  const chanceChuva = arredondar(daily.precipitation_probability_max?.[index]) ?? 0
-  const chuvaMm = numero(daily.precipitation_sum?.[index]) ?? 0
-  const ventoKmh = arredondar(daily.wind_speed_10m_max?.[index]) ?? null
-  const indiceUv = numero(daily.uv_index_max?.[index]) ?? null
-
-  const badgeTemperatura = temperatura !== null ? `${temperatura}°` : '--°'
-  const badgeChuva = `${chanceChuva}%`
-
-  return {
-    icone: visual.icone,
-    resumo: visual.resumo,
-    temperatura,
-    temperatura_atual: temperatura,
-    temperatura_max: temperaturaMax,
-    temperatura_min: temperaturaMin,
-    chance_chuva: chanceChuva,
-    chuva_percentual: chanceChuva,
-    chuva_mm: chuvaMm,
-    vento_kmh: ventoKmh,
-    indice_uv: indiceUv,
-    weather_code: codigo,
-    badge: {
-      icone: visual.icone,
-      temperatura,
-      chance_chuva: chanceChuva,
-      texto: `${visual.icone} ${badgeTemperatura} · ${badgeChuva}`,
-    },
-  }
-}
-
-function respostaOk(payload: AnyRecord) {
-  return NextResponse.json(payload, {
-    status: 200,
-    headers: {
-      'Cache-Control': 'no-store, max-age=0',
-    },
-  })
+function extrairValorPorData(listaDatas: string[], listaValores: any[], dataAlvo: string) {
+  const index = listaDatas.findIndex((item) => item === dataAlvo)
+  if (index < 0) return null
+  return numero(listaValores?.[index])
 }
 
 export async function GET(
-  request: NextRequest,
-  context: { params: { roteiroId: string } | Promise<{ roteiroId: string }> }
+  _request: NextRequest,
+  context: { params: Promise<{ roteiroId: string }> | { roteiroId: string } }
 ) {
+  let roteiroId = ''
+
   try {
-    const params = await Promise.resolve(context.params)
-    const roteiroId = texto(params?.roteiroId)
-    const dataQuery = texto(request.nextUrl.searchParams.get('data'))
+    const paramsResolvidos = await Promise.resolve(context.params)
+    roteiroId = texto(paramsResolvidos?.roteiroId)
 
     if (!roteiroId) {
-      return respostaOk({
-        sucesso: false,
-        disponivel: false,
-        motivo: 'ROTEIRO_ID_AUSENTE',
+      return respostaIndisponivel({
+        codigo: 'ROTEIRO_ID_AUSENTE',
         mensagem: 'ID do roteiro não informado.',
+        status: 400,
       })
     }
 
-    const supabase = getSupabaseServer()
+    const supabase = getSupabaseAdmin()
 
     const { data: roteiro, error } = await supabase
       .from('roteiros')
@@ -372,92 +233,169 @@ export async function GET(
       .eq('id', roteiroId)
       .maybeSingle()
 
-    if (error) throw error
-
-    if (!roteiro) {
-      return respostaOk({
-        sucesso: false,
-        disponivel: false,
-        motivo: 'ROTEIRO_NAO_ENCONTRADO',
-        mensagem: 'Roteiro não encontrado.',
+    if (error) {
+      console.error('[api/clima/roteiro] Erro Supabase:', error)
+      return respostaIndisponivel({
+        codigo: 'ROTEIRO_ERRO_SUPABASE',
+        mensagem: error.message || 'Erro ao buscar roteiro.',
+        roteiroId,
       })
     }
 
-    const dataOriginal = dataDoRoteiro(roteiro, dataQuery)
-    const janela = dataDentroDaJanelaOpenMeteo(dataOriginal)
+    if (!roteiro) {
+      return respostaIndisponivel({
+        codigo: 'ROTEIRO_NAO_ENCONTRADO',
+        mensagem: 'Roteiro não encontrado.',
+        roteiroId,
+      })
+    }
 
-    let coordenadas = coordenadasDoRoteiro(roteiro)
+    let latitude = numero(roteiro.latitude ?? roteiro.lat)
+    let longitude = numero(roteiro.longitude ?? roteiro.lng ?? roteiro.lon)
     let origemCoordenadas = 'roteiro'
-    let enderecoGeocodificado = ''
+    let termoUsado = ''
+    let termosTentados: string[] = []
 
-    if (!coordenadas) {
-      const geocoding = await geocodificarPorOpenMeteo(roteiro)
+    if (latitude === null || longitude === null) {
+      termosTentados = montarTermosGeocoding(roteiro)
+      const geo = await buscarCoordenadasPorTexto(termosTentados)
 
-      if (geocoding) {
-        coordenadas = {
-          latitude: geocoding.latitude,
-          longitude: geocoding.longitude,
-        }
-        origemCoordenadas = geocoding.origem
-        enderecoGeocodificado = geocoding.endereco
+      if (geo) {
+        latitude = geo.latitude
+        longitude = geo.longitude
+        origemCoordenadas = 'open-meteo-geocoding-fallback'
+        termoUsado = geo.termo
       }
     }
 
-    if (!coordenadas) {
-      return respostaOk({
-        sucesso: true,
-        disponivel: false,
-        motivo: 'COORDENADAS_AUSENTES',
-        mensagem: 'Informe latitude/longitude ou um local/cidade reconhecível no roteiro para exibir clima.',
-        roteiro_id: roteiroId,
+    if (latitude === null || longitude === null) {
+      return respostaIndisponivel({
+        codigo: 'COORDENADAS_AUSENTES',
+        mensagem: 'Roteiro sem latitude/longitude e sem local reconhecível para clima.',
+        roteiroId,
+        termosTentados,
       })
     }
 
-    const previsao = await buscarPrevisao(coordenadas)
-    const clima = montarClima(previsao, janela.dataConsulta)
+    const dataReferencia = dataDoRoteiro(roteiro)
 
-    return respostaOk({
+    const weatherParams = new URLSearchParams({
+      latitude: String(latitude),
+      longitude: String(longitude),
+      current: 'temperature_2m,weather_code,precipitation',
+      daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum',
+      forecast_days: '16',
+      timezone: 'auto',
+    })
+
+    const weatherResponse = await fetch(
+      `https://api.open-meteo.com/v1/forecast?${weatherParams.toString()}`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      }
+    )
+
+    const weather = await weatherResponse.json().catch(() => null)
+
+    if (!weatherResponse.ok || weather?.error) {
+      return respostaIndisponivel({
+        codigo: 'OPEN_METEO_WEATHER_ERROR',
+        mensagem: weather?.reason || 'Open-Meteo não retornou previsão agora.',
+        roteiroId,
+        termosTentados,
+      })
+    }
+
+    const datas: string[] = Array.isArray(weather?.daily?.time) ? weather.daily.time : []
+
+    const tempMaxPorData = extrairValorPorData(datas, weather?.daily?.temperature_2m_max || [], dataReferencia)
+    const tempMinPorData = extrairValorPorData(datas, weather?.daily?.temperature_2m_min || [], dataReferencia)
+    const chuvaPorData = extrairValorPorData(datas, weather?.daily?.precipitation_probability_max || [], dataReferencia)
+    const chuvaMmPorData = extrairValorPorData(datas, weather?.daily?.precipitation_sum || [], dataReferencia)
+    const codigoPorData = extrairValorPorData(datas, weather?.daily?.weather_code || [], dataReferencia)
+
+    const tempAtual = numero(weather?.current?.temperature_2m)
+    const codigoAtual = numero(weather?.current?.weather_code)
+
+    const temperaturaBase =
+      tempMaxPorData ??
+      tempAtual ??
+      tempMinPorData ??
+      null
+
+    const temperatura = temperaturaBase !== null ? Math.round(temperaturaBase) : null
+    const chanceChuva = chuvaPorData !== null ? Math.round(chuvaPorData) : 0
+    const icone = iconePorCodigo(codigoPorData ?? codigoAtual)
+
+    if (temperatura === null) {
+      return respostaIndisponivel({
+        codigo: 'TEMPERATURA_AUSENTE',
+        mensagem: 'Previsão encontrada, mas sem temperatura disponível.',
+        roteiroId,
+        termosTentados,
+      })
+    }
+
+    const badgeTexto = `${icone} ${temperatura}° · ${chanceChuva}%`
+
+    const payload = {
       sucesso: true,
       disponivel: true,
-      provider: 'open-meteo',
       roteiro_id: roteiroId,
-      data_referencia: dataOriginal,
-      data_consulta: janela.dataConsulta,
-      usando_data_atual: dataOriginal !== janela.dataConsulta,
-      aviso: janela.aviso,
-      latitude: coordenadas.latitude,
-      longitude: coordenadas.longitude,
+      fonte: 'open-meteo',
+      data_referencia: dataReferencia,
+      latitude,
+      longitude,
       origem_coordenadas: origemCoordenadas,
-      endereco_geocodificado: enderecoGeocodificado,
-      clima,
-      previsao: clima,
-      badge: clima.badge,
-      icone: clima.icone,
-      resumo: clima.resumo,
-      temperatura: clima.temperatura,
-      temperatura_atual: clima.temperatura_atual,
-      temperatura_max: clima.temperatura_max,
-      temperatura_min: clima.temperatura_min,
-      chance_chuva: clima.chance_chuva,
-      chuva_percentual: clima.chuva_percentual,
-      chuva_mm: clima.chuva_mm,
-      vento_kmh: clima.vento_kmh,
-      indice_uv: clima.indice_uv,
-    })
-  } catch (error: any) {
-    console.error('[api/clima/roteiro] Erro:', {
-      message: error?.message,
-      stack: error?.stack,
-    })
-
-    return NextResponse.json(
-      {
-        sucesso: false,
-        disponivel: false,
-        motivo: 'ERRO_INTERNO',
-        mensagem: error?.message || 'Não foi possível carregar o clima agora.',
+      termo_usado: termoUsado || null,
+      temperatura,
+      temperatura_atual: tempAtual !== null ? Math.round(tempAtual) : temperatura,
+      temperatura_max: tempMaxPorData !== null ? Math.round(tempMaxPorData) : temperatura,
+      temperatura_min: tempMinPorData !== null ? Math.round(tempMinPorData) : null,
+      chance_chuva: chanceChuva,
+      chuva_probabilidade: chanceChuva,
+      chuva_mm: chuvaMmPorData ?? 0,
+      codigo_clima: codigoPorData ?? codigoAtual ?? null,
+      icone,
+      badge: {
+        icone,
+        temperatura,
+        chance_chuva: chanceChuva,
+        texto: badgeTexto,
       },
-      { status: 500 }
-    )
+      clima: {
+        icone,
+        temperatura,
+        temperatura_atual: tempAtual !== null ? Math.round(tempAtual) : temperatura,
+        temperatura_max: tempMaxPorData !== null ? Math.round(tempMaxPorData) : temperatura,
+        temperatura_min: tempMinPorData !== null ? Math.round(tempMinPorData) : null,
+        chance_chuva: chanceChuva,
+        chuva_probabilidade: chanceChuva,
+        chuva_mm: chuvaMmPorData ?? 0,
+        texto_badge: badgeTexto,
+      },
+      previsao: {
+        icone,
+        temperatura,
+        temperatura_max: tempMaxPorData !== null ? Math.round(tempMaxPorData) : temperatura,
+        temperatura_min: tempMinPorData !== null ? Math.round(tempMinPorData) : null,
+        chance_chuva: chanceChuva,
+        chuva_mm: chuvaMmPorData ?? 0,
+        texto_badge: badgeTexto,
+      },
+      termos_tentados: termosTentados,
+    }
+
+    return NextResponse.json(payload)
+  } catch (error) {
+    console.error('[api/clima/roteiro] Erro:', error)
+
+    return respostaIndisponivel({
+      codigo: 'ERRO_INTERNO_CLIMA',
+      mensagem: error instanceof Error ? error.message : 'Erro interno na rota de clima.',
+      roteiroId,
+    })
   }
 }

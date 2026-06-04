@@ -80,18 +80,26 @@ type Clima = {
   disponivel?: boolean;
   motivo?: string;
   mensagem?: string;
-  data_referencia?: string;
+  data_referencia?: string | null;
   resumo?: string;
   icone?: string;
+  temperatura?: number | null;
   temperatura_min?: number | null;
   temperatura_max?: number | null;
   temperatura_atual?: number | null;
   chance_chuva?: number | null;
+  chuva_probabilidade?: number | null;
   chuva_mm?: number | null;
   vento_kmh?: number | null;
   umidade?: number | null;
   indice_uv?: number | null;
-  atualizado_em?: string;
+  atualizado_em?: string | null;
+  badge?: {
+    icone?: string;
+    temperatura?: number | null;
+    chance_chuva?: number | null;
+    texto?: string;
+  } | null;
 };
 
 function texto(valor: unknown) {
@@ -249,6 +257,145 @@ function formatarNumero(valor: unknown, sufixo = "") {
   return `${n.toLocaleString("pt-BR", { maximumFractionDigits: n % 1 === 0 ? 0 : 1 })}${sufixo}`;
 }
 
+function primeiroNumeroValido(...valores: unknown[]) {
+  for (const valor of valores) {
+    if (valor === null || valor === undefined || valor === "") continue;
+    const n = Number(valor);
+    if (Number.isFinite(n)) return n;
+  }
+
+  return null;
+}
+
+function normalizarClimaResponse(data: any): Clima | null {
+  if (!data) return null;
+
+  const clima = data?.clima || {};
+  const previsao = data?.previsao || {};
+  const badge = data?.badge || {};
+
+  const temperatura = primeiroNumeroValido(
+    data?.temperatura,
+    data?.temperatura_max,
+    data?.temperatura_atual,
+    clima?.temperatura,
+    clima?.temperatura_max,
+    clima?.temperatura_atual,
+    previsao?.temperatura,
+    previsao?.temperatura_max,
+    badge?.temperatura,
+  );
+
+  const temperaturaMin = primeiroNumeroValido(
+    data?.temperatura_min,
+    clima?.temperatura_min,
+    previsao?.temperatura_min,
+  );
+
+  const temperaturaAtual = primeiroNumeroValido(
+    data?.temperatura_atual,
+    data?.temperatura,
+    clima?.temperatura_atual,
+    clima?.temperatura,
+    previsao?.temperatura,
+    badge?.temperatura,
+  );
+
+  const temperaturaMax = primeiroNumeroValido(
+    data?.temperatura_max,
+    data?.temperatura,
+    clima?.temperatura_max,
+    clima?.temperatura,
+    previsao?.temperatura_max,
+    previsao?.temperatura,
+    badge?.temperatura,
+    temperaturaAtual,
+  );
+
+  const chanceChuva =
+    primeiroNumeroValido(
+      data?.chance_chuva,
+      data?.chuva_probabilidade,
+      clima?.chance_chuva,
+      clima?.chuva_probabilidade,
+      previsao?.chance_chuva,
+      previsao?.chuva_probabilidade,
+      badge?.chance_chuva,
+    ) ?? 0;
+
+  const chuvaMm =
+    primeiroNumeroValido(data?.chuva_mm, clima?.chuva_mm, previsao?.chuva_mm) ?? 0;
+
+  const ventoKmh = primeiroNumeroValido(data?.vento_kmh, clima?.vento_kmh, previsao?.vento_kmh);
+  const umidade = primeiroNumeroValido(data?.umidade, clima?.umidade, previsao?.umidade);
+  const indiceUv = primeiroNumeroValido(data?.indice_uv, clima?.indice_uv, previsao?.indice_uv);
+
+  const disponivelInformado =
+    data?.disponivel === true ||
+    clima?.disponivel === true ||
+    previsao?.disponivel === true;
+
+  const temTemperatura =
+    temperatura !== null ||
+    temperaturaMax !== null ||
+    temperaturaAtual !== null;
+
+  if (!disponivelInformado && !temTemperatura) {
+    return {
+      sucesso: data?.sucesso !== false,
+      disponivel: false,
+      motivo: data?.motivo || data?.codigo || "CLIMA_INDISPONIVEL",
+      mensagem: data?.mensagem || "Previsão climática indisponível para este roteiro agora.",
+    };
+  }
+
+  return {
+    sucesso: data?.sucesso !== false,
+    disponivel: true,
+    motivo: data?.motivo || data?.codigo || "",
+    mensagem: data?.mensagem || clima?.mensagem || previsao?.mensagem || "",
+    data_referencia:
+      data?.data_referencia ||
+      clima?.data_referencia ||
+      previsao?.data_referencia ||
+      null,
+    resumo:
+      data?.resumo ||
+      clima?.resumo ||
+      previsao?.resumo ||
+      "Previsão climática",
+    icone:
+      data?.icone ||
+      clima?.icone ||
+      previsao?.icone ||
+      badge?.icone ||
+      "🌤️",
+    temperatura: temperatura,
+    temperatura_min: temperaturaMin,
+    temperatura_max: temperaturaMax,
+    temperatura_atual: temperaturaAtual,
+    chance_chuva: chanceChuva,
+    chuva_probabilidade: chanceChuva,
+    chuva_mm: chuvaMm,
+    vento_kmh: ventoKmh,
+    umidade,
+    indice_uv: indiceUv,
+    atualizado_em:
+      data?.atualizado_em ||
+      clima?.atualizado_em ||
+      previsao?.atualizado_em ||
+      "",
+    badge: {
+      icone: data?.icone || clima?.icone || previsao?.icone || badge?.icone || "🌤️",
+      temperatura: temperaturaMax ?? temperaturaAtual ?? temperatura,
+      chance_chuva: chanceChuva,
+      texto:
+        badge?.texto ||
+        `${data?.icone || clima?.icone || previsao?.icone || badge?.icone || "🌤️"} ${Math.round(Number(temperaturaMax ?? temperaturaAtual ?? temperatura ?? 0))}° · ${Math.round(Number(chanceChuva || 0))}%`,
+    },
+  };
+}
+
 function nomeGuia(guia?: Guia | null) {
   return texto(guia?.nome || guia?.name || guia?.email) || "Guia PrussikTrails";
 }
@@ -391,7 +538,7 @@ export default function DetalhesRoteiro() {
       );
 
       const data = await response.json().catch(() => null);
-      setClima(data || null);
+      setClima(normalizarClimaResponse(data));
     } catch (error) {
       console.warn("Não foi possível carregar clima:", error);
       setClima(null);
@@ -552,20 +699,31 @@ export default function DetalhesRoteiro() {
                   aria-label="Ver previsão do clima para este roteiro"
                   title="Ver clima da data"
                 >
-                  <span className="climaIcon">{clima.icone || "🌤️"}</span>
+                  <span className="climaIcon">
+                    {clima.badge?.icone || clima.icone || "🌤️"}
+                  </span>
                   <span className="climaNumbers">
                     <strong>
-                      {clima.temperatura_max !== null &&
-                      clima.temperatura_max !== undefined
-                        ? `${Math.round(Number(clima.temperatura_max))}°`
-                        : "—°"}
+                      {clima.badge?.temperatura !== null &&
+                      clima.badge?.temperatura !== undefined
+                        ? `${Math.round(Number(clima.badge.temperatura))}°`
+                        : clima.temperatura_max !== null &&
+                            clima.temperatura_max !== undefined
+                          ? `${Math.round(Number(clima.temperatura_max))}°`
+                          : clima.temperatura_atual !== null &&
+                              clima.temperatura_atual !== undefined
+                            ? `${Math.round(Number(clima.temperatura_atual))}°`
+                            : "—°"}
                     </strong>
                     <span className="climaDivider">·</span>
                     <small>
-                      {clima.chance_chuva !== null &&
-                      clima.chance_chuva !== undefined
-                        ? `${Math.round(Number(clima.chance_chuva))}%`
-                        : "—%"}
+                      {clima.badge?.chance_chuva !== null &&
+                      clima.badge?.chance_chuva !== undefined
+                        ? `${Math.round(Number(clima.badge.chance_chuva))}%`
+                        : clima.chance_chuva !== null &&
+                            clima.chance_chuva !== undefined
+                          ? `${Math.round(Number(clima.chance_chuva))}%`
+                          : "—%"}
                     </small>
                   </span>
                 </button>
