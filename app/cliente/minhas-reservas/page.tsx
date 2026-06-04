@@ -813,40 +813,27 @@ export default function ClienteMinhasReservasPage() {
         .brand {
           min-width: 0;
           width: 100%;
+          max-width: min(520px, calc(100vw - 124px));
           border: 0;
           background: transparent;
           cursor: pointer;
           text-align: center;
           padding: 0;
           display: flex;
-          flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 3px;
+          overflow: hidden;
         }
 
         .brandLogo {
-          width: clamp(148px, 42vw, 238px);
+          width: clamp(140px, 34vw, 250px);
           max-width: 100%;
+          max-height: 58px;
           height: auto;
           object-fit: contain;
           display: block;
           margin: 0 auto;
           filter: drop-shadow(0 8px 18px rgba(32, 60, 46, 0.08));
-        }
-
-        .brandSub {
-          display: block;
-          max-width: min(78vw, 360px);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          color: #7b8372;
-          font-size: clamp(8px, 1.45vw, 11px);
-          line-height: 1.15;
-          font-weight: 950;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          white-space: nowrap;
         }
 
         .headerActions {
@@ -1551,14 +1538,13 @@ export default function ClienteMinhasReservasPage() {
             height: 36px;
           }
 
-          .brandLogo {
-            width: clamp(132px, 58vw, 196px);
+          .brand {
+            max-width: calc(100vw - 96px);
           }
 
-          .brandSub {
-            max-width: calc(100vw - 96px);
-            font-size: 7.8px;
-            letter-spacing: 0.10em;
+          .brandLogo {
+            width: clamp(132px, 48vw, 204px);
+            max-height: 50px;
           }
 
           .iconBtn,
@@ -1638,7 +1624,6 @@ export default function ClienteMinhasReservasPage() {
               src="/logo-prussik-display.png"
               alt="PrussikTrails"
             />
-            <span className="brandSub">Reservas do seu passaporte outdoor</span>
           </button>
 
           <div className="headerActions">
