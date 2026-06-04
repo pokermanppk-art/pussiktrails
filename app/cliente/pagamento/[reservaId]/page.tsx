@@ -288,6 +288,7 @@ export default function ClientePagamentoReservaPage() {
   const precoPessoa = useMemo(() => (quantidade > 0 ? valorTotal / quantidade : valorTotal), [valorTotal, quantidade])
   const pixImage = useMemo(() => qrImageSrc(pix), [pix])
   const temPix = Boolean(pix.pix_code || pixImage)
+  const statusPagamento = reserva?.pagamento_status || reserva?.status_pagamento || reserva?.status
 
   async function iniciar() {
     setCarregando(true)
@@ -434,13 +435,23 @@ export default function ClientePagamentoReservaPage() {
     router.push('/cliente/dashboard')
   }
 
+  function voltarRoteiro() {
+    const roteiroId = primeiroTexto(roteiro?.id, reserva?.roteiro_id, reserva?.id_roteiro)
+    if (roteiroId) {
+      router.push(`/roteiros/${roteiroId}`)
+      return
+    }
+
+    router.push('/roteiros')
+  }
+
   if (carregando) {
     return (
       <main className="page loadingPage">
         <style>{styles}</style>
         <section className="loadingCard">
           <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-          <p>Carregando detalhes do pagamento...</p>
+          <p>Carregando pagamento...</p>
         </section>
       </main>
     )
@@ -456,50 +467,45 @@ export default function ClientePagamentoReservaPage() {
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
           </button>
 
-          <button type="button" className="ghostTopButton" onClick={() => router.push('/cliente/minhas-reservas')}>
+          <button type="button" className="topLink" onClick={() => router.push('/cliente/minhas-reservas')}>
             Minhas reservas
           </button>
         </div>
       </header>
 
       <section className="shell">
-        <section className="hero">
+        <section className="titleArea">
           <div>
-            <p className="eyebrow">Pagamento seguro</p>
-            <h1>Confira sua reserva antes de pagar.</h1>
-            <p className="heroText">
-              Revise os dados da experiência, quantidade de pessoas e valor total. Depois gere o PIX para concluir a reserva.
+            <span className="kicker">Pagamento</span>
+            <h1>{temPix ? 'PIX gerado.' : 'Revise antes de pagar.'}</h1>
+            <p>
+              {temPix
+                ? 'Use o QR Code ou o PIX copia e cola para concluir sua reserva.'
+                : 'Confira os dados da experiência. O PIX só será gerado depois da sua confirmação.'}
             </p>
           </div>
 
-          <div className="statusBox">
-            <span>Status da reserva</span>
-            <strong className={statusClasse(reserva?.pagamento_status || reserva?.status_pagamento || reserva?.status)}>
-              {statusLabel(reserva?.pagamento_status || reserva?.status_pagamento || reserva?.status)}
-            </strong>
-            <small>{reserva?.created_at ? `Criada em ${formatarDataHora(reserva.created_at)}` : 'Reserva em andamento'}</small>
+          <div className="statusPillBox">
+            <span>Status</span>
+            <strong className={statusClasse(statusPagamento)}>{statusLabel(statusPagamento)}</strong>
           </div>
         </section>
 
-        {mensagem && <div className="alert">❌ {mensagem}</div>}
+        {mensagem && <div className="alert">{mensagem}</div>}
 
-        <section className="layoutGrid">
-          <div className="mainColumn">
-            <article className="routeCard">
-              <div className="routeImage">
+        <section className="checkoutGrid">
+          <div className="leftColumn">
+            <article className="experienceCard">
+              <div className="cover">
                 {fotoRoteiro(roteiro) ? <img src={fotoRoteiro(roteiro)} alt={tituloRoteiro(roteiro)} /> : <span>🏞️</span>}
               </div>
 
-              <div className="routeBody">
-                <div className="routeHeader">
-                  <div>
-                    <span>Roteiro reservado</span>
-                    <h2>{tituloRoteiro(roteiro)}</h2>
-                    <p>{roteiro?.descricao || reserva?.descricao || 'Experiência outdoor PrussikTrails.'}</p>
-                  </div>
-                </div>
+              <div className="experienceBody">
+                <span className="microLabel">Experiência escolhida</span>
+                <h2>{tituloRoteiro(roteiro)}</h2>
+                <p>{roteiro?.descricao || reserva?.descricao || 'Experiência outdoor PrussikTrails.'}</p>
 
-                <div className="infoGrid">
+                <div className="detailsGrid">
                   <div>
                     <small>Local</small>
                     <strong>{localRoteiro(roteiro)}</strong>
@@ -518,50 +524,49 @@ export default function ClientePagamentoReservaPage() {
                   </div>
                 </div>
 
-                {guiaIdDoRoteiro(roteiro) && (
-                  <button type="button" className="outlineButton" onClick={() => router.push(`/guia/publico/${guiaIdDoRoteiro(roteiro)}`)}>
-                    Ver perfil do guia
+                <div className="subActions">
+                  {guiaIdDoRoteiro(roteiro) && (
+                    <button type="button" onClick={() => router.push(`/guia/publico/${guiaIdDoRoteiro(roteiro)}`)}>
+                      Ver guia
+                    </button>
+                  )}
+                  <button type="button" onClick={voltarRoteiro}>
+                    Voltar ao roteiro
                   </button>
-                )}
+                </div>
               </div>
             </article>
 
-            <article className="detailsCard">
-              <div className="sectionHeader">
-                <span>Resumo financeiro</span>
-                <h2>Detalhes antes do pagamento</h2>
-              </div>
-
-              <div className="summaryRows">
+            <article className="cleanCard">
+              <span className="microLabel">Detalhes da compra</span>
+              <div className="rowList">
                 <div>
                   <span>Preço por pessoa</span>
                   <strong>{formatarMoeda(precoPessoa)}</strong>
                 </div>
                 <div>
-                  <span>Quantidade de pessoas</span>
+                  <span>Pessoas</span>
                   <strong>{quantidade}</strong>
                 </div>
                 <div>
-                  <span>Total da reserva</span>
-                  <strong>{formatarMoeda(valorTotal)}</strong>
+                  <span>Forma de pagamento</span>
+                  <strong>PIX</strong>
                 </div>
                 <div>
-                  <span>Forma de pagamento</span>
-                  <strong>PIX PagHiper</strong>
+                  <span>Reserva</span>
+                  <strong>{reserva?.created_at ? formatarDataHora(reserva.created_at) : 'Em andamento'}</strong>
                 </div>
               </div>
-
-              <p className="safeNote">
-                O pagamento será processado via PIX. Após a confirmação, sua reserva poderá ser liberada conforme o fluxo do PrussikTrails.
-              </p>
             </article>
           </div>
 
-          <aside className="paymentCard">
-            <div className="paymentHeader">
-              <span>Pagamento PIX</span>
-              <h2>{temPix ? 'PIX gerado' : 'Gerar PIX'}</h2>
-              <p>{temPix ? 'Escaneie o QR Code ou copie o código.' : 'Clique para gerar o QR Code somente após conferir os dados.'}</p>
+          <aside className="paymentPanel">
+            <div className="paymentTop">
+              <span className="microLabel">Resumo</span>
+              <div className="totalLine">
+                <span>Total</span>
+                <strong>{formatarMoeda(valorTotal)}</strong>
+              </div>
             </div>
 
             {temPix ? (
@@ -572,7 +577,7 @@ export default function ClientePagamentoReservaPage() {
                   <div className="qrFallback">QR Code indisponível</div>
                 )}
 
-                <label className="pixCodeBox">
+                <label className="pixBox">
                   <span>PIX copia e cola</span>
                   <textarea value={pix.pix_code || ''} readOnly />
                 </label>
@@ -586,20 +591,20 @@ export default function ClientePagamentoReservaPage() {
                 </button>
               </div>
             ) : (
-              <>
-                <div className="totalBox">
-                  <span>Total a pagar</span>
-                  <strong>{formatarMoeda(valorTotal)}</strong>
+              <div className="confirmArea">
+                <div className="securityNote">
+                  <strong>Confira antes de gerar</strong>
+                  <span>O QR Code será emitido pela PagHiper após sua confirmação.</span>
                 </div>
 
                 <button type="button" className="primaryButton" onClick={gerarPix} disabled={gerandoPix || valorTotal <= 0}>
-                  {gerandoPix ? 'Gerando PIX...' : 'Gerar PIX agora'}
+                  {gerandoPix ? 'Gerando PIX...' : 'Gerar PIX'}
                 </button>
 
-                <button type="button" className="secondaryButton" onClick={() => router.push(`/roteiros/${roteiro?.id || reserva?.roteiro_id || ''}`)}>
-                  Voltar ao roteiro
+                <button type="button" className="secondaryButton" onClick={voltarRoteiro}>
+                  Revisar roteiro
                 </button>
-              </>
+              </div>
             )}
           </aside>
         </section>
@@ -617,16 +622,16 @@ const styles = `
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
-  button, input, textarea { font: inherit; }
+  button, textarea { font: inherit; }
 
   .page {
     min-height: 100vh;
     min-height: 100dvh;
     color: #172018;
     background:
-      radial-gradient(circle at 10% 0%, rgba(132,204,22,0.16), transparent 28%),
-      radial-gradient(circle at 90% 10%, rgba(251,146,60,0.14), transparent 28%),
-      linear-gradient(180deg,#fffdf7 0%,#f3f5ea 48%,#eef2e5 100%);
+      radial-gradient(circle at 8% 0%, rgba(132,204,22,0.10), transparent 30%),
+      radial-gradient(circle at 92% 8%, rgba(251,146,60,0.10), transparent 30%),
+      linear-gradient(180deg,#fffdf7 0%,#f4f5ec 48%,#eef2e5 100%);
   }
 
   .loadingPage {
@@ -636,19 +641,19 @@ const styles = `
   }
 
   .loadingCard {
-    width: min(430px, 100%);
-    border-radius: 30px;
+    width: min(360px, 100%);
+    border-radius: 28px;
     background: rgba(255,255,255,0.88);
     border: 1px solid rgba(15,23,42,0.08);
-    box-shadow: 0 22px 60px rgba(15,23,42,0.12);
-    padding: 28px;
+    box-shadow: 0 22px 60px rgba(15,23,42,0.10);
+    padding: 26px;
     text-align: center;
     color: #203c2e;
     font-weight: 900;
   }
 
   .loadingCard img {
-    width: 160px;
+    width: 142px;
     height: auto;
     object-fit: contain;
   }
@@ -657,14 +662,14 @@ const styles = `
     position: sticky;
     top: 0;
     z-index: 60;
-    background: rgba(255,253,247,0.90);
+    background: rgba(255,253,247,0.88);
     border-bottom: 1px solid rgba(15,23,42,0.06);
     backdrop-filter: blur(18px);
     padding: 8px 14px;
   }
 
   .topbarInner {
-    max-width: 1180px;
+    max-width: 1080px;
     margin: 0 auto;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -684,124 +689,97 @@ const styles = `
   }
 
   .brandLogo img {
-    width: clamp(142px, 34vw, 238px);
-    max-height: 58px;
+    width: clamp(136px, 30vw, 210px);
+    max-height: 52px;
     object-fit: contain;
     display: block;
   }
 
-  .ghostTopButton {
+  .topLink {
     grid-column: 3;
     justify-self: end;
     border: 1px solid rgba(32,60,46,0.10);
-    background: rgba(255,255,255,0.82);
+    background: rgba(255,255,255,0.74);
     color: #203c2e;
     border-radius: 999px;
-    padding: 10px 13px;
-    font-size: 12px;
+    padding: 9px 12px;
+    font-size: 11px;
     font-weight: 950;
     cursor: pointer;
   }
 
   .shell {
-    max-width: 1180px;
+    max-width: 1080px;
     margin: 0 auto;
     padding: 22px 16px 54px;
   }
 
-  .hero {
+  .titleArea {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 310px;
-    gap: 18px;
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: end;
     margin-bottom: 16px;
   }
 
-  .hero > div:first-child,
-  .statusBox {
-    border-radius: 36px;
-    box-shadow: 0 24px 60px rgba(23,32,24,0.14);
-  }
-
-  .hero > div:first-child {
-    padding: 30px;
-    color: #fff;
-    background:
-      linear-gradient(135deg, rgba(23,32,24,0.82), rgba(23,32,24,0.46)),
-      radial-gradient(circle at top right, rgba(190,242,100,0.30), transparent 34%),
-      linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
-  }
-
-  .eyebrow {
-    display: inline-flex;
-    width: fit-content;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.24);
-    background: rgba(255,255,255,0.12);
-    color: #f7fee7;
-    padding: 8px 12px;
-    font-size: 11px;
+  .kicker,
+  .microLabel {
+    display: block;
+    color: #991b1b;
+    font-size: 10px;
     font-weight: 950;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    margin: 0 0 12px;
   }
 
-  .hero h1 {
-    margin: 0;
-    font-size: clamp(42px, 6vw, 72px);
-    line-height: 0.92;
+  .titleArea h1 {
+    margin: 8px 0 0;
+    color: #172018;
+    font-size: clamp(36px, 5vw, 58px);
+    line-height: 0.95;
     font-weight: 950;
-    letter-spacing: -0.085em;
+    letter-spacing: -0.075em;
   }
 
-  .heroText {
-    max-width: 760px;
-    margin: 14px 0 0;
-    color: rgba(255,255,255,0.82);
-    line-height: 1.6;
+  .titleArea p {
+    max-width: 640px;
+    margin: 10px 0 0;
+    color: #64748b;
     font-size: 14px;
-    font-weight: 650;
+    line-height: 1.55;
+    font-weight: 750;
   }
 
-  .statusBox {
-    background: rgba(255,255,255,0.90);
+  .statusPillBox {
+    min-width: 210px;
+    border-radius: 24px;
+    background: rgba(255,255,255,0.78);
     border: 1px solid rgba(15,23,42,0.06);
-    padding: 24px;
+    box-shadow: 0 14px 34px rgba(15,23,42,0.05);
+    padding: 14px;
     display: grid;
-    align-content: center;
     gap: 8px;
   }
 
-  .statusBox span,
-  .sectionHeader span,
-  .paymentHeader span,
-  .routeBody > .routeHeader span {
-    color: #991b1b;
-    font-size: 11px;
+  .statusPillBox span {
+    color: #64748b;
+    font-size: 10px;
     font-weight: 950;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.11em;
     text-transform: uppercase;
   }
 
-  .statusBox strong {
+  .statusPillBox strong {
     width: fit-content;
     border-radius: 999px;
-    padding: 9px 12px;
-    font-size: 13px;
+    padding: 8px 11px;
+    font-size: 12px;
     font-weight: 950;
   }
 
-  .statusBox strong.pending { background: #fef3c7; color: #92400e; }
-  .statusBox strong.paid { background: #dcfce7; color: #166534; }
-  .statusBox strong.danger { background: #fee2e2; color: #991b1b; }
-
-  .statusBox small {
-    color: #64748b;
-    font-size: 12px;
-    font-weight: 800;
-    line-height: 1.4;
-  }
+  .statusPillBox strong.pending { background: #fef3c7; color: #92400e; }
+  .statusPillBox strong.paid { background: #dcfce7; color: #166534; }
+  .statusPillBox strong.danger { background: #fee2e2; color: #991b1b; }
 
   .alert {
     border-radius: 18px;
@@ -814,94 +792,95 @@ const styles = `
     font-weight: 850;
   }
 
-  .layoutGrid {
+  .checkoutGrid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 370px;
+    grid-template-columns: minmax(0, 1fr) 350px;
     gap: 16px;
     align-items: start;
   }
 
-  .mainColumn {
+  .leftColumn {
     display: grid;
     gap: 16px;
   }
 
-  .routeCard,
-  .detailsCard,
-  .paymentCard {
-    background: rgba(255,255,255,0.90);
+  .experienceCard,
+  .cleanCard,
+  .paymentPanel {
+    background: rgba(255,255,255,0.86);
     border: 1px solid rgba(15,23,42,0.06);
-    box-shadow: 0 12px 34px rgba(15,23,42,0.06);
-    border-radius: 30px;
+    box-shadow: 0 14px 34px rgba(15,23,42,0.055);
+    border-radius: 28px;
     overflow: hidden;
   }
 
-  .routeCard {
+  .experienceCard {
     display: grid;
-    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-columns: 300px minmax(0, 1fr);
   }
 
-  .routeImage {
-    min-height: 270px;
+  .cover {
+    min-height: 250px;
     background: #eef2e5;
     display: grid;
     place-items: center;
     overflow: hidden;
     color: #64748b;
-    font-size: 44px;
+    font-size: 42px;
   }
 
-  .routeImage img {
+  .cover img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
   }
 
-  .routeBody {
-    padding: 22px;
-    display: grid;
-    gap: 18px;
-    align-content: start;
+  .experienceBody,
+  .cleanCard,
+  .paymentPanel {
+    padding: 20px;
   }
 
-  .routeBody h2,
-  .sectionHeader h2,
-  .paymentHeader h2 {
-    margin: 5px 0 0;
+  .experienceBody h2 {
+    margin: 6px 0 0;
     color: #172018;
+    font-size: 30px;
     line-height: 1;
     font-weight: 950;
-    letter-spacing: -0.055em;
+    letter-spacing: -0.06em;
   }
 
-  .routeBody h2 { font-size: 31px; }
-  .sectionHeader h2, .paymentHeader h2 { font-size: 26px; }
-
-  .routeBody p,
-  .paymentHeader p,
-  .safeNote {
-    margin: 8px 0 0;
+  .experienceBody p {
+    margin: 9px 0 0;
     color: #64748b;
     font-size: 13px;
     line-height: 1.55;
     font-weight: 750;
   }
 
-  .infoGrid {
+  .detailsGrid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: 9px;
+    margin-top: 16px;
   }
 
-  .infoGrid div {
-    border-radius: 20px;
-    padding: 13px;
+  .detailsGrid div,
+  .rowList div,
+  .totalLine,
+  .securityNote {
+    border-radius: 18px;
     background: #fffdf7;
-    border: 1px solid rgba(15,23,42,0.06);
+    border: 1px solid rgba(15,23,42,0.055);
+    padding: 12px;
   }
 
-  .infoGrid small {
+  .detailsGrid small,
+  .rowList span,
+  .totalLine span,
+  .pixBox span,
+  .securityNote span {
     display: block;
     color: #64748b;
     font-size: 10px;
@@ -911,99 +890,99 @@ const styles = `
     margin-bottom: 5px;
   }
 
-  .infoGrid strong {
+  .detailsGrid strong,
+  .rowList strong {
     color: #172018;
     font-size: 13px;
     line-height: 1.3;
     font-weight: 900;
   }
 
-  .outlineButton,
+  .subActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .subActions button,
   .secondaryButton,
   .primaryButton {
     border: 0;
     border-radius: 999px;
-    padding: 12px 15px;
+    padding: 11px 14px;
     font-size: 12px;
     font-weight: 950;
     cursor: pointer;
     transition: 0.18s ease;
   }
 
-  .outlineButton {
-    width: fit-content;
+  .subActions button,
+  .secondaryButton {
     background: #eef2e5;
     color: #203c2e;
   }
 
-  .detailsCard,
-  .paymentCard {
-    padding: 22px;
-  }
-
-  .summaryRows {
+  .rowList {
     display: grid;
-    gap: 10px;
-    margin-top: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    margin-top: 14px;
   }
 
-  .summaryRows div,
-  .totalBox {
-    border-radius: 20px;
-    padding: 14px;
-    background: #fffdf7;
-    border: 1px solid rgba(15,23,42,0.06);
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .summaryRows span,
-  .totalBox span,
-  .pixCodeBox span {
-    color: #64748b;
-    font-size: 11px;
-    font-weight: 950;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .summaryRows strong,
-  .totalBox strong {
-    color: #203c2e;
-    font-size: 17px;
-    font-weight: 950;
-    text-align: right;
-  }
-
-  .paymentCard {
+  .paymentPanel {
     position: sticky;
-    top: 86px;
+    top: 84px;
     display: grid;
     gap: 15px;
   }
 
-  .paymentHeader {
+  .paymentTop {
     display: grid;
-    gap: 3px;
+    gap: 12px;
   }
 
-  .totalBox {
+  .totalLine {
     display: grid;
-    justify-items: start;
+    gap: 2px;
   }
 
-  .totalBox strong {
-    font-size: 30px;
-    letter-spacing: -0.06em;
+  .totalLine strong {
+    color: #203c2e;
+    font-size: 34px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.07em;
+  }
+
+  .confirmArea,
+  .pixArea {
+    display: grid;
+    gap: 12px;
+  }
+
+  .securityNote strong {
+    display: block;
+    color: #172018;
+    font-size: 13px;
+    font-weight: 950;
+    margin-bottom: 4px;
+  }
+
+  .securityNote span {
+    margin: 0;
+    text-transform: none;
+    letter-spacing: 0;
+    line-height: 1.45;
+    font-size: 12px;
+    font-weight: 750;
   }
 
   .primaryButton {
     width: 100%;
     background: #203c2e;
     color: #fffdf7;
-    box-shadow: 0 14px 28px rgba(32,60,46,0.16);
+    box-shadow: 0 14px 28px rgba(32,60,46,0.14);
   }
 
   .primaryButton:disabled {
@@ -1014,33 +993,26 @@ const styles = `
 
   .secondaryButton {
     width: 100%;
-    background: #eef2e5;
-    color: #203c2e;
   }
 
   .primaryButton:hover:not(:disabled),
   .secondaryButton:hover,
-  .outlineButton:hover,
-  .ghostTopButton:hover {
+  .subActions button:hover,
+  .topLink:hover {
     transform: translateY(-1px);
-  }
-
-  .pixArea {
-    display: grid;
-    gap: 13px;
   }
 
   .qrImage,
   .qrFallback {
-    width: min(260px, 100%);
+    width: min(236px, 100%);
     aspect-ratio: 1 / 1;
     margin: 0 auto;
-    border-radius: 22px;
+    border-radius: 20px;
     background: #ffffff;
     border: 1px solid rgba(15,23,42,0.08);
     padding: 10px;
     object-fit: contain;
-    box-shadow: 0 14px 34px rgba(15,23,42,0.08);
+    box-shadow: 0 12px 30px rgba(15,23,42,0.08);
   }
 
   .qrFallback {
@@ -1052,14 +1024,14 @@ const styles = `
     text-align: center;
   }
 
-  .pixCodeBox {
+  .pixBox {
     display: grid;
     gap: 7px;
   }
 
-  .pixCodeBox textarea {
+  .pixBox textarea {
     width: 100%;
-    min-height: 112px;
+    min-height: 100px;
     resize: vertical;
     border: 1px solid rgba(15,23,42,0.10);
     background: #fffdf7;
@@ -1073,18 +1045,18 @@ const styles = `
   }
 
   @media (max-width: 980px) {
-    .hero,
-    .layoutGrid,
-    .routeCard {
+    .titleArea,
+    .checkoutGrid,
+    .experienceCard {
       grid-template-columns: 1fr;
     }
 
-    .paymentCard {
+    .paymentPanel {
       position: static;
     }
 
-    .routeImage {
-      min-height: 250px;
+    .cover {
+      min-height: 230px;
       aspect-ratio: 4 / 3;
     }
   }
@@ -1104,51 +1076,48 @@ const styles = `
     }
 
     .brandLogo img {
-      width: clamp(130px, 50vw, 205px);
-      max-height: 50px;
+      width: clamp(128px, 48vw, 198px);
+      max-height: 48px;
     }
 
-    .ghostTopButton {
+    .topLink {
       grid-column: 2;
-      padding: 9px 11px;
-      font-size: 11px;
+      padding: 8px 10px;
+      font-size: 10.5px;
     }
 
     .shell {
-      padding: 12px 9px 40px;
+      padding: 14px 10px 38px;
     }
 
-    .hero > div:first-child,
-    .statusBox,
-    .routeCard,
-    .detailsCard,
-    .paymentCard {
-      border-radius: 24px;
+    .titleArea h1 {
+      font-size: 38px;
     }
 
-    .hero > div:first-child,
-    .statusBox,
-    .detailsCard,
-    .paymentCard,
-    .routeBody {
-      padding: 18px;
+    .experienceCard,
+    .cleanCard,
+    .paymentPanel,
+    .statusPillBox {
+      border-radius: 22px;
     }
 
-    .hero h1 {
-      font-size: 40px;
+    .experienceBody,
+    .cleanCard,
+    .paymentPanel {
+      padding: 16px;
     }
 
-    .infoGrid {
+    .detailsGrid,
+    .rowList {
       grid-template-columns: 1fr;
     }
 
-    .summaryRows div {
+    .subActions {
       display: grid;
-      justify-content: initial;
     }
 
-    .summaryRows strong {
-      text-align: left;
+    .subActions button {
+      width: 100%;
     }
   }
 `
