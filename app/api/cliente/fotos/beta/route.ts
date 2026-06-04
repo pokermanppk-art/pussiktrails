@@ -151,7 +151,28 @@ async function buscarMedalhaFotosBeta(supabase: any) {
     throw error
   }
 
-  return Array.isArray(data) ? data[0] || null : null
+  if (Array.isArray(data) && data[0]) return data[0]
+
+  const { data: porNome, error: erroNome } = await supabase
+    .from('medalhas')
+    .select('*')
+    .or(
+      [
+        'nome.ilike.%Memórias do Beta%',
+        'nome.ilike.%Memorias do Beta%',
+        'nome.ilike.%Olhar da Jornada Beta%',
+        'codigo.ilike.%memorias%',
+        'codigo.ilike.%beta_3%'
+      ].join(',')
+    )
+    .limit(1)
+
+  if (erroNome) {
+    if (erroDeTabelaOuColuna(erroNome as AnyRecord)) return null
+    throw erroNome
+  }
+
+  return Array.isArray(porNome) ? porNome[0] || null : null
 }
 
 async function usuarioJaTemMedalha(supabase: any, clienteId: string, medalhaId: string) {

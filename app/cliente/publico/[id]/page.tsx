@@ -117,6 +117,7 @@ const MEDALHAS_ESPECIAIS_BASE = [
     descricao: 'Publicou 3 fotos durante o Beta de testes e ajudou a dar vida ao passaporte.',
     icone: '📷',
     meta: 3,
+    svg: '/medalhas/iniciais_jornada/06_memorias_do_beta.svg',
   },
 ]
 

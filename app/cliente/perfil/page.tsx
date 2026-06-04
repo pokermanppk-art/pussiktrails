@@ -223,7 +223,11 @@ const BETA_MEDALHAS_SVG: Record<string, string> = {
   voz_da_trilha_beta: '/medalhas/iniciais_jornada/03_voz_da_trilha_beta.svg',
   guia_pioneiro_beta: '/medalhas/iniciais_jornada/04_guia_pioneiro_beta.svg',
   construtor_da_jornada_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg',
-  construtor_da_trilha_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg'
+  construtor_da_trilha_beta: '/medalhas/iniciais_jornada/05_construtor_da_jornada_beta.svg',
+  memorias_do_beta: '/medalhas/iniciais_jornada/06_memorias_do_beta.svg',
+  memoria_do_beta: '/medalhas/iniciais_jornada/06_memorias_do_beta.svg',
+  fotos_beta_3: '/medalhas/iniciais_jornada/06_memorias_do_beta.svg',
+  olhar_da_jornada_beta: '/medalhas/iniciais_jornada/06_memorias_do_beta.svg'
 }
 
 function normalizarChaveMedalha(valor?: string | null) {
@@ -270,6 +274,15 @@ function obterSvgMedalhaBeta(medalha?: MedalhaBanco['medalhas'] | null) {
     return BETA_MEDALHAS_SVG.construtor_da_jornada_beta
   }
 
+  if (
+    (nome.includes('memorias') && nome.includes('beta')) ||
+    (nome.includes('memoria') && nome.includes('beta')) ||
+    (nome.includes('olhar') && nome.includes('jornada') && nome.includes('beta')) ||
+    (nome.includes('fotos') && nome.includes('beta'))
+  ) {
+    return BETA_MEDALHAS_SVG.memorias_do_beta
+  }
+
   return ''
 }
 
@@ -280,6 +293,7 @@ function obterFallbackSvgMedalhaBeta(svg: string) {
 
 const ALTURA_TARGET = 200
 const LIMITE_INICIAL_FOTOS_LAYOUT = 24
+const BONUS_FOTOS_BETA_FALLBACK = 3
 
 function agendarTarefaLeve(callback: () => void) {
   if (typeof window === 'undefined') return
@@ -499,7 +513,7 @@ export default function PerfilCliente() {
   const [salvandoPerfil, setSalvandoPerfil] = useState(false)
   const [erroPerfil, setErroPerfil] = useState('')
   const [medalhaSelecionada, setMedalhaSelecionada] = useState<MedalhaVisual | null>(null)
-  const [bonusFotosBeta, setBonusFotosBeta] = useState(0)
+  const [bonusFotosBeta, setBonusFotosBeta] = useState(BONUS_FOTOS_BETA_FALLBACK)
   const [fotosBetaPublicadas, setFotosBetaPublicadas] = useState(0)
   const [medalhaFotosBetaConquistada, setMedalhaFotosBetaConquistada] = useState(false)
 
@@ -520,6 +534,10 @@ export default function PerfilCliente() {
   const fotosLiberadas = useMemo(
     () => fotosLiberadasPorKm + bonusFotosBeta,
     [fotosLiberadasPorKm, bonusFotosBeta]
+  )
+  const vagasFotosDisponiveis = useMemo(
+    () => Math.max(fotosLiberadas - fotos.length, 0),
+    [fotosLiberadas, fotos.length]
   )
   const faltamKm = Math.max(0, proximoNivel.km - totalKm)
   const medalhasKmConquistadas = METAS_JORNADA.filter((meta) => totalKm >= meta.km).length
@@ -646,8 +664,9 @@ export default function PerfilCliente() {
       }
 
       const beneficio = data?.beneficio || {}
+      const bonusApi = Number(beneficio?.bonusFotosBeta)
 
-      setBonusFotosBeta(Number(beneficio?.bonusFotosBeta || 0))
+      setBonusFotosBeta(Number.isFinite(bonusApi) && bonusApi > 0 ? bonusApi : BONUS_FOTOS_BETA_FALLBACK)
       setFotosBetaPublicadas(Number(data?.fotosBetaPublicadas || beneficio?.usado || 0))
       setMedalhaFotosBetaConquistada(Boolean(data?.medalhaConcedida || data?.medalhaJaExistia))
 
@@ -1284,6 +1303,35 @@ export default function PerfilCliente() {
     }
   }
 
+  function abrirSeletorFotos() {
+    if (uploading) return
+
+    if (!user?.id) {
+      router.push('/login')
+      return
+    }
+
+    if (vagasFotosDisponiveis <= 0) {
+      setMensagem(
+        bonusFotosBeta > 0
+          ? `⚠️ Você já usou as ${fotosLiberadas} fotos liberadas, incluindo o benefício Beta.`
+          : `⚠️ Você já usou as ${fotosLiberadas} fotos liberadas.`
+      )
+      setTimeout(() => setMensagem(''), 4000)
+      return
+    }
+
+    const input = fotosInputRef.current
+
+    if (!input) {
+      setMensagem('⚠️ Não foi possível abrir o seletor de fotos agora. Atualize a página e tente novamente.')
+      setTimeout(() => setMensagem(''), 4000)
+      return
+    }
+
+    input.click()
+  }
+
   async function handleUploadFotos(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || [])
     event.target.value = ''
@@ -1300,42 +1348,61 @@ export default function PerfilCliente() {
       return
     }
 
-    setUploading(true)
+    try {
+      setUploading(true)
+      setErro('')
+      setMensagem('Enviando fotos...')
 
-    const novasUrls: string[] = []
+      const formData = new FormData()
+      formData.append('clienteId', user.id)
 
-    for (const file of files) {
-      const fileExt = file.name.split('.').pop() || 'jpg'
-      const fileName = `${uuidv4()}.${fileExt}`
-      const filePath = `clientes/${user.id}/${fileName}`
+      files.forEach((file) => {
+        formData.append('files', file)
+      })
 
-      const { error } = await supabase.storage.from('fotos-aventuras').upload(filePath, file)
+      const response = await fetch('/api/cliente/fotos/upload', {
+        method: 'POST',
+        body: formData
+      })
 
-      if (error) {
-        console.error(error)
-        continue
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(
+          data?.erro ||
+            data?.message ||
+            `Erro HTTP ${response.status} ao salvar fotos.`
+        )
       }
 
-      const { data } = supabase.storage.from('fotos-aventuras').getPublicUrl(filePath)
-      if (data?.publicUrl) novasUrls.push(data.publicUrl)
+      const fotosAtualizadas = Array.isArray(data?.fotos)
+        ? data.fotos
+        : [...fotos, ...((data?.novasUrls || []) as string[])]
+
+      const novasUrls = Array.isArray(data?.novasUrls) ? data.novasUrls : []
+
+      setFotos(fotosAtualizadas)
+      await carregarLayoutJustificado(fotosAtualizadas.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
+
+      const beta = await sincronizarBeneficioFotosBeta(user.id, 'POST')
+
+      if (beta?.medalhaConcedida || beta?.medalhaJaExistia) {
+        await carregarMedalhas(user.id)
+      }
+
+      if (beta?.medalhaConcedida) {
+        setMensagem('✅ Fotos salvas! Medalha “Memórias do Beta” desbloqueada.')
+      } else {
+        setMensagem(`✅ ${novasUrls.length || files.length} foto(s) salva(s)!`)
+      }
+    } catch (error: unknown) {
+      console.error('Erro ao enviar fotos:', error)
+      setErro(error instanceof Error ? error.message : 'Não foi possível salvar as fotos.')
+      setMensagem(error instanceof Error ? `❌ ${error.message}` : '❌ Não foi possível salvar as fotos.')
+    } finally {
+      setUploading(false)
+      setTimeout(() => setMensagem(''), 4500)
     }
-
-    const novasFotos = [...fotos, ...novasUrls]
-    await atualizarUsuarioComFallback(user.id, { fotos_aventuras: novasFotos })
-    setFotos(novasFotos)
-    await carregarLayoutJustificado(novasFotos.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
-
-    const beta = await sincronizarBeneficioFotosBeta(user.id, 'POST')
-
-    if (beta?.medalhaConcedida) {
-      await carregarMedalhas(user.id)
-      setMensagem('✅ Fotos adicionadas! Medalha “Memórias do Beta” desbloqueada.')
-    } else {
-      setMensagem(`✅ ${novasUrls.length} foto(s) adicionada(s)!`)
-    }
-
-    setUploading(false)
-    setTimeout(() => setMensagem(''), 4000)
   }
 
   async function removerFoto(index: number) {
@@ -1955,8 +2022,8 @@ export default function PerfilCliente() {
                     {bonusFotosBeta > 0 ? ` · ${bonusFotosBeta} grátis no Beta` : ' no seu nível atual'}
                   </span>
                 </div>
-                <button type="button" onClick={() => fotosInputRef.current?.click()} disabled={uploading || fotosLiberadas <= 0}>
-                  {uploading ? 'Enviando...' : 'Enviar fotos'}
+                <button type="button" onClick={abrirSeletorFotos} disabled={uploading}>
+                  {uploading ? 'Enviando...' : vagasFotosDisponiveis <= 0 ? 'Limite atingido' : 'Enviar fotos'}
                 </button>
                 <input
                   ref={fotosInputRef}
