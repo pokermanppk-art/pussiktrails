@@ -612,8 +612,32 @@ export default function PerfilCliente() {
       }
     })
 
+    const jaTemMemoriasDoBeta = especiais.some((medalha) => {
+      const nome = normalizarChaveMedalha(medalha.nome)
+      return nome === 'memorias_do_beta' || nome === 'memoria_do_beta'
+    })
+
+    const clienteCompletouMemoriasDoBeta =
+      fotos.length >= 3 || fotosBetaPublicadas >= 3 || medalhaFotosBetaConquistada
+
+    if (clienteCompletouMemoriasDoBeta && !jaTemMemoriasDoBeta) {
+      especiais.unshift({
+        id: 'especial-memorias-do-beta-local',
+        nome: 'Memórias do Beta',
+        descricao: 'Publicou 3 fotos durante o Beta de testes e ajudou a dar vida ao passaporte.',
+        categoria: 'beta',
+        status: 'Conquistada',
+        svg: '/medalhas/iniciais_jornada/06_memorias_do_beta.svg',
+        fallbackSvg: undefined,
+        icone: undefined,
+        cor: '#991b1b',
+        desbloqueada: true,
+        especial: true
+      })
+    }
+
     return [...progressao, ...especiais]
-  }, [totalKm, medalhasBanco])
+  }, [totalKm, medalhasBanco, fotos.length, fotosBetaPublicadas, medalhaFotosBetaConquistada])
 
   useEffect(() => {
     router.prefetch('/cliente/dashboard')
@@ -1559,15 +1583,57 @@ export default function PerfilCliente() {
 
   async function removerFoto(index: number) {
     if (!user?.id) return
-    if (!confirm('Remover esta foto?')) return
 
-    const novasFotos = fotos.filter((_, i) => i !== index)
-    await atualizarUsuarioComFallback(user.id, { fotos_aventuras: novasFotos })
-    setFotos(novasFotos)
-    await carregarCurtidasFotos(user.id, novasFotos)
-    await carregarLayoutJustificado(novasFotos.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
-    setMensagem('✅ Foto removida!')
-    setTimeout(() => setMensagem(''), 3000)
+    const fotoUrl = fotos[index]
+
+    if (!fotoUrl) {
+      setMensagem('⚠️ Não encontrei esta foto para remover.')
+      setTimeout(() => setMensagem(''), 3000)
+      return
+    }
+
+    if (!confirm('Remover esta foto do seu passaporte?')) return
+
+    try {
+      setMensagem('Removendo foto...')
+
+      const response = await fetch('/api/cliente/fotos/remover', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          clienteId: user.id,
+          fotoUrl
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(
+          data?.erro ||
+            data?.message ||
+            `Erro HTTP ${response.status} ao remover foto.`
+        )
+      }
+
+      const novasFotos = Array.isArray(data?.fotos)
+        ? data.fotos
+        : fotos.filter((_, i) => i !== index)
+
+      setFotos(novasFotos)
+      await carregarCurtidasFotos(user.id, novasFotos)
+      await carregarLayoutJustificado(novasFotos.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
+      await sincronizarBeneficioFotosBeta(user.id, 'POST')
+
+      setMensagem('✅ Foto removida!')
+      setTimeout(() => setMensagem(''), 3000)
+    } catch (error: unknown) {
+      console.error('Erro ao remover foto:', error)
+      setMensagem(error instanceof Error ? `❌ ${error.message}` : '❌ Não foi possível remover a foto.')
+      setTimeout(() => setMensagem(''), 4500)
+    }
   }
 
   function abrirLightbox(index: number) {
