@@ -3643,6 +3643,17 @@ const styles = `
     transform-origin: center center;
   }
 
+  /* Ajuste pontual da Botinha / Início da Jornada:
+     mantém o card no mesmo tamanho dos demais e apenas sobe a arte dentro do card. */
+  .medalTile.medalKey-inicio-da-jornada-beta .medalSvg,
+  .medalTile.medalKey-primeiros-passos .medalSvg,
+  .medalTile.medalKey-botinha-beta-oficial .medalSvg {
+    max-width: 78%;
+    max-height: 78%;
+    transform: translateY(-18%);
+    transform-origin: center center;
+  }
+
   .medalTile.locked .medalSvg {
     filter: grayscale(1) brightness(1.12) opacity(0.72);
   }
