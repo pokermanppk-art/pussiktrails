@@ -1,212 +1,338 @@
-'use client'
+"use client";
 
-import { CSSProperties, useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-import { registrarAtividade } from '@/lib/logAtividade'
+import { CSSProperties, useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
+import { registrarAtividade } from "@/lib/logAtividade";
 
-type AnyRecord = Record<string, any>
+type AnyRecord = Record<string, any>;
 
 type Roteiro = {
-  id: string
-  titulo?: string
-  nome?: string
-  descricao?: string
-  preco?: number
-  valor?: number
-  duracao_horas?: number
-  duracao?: string
-  km?: number
-  distancia_km?: number
-  dificuldade?: string
-  nivel?: string
-  localizacao?: string
-  local?: string
-  cidade?: string
-  endereco_formatado?: string
-  foto_capa?: string | null
-  foto_url?: string | null
-  imagem_url?: string | null
-  image_url?: string | null
-  capa_url?: string | null
-  galeria_fotos?: string[]
-  imagens?: string[]
-  embarque_local?: string
-  ponto_encontro?: string
-  local_encontro?: string
-  embarque_data?: string
-  embarque_data_hora?: string
-  data_roteiro?: string
-  data_trilha?: string
-  proxima_data?: string
-  retorno_local?: string
-  retorno_data?: string
-  retorno_data_hora?: string
-  roteiro_detalhado?: string
-  detalhes?: string
-  inclui?: string
-  nao_inclui?: string
-  orientacoes?: string
-  status?: string
-  id_guia?: string
-  guia_id?: string
-  user_id?: string
-  usuario_id?: string
-  criado_por?: string
-  created_by?: string
-  owner_id?: string
-  limite_pessoas?: number | null
-}
+  id: string;
+  titulo?: string;
+  nome?: string;
+  descricao?: string;
+  preco?: number;
+  valor?: number;
+  duracao_horas?: number;
+  duracao?: string;
+  km?: number;
+  distancia_km?: number;
+  dificuldade?: string;
+  nivel?: string;
+  localizacao?: string;
+  local?: string;
+  cidade?: string;
+  endereco_formatado?: string;
+  foto_capa?: string | null;
+  foto_url?: string | null;
+  imagem_url?: string | null;
+  image_url?: string | null;
+  capa_url?: string | null;
+  galeria_fotos?: string[];
+  imagens?: string[];
+  embarque_local?: string;
+  ponto_encontro?: string;
+  local_encontro?: string;
+  embarque_data?: string;
+  embarque_data_hora?: string;
+  data_roteiro?: string;
+  data_trilha?: string;
+  proxima_data?: string;
+  data_disponivel?: string;
+  data_saida?: string;
+  data_inicio?: string;
+  data_evento?: string;
+  retorno_local?: string;
+  retorno_data?: string;
+  retorno_data_hora?: string;
+  roteiro_detalhado?: string;
+  detalhes?: string;
+  inclui?: string;
+  nao_inclui?: string;
+  orientacoes?: string;
+  status?: string;
+  id_guia?: string;
+  guia_id?: string;
+  user_id?: string;
+  usuario_id?: string;
+  criado_por?: string;
+  created_by?: string;
+  owner_id?: string;
+  limite_pessoas?: number | null;
+};
 
 type Guia = {
-  id: string
-  nome?: string | null
-  name?: string | null
-  email?: string | null
-  avatar_url?: string | null
-  foto_url?: string | null
-  imagem_url?: string | null
-  bio?: string | null
-  instagram?: string | null
-  cadastur?: string | null
-}
+  id: string;
+  nome?: string | null;
+  name?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+  foto_url?: string | null;
+  imagem_url?: string | null;
+  bio?: string | null;
+  instagram?: string | null;
+  cadastur?: string | null;
+};
 
 type Clima = {
-  sucesso?: boolean
-  disponivel?: boolean
-  motivo?: string
-  mensagem?: string
-  data_referencia?: string
-  resumo?: string
-  icone?: string
-  temperatura_min?: number | null
-  temperatura_max?: number | null
-  temperatura_atual?: number | null
-  chance_chuva?: number | null
-  chuva_mm?: number | null
-  vento_kmh?: number | null
-  umidade?: number | null
-  indice_uv?: number | null
-  atualizado_em?: string
-}
+  sucesso?: boolean;
+  disponivel?: boolean;
+  motivo?: string;
+  mensagem?: string;
+  data_referencia?: string;
+  resumo?: string;
+  icone?: string;
+  temperatura_min?: number | null;
+  temperatura_max?: number | null;
+  temperatura_atual?: number | null;
+  chance_chuva?: number | null;
+  chuva_mm?: number | null;
+  vento_kmh?: number | null;
+  umidade?: number | null;
+  indice_uv?: number | null;
+  atualizado_em?: string;
+};
 
 function texto(valor: unknown) {
-  return String(valor || '').trim()
+  return String(valor || "").trim();
 }
 
 function normalizar(valor: unknown) {
   return texto(valor)
     .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }
 
 function numero(valor: unknown) {
-  const n = Number(valor)
-  return Number.isFinite(n) ? n : 0
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function tituloRoteiro(roteiro?: Roteiro | null) {
-  return texto(roteiro?.titulo || roteiro?.nome) || 'Roteiro PrussikTrails'
+  return texto(roteiro?.titulo || roteiro?.nome) || "Roteiro PrussikTrails";
 }
 
 function fotoPrincipal(roteiro?: Roteiro | null) {
-  return texto(roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || roteiro?.image_url || roteiro?.capa_url)
+  return texto(
+    roteiro?.foto_capa ||
+      roteiro?.foto_url ||
+      roteiro?.imagem_url ||
+      roteiro?.image_url ||
+      roteiro?.capa_url,
+  );
 }
 
 function localRoteiro(roteiro?: Roteiro | null) {
-  return texto(roteiro?.endereco_formatado || roteiro?.localizacao || roteiro?.local || roteiro?.cidade || roteiro?.embarque_local) || 'Local a confirmar'
+  return (
+    texto(
+      roteiro?.endereco_formatado ||
+        roteiro?.localizacao ||
+        roteiro?.local ||
+        roteiro?.cidade ||
+        roteiro?.embarque_local,
+    ) || "Local a confirmar"
+  );
 }
 
 function pontoEncontro(roteiro?: Roteiro | null) {
-  return texto(roteiro?.ponto_encontro || roteiro?.local_encontro || roteiro?.embarque_local || roteiro?.localizacao || roteiro?.local)
+  return texto(
+    roteiro?.ponto_encontro ||
+      roteiro?.local_encontro ||
+      roteiro?.embarque_local ||
+      roteiro?.localizacao ||
+      roteiro?.local,
+  );
 }
 
 function guiaIdRoteiro(roteiro?: Roteiro | null) {
-  return texto(roteiro?.id_guia || roteiro?.guia_id || roteiro?.user_id || roteiro?.usuario_id || roteiro?.criado_por || roteiro?.created_by || roteiro?.owner_id)
+  return texto(
+    roteiro?.id_guia ||
+      roteiro?.guia_id ||
+      roteiro?.user_id ||
+      roteiro?.usuario_id ||
+      roteiro?.criado_por ||
+      roteiro?.created_by ||
+      roteiro?.owner_id,
+  );
 }
 
 function precoRoteiro(roteiro?: Roteiro | null) {
-  return numero(roteiro?.preco ?? roteiro?.valor)
+  return numero(roteiro?.preco ?? roteiro?.valor);
 }
 
 function kmRoteiro(roteiro?: Roteiro | null) {
-  return numero(roteiro?.km ?? roteiro?.distancia_km)
+  return numero(roteiro?.km ?? roteiro?.distancia_km);
 }
 
 function duracaoRoteiro(roteiro?: Roteiro | null) {
-  return texto(roteiro?.duracao || (roteiro?.duracao_horas ? `${roteiro.duracao_horas} h` : '')) || 'A definir'
+  return (
+    texto(
+      roteiro?.duracao ||
+        (roteiro?.duracao_horas ? `${roteiro.duracao_horas} h` : ""),
+    ) || "A definir"
+  );
+}
+
+function dataISOValida(valor: unknown) {
+  const raw = texto(valor);
+  if (!raw) return "";
+
+  const somenteData = raw.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(somenteData)) {
+    const data = new Date(`${somenteData}T12:00:00`);
+    if (!Number.isNaN(data.getTime())) return somenteData;
+  }
+
+  const data = new Date(raw);
+  if (Number.isNaN(data.getTime())) return "";
+
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const dia = String(data.getDate()).padStart(2, "0");
+
+  return `${ano}-${mes}-${dia}`;
+}
+
+function hojeISO() {
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = String(hoje.getMonth() + 1).padStart(2, "0");
+  const dia = String(hoje.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
 }
 
 function dataBase(roteiro?: Roteiro | null) {
-  const data = roteiro?.proxima_data || roteiro?.data_roteiro || roteiro?.data_trilha || roteiro?.embarque_data_hora || roteiro?.embarque_data || null
-  return data ? String(data).slice(0, 10) : ''
+  const fontes = [
+    roteiro?.data_disponivel,
+    roteiro?.proxima_data,
+    roteiro?.data_trilha,
+    roteiro?.embarque_data_hora,
+    roteiro?.embarque_data,
+    roteiro?.data_roteiro,
+    roteiro?.data_saida,
+    roteiro?.data_inicio,
+    roteiro?.data_evento,
+  ];
+
+  for (const fonte of fontes) {
+    const data = dataISOValida(fonte);
+    if (data) return data;
+  }
+
+  return "";
 }
 
 function formatarData(data?: string | null) {
-  if (!data) return 'Data a definir'
-  const date = new Date(`${String(data).slice(0, 10)}T12:00:00`)
-  if (Number.isNaN(date.getTime())) return 'Data a definir'
-  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+  if (!data) return "Data a definir";
+  const date = new Date(`${String(data).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return "Data a definir";
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 function formatarMoeda(valor: unknown) {
-  return numero(valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  return numero(valor).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 }
 
-function formatarNumero(valor: unknown, sufixo = '') {
-  const n = Number(valor)
-  if (!Number.isFinite(n)) return '—'
-  return `${n.toLocaleString('pt-BR', { maximumFractionDigits: n % 1 === 0 ? 0 : 1 })}${sufixo}`
+function formatarNumero(valor: unknown, sufixo = "") {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toLocaleString("pt-BR", { maximumFractionDigits: n % 1 === 0 ? 0 : 1 })}${sufixo}`;
 }
 
 function nomeGuia(guia?: Guia | null) {
-  return texto(guia?.nome || guia?.name || guia?.email) || 'Guia PrussikTrails'
+  return texto(guia?.nome || guia?.name || guia?.email) || "Guia PrussikTrails";
 }
 
 function avatarGuia(guia?: Guia | null) {
-  return texto(guia?.avatar_url || guia?.foto_url || guia?.imagem_url)
+  return texto(guia?.avatar_url || guia?.foto_url || guia?.imagem_url);
 }
 
 function irParaDashboardPorTipo(router: ReturnType<typeof useRouter>) {
   try {
-    const userData = typeof window !== 'undefined' ? localStorage.getItem('user') : null
-    const usuario = userData ? JSON.parse(userData) as { tipo?: string | null } : null
+    const userData =
+      typeof window !== "undefined" ? localStorage.getItem("user") : null;
+    const usuario = userData
+      ? (JSON.parse(userData) as { tipo?: string | null })
+      : null;
 
-    if (usuario?.tipo === 'cliente') return router.push('/cliente/dashboard')
-    if (usuario?.tipo === 'guia') return router.push('/guia/dashboard')
-    if (usuario?.tipo === 'admin') return router.push('/admin/dashboard')
+    if (usuario?.tipo === "cliente") return router.push("/cliente/dashboard");
+    if (usuario?.tipo === "guia") return router.push("/guia/dashboard");
+    if (usuario?.tipo === "admin") return router.push("/admin/dashboard");
 
-    return router.push('/login')
+    return router.push("/login");
   } catch {
-    return router.push('/login')
+    return router.push("/login");
   }
 }
 
-export default function DetalhesRoteiro() {
-  const params = useParams()
-  const router = useRouter()
-  const id = params.id as string
+function erroDeColunaAusente(error: any) {
+  const mensagem = String(
+    error?.message || error?.details || error?.hint || "",
+  ).toLowerCase();
 
-  const [roteiro, setRoteiro] = useState<Roteiro | null>(null)
-  const [guia, setGuia] = useState<Guia | null>(null)
-  const [carregando, setCarregando] = useState(true)
-  const [reservando, setReservando] = useState(false)
-  const [quantidadePessoas, setQuantidadePessoas] = useState(1)
-  const [mensagem, setMensagem] = useState('')
-  const [fotoSelecionada, setFotoSelecionada] = useState(0)
-  const [usuarioLogado, setUsuarioLogado] = useState<AnyRecord | null>(null)
-  const [clima, setClima] = useState<Clima | null>(null)
-  const [modalClimaAberto, setModalClimaAberto] = useState(false)
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    mensagem.includes("schema cache") ||
+    mensagem.includes("could not find") ||
+    mensagem.includes("column") ||
+    mensagem.includes("does not exist")
+  );
+}
+
+function extrairColunaAusente(error: any) {
+  const textoErro = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(" ");
+
+  const matchReservas = textoErro.match(/reservas\.([a-zA-Z0-9_]+)/);
+  if (matchReservas?.[1]) return matchReservas[1];
+
+  const matchAspas = textoErro.match(/'([^']+)'/);
+  if (matchAspas?.[1]) return matchAspas[1];
+
+  const matchColumn = textoErro.match(/column\s+[\"']?([a-zA-Z0-9_]+)[\"']?/i);
+  if (matchColumn?.[1]) return matchColumn[1];
+
+  return "";
+}
+
+export default function DetalhesRoteiro() {
+  const params = useParams();
+  const router = useRouter();
+  const id = params.id as string;
+
+  const [roteiro, setRoteiro] = useState<Roteiro | null>(null);
+  const [guia, setGuia] = useState<Guia | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [reservando, setReservando] = useState(false);
+  const [quantidadePessoas, setQuantidadePessoas] = useState(1);
+  const [mensagem, setMensagem] = useState("");
+  const [fotoSelecionada, setFotoSelecionada] = useState(0);
+  const [usuarioLogado, setUsuarioLogado] = useState<AnyRecord | null>(null);
+  const [clima, setClima] = useState<Clima | null>(null);
+  const [modalClimaAberto, setModalClimaAberto] = useState(false);
+  const [mostrarPix, setMostrarPix] = useState(false);
+  const [pixCode, setPixCode] = useState("");
+  const [pixQrCode, setPixQrCode] = useState("");
 
   useEffect(() => {
-    const userData = localStorage.getItem('user')
-    if (userData) setUsuarioLogado(JSON.parse(userData))
-    carregarRoteiro()
-    carregarClima()
+    const userData = localStorage.getItem("user");
+    if (userData) setUsuarioLogado(JSON.parse(userData));
+    carregarRoteiro();
+    carregarClima();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id]);
 
   const todasFotos = useMemo(() => {
     const lista = [
@@ -215,116 +341,342 @@ export default function DetalhesRoteiro() {
       ...((roteiro?.imagens || []) as string[]),
     ]
       .map(texto)
-      .filter(Boolean)
+      .filter(Boolean);
 
-    return Array.from(new Set(lista))
-  }, [roteiro])
+    return Array.from(new Set(lista));
+  }, [roteiro]);
 
-  const fotoAtual = todasFotos[fotoSelecionada] || fotoPrincipal(roteiro)
+  const fotoAtual = todasFotos[fotoSelecionada] || fotoPrincipal(roteiro);
 
   async function carregarRoteiro() {
-    setCarregando(true)
-    setMensagem('')
+    setCarregando(true);
+    setMensagem("");
 
     try {
       const { data: roteiroData, error: roteiroError } = await supabase
-        .from('roteiros')
-        .select('*')
-        .eq('id', id)
-        .single()
+        .from("roteiros")
+        .select("*")
+        .eq("id", id)
+        .single();
 
-      if (roteiroError) throw roteiroError
+      if (roteiroError) throw roteiroError;
 
-      const roteiroCarregado = roteiroData as Roteiro
-      setRoteiro(roteiroCarregado)
+      const roteiroCarregado = roteiroData as Roteiro;
+      setRoteiro(roteiroCarregado);
 
-      const guiaId = guiaIdRoteiro(roteiroCarregado)
+      const guiaId = guiaIdRoteiro(roteiroCarregado);
 
       if (guiaId) {
         const { data: guiaData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', guiaId)
-          .maybeSingle()
+          .from("users")
+          .select("*")
+          .eq("id", guiaId)
+          .maybeSingle();
 
-        setGuia((guiaData || null) as Guia | null)
+        setGuia((guiaData || null) as Guia | null);
       }
     } catch (err: any) {
-      console.error(err)
-      setMensagem(err?.message || 'Não foi possível carregar este roteiro.')
+      console.error(err);
+      setMensagem(err?.message || "Não foi possível carregar este roteiro.");
     } finally {
-      setCarregando(false)
+      setCarregando(false);
     }
   }
 
   async function carregarClima() {
     try {
-      const response = await fetch(`/api/clima/roteiro/${encodeURIComponent(id)}`, {
-        method: 'GET',
-        cache: 'no-store',
-      })
+      const response = await fetch(
+        `/api/clima/roteiro/${encodeURIComponent(id)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
 
-      const data = await response.json().catch(() => null)
-      setClima(data || null)
+      const data = await response.json().catch(() => null);
+      setClima(data || null);
     } catch (error) {
-      console.warn('Não foi possível carregar clima:', error)
-      setClima(null)
+      console.warn("Não foi possível carregar clima:", error);
+      setClima(null);
     }
+  }
+
+  async function inserirReservaComFallback(payloadOriginal: AnyRecord) {
+    let payload: AnyRecord = { ...payloadOriginal };
+
+    for (let tentativa = 0; tentativa < 18; tentativa++) {
+      const { data, error } = await supabase
+        .from("reservas")
+        .insert(payload)
+        .select("*")
+        .single();
+
+      if (!error) return data as AnyRecord;
+
+      if (!erroDeColunaAusente(error)) throw error;
+
+      const coluna = extrairColunaAusente(error);
+
+      if (!coluna || !(coluna in payload)) {
+        console.error("Coluna ausente não mapeada ao criar reserva:", error);
+        throw error;
+      }
+
+      delete payload[coluna];
+
+      if (Object.keys(payload).length === 0) {
+        throw new Error("Nenhuma coluna disponível para criar a reserva.");
+      }
+    }
+
+    throw new Error("Não foi possível criar a reserva após ajustar colunas.");
+  }
+
+  function extrairPixDaResposta(data: AnyRecord) {
+    const procurar = (obj: any, nomes: string[]): string => {
+      if (!obj || typeof obj !== "object") return "";
+
+      for (const nome of nomes) {
+        const valor = obj[nome];
+        if (typeof valor === "string" && valor.trim()) return valor;
+        if (typeof valor === "number") return String(valor);
+      }
+
+      for (const key of Object.keys(obj)) {
+        const encontrado = procurar(obj[key], nomes);
+        if (encontrado) return encontrado;
+      }
+
+      return "";
+    };
+
+    return {
+      transactionId: procurar(data, [
+        "transaction_id",
+        "transactionId",
+        "id_transacao",
+        "idTransacao",
+        "hash",
+      ]),
+      pixCode: procurar(data, [
+        "pix_code",
+        "qr_code_text",
+        "qrcode_text",
+        "pix_copia_cola",
+        "codigo_pix",
+        "copia_cola",
+        "copy_paste",
+        "emv",
+      ]),
+      qrCodeBase64: procurar(data, [
+        "qr_code_base64",
+        "qrCodeBase64",
+        "qrcode_base64",
+        "pix_qrcode",
+        "pix_qrcode_base64",
+        "qr_code_image",
+      ]),
+    };
+  }
+
+  async function atualizarReservaComFallback(
+    reservaId: string,
+    payloadOriginal: AnyRecord,
+  ) {
+    let payload: AnyRecord = { ...payloadOriginal };
+
+    for (let tentativa = 0; tentativa < 18; tentativa++) {
+      const { error } = await supabase
+        .from("reservas")
+        .update(payload)
+        .eq("id", reservaId);
+
+      if (!error) return;
+
+      if (!erroDeColunaAusente(error)) throw error;
+
+      const coluna = extrairColunaAusente(error);
+
+      if (!coluna || !(coluna in payload)) {
+        console.warn(
+          "Coluna ausente não mapeada ao atualizar PIX da reserva:",
+          error,
+        );
+        return;
+      }
+
+      delete payload[coluna];
+
+      if (Object.keys(payload).length === 0) return;
+    }
+  }
+
+  async function gerarPixParaReserva(reserva: AnyRecord, valorTotal: number) {
+    const payloadCreatePix: AnyRecord = {
+      reservaId: reserva.id,
+      reserva_id: reserva.id,
+      valor: valorTotal,
+      amount: valorTotal,
+      descricao: tituloRoteiro(roteiro),
+      description: tituloRoteiro(roteiro),
+      clienteId: usuarioLogado?.id,
+      nome: texto(usuarioLogado?.nome || usuarioLogado?.name),
+      email: texto(usuarioLogado?.email),
+      cpf: texto(
+        usuarioLogado?.cpf ||
+          usuarioLogado?.cpf_cnpj ||
+          usuarioLogado?.documento,
+      ),
+      cpf_cnpj: texto(
+        usuarioLogado?.cpf_cnpj ||
+          usuarioLogado?.cpf ||
+          usuarioLogado?.documento,
+      ),
+      telefone: texto(
+        usuarioLogado?.telefone ||
+          usuarioLogado?.celular ||
+          usuarioLogado?.whatsapp,
+      ),
+    };
+
+    // Restaura o fluxo que já funcionava antes da atualização: tenta primeiro /api/paghiper.
+    // Se o projeto estiver usando a rota nova, cai automaticamente para /api/paghiper/create-pix.
+    const legacyPayload = {
+      amount: valorTotal,
+      email: texto(usuarioLogado?.email),
+      description: tituloRoteiro(roteiro),
+      reservationId: reserva.id,
+      reservaId: reserva.id,
+    };
+
+    let response = await fetch("/api/paghiper", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(legacyPayload),
+    });
+
+    let data = await response.json().catch(() => null);
+
+    if (
+      !response.ok ||
+      data?.success === false ||
+      data?.sucesso === false ||
+      data?.error === true
+    ) {
+      const erroLegacy = data;
+
+      response = await fetch("/api/paghiper/create-pix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payloadCreatePix),
+      });
+
+      data = await response.json().catch(() => null);
+
+      if (
+        !response.ok ||
+        data?.success === false ||
+        data?.sucesso === false ||
+        data?.error === true
+      ) {
+        throw new Error(
+          data?.message ||
+            data?.erro ||
+            data?.error ||
+            erroLegacy?.message ||
+            erroLegacy?.erro ||
+            erroLegacy?.error ||
+            "Erro ao gerar PIX.",
+        );
+      }
+    }
+
+    const pix = extrairPixDaResposta(data || {});
+
+    if (!pix.pixCode && !pix.qrCodeBase64) {
+      throw new Error("O PagHiper respondeu, mas não retornou o código PIX.");
+    }
+
+    await atualizarReservaComFallback(String(reserva.id), {
+      transaction_id: pix.transactionId || data?.transaction_id || null,
+      paghiper_transaction_id:
+        pix.transactionId || data?.transaction_id || null,
+      pix_code: pix.pixCode || null,
+      pix_qrcode: pix.qrCodeBase64 || null,
+      paghiper_pix_code: pix.pixCode || null,
+      paghiper_qrcode_base64: pix.qrCodeBase64 || null,
+      status_pagamento: "pendente",
+      pagamento_status: "pendente",
+    });
+
+    return pix;
   }
 
   async function handleReservar() {
     if (!usuarioLogado?.id) {
-      router.push('/login')
-      return
+      router.push("/login");
+      return;
     }
 
-    if (!roteiro?.id) return
+    if (!roteiro?.id) return;
 
-    setReservando(true)
-    setMensagem('')
+    setReservando(true);
+    setMensagem("");
+    setPixCode("");
+    setPixQrCode("");
+    setMostrarPix(false);
 
     try {
-      const valorTotal = precoRoteiro(roteiro) * quantidadePessoas
-      const guiaId = guiaIdRoteiro(roteiro)
+      const valorTotal = precoRoteiro(roteiro) * quantidadePessoas;
+      const dataTrilhaReserva = dataBase(roteiro) || hojeISO();
 
-      const { data: reserva, error: reservaError } = await supabase
-        .from('reservas')
-        .insert({
-          cliente_id: usuarioLogado.id,
-          roteiro_id: roteiro.id,
-          guia_id: guiaId || null,
-          quantidade_pessoas: quantidadePessoas,
-          valor_total: valorTotal,
-          status: 'pendente',
-          pagamento_status: 'pendente',
-          data_roteiro: dataBase(roteiro) || null,
-          data_trilha: dataBase(roteiro) || null,
-        })
-        .select()
-        .single()
+      if (valorTotal <= 0) {
+        throw new Error("Valor do roteiro inválido para gerar PIX.");
+      }
 
-      if (reservaError) throw reservaError
+      // Payload mínimo e compatível com a tabela atual.
+      // data_trilha é obrigatória em reservas; data_reserva é mantida como fallback operacional.
+      // Não enviamos data_roteiro nem updated_at porque essas colunas não existem em reservas.
+      const payloadReserva: AnyRecord = {
+        cliente_id: usuarioLogado.id,
+        roteiro_id: roteiro.id,
+        quantidade_pessoas: quantidadePessoas,
+        valor_total: valorTotal,
+        data_trilha: dataTrilhaReserva,
+        data_reserva: dataTrilhaReserva,
+        status: "aguardando_pagamento",
+        status_pagamento: "pendente",
+        pagamento_status: "pendente",
+      };
 
-      const primeiroNome = usuarioLogado.nome?.split(' ')[0] || usuarioLogado.email?.split('@')[0] || 'Cliente'
+      const reserva = await inserirReservaComFallback(payloadReserva);
+      const pix = await gerarPixParaReserva(reserva, valorTotal);
+
+      setPixCode(pix.pixCode);
+      setPixQrCode(pix.qrCodeBase64);
+      setMostrarPix(true);
+
+      const primeiroNome =
+        usuarioLogado.nome?.split(" ")[0] ||
+        usuarioLogado.email?.split("@")[0] ||
+        "Cliente";
 
       try {
         await registrarAtividade(
           usuarioLogado.id,
-          'cliente',
+          "cliente",
           primeiroNome,
-          'reservou',
-          `${primeiroNome} iniciou reserva do roteiro "${tituloRoteiro(roteiro)}"`,
-          roteiro.id
-        )
+          "reservou",
+          `${primeiroNome} iniciou pagamento PIX do roteiro "${tituloRoteiro(roteiro)}"`,
+          roteiro.id,
+        );
       } catch (logError) {
-        console.warn('Log de reserva não registrado:', logError)
+        console.warn("Log de reserva não registrado:", logError);
       }
-
-      router.push(`/cliente/pagamento/${reserva.id}`)
     } catch (err: any) {
-      setMensagem(`❌ ${err.message || 'Erro ao criar reserva'}`)
+      setMensagem(`❌ ${err.message || "Erro ao gerar PIX"}`);
     } finally {
-      setReservando(false)
+      setReservando(false);
     }
   }
 
@@ -335,7 +687,7 @@ export default function DetalhesRoteiro() {
         <div className="spinner" />
         <p>Carregando roteiro...</p>
       </main>
-    )
+    );
   }
 
   if (!roteiro) {
@@ -344,7 +696,7 @@ export default function DetalhesRoteiro() {
         <style>{styles}</style>
         <p>Roteiro não encontrado.</p>
       </main>
-    )
+    );
   }
 
   return (
@@ -353,7 +705,12 @@ export default function DetalhesRoteiro() {
 
       <header className="header">
         <div className="headerInner">
-          <button type="button" className="brandLogoOnly" onClick={() => irParaDashboardPorTipo(router)} aria-label="Voltar para o painel">
+          <button
+            type="button"
+            className="brandLogoOnly"
+            onClick={() => irParaDashboardPorTipo(router)}
+            aria-label="Voltar para o painel"
+          >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
           </button>
         </div>
@@ -366,35 +723,51 @@ export default function DetalhesRoteiro() {
           <div className="mediaCard">
             <div
               className="mainPhoto"
-              style={{ '--photo': fotoAtual ? `url("${fotoAtual}")` : 'linear-gradient(135deg,#203c2e,#647a49)' } as CSSProperties}
+              style={
+                {
+                  "--photo": fotoAtual
+                    ? `url("${fotoAtual}")`
+                    : "linear-gradient(135deg,#203c2e,#647a49)",
+                } as CSSProperties
+              }
             >
-              <button
-                type="button"
-                className="climaBadge"
-                onClick={() => setModalClimaAberto(true)}
-                aria-label="Ver previsão do clima para este roteiro"
-                title="Ver clima da data"
-              >
-                {clima?.disponivel ? (
-                  <>
-                    <span className="climaIcon">{clima.icone || '🌤️'}</span>
-                    <strong>{clima.temperatura_max !== null && clima.temperatura_max !== undefined ? `${Math.round(Number(clima.temperatura_max))}°` : '—'}</strong>
+              {clima?.disponivel && (
+                <button
+                  type="button"
+                  className="climaBadge"
+                  onClick={() => setModalClimaAberto(true)}
+                  aria-label="Ver previsão do clima para este roteiro"
+                  title="Ver clima da data"
+                >
+                  <span className="climaIcon">{clima.icone || "🌤️"}</span>
+                  <span className="climaNumbers">
+                    <strong>
+                      {clima.temperatura_max !== null &&
+                      clima.temperatura_max !== undefined
+                        ? `${Math.round(Number(clima.temperatura_max))}°`
+                        : "—°"}
+                    </strong>
                     <span className="climaDivider">·</span>
-                    <small>{clima.chance_chuva !== null && clima.chance_chuva !== undefined ? `${Math.round(Number(clima.chance_chuva))}%` : '—'}</small>
-                  </>
-                ) : (
-                  <>
-                    <span className="climaIcon">🌤️</span>
-                    <strong>Clima</strong>
-                  </>
-                )}
-              </button>
+                    <small>
+                      {clima.chance_chuva !== null &&
+                      clima.chance_chuva !== undefined
+                        ? `${Math.round(Number(clima.chance_chuva))}%`
+                        : "—%"}
+                    </small>
+                  </span>
+                </button>
+              )}
             </div>
 
             {todasFotos.length > 1 && (
               <div className="thumbs">
                 {todasFotos.slice(0, 6).map((foto, index) => (
-                  <button key={foto} type="button" className={index === fotoSelecionada ? 'active' : ''} onClick={() => setFotoSelecionada(index)}>
+                  <button
+                    key={foto}
+                    type="button"
+                    className={index === fotoSelecionada ? "active" : ""}
+                    onClick={() => setFotoSelecionada(index)}
+                  >
                     <img src={foto} alt={`Foto ${index + 1} do roteiro`} />
                   </button>
                 ))}
@@ -408,25 +781,50 @@ export default function DetalhesRoteiro() {
 
             <label className="field">
               <span>Pessoas</span>
-              <input type="number" min={1} max={roteiro.limite_pessoas || 99} value={quantidadePessoas} onChange={(e) => setQuantidadePessoas(Math.max(1, Number(e.target.value) || 1))} />
+              <input
+                type="number"
+                min={1}
+                max={roteiro.limite_pessoas || 99}
+                value={quantidadePessoas}
+                onChange={(e) =>
+                  setQuantidadePessoas(Math.max(1, Number(e.target.value) || 1))
+                }
+              />
             </label>
 
-            <button type="button" className="reserveButton" onClick={handleReservar} disabled={reservando}>
-              {reservando ? 'Criando reserva...' : 'Reservar roteiro'}
+            <button
+              type="button"
+              className="reserveButton"
+              onClick={handleReservar}
+              disabled={reservando}
+            >
+              {reservando ? "Gerando PIX..." : "Reservar via PIX"}
             </button>
 
             <div className="guideMini">
               <div className="guideAvatar">
-                {avatarGuia(guia) ? <img src={avatarGuia(guia)} alt={nomeGuia(guia)} /> : <span>{nomeGuia(guia).slice(0, 1).toUpperCase()}</span>}
+                {avatarGuia(guia) ? (
+                  <img src={avatarGuia(guia)} alt={nomeGuia(guia)} />
+                ) : (
+                  <span>{nomeGuia(guia).slice(0, 1).toUpperCase()}</span>
+                )}
               </div>
               <div>
                 <strong>{nomeGuia(guia)}</strong>
-                <small>{guia?.cadastur ? `CADASTUR ${guia.cadastur}` : 'Guia/Agência PrussikTrails'}</small>
+                <small>
+                  {guia?.cadastur
+                    ? `CADASTUR ${guia.cadastur}`
+                    : "Guia/Agência PrussikTrails"}
+                </small>
               </div>
             </div>
 
             {guia?.id && (
-              <button type="button" className="guideButton" onClick={() => router.push(`/guia/publico/${guia.id}`)}>
+              <button
+                type="button"
+                className="guideButton"
+                onClick={() => router.push(`/guia/publico/${guia.id}`)}
+              >
                 Ver perfil do guia
               </button>
             )}
@@ -437,15 +835,41 @@ export default function DetalhesRoteiro() {
           <article className="contentCard mainContent">
             <div className="eyebrow">Roteiro</div>
             <h1>{tituloRoteiro(roteiro)}</h1>
-            <p className="description">{roteiro.descricao || 'Descrição em atualização pelo guia.'}</p>
+            <p className="description">
+              {roteiro.descricao || "Descrição em atualização pelo guia."}
+            </p>
 
             <div className="infoGrid">
-              <div><span>Local</span><strong>{localRoteiro(roteiro)}</strong></div>
-              <div><span>Data</span><strong>{formatarData(dataBase(roteiro))}</strong></div>
-              <div><span>Nível</span><strong>{roteiro.dificuldade || roteiro.nivel || 'A definir'}</strong></div>
-              <div><span>Distância</span><strong>{formatarNumero(kmRoteiro(roteiro), ' km')}</strong></div>
-              <div><span>Duração</span><strong>{duracaoRoteiro(roteiro)}</strong></div>
-              <div><span>Vagas</span><strong>{roteiro.limite_pessoas ? `Até ${roteiro.limite_pessoas} pessoas` : 'A confirmar'}</strong></div>
+              <div>
+                <span>Local</span>
+                <strong>{localRoteiro(roteiro)}</strong>
+              </div>
+              <div>
+                <span>Data</span>
+                <strong>{formatarData(dataBase(roteiro))}</strong>
+              </div>
+              <div>
+                <span>Nível</span>
+                <strong>
+                  {roteiro.dificuldade || roteiro.nivel || "A definir"}
+                </strong>
+              </div>
+              <div>
+                <span>Distância</span>
+                <strong>{formatarNumero(kmRoteiro(roteiro), " km")}</strong>
+              </div>
+              <div>
+                <span>Duração</span>
+                <strong>{duracaoRoteiro(roteiro)}</strong>
+              </div>
+              <div>
+                <span>Vagas</span>
+                <strong>
+                  {roteiro.limite_pessoas
+                    ? `Até ${roteiro.limite_pessoas} pessoas`
+                    : "A confirmar"}
+                </strong>
+              </div>
             </div>
 
             {pontoEncontro(roteiro) && (
@@ -486,29 +910,131 @@ export default function DetalhesRoteiro() {
         </section>
       </section>
 
+      {mostrarPix && (
+        <div className="modalOverlay" onClick={() => setMostrarPix(false)}>
+          <section
+            className="pixModal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="close"
+              onClick={() => setMostrarPix(false)}
+            >
+              ×
+            </button>
+            <div className="eyebrow">Pagamento PIX</div>
+            <h2>PIX gerado com sucesso</h2>
+            <p>
+              Copie o código PIX ou escaneie o QR Code para concluir a reserva.
+            </p>
+
+            {pixQrCode && (
+              <div className="pixQrWrap">
+                <img
+                  src={
+                    pixQrCode.startsWith("data:")
+                      ? pixQrCode
+                      : `data:image/png;base64,${pixQrCode}`
+                  }
+                  alt="QR Code PIX"
+                />
+              </div>
+            )}
+
+            <textarea className="pixText" value={pixCode} readOnly />
+
+            <button
+              type="button"
+              className="copyButton"
+              onClick={async () => {
+                await navigator.clipboard.writeText(pixCode);
+                setMensagem("PIX copiado. Abra o app do seu banco para pagar.");
+              }}
+            >
+              Copiar PIX
+            </button>
+
+            <button
+              type="button"
+              className="pixSecondaryButton"
+              onClick={() => {
+                setMostrarPix(false);
+                router.push("/cliente/minhas-reservas");
+              }}
+            >
+              Ver minhas reservas
+            </button>
+          </section>
+        </div>
+      )}
+
       {modalClimaAberto && (
-        <div className="modalOverlay" onClick={() => setModalClimaAberto(false)}>
-          <section className="climaModal" onClick={(event) => event.stopPropagation()}>
-            <button type="button" className="close" onClick={() => setModalClimaAberto(false)}>×</button>
+        <div
+          className="modalOverlay"
+          onClick={() => setModalClimaAberto(false)}
+        >
+          <section
+            className="climaModal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="close"
+              onClick={() => setModalClimaAberto(false)}
+            >
+              ×
+            </button>
             <div className="eyebrow">Clima da data</div>
-            <h2>{clima?.disponivel ? `${clima.icone || '🌦️'} ${clima.resumo || 'Previsão climática'}` : '🌦️ Previsão indisponível'}</h2>
-            <p>{clima?.mensagem || 'A previsão será exibida quando houver coordenadas e data compatível com a janela gratuita.'}</p>
+            <h2>
+              {clima?.disponivel
+                ? `${clima.icone || "🌦️"} ${clima.resumo || "Previsão climática"}`
+                : "🌦️ Previsão indisponível"}
+            </h2>
+            <p>
+              {clima?.mensagem ||
+                "A previsão será exibida quando houver coordenadas e data compatível com a janela gratuita."}
+            </p>
 
             {clima?.disponivel && (
               <div className="weatherGrid">
-                <div><span>Data</span><strong>{formatarData(clima.data_referencia)}</strong></div>
-                <div><span>Temperatura</span><strong>{formatarNumero(clima.temperatura_min, '°C')} / {formatarNumero(clima.temperatura_max, '°C')}</strong></div>
-                <div><span>Chuva</span><strong>{formatarNumero(clima.chance_chuva, '%')} · {formatarNumero(clima.chuva_mm, ' mm')}</strong></div>
-                <div><span>Vento</span><strong>{formatarNumero(clima.vento_kmh, ' km/h')}</strong></div>
-                <div><span>Umidade</span><strong>{formatarNumero(clima.umidade, '%')}</strong></div>
-                <div><span>Índice UV</span><strong>{formatarNumero(clima.indice_uv)}</strong></div>
+                <div>
+                  <span>Data</span>
+                  <strong>{formatarData(clima.data_referencia)}</strong>
+                </div>
+                <div>
+                  <span>Temperatura</span>
+                  <strong>
+                    {formatarNumero(clima.temperatura_min, "°C")} /{" "}
+                    {formatarNumero(clima.temperatura_max, "°C")}
+                  </strong>
+                </div>
+                <div>
+                  <span>Chuva</span>
+                  <strong>
+                    {formatarNumero(clima.chance_chuva, "%")} ·{" "}
+                    {formatarNumero(clima.chuva_mm, " mm")}
+                  </strong>
+                </div>
+                <div>
+                  <span>Vento</span>
+                  <strong>{formatarNumero(clima.vento_kmh, " km/h")}</strong>
+                </div>
+                <div>
+                  <span>Umidade</span>
+                  <strong>{formatarNumero(clima.umidade, "%")}</strong>
+                </div>
+                <div>
+                  <span>Índice UV</span>
+                  <strong>{formatarNumero(clima.indice_uv)}</strong>
+                </div>
               </div>
             )}
           </section>
         </div>
       )}
     </main>
-  )
+  );
 }
 
 const styles = `
@@ -528,11 +1054,11 @@ const styles = `
   .heroGrid { display: grid; grid-template-columns: minmax(0,1fr) 360px; gap: 18px; align-items: start; }
   .mediaCard, .bookingCard, .contentCard { background: rgba(255,255,255,.88); border: 1px solid rgba(32,60,46,.08); border-radius: 30px; box-shadow: 0 18px 48px rgba(32,60,46,.08); overflow: hidden; }
   .mainPhoto { position: relative; min-height: 520px; background: linear-gradient(135deg, rgba(23,32,24,.25), rgba(23,32,24,.08)), var(--photo); background-size: cover; background-position: center; }
-  .climaBadge { position: absolute; top: 16px; right: 16px; z-index: 3; border: 1px solid rgba(255,255,255,.34); background: rgba(255,253,247,.34); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); color: #fffdf7; border-radius: 999px; padding: 8px 11px; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 12px 30px rgba(15,23,42,.16); cursor: pointer; text-shadow: 0 1px 2px rgba(15,23,42,.26); transition: .18s ease; }
-  .climaBadge:hover { transform: translateY(-1px); background: rgba(255,253,247,.42); box-shadow: 0 16px 34px rgba(15,23,42,.20); }
-  .climaBadge .climaIcon { font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(15,23,42,.20)); }
-  .climaBadge strong, .climaBadge small, .climaDivider { font-size: 12px; font-weight: 950; line-height: 1; letter-spacing: -0.01em; }
-  .climaBadge small, .climaDivider { color: rgba(255,253,247,.92); }
+  .climaBadge { position: absolute; top: 16px; right: 16px; z-index: 3; border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; color: #ffffff; border-radius: 0; padding: 0; display: inline-flex; align-items: center; gap: 5px; box-shadow: none; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,.46), 0 2px 7px rgba(0,0,0,.24); transition: opacity .18s ease; }
+  .climaBadge:hover { opacity: .92; }
+  .climaBadge .climaIcon { font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,.34)); }
+  .climaNumbers { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .climaBadge strong, .climaBadge small, .climaDivider { color: #ffffff; font-size: 13px; font-weight: 950; line-height: 1; letter-spacing: -0.01em; }
   .thumbs { padding: 12px; display: flex; gap: 10px; overflow-x: auto; }
   .thumbs button { border: 2px solid transparent; background: transparent; border-radius: 16px; padding: 0; width: 84px; height: 64px; overflow: hidden; flex: 0 0 auto; cursor: pointer; }
   .thumbs button.active { border-color: #dc2626; }
@@ -565,10 +1091,19 @@ const styles = `
   .textBlock h2 { margin: 0 0 8px; color: #203c2e; font-size: 22px; line-height: 1; font-weight: 950; letter-spacing: -.045em; }
   .textBlock p { margin: 0; white-space: pre-line; color: #475569; font-size: 14px; line-height: 1.65; font-weight: 700; }
   .modalOverlay { position: fixed; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(8,13,7,.50); backdrop-filter: blur(10px); }
+  .pixModal { position: relative; width: min(460px,100%); border-radius: 30px; background: #fffdf7; border: 1px solid rgba(15,23,42,.08); box-shadow: 0 34px 90px rgba(15,23,42,.24); padding: 24px; text-align: center; }
+  .pixModal h2 { margin: 0; color: #172018; font-size: 28px; line-height: 1; font-weight: 950; letter-spacing: -.055em; }
+  .pixModal p { color: #64748b; line-height: 1.55; font-size: 13px; font-weight: 750; }
+  .pixQrWrap { width: 238px; height: 238px; margin: 16px auto; border-radius: 22px; background: #fff; border: 1px solid rgba(15,23,42,.08); display: grid; place-items: center; overflow: hidden; }
+  .pixQrWrap img { width: 220px; height: 220px; object-fit: contain; display: block; }
+  .pixText { width: 100%; min-height: 112px; border: 1px solid rgba(15,23,42,.10); background: #fff; border-radius: 18px; padding: 12px; color: #172018; font-size: 12px; line-height: 1.4; resize: vertical; outline: none; }
+  .copyButton, .pixSecondaryButton { width: 100%; border: 0; border-radius: 999px; padding: 13px 15px; font-size: 13px; font-weight: 950; cursor: pointer; margin-top: 10px; }
+  .copyButton { background: #16a34a; color: #fff; }
+  .pixSecondaryButton { background: #172018; color: #fffdf7; }
   .climaModal { position: relative; width: min(560px,100%); border-radius: 30px; background: #fffdf7; border: 1px solid rgba(15,23,42,.08); box-shadow: 0 34px 90px rgba(15,23,42,.24); padding: 24px; }
   .climaModal h2 { margin: 0; color: #172018; font-size: 30px; line-height: 1; font-weight: 950; letter-spacing: -.055em; }
   .climaModal p { color: #64748b; line-height: 1.55; font-weight: 750; }
   .close { position: absolute; top: 14px; right: 14px; width: 38px; height: 38px; border-radius: 999px; border: 1px solid rgba(15,23,42,.08); background: #f8fafc; color: #172018; font-size: 24px; cursor: pointer; }
   @media (max-width: 980px) { .heroGrid { grid-template-columns: 1fr; } .bookingCard { position: static; } .infoGrid, .weatherGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
   @media (max-width: 640px) { .header { padding: 7px 10px; } .brandLogoOnly img { width: clamp(142px,52vw,218px); max-height: 50px; } .container { padding: 14px 10px 40px; } .mediaCard, .bookingCard, .contentCard { border-radius: 24px; } .mainPhoto { min-height: 360px; } .bookingCard, .mainContent { padding: 16px; } .infoGrid, .weatherGrid { grid-template-columns: 1fr; } .climaBadge { top: 12px; right: 12px; } }
-`
+`;

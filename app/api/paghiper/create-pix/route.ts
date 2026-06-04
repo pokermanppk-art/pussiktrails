@@ -489,7 +489,10 @@ export async function POST(req: Request) {
         order_id: reserva.paghiper_order_id,
         transaction_id: reserva.paghiper_transaction_id,
         pix_code: reserva.paghiper_pix_code,
+        qr_code_text: reserva.paghiper_pix_code,
         qr_code_base64: reserva.paghiper_qrcode_base64,
+        pix_qrcode: reserva.paghiper_qrcode_base64,
+        pix_qrcode_base64: reserva.paghiper_qrcode_base64,
         status: reserva.paghiper_status,
         reserva
       })
@@ -577,7 +580,6 @@ export async function POST(req: Request) {
         paghiper_response: retornoPagHiper,
         pagamento_status: 'pendente',
         pagamento_criado_em: new Date().toISOString(),
-        updated_at: new Date().toISOString()
       }
     })
 
@@ -586,7 +588,10 @@ export async function POST(req: Request) {
       order_id: orderId,
       transaction_id: dadosPix.transactionId,
       pix_code: dadosPix.pixCode,
+      qr_code_text: dadosPix.pixCode,
       qr_code_base64: dadosPix.qrCodeBase64,
+      pix_qrcode: dadosPix.qrCodeBase64,
+      pix_qrcode_base64: dadosPix.qrCodeBase64,
       status: dadosPix.status,
       reserva: reservaAtualizada || reserva,
       paghiper: retornoPagHiper
