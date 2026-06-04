@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { CSSProperties, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
@@ -33,6 +33,9 @@ type Roteiro = {
   imagem_url?: string | null
   image_url?: string | null
   capa_url?: string | null
+  galeria_fotos?: string[] | null
+  fotos?: string[] | null
+  imagens?: string[] | null
   status?: string | null
   ativo?: boolean | null
   limite_pessoas?: number | null
@@ -72,14 +75,29 @@ function primeiroTexto(...valores: unknown[]) {
   return ''
 }
 
-function fotoRoteiro(roteiro: Roteiro) {
-  return primeiroTexto(
+function fotosRoteiro(roteiro?: Roteiro | null) {
+  if (!roteiro) return []
+
+  const principais = [
     roteiro.foto_capa,
     roteiro.foto_url,
     roteiro.imagem_url,
     roteiro.image_url,
-    roteiro.capa_url
-  )
+    roteiro.capa_url,
+  ]
+    .map(texto)
+    .filter(Boolean)
+
+  const galerias = [roteiro.galeria_fotos, roteiro.fotos, roteiro.imagens]
+    .flatMap((lista) => (Array.isArray(lista) ? lista : []))
+    .map(texto)
+    .filter(Boolean)
+
+  return Array.from(new Set([...principais, ...galerias]))
+}
+
+function fotoRoteiro(roteiro: Roteiro) {
+  return fotosRoteiro(roteiro)[0] || ''
 }
 
 function localRoteiro(roteiro: Roteiro) {
@@ -227,6 +245,8 @@ export default function ClienteRoteirosPage() {
   const [mensagem, setMensagem] = useState('')
   const [busca, setBusca] = useState('')
   const [dificuldade, setDificuldade] = useState('todas')
+  const [activeHighlight, setActiveHighlight] = useState(0)
+  const [activePhotos, setActivePhotos] = useState<Record<string, number>>({})
 
   useEffect(() => {
     try {
@@ -240,6 +260,20 @@ export default function ClienteRoteirosPage() {
     carregarRoteiros()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function definirFotoAtiva(roteiroId: string, total: number, direcao: 1 | -1) {
+    if (total <= 1) return
+
+    setActivePhotos((prev) => {
+      const atual = prev[roteiroId] || 0
+      const proximo = (atual + direcao + total) % total
+      return { ...prev, [roteiroId]: proximo }
+    })
+  }
+
+  function selecionarFoto(roteiroId: string, index: number) {
+    setActivePhotos((prev) => ({ ...prev, [roteiroId]: index }))
+  }
 
   async function carregarOcupacao(roteiroId: string, dataDisponivel: string | null) {
     const { data, error } = await supabase
@@ -331,7 +365,46 @@ export default function ClienteRoteirosPage() {
     })
   }, [roteiros, busca, dificuldade])
 
-  const destaque = roteirosFiltrados[0] || roteiros[0] || null
+  useEffect(() => {
+    setActiveHighlight(0)
+  }, [busca, dificuldade])
+
+  useEffect(() => {
+    if (roteirosFiltrados.length <= 1) return
+
+    const timer = window.setInterval(() => {
+      setActiveHighlight((prev) => (prev + 1) % roteirosFiltrados.length)
+    }, 4300)
+
+    return () => window.clearInterval(timer)
+  }, [roteirosFiltrados.length])
+
+  useEffect(() => {
+    const carrosseis = roteirosFiltrados
+      .map((roteiro) => ({
+        id: roteiro.id,
+        total: fotosRoteiro(roteiro).length,
+      }))
+      .filter((item) => item.id && item.total > 1)
+
+    if (carrosseis.length === 0) return
+
+    const timer = window.setInterval(() => {
+      setActivePhotos((prev) => {
+        const proximo = { ...prev }
+
+        carrosseis.forEach((item) => {
+          proximo[item.id] = ((prev[item.id] || 0) + 1) % item.total
+        })
+
+        return proximo
+      })
+    }, 3600)
+
+    return () => window.clearInterval(timer)
+  }, [roteirosFiltrados])
+
+  const destaque = roteirosFiltrados[activeHighlight] || roteirosFiltrados[0] || roteiros[0] || null
   const avatar = avatarUsuario(user)
   const nome = nomeUsuario(user)
 
@@ -394,18 +467,87 @@ export default function ClienteRoteirosPage() {
             </p>
           </div>
 
-          <aside className="heroHighlight" onClick={() => destaque && router.push(`/roteiros/${destaque.id}`)}>
+          <aside
+            className="heroHighlight carouselHighlight"
+            onClick={() => destaque && router.push(`/roteiros/${destaque.id}`)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if ((event.key === 'Enter' || event.key === ' ') && destaque) {
+                event.preventDefault()
+                router.push(`/roteiros/${destaque.id}`)
+              }
+            }}
+          >
             {destaque ? (
-              <div className="highlightVisual">
-                {fotoRoteiro(destaque) ? <img src={fotoRoteiro(destaque)} alt={destaque.titulo} /> : <span>🏔️</span>}
+              <div
+                className="highlightVisual"
+                style={{
+                  '--highlight-image': fotoRoteiro(destaque)
+                    ? `url("${fotoRoteiro(destaque)}")`
+                    : 'radial-gradient(circle at 80% 10%, rgba(190,242,100,0.24), transparent 34%), linear-gradient(135deg, #203c2e 0%, #5f7547 48%, #d7c6a1 100%)',
+                } as CSSProperties}
+              >
                 <div className="highlightOverlay" />
+
                 <div className="highlightTop">
-                  <span>Em destaque</span>
-                  <small>{formatarData(destaque.data_disponivel)}</small>
+                  <span>Roteiro em destaque</span>
+                  <small>
+                    {String(activeHighlight + 1).padStart(2, '0')} / {String(roteirosFiltrados.length || 1).padStart(2, '0')}
+                  </small>
                 </div>
+
                 <div className="highlightBody">
                   <h2>{destaque.titulo}</h2>
                   <p>{localRoteiro(destaque)}</p>
+
+                  <div className="highlightMeta">
+                    <div><strong>Data:</strong> {formatarData(destaque.data_disponivel)}</div>
+                    <div><strong>Nível:</strong> {labelDificuldade(destaque.dificuldade)}</div>
+                    <div><strong>Valor:</strong> {formatarMoeda(destaque.preco)}</div>
+                  </div>
+
+                  <div className="highlightActions">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        router.push(`/roteiros/${destaque.id}`)
+                      }}
+                    >
+                      Ver roteiro
+                    </button>
+
+                    {roteirosFiltrados.length > 1 && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setActiveHighlight((prev) => (prev + 1) % roteirosFiltrados.length)
+                        }}
+                      >
+                        Próximo
+                      </button>
+                    )}
+                  </div>
+
+                  {roteirosFiltrados.length > 1 && (
+                    <div className="highlightDots" aria-label="Roteiros em destaque">
+                      {roteirosFiltrados.slice(0, 8).map((item, index) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`highlightDot ${index === activeHighlight ? 'active' : ''}`}
+                          aria-label={`Ver roteiro em destaque ${index + 1}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setActiveHighlight(index)
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -454,7 +596,9 @@ export default function ClienteRoteirosPage() {
         ) : (
           <section className="routesGrid">
             {roteirosFiltrados.map((roteiro) => {
-              const foto = fotoRoteiro(roteiro)
+              const fotos = fotosRoteiro(roteiro)
+              const fotoAtiva = activePhotos[roteiro.id] || 0
+              const foto = fotos[fotoAtiva % Math.max(fotos.length, 1)] || ''
               const vagasTexto = labelVagas(roteiro)
               const esgotado = vagasTexto === 'Esgotado'
               const preco = formatarMoeda(roteiro.preco)
@@ -480,6 +624,49 @@ export default function ClienteRoteirosPage() {
                       <span>{labelDificuldade(roteiro.dificuldade)}</span>
                       <strong>{formatarData(roteiro.data_disponivel)}</strong>
                     </div>
+
+                    {fotos.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          className="photoArrow left"
+                          aria-label="Foto anterior"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            definirFotoAtiva(roteiro.id, fotos.length, -1)
+                          }}
+                        >
+                          ‹
+                        </button>
+
+                        <button
+                          type="button"
+                          className="photoArrow right"
+                          aria-label="Próxima foto"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            definirFotoAtiva(roteiro.id, fotos.length, 1)
+                          }}
+                        >
+                          ›
+                        </button>
+
+                        <div className="photoDots" aria-label="Fotos do roteiro">
+                          {fotos.slice(0, 6).map((item, index) => (
+                            <button
+                              key={`${roteiro.id}-foto-${index}-${item}`}
+                              type="button"
+                              className={`photoDot ${index === fotoAtiva ? 'active' : ''}`}
+                              aria-label={`Ver foto ${index + 1}`}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                selecionarFoto(roteiro.id, index)
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="routeBody">
@@ -737,24 +924,11 @@ const styles = `
     padding: 20px;
     color: #fff;
     overflow: hidden;
-  }
-
-  .highlightVisual > img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .highlightVisual > span {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    background: linear-gradient(135deg, #203c2e, #6f7f4f);
-    font-size: 56px;
+    background:
+      linear-gradient(135deg, rgba(23,32,24,0.72), rgba(23,32,24,0.36)),
+      var(--highlight-image);
+    background-size: cover;
+    background-position: center;
   }
 
   .highlightOverlay {
@@ -804,6 +978,72 @@ const styles = `
     font-size: 13px;
     font-weight: 800;
   }
+  .highlightMeta {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+    color: rgba(255,255,255,0.82);
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 800;
+  }
+
+  .highlightMeta strong {
+    color: #fff;
+    font-weight: 950;
+  }
+
+  .highlightActions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+
+  .highlightActions button {
+    border: 0;
+    border-radius: 999px;
+    padding: 11px 14px;
+    background: #bef264;
+    color: #172018;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 950;
+    transition: 0.18s ease;
+  }
+
+  .highlightActions button.secondary {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.22);
+  }
+
+  .highlightActions button:hover {
+    transform: translateY(-1px);
+  }
+
+  .highlightDots {
+    display: flex;
+    gap: 7px;
+    margin-top: 13px;
+  }
+
+  .highlightDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    border: 0;
+    padding: 0;
+    background: rgba(255,255,255,0.38);
+    cursor: pointer;
+    transition: 0.18s ease;
+  }
+
+  .highlightDot.active {
+    width: 24px;
+    background: #bef264;
+  }
+
 
   .highlightEmpty {
     height: 100%;
@@ -956,6 +1196,11 @@ const styles = `
     height: 100%;
     object-fit: cover;
     display: block;
+    transition: transform 0.28s ease;
+  }
+
+  .routeCard:hover .routeImage img {
+    transform: scale(1.035);
   }
 
   .imageGradient {
@@ -988,6 +1233,66 @@ const styles = `
     text-shadow: 0 2px 10px rgba(0,0,0,0.35);
     backdrop-filter: blur(10px);
   }
+  .photoArrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 4;
+    width: 32px;
+    height: 32px;
+    border: 1px solid rgba(255,255,255,0.24);
+    border-radius: 999px;
+    background: rgba(23,32,24,0.30);
+    color: #fff;
+    cursor: pointer;
+    font-size: 24px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(10px);
+    opacity: 0;
+    transition: 0.18s ease;
+  }
+
+  .photoArrow.left { left: 12px; }
+  .photoArrow.right { right: 12px; }
+
+  .routeCard:hover .photoArrow,
+  .routeCard:focus-within .photoArrow {
+    opacity: 1;
+  }
+
+  .photoDots {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    z-index: 4;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 999px;
+    background: rgba(23,32,24,0.22);
+    backdrop-filter: blur(10px);
+  }
+
+  .photoDot {
+    width: 6px;
+    height: 6px;
+    border: 0;
+    border-radius: 999px;
+    padding: 0;
+    background: rgba(255,255,255,0.46);
+    cursor: pointer;
+    transition: 0.18s ease;
+  }
+
+  .photoDot.active {
+    width: 18px;
+    background: #bef264;
+  }
+
 
   .routeBody {
     padding: 16px;
@@ -1167,9 +1472,20 @@ const styles = `
       font-size: 42px;
     }
 
+    .heroHighlight {
+      display: none;
+    }
+
     .highlightVisual {
       min-height: 250px;
       padding: 16px;
+    }
+
+    .photoArrow {
+      opacity: 1;
+      width: 30px;
+      height: 30px;
+      font-size: 22px;
     }
 
     .filtersPanel,
