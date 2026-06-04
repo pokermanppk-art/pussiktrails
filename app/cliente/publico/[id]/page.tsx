@@ -1854,15 +1854,17 @@ export default function PerfilPublicoCliente() {
           }
 
           .medalOverlay {
-            align-items: flex-end;
-            padding: 10px;
+            align-items: center;
+            justify-content: center;
+            padding: 14px;
           }
 
           .medalDetailCard {
             border-radius: 28px;
-            width: 100%;
-            max-height: calc(100dvh - 22px);
+            width: min(360px, calc(100vw - 28px));
+            max-height: calc(100dvh - 28px);
             overflow: auto;
+            margin: auto;
           }
 
           .medalDetailArt {
