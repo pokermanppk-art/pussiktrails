@@ -494,12 +494,21 @@ export default function PerfilPublicoCliente() {
 
         const medalhasAtualizadas: MedalhaEspecial[] = MEDALHAS_ESPECIAIS_BASE.map((medalha) => {
           const chave = normalizarNome(medalha.nome)
-          const progressoAtual = mapaProgresso.get(chave) || 0
+          const progressoBanco = mapaProgresso.get(chave) || 0
+
+          // Regra Beta pública:
+          // se o cliente já publicou 3 fotos no passaporte, a medalha Memórias do Beta
+          // deve aparecer também no perfil público, mesmo que a sincronização do banco
+          // ainda não tenha retornado/ficado visível por RLS.
+          const progressoVisual =
+            chave === 'memorias do beta' && fotosPublicas.length >= 3
+              ? Math.max(progressoBanco, 3)
+              : progressoBanco
 
           return {
             ...medalha,
-            progresso: progressoAtual,
-            desbloqueado: progressoAtual >= medalha.meta,
+            progresso: progressoVisual,
+            desbloqueado: progressoVisual >= medalha.meta,
           }
         })
 
