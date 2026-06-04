@@ -56,6 +56,11 @@ type FotoComDimensao = {
   proporcao: number
 }
 
+type CurtidaFoto = {
+  foto_url?: string | null
+  usuario_id?: string | null
+}
+
 type MedalhaBanco = {
   id: string
   status?: string | null
@@ -291,6 +296,31 @@ function obterFallbackSvgMedalhaBeta(svg: string) {
   return svg.replace('/medalhas/iniciais_jornada/', '/medalhas/prussik_svg_pack/iniciais_jornada/')
 }
 
+function criarMedalhaMemoriasDoBeta(medalha?: Record<string, any> | null): MedalhaBanco {
+  return {
+    id: String(medalha?.usuario_medalha_id || medalha?.id || 'memorias-do-beta-local'),
+    status: 'conquistada',
+    progresso_atual: 3,
+    progresso_total: 3,
+    conquistada_em: medalha?.conquistada_em || new Date().toISOString(),
+    medalhas: {
+      id: String(medalha?.id || 'memorias-do-beta'),
+      codigo: String(medalha?.codigo || 'fotos_beta_3'),
+      nome: String(medalha?.nome || 'Memórias do Beta'),
+      descricao: String(
+        medalha?.descricao ||
+          'Publicou 3 fotos durante o Beta de testes e ajudou a dar vida ao passaporte.'
+      ),
+      categoria: String(medalha?.categoria || 'beta'),
+      nivel: String(medalha?.nivel || 'especial'),
+      icone: '/medalhas/iniciais_jornada/06_memorias_do_beta.svg',
+      cor: String(medalha?.cor || '#991b1b'),
+      especial: true,
+      ordem: Number(medalha?.ordem || 6)
+    }
+  }
+}
+
 const ALTURA_TARGET = 200
 const LIMITE_INICIAL_FOTOS_LAYOUT = 24
 const BONUS_FOTOS_BETA_FALLBACK = 3
@@ -519,6 +549,8 @@ export default function PerfilCliente() {
 
   const [linhas, setLinhas] = useState<FotoComDimensao[][]>([])
   const [carregandoFotos, setCarregandoFotos] = useState(true)
+  const [curtidasFotos, setCurtidasFotos] = useState<Record<string, number>>({})
+  const [usuarioCurtiuFoto, setUsuarioCurtiuFoto] = useState<Record<string, boolean>>({})
 
   const [medalhasBanco, setMedalhasBanco] = useState<MedalhaBanco[]>([])
   const [carregandoMedalhas, setCarregandoMedalhas] = useState(true)
@@ -666,14 +698,130 @@ export default function PerfilCliente() {
       const beneficio = data?.beneficio || {}
       const bonusApi = Number(beneficio?.bonusFotosBeta)
 
-      setBonusFotosBeta(Number.isFinite(bonusApi) && bonusApi > 0 ? bonusApi : BONUS_FOTOS_BETA_FALLBACK)
-      setFotosBetaPublicadas(Number(data?.fotosBetaPublicadas || beneficio?.usado || 0))
-      setMedalhaFotosBetaConquistada(Boolean(data?.medalhaConcedida || data?.medalhaJaExistia))
+      const fotosBeta = Number(data?.fotosBetaPublicadas || beneficio?.usado || 0)
+      const totalFotosPublicadas = Number(data?.totalFotosPublicadas || fotosBeta || 0)
+      const conquistada = Boolean(data?.medalhaConcedida || data?.medalhaJaExistia || totalFotosPublicadas >= 3)
 
-      return data
+      setBonusFotosBeta(Number.isFinite(bonusApi) && bonusApi > 0 ? bonusApi : BONUS_FOTOS_BETA_FALLBACK)
+      setFotosBetaPublicadas(fotosBeta)
+      setMedalhaFotosBetaConquistada(conquistada)
+
+      if (conquistada) {
+        garantirMedalhaMemoriasDoBetaNoEstado(data?.medalha || null)
+      }
+
+      return {
+        ...data,
+        medalhaConcedida: Boolean(data?.medalhaConcedida),
+        medalhaJaExistia: Boolean(data?.medalhaJaExistia || conquistada)
+      }
     } catch (error) {
       console.warn('Erro ao sincronizar benefício Beta de fotos:', error)
       return null
+    }
+  }
+
+  function garantirMedalhaMemoriasDoBetaNoEstado(medalha?: Record<string, any> | null) {
+    setMedalhasBanco((prev) => {
+      const jaExiste = prev.some((item) => {
+        const codigo = normalizarChaveMedalha(item.medalhas?.codigo)
+        const nome = normalizarChaveMedalha(item.medalhas?.nome)
+
+        return (
+          codigo === 'fotos_beta_3' ||
+          codigo === 'memorias_do_beta' ||
+          nome === 'memorias_do_beta' ||
+          nome === 'memoria_do_beta'
+        )
+      })
+
+      if (jaExiste) return prev
+
+      return [criarMedalhaMemoriasDoBeta(medalha), ...prev]
+    })
+  }
+
+  async function carregarCurtidasFotos(userId: string, urls: string[]) {
+    if (!urls.length) {
+      setCurtidasFotos({})
+      setUsuarioCurtiuFoto({})
+      return
+    }
+
+    try {
+      const urlsLimitadas = urls.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT)
+
+      const { data, error } = await supabase
+        .from('curtidas_fotos')
+        .select('foto_url, usuario_id')
+        .eq('dono_id', userId)
+        .in('foto_url', urlsLimitadas)
+
+      if (error) {
+        console.warn('Não foi possível carregar curtidas das fotos:', error)
+        return
+      }
+
+      const mapaCurtidas: Record<string, number> = {}
+      const mapaUsuario: Record<string, boolean> = {}
+
+      ;((data || []) as CurtidaFoto[]).forEach((curtida) => {
+        const fotoUrl = curtida.foto_url
+        if (!fotoUrl) return
+
+        mapaCurtidas[fotoUrl] = (mapaCurtidas[fotoUrl] || 0) + 1
+
+        if (curtida.usuario_id === user?.id) {
+          mapaUsuario[fotoUrl] = true
+        }
+      })
+
+      setCurtidasFotos(mapaCurtidas)
+      setUsuarioCurtiuFoto(mapaUsuario)
+    } catch (error) {
+      console.warn('Erro ao carregar curtidas das fotos:', error)
+    }
+  }
+
+  async function alternarCurtidaFoto(fotoUrl: string) {
+    if (!user?.id) {
+      router.push('/login')
+      return
+    }
+
+    const isCurtindo = !usuarioCurtiuFoto[fotoUrl]
+
+    try {
+      if (isCurtindo) {
+        const { error } = await supabase
+          .from('curtidas_fotos')
+          .insert({
+            foto_url: fotoUrl,
+            dono_id: user.id,
+            usuario_id: user.id
+          })
+
+        if (error) throw error
+
+        setUsuarioCurtiuFoto((prev) => ({ ...prev, [fotoUrl]: true }))
+        setCurtidasFotos((prev) => ({ ...prev, [fotoUrl]: (prev[fotoUrl] || 0) + 1 }))
+        return
+      }
+
+      const { error } = await supabase
+        .from('curtidas_fotos')
+        .delete()
+        .eq('foto_url', fotoUrl)
+        .eq('usuario_id', user.id)
+
+      if (error) throw error
+
+      setUsuarioCurtiuFoto((prev) => ({ ...prev, [fotoUrl]: false }))
+      setCurtidasFotos((prev) => ({ ...prev, [fotoUrl]: Math.max((prev[fotoUrl] || 0) - 1, 0) }))
+    } catch (error) {
+      console.warn('Não foi possível atualizar a curtida da foto:', error)
+      setMensagem('⚠️ Não foi possível atualizar a curtida agora.')
+      setTimeout(() => setMensagem(''), 3000)
     }
   }
 
@@ -876,12 +1024,15 @@ export default function PerfilCliente() {
     if (data?.fotos_aventuras) {
       const lista = Array.isArray(data.fotos_aventuras) ? data.fotos_aventuras : []
       setFotos(lista)
+      await carregarCurtidasFotos(userId, lista)
 
       const listaInicial = lista.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT)
       await carregarLayoutJustificado(listaInicial)
     } else {
       setFotos([])
       setLinhas([])
+      setCurtidasFotos({})
+      setUsuarioCurtiuFoto({})
       setCarregandoFotos(false)
     }
   }
@@ -1382,6 +1533,7 @@ export default function PerfilCliente() {
       const novasUrls = Array.isArray(data?.novasUrls) ? data.novasUrls : []
 
       setFotos(fotosAtualizadas)
+      await carregarCurtidasFotos(user.id, fotosAtualizadas)
       await carregarLayoutJustificado(fotosAtualizadas.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
 
       const beta = await sincronizarBeneficioFotosBeta(user.id, 'POST')
@@ -1412,6 +1564,7 @@ export default function PerfilCliente() {
     const novasFotos = fotos.filter((_, i) => i !== index)
     await atualizarUsuarioComFallback(user.id, { fotos_aventuras: novasFotos })
     setFotos(novasFotos)
+    await carregarCurtidasFotos(user.id, novasFotos)
     await carregarLayoutJustificado(novasFotos.slice(0, LIMITE_INICIAL_FOTOS_LAYOUT))
     setMensagem('✅ Foto removida!')
     setTimeout(() => setMensagem(''), 3000)
@@ -2019,7 +2172,6 @@ export default function PerfilCliente() {
                   <h2>Fotos das aventuras</h2>
                   <span>
                     {fotos.length}/{fotosLiberadas} fotos liberadas
-                    {bonusFotosBeta > 0 ? ` · ${bonusFotosBeta} grátis no Beta` : ' no seu nível atual'}
                   </span>
                 </div>
                 <button type="button" onClick={abrirSeletorFotos} disabled={uploading}>
@@ -2047,7 +2199,6 @@ export default function PerfilCliente() {
 
                 {bonusFotosBeta > 0 && (
                   <div className="betaPhotosBox">
-                    <strong>Beta: 3 fotos grátis para começar</strong>
                     <span>
                       {medalhaFotosBetaConquistada
                         ? 'Medalha “Memórias do Beta” desbloqueada.'
@@ -2083,15 +2234,31 @@ export default function PerfilCliente() {
                                   style={{ width: `${largura}%` }}
                                 >
                                   <img src={img.url} alt={`Foto ${img.index + 1}`} loading="lazy" decoding="async" />
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      removerFoto(img.index)
-                                    }}
-                                  >
-                                    ×
-                                  </button>
+                                  <div className="photoActions">
+                                    <button
+                                      type="button"
+                                      className={`photoLikeButton ${usuarioCurtiuFoto[img.url] ? 'liked' : ''}`}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        alternarCurtidaFoto(img.url)
+                                      }}
+                                      aria-label={usuarioCurtiuFoto[img.url] ? 'Remover curtida da foto' : 'Curtir foto'}
+                                    >
+                                      {usuarioCurtiuFoto[img.url] ? '❤️' : '🤍'} {curtidasFotos[img.url] || 0}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="photoRemoveButton"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        removerFoto(img.index)
+                                      }}
+                                      aria-label="Remover foto"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
                                 </div>
                               )
                             })}
@@ -2119,7 +2286,6 @@ export default function PerfilCliente() {
                 <div className="summaryLine">
                   <span>Fotos liberadas</span>
                   <strong>{fotosLiberadas}</strong>
-                  {bonusFotosBeta > 0 && <small className="summaryHint">+{bonusFotosBeta} Beta</small>}
                 </div>
                 <div className="summaryLine">
                   <span>Fotos usadas</span>
@@ -3631,19 +3797,55 @@ const styles = `
     display: block;
   }
 
-  .photoCell button {
+  .photoActions {
     position: absolute;
-    top: 8px;
+    left: 8px;
     right: 8px;
-    width: 28px;
-    height: 28px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .photoActions button {
+    pointer-events: auto;
+  }
+
+  .photoLikeButton {
+    min-width: 54px;
+    height: 30px;
+    border: 0;
+    border-radius: 999px;
+    padding: 0 10px;
+    background: rgba(15,23,42,0.62);
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 950;
+    backdrop-filter: blur(8px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .photoLikeButton.liked {
+    background: rgba(153,27,27,0.82);
+  }
+
+  .photoRemoveButton {
+    width: 30px;
+    height: 30px;
     border-radius: 999px;
     border: 0;
-    background: #dc2626;
+    background: rgba(220,38,38,0.92);
     color: white;
     cursor: pointer;
     font-size: 16px;
     font-weight: 950;
+    box-shadow: 0 8px 18px rgba(15,23,42,0.16);
   }
 
   .summaryLine {

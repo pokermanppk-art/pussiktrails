@@ -56,6 +56,75 @@ function erroDeTabelaOuColuna(error: AnyRecord | null | undefined) {
   )
 }
 
+function extrairColunaAusente(error: AnyRecord | null | undefined) {
+  const texto = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ')
+
+  const matchAspas = texto.match(/'([^']+)'/)
+  if (matchAspas?.[1]) return matchAspas[1]
+
+  const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
+  if (matchColumn?.[1]) return matchColumn[1]
+
+  return ''
+}
+
+async function inserirComFallback(
+  supabase: any,
+  tabela: string,
+  payloadOriginal: AnyRecord
+) {
+  let payloadAtual = { ...payloadOriginal }
+
+  for (let tentativa = 0; tentativa < 12; tentativa++) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .insert(payloadAtual)
+      .select('*')
+      .maybeSingle()
+
+    if (!error) return data
+
+    if (!erroDeTabelaOuColuna(error as AnyRecord)) {
+      throw error
+    }
+
+    const coluna = extrairColunaAusente(error as AnyRecord)
+
+    if (!coluna || !(coluna in payloadAtual)) {
+      throw error
+    }
+
+    delete payloadAtual[coluna]
+  }
+
+  throw new Error(`Não foi possível inserir em ${tabela} após ajustar colunas.`)
+}
+
+async function garantirMedalhaFotosBeta(supabase: any) {
+  const medalhaExistente = await buscarMedalhaFotosBetaSemCriar(supabase)
+  if (medalhaExistente) return medalhaExistente
+
+  try {
+    return await inserirComFallback(supabase, 'medalhas', {
+      codigo: 'fotos_beta_3',
+      nome: 'Memórias do Beta',
+      descricao: 'Publicou 3 fotos durante o Beta de testes e ajudou a dar vida ao passaporte.',
+      categoria: 'beta',
+      nivel: 'especial',
+      icone: '/medalhas/iniciais_jornada/06_memorias_do_beta.svg',
+      cor: '#991b1b',
+      especial: true,
+      ordem: 6,
+      ativo: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+  } catch (error) {
+    console.warn('Não foi possível criar a medalha Memórias do Beta automaticamente:', error)
+    return null
+  }
+}
+
 async function contarFotosCliente(supabase: any, clienteId: string) {
   const { data, error } = await supabase
     .from('users')
@@ -139,7 +208,7 @@ async function garantirBeneficioBeta(supabase: any, clienteId: string, fotosPubl
   return criado || fallback
 }
 
-async function buscarMedalhaFotosBeta(supabase: any) {
+async function buscarMedalhaFotosBetaSemCriar(supabase: any) {
   const { data, error } = await supabase
     .from('medalhas')
     .select('*')
@@ -197,7 +266,7 @@ async function concederMedalhaFotosBeta(supabase: any, clienteId: string, fotosP
     }
   }
 
-  const medalha = await buscarMedalhaFotosBeta(supabase)
+  const medalha = await garantirMedalhaFotosBeta(supabase)
 
   if (!medalha?.id) {
     return {
