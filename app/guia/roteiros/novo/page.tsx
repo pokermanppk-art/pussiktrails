@@ -262,6 +262,194 @@ async function normalizarImagemRoteiro(file: File) {
   }
 }
 
+
+type LocalizacaoRoteiroValue = {
+  endereco_local: string
+  ponto_referencia: string
+  endereco_formatado?: string
+  cidade?: string
+  uf?: string
+  pais?: string
+  latitude?: number | null
+  longitude?: number | null
+  geocoding_provider?: string
+  geocoding_place_id?: string
+  geocoding_confianca?: string
+}
+
+function criarLocalizacaoVazia(): LocalizacaoRoteiroValue {
+  return {
+    endereco_local: '',
+    ponto_referencia: '',
+    endereco_formatado: '',
+    cidade: '',
+    uf: '',
+    pais: 'Brasil',
+    latitude: null,
+    longitude: null,
+    geocoding_provider: '',
+    geocoding_place_id: '',
+    geocoding_confianca: ''
+  }
+}
+
+function temCoordenadas(localizacao: LocalizacaoRoteiroValue) {
+  return (
+    Number.isFinite(Number(localizacao.latitude)) &&
+    Number.isFinite(Number(localizacao.longitude))
+  )
+}
+
+function LocalizacaoRoteiroBox({
+  value,
+  onChange
+}: {
+  value: LocalizacaoRoteiroValue
+  onChange: (value: LocalizacaoRoteiroValue) => void
+}) {
+  const [buscando, setBuscando] = useState(false)
+  const [erroLocalizacao, setErroLocalizacao] = useState('')
+  const [mensagemLocalizacao, setMensagemLocalizacao] = useState('')
+
+  const coordenadasConfirmadas = temCoordenadas(value)
+
+  function atualizarCampo(campo: 'endereco_local' | 'ponto_referencia', novoValor: string) {
+    onChange({
+      ...value,
+      [campo]: novoValor,
+      endereco_formatado: '',
+      cidade: '',
+      uf: '',
+      latitude: null,
+      longitude: null,
+      geocoding_provider: '',
+      geocoding_place_id: '',
+      geocoding_confianca: ''
+    })
+    setMensagemLocalizacao('')
+    setErroLocalizacao('')
+  }
+
+  async function localizarEndereco() {
+    setErroLocalizacao('')
+    setMensagemLocalizacao('')
+
+    const endereco = texto(value.endereco_local)
+    const pontoReferencia = texto(value.ponto_referencia)
+
+    if (!endereco) {
+      setErroLocalizacao('Informe o local principal do roteiro.')
+      return
+    }
+
+    try {
+      setBuscando(true)
+
+      const response = await fetch('/api/geocoding/buscar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endereco,
+          pontoReferencia
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || 'Não foi possível localizar este endereço.')
+      }
+
+      const resultado = data.resultado || {}
+      const latitude = Number(resultado.latitude)
+      const longitude = Number(resultado.longitude)
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error('O local foi encontrado, mas não retornou coordenadas válidas.')
+      }
+
+      onChange({
+        ...value,
+        endereco_local: endereco,
+        ponto_referencia: pontoReferencia,
+        endereco_formatado: texto(resultado.endereco_formatado),
+        cidade: texto(resultado.cidade),
+        uf: texto(resultado.uf),
+        pais: texto(resultado.pais) || 'Brasil',
+        latitude,
+        longitude,
+        geocoding_provider: texto(resultado.provider) || 'google',
+        geocoding_place_id: texto(resultado.place_id),
+        geocoding_confianca: texto(resultado.confianca) || 'media'
+      })
+
+      setMensagemLocalizacao('Local encontrado. Confira se é o ponto correto antes de salvar o roteiro.')
+    } catch (error) {
+      setErroLocalizacao(error instanceof Error ? error.message : 'Erro ao localizar endereço.')
+    } finally {
+      setBuscando(false)
+    }
+  }
+
+  return (
+    <section className="geoBox">
+      <div className="geoHeader">
+        <div className="geoEyebrow">Localização do roteiro</div>
+        <h2>Onde começa a experiência?</h2>
+        <p>
+          Informe o local de forma simples. O PrussikTrails localiza o endereço e salva as coordenadas para clima, mapa e segurança.
+        </p>
+      </div>
+
+      <div className="geoFields">
+        <label className="field full">
+          <span>Local principal do roteiro *</span>
+          <input
+            value={value.endereco_local}
+            onChange={(event) => atualizarCampo('endereco_local', event.target.value)}
+            placeholder="Ex.: Pedra do Lagarto, Serra do Itapety, Mogi das Cruzes/SP"
+          />
+        </label>
+
+        <label className="field full">
+          <span>Ponto de encontro ou referência</span>
+          <input
+            value={value.ponto_referencia}
+            onChange={(event) => atualizarCampo('ponto_referencia', event.target.value)}
+            placeholder="Ex.: estacionamento, portaria, restaurante próximo, entrada da trilha"
+          />
+        </label>
+      </div>
+
+      <div className="geoActions">
+        <button type="button" className="geoButton" onClick={localizarEndereco} disabled={buscando}>
+          {buscando ? 'Localizando...' : 'Localizar endereço'}
+        </button>
+        <span>O guia não precisa digitar latitude e longitude.</span>
+      </div>
+
+      {coordenadasConfirmadas && (
+        <div className="geoResult">
+          <strong>Local encontrado</strong>
+          <span>{value.endereco_formatado || value.endereco_local}</span>
+          {(value.cidade || value.uf) && (
+            <small>
+              {value.cidade}{value.uf ? `/${value.uf}` : ''}
+            </small>
+          )}
+          <em>
+            Coordenadas salvas · {Number(value.latitude).toFixed(5)}, {Number(value.longitude).toFixed(5)}
+            {value.geocoding_confianca ? ` · precisão ${value.geocoding_confianca}` : ''}
+          </em>
+        </div>
+      )}
+
+      {mensagemLocalizacao && <div className="geoOk">{mensagemLocalizacao}</div>}
+      {erroLocalizacao && <div className="geoErro">{erroLocalizacao}</div>}
+    </section>
+  )
+}
+
 export default function GuiaNovoRoteiroPage() {
   const router = useRouter()
   const iniciouRef = useRef(false)
@@ -275,7 +463,7 @@ export default function GuiaNovoRoteiroPage() {
 
   const [titulo, setTitulo] = useState('')
   const [descricao, setDescricao] = useState('')
-  const [local, setLocal] = useState('')
+  const [localizacao, setLocalizacao] = useState<LocalizacaoRoteiroValue>(criarLocalizacaoVazia())
   const [dataRoteiro, setDataRoteiro] = useState('')
   const [horaRoteiro, setHoraRoteiro] = useState('')
   const [preco, setPreco] = useState('')
@@ -313,7 +501,8 @@ export default function GuiaNovoRoteiroPage() {
     return (
       texto(titulo).length >= 4 &&
       texto(descricao).length >= 12 &&
-      texto(local).length >= 3 &&
+      texto(localizacao.endereco_local).length >= 3 &&
+      temCoordenadas(localizacao) &&
       texto(dataRoteiro).length > 0 &&
       texto(horaRoteiro).length > 0 &&
       numeroDecimal(preco) > 0 &&
@@ -324,7 +513,7 @@ export default function GuiaNovoRoteiroPage() {
   }, [
     titulo,
     descricao,
-    local,
+    localizacao,
     dataRoteiro,
     horaRoteiro,
     preco,
@@ -527,7 +716,9 @@ export default function GuiaNovoRoteiroPage() {
 
     const tituloLimpo = texto(titulo)
     const descricaoLimpa = texto(descricao)
-    const localLimpo = texto(local)
+    const localPrincipal = texto(localizacao.endereco_local)
+    const pontoReferencia = texto(localizacao.ponto_referencia)
+    const localFormatado = texto(localizacao.endereco_formatado) || localPrincipal
     const dataLimpa = texto(dataRoteiro)
     const horaLimpa = texto(horaRoteiro)
     const precoNumero = numeroDecimal(preco)
@@ -546,8 +737,13 @@ export default function GuiaNovoRoteiroPage() {
       return
     }
 
-    if (!localLimpo) {
+    if (!localPrincipal) {
       setErro('Informe o local principal do roteiro.')
+      return
+    }
+
+    if (!temCoordenadas(localizacao)) {
+      setErro('Clique em "Localizar endereço" antes de salvar o roteiro. Isso libera clima, mapa e segurança.')
       return
     }
 
@@ -578,13 +774,24 @@ export default function GuiaNovoRoteiroPage() {
         roteiro_detalhado: texto(roteiroDetalhado) || null,
         detalhes: texto(roteiroDetalhado) || null,
 
-        local: localLimpo,
-        localizacao: localLimpo,
-        cidade: localLimpo,
+        local: localFormatado,
+        localizacao: localFormatado,
+        endereco_local: localPrincipal,
+        endereco_formatado: localFormatado,
+        cidade: texto(localizacao.cidade) || null,
+        uf: texto(localizacao.uf) || null,
+        pais: texto(localizacao.pais) || 'Brasil',
+        latitude: Number(localizacao.latitude),
+        longitude: Number(localizacao.longitude),
+        geocoding_provider: texto(localizacao.geocoding_provider) || 'google',
+        geocoding_place_id: texto(localizacao.geocoding_place_id) || null,
+        geocoding_confianca: texto(localizacao.geocoding_confianca) || null,
+        geocoding_atualizado_em: new Date().toISOString(),
 
-        embarque_local: localLimpo,
-        local_encontro: localLimpo,
-        ponto_encontro: localLimpo,
+        embarque_local: pontoReferencia || localFormatado,
+        local_encontro: pontoReferencia || localFormatado,
+        ponto_encontro: pontoReferencia || localFormatado,
+        ponto_referencia: pontoReferencia || null,
 
         embarque_data: dataLimpa,
         hora_trilha: horaLimpa,
@@ -757,14 +964,9 @@ export default function GuiaNovoRoteiroPage() {
                 />
               </label>
 
-              <label className="field">
-                <span>Local principal *</span>
-                <input
-                  value={local}
-                  onChange={(event) => setLocal(event.target.value)}
-                  placeholder="Cidade, bairro, ponto de encontro..."
-                />
-              </label>
+              <div className="field full">
+                <LocalizacaoRoteiroBox value={localizacao} onChange={setLocalizacao} />
+              </div>
 
               <label className="field">
                 <span>Data *</span>
@@ -1404,6 +1606,140 @@ const styles = `
     font-weight: 850;
   }
 
+
+  .geoBox {
+    border-radius: 26px;
+    padding: 18px;
+    background: rgba(255, 253, 247, 0.78);
+    border: 1px solid rgba(32, 60, 46, 0.10);
+    box-shadow: 0 16px 38px rgba(32, 60, 46, 0.07);
+  }
+
+  .geoHeader {
+    margin-bottom: 14px;
+  }
+
+  .geoEyebrow {
+    color: #dc2626;
+    font-size: 11px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+  }
+
+  .geoHeader h2 {
+    margin: 6px 0 0;
+    color: #203c2e;
+    font-size: 22px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.045em;
+  }
+
+  .geoHeader p {
+    margin: 7px 0 0;
+    color: rgba(23, 32, 24, 0.62);
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .geoFields {
+    display: grid;
+    gap: 12px;
+  }
+
+  .geoActions {
+    margin-top: 14px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .geoActions span {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1.4;
+  }
+
+  .geoButton {
+    border: 0;
+    border-radius: 999px;
+    background: #203c2e;
+    color: #fffdf7;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 950;
+    cursor: pointer;
+    transition: 0.18s ease;
+  }
+
+  .geoButton:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(32, 60, 46, 0.18);
+  }
+
+  .geoButton:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+  }
+
+  .geoResult {
+    margin-top: 14px;
+    border-radius: 20px;
+    padding: 14px;
+    background: rgba(236, 253, 245, 0.82);
+    border: 1px solid rgba(22, 163, 74, 0.18);
+    color: #14532d;
+    display: grid;
+    gap: 4px;
+  }
+
+  .geoResult strong {
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .geoResult span,
+  .geoResult small {
+    color: #166534;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 760;
+  }
+
+  .geoResult em {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
+    font-style: normal;
+    font-weight: 850;
+  }
+
+  .geoOk,
+  .geoErro {
+    margin-top: 12px;
+    border-radius: 16px;
+    padding: 11px 12px;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 850;
+  }
+
+  .geoOk {
+    background: rgba(22, 163, 74, 0.08);
+    border: 1px solid rgba(22, 163, 74, 0.16);
+    color: #166534;
+  }
+
+  .geoErro {
+    background: rgba(153, 27, 27, 0.08);
+    border: 1px solid rgba(153, 27, 27, 0.16);
+    color: #7f1d1d;
+  }
+
   .difficultyGrid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1604,7 +1940,141 @@ const styles = `
     }
 
     .fieldsGrid,
-    .difficultyGrid {
+  
+  .geoBox {
+    border-radius: 26px;
+    padding: 18px;
+    background: rgba(255, 253, 247, 0.78);
+    border: 1px solid rgba(32, 60, 46, 0.10);
+    box-shadow: 0 16px 38px rgba(32, 60, 46, 0.07);
+  }
+
+  .geoHeader {
+    margin-bottom: 14px;
+  }
+
+  .geoEyebrow {
+    color: #dc2626;
+    font-size: 11px;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+  }
+
+  .geoHeader h2 {
+    margin: 6px 0 0;
+    color: #203c2e;
+    font-size: 22px;
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.045em;
+  }
+
+  .geoHeader p {
+    margin: 7px 0 0;
+    color: rgba(23, 32, 24, 0.62);
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 750;
+  }
+
+  .geoFields {
+    display: grid;
+    gap: 12px;
+  }
+
+  .geoActions {
+    margin-top: 14px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .geoActions span {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1.4;
+  }
+
+  .geoButton {
+    border: 0;
+    border-radius: 999px;
+    background: #203c2e;
+    color: #fffdf7;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 950;
+    cursor: pointer;
+    transition: 0.18s ease;
+  }
+
+  .geoButton:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(32, 60, 46, 0.18);
+  }
+
+  .geoButton:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+  }
+
+  .geoResult {
+    margin-top: 14px;
+    border-radius: 20px;
+    padding: 14px;
+    background: rgba(236, 253, 245, 0.82);
+    border: 1px solid rgba(22, 163, 74, 0.18);
+    color: #14532d;
+    display: grid;
+    gap: 4px;
+  }
+
+  .geoResult strong {
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .geoResult span,
+  .geoResult small {
+    color: #166534;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 760;
+  }
+
+  .geoResult em {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
+    font-style: normal;
+    font-weight: 850;
+  }
+
+  .geoOk,
+  .geoErro {
+    margin-top: 12px;
+    border-radius: 16px;
+    padding: 11px 12px;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 850;
+  }
+
+  .geoOk {
+    background: rgba(22, 163, 74, 0.08);
+    border: 1px solid rgba(22, 163, 74, 0.16);
+    color: #166534;
+  }
+
+  .geoErro {
+    background: rgba(153, 27, 27, 0.08);
+    border: 1px solid rgba(153, 27, 27, 0.16);
+    color: #7f1d1d;
+  }
+
+  .difficultyGrid {
       grid-template-columns: 1fr;
     }
 
@@ -1620,7 +2090,8 @@ const styles = `
     }
 
     .primaryButton,
-    .secondaryButton {
+    .secondaryButton,
+    .geoButton {
       width: 100%;
     }
   }
