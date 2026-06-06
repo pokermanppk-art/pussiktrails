@@ -1232,29 +1232,43 @@ export default function ClienteDashboardPage() {
         {mensagem && <div className="notice">{mensagem}</div>}
 
         <section className="statsGrid">
-          <article>
-            <span>Km registrados</span>
-            <strong>{formatarKm(stats.totalKm)}</strong>
+          <article className="statsJourneyCard">
+            <span>Jornada</span>
+            <div className="journeySplit">
+              <strong>{formatarKm(stats.totalKm)} km</strong>
+              <strong>{stats.totalTrilhas} trilhas</strong>
+            </div>
           </article>
-          <article>
-            <span>Trilhas</span>
-            <strong>{stats.totalTrilhas}</strong>
-          </article>
-          <article>
-            <span>Confirmadas</span>
-            <strong>{stats.reservasConfirmadas}</strong>
-          </article>
-          <article>
-            <span>Pendentes</span>
-            <strong>{stats.reservasPendentes}</strong>
-          </article>
+
           <article>
             <span>Medalhas</span>
             <strong>{stats.totalMedalhas}</strong>
           </article>
-          <article>
-            <span>Atualização</span>
-            <strong>{ultimaAtualizacao || "Agora"}</strong>
+
+          <article
+            className="statsProfileCard"
+            role="button"
+            tabIndex={0}
+            onClick={() => router.push("/cliente/perfil")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                router.push("/cliente/perfil");
+              }
+            }}
+            aria-label="Abrir perfil do cliente"
+          >
+            <div className="profileStatContent">
+              <div className="profileStatAvatar">
+                {avatar ? <img src={avatar} alt={nome} /> : <b>{nome.charAt(0).toUpperCase()}</b>}
+              </div>
+
+              <div className="profileStatText">
+                <span>Perfil</span>
+                <strong>Meu perfil</strong>
+                <small>Ver passaporte</small>
+              </div>
+            </div>
           </article>
         </section>
 
@@ -1413,11 +1427,23 @@ const styles = `
   .hotMeta strong { color: #fff; }
   .hotClickHint { width: fit-content; border-radius: 999px; padding: 10px 13px; background: rgba(190,242,100,0.92); color: #172018; font-size: 12px; line-height: 1.2; font-weight: 950; box-shadow: 0 14px 30px rgba(15,23,42,0.16); }
   .notice { border-radius: 18px; padding: 13px 15px; margin-bottom: 16px; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-size: 13px; font-weight: 850; }
-  .statsGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .statsGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
   .statsGrid article, .panel { background: rgba(255,255,255,0.90); border: 1px solid rgba(15,23,42,0.06); box-shadow: 0 12px 34px rgba(15,23,42,0.06); }
-  .statsGrid article { border-radius: 24px; padding: 16px; }
+  .statsGrid article { border-radius: 24px; padding: 16px; min-height: 88px; }
   .statsGrid span { display: block; color: #64748b; font-size: 10px; font-weight: 950; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 7px; }
   .statsGrid strong { color: #172018; font-size: 20px; line-height: 1; font-weight: 950; letter-spacing: -0.05em; }
+  .statsJourneyCard { background: radial-gradient(circle at 100% 0%, rgba(132,204,22,0.14), transparent 42%), rgba(255,255,255,0.92) !important; }
+  .journeySplit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end; }
+  .journeySplit strong { display: block; white-space: nowrap; }
+  .statsProfileCard { cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; background: radial-gradient(circle at 100% 0%, rgba(251,146,60,0.13), transparent 42%), rgba(255,255,255,0.92) !important; }
+  .statsProfileCard:hover, .statsProfileCard:focus-visible { transform: translateY(-2px); border-color: rgba(32,60,46,0.16); box-shadow: 0 18px 42px rgba(15,23,42,0.10); outline: none; }
+  .profileStatContent { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .profileStatAvatar { width: 46px; height: 46px; border-radius: 999px; flex: 0 0 auto; overflow: hidden; background: #203c2e; color: #fffdf7; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 22px rgba(15,23,42,0.08); }
+  .profileStatAvatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .profileStatAvatar b { font-size: 17px; font-weight: 950; }
+  .profileStatText { min-width: 0; }
+  .profileStatText strong { display: block; }
+  .profileStatText small { display: block; margin-top: 5px; color: #64748b; font-size: 11px; line-height: 1.2; font-weight: 850; }
   .mainGrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
   .panel { border-radius: 30px; padding: 18px; overflow: hidden; }
   .panelHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; }
@@ -1441,5 +1467,5 @@ const styles = `
   .reservationList strong { display: block; color: #172018; font-size: 12px; line-height: 1.25; font-weight: 950; }
   .reservationList small { display: block; margin-top: 3px; color: #64748b; font-size: 11px; font-weight: 750; line-height: 1.35; }
   @media (max-width: 1040px) { .hero, .mainGrid { grid-template-columns: 1fr; } .statsGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 720px) { .topbar { padding: 7px 10px; } .topbarInner { grid-template-columns: 1fr auto; } .brandLogo { grid-column: 1; justify-self: start; } .brandLogo img { width: clamp(130px, 50vw, 205px); max-height: 50px; } .avatarMini { grid-column: 2; width: 36px; height: 36px; box-shadow: none; } .shell { padding: 12px 9px 40px; } .heroText, .homeHotCard, .panel { border-radius: 24px; } .heroText { padding: 20px; } .heroText h1 { font-size: 42px; } .homeHotVisual { min-height: 320px; } .statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tabs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; } .tabs button { width: 100%; } }
+  @media (max-width: 720px) { .topbar { padding: 7px 10px; } .topbarInner { grid-template-columns: 1fr auto; } .brandLogo { grid-column: 1; justify-self: start; } .brandLogo img { width: clamp(130px, 50vw, 205px); max-height: 50px; } .avatarMini { grid-column: 2; width: 36px; height: 36px; box-shadow: none; } .shell { padding: 12px 9px 40px; } .heroText, .homeHotCard, .panel { border-radius: 24px; } .heroText { padding: 20px; } .heroText h1 { font-size: 42px; } .homeHotVisual { min-height: 320px; } .statsGrid { grid-template-columns: 1fr; } .journeySplit { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tabs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; } .tabs button { width: 100%; } }
 `;
