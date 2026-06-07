@@ -688,7 +688,7 @@ export default function GuiaNovoRoteiroPage() {
 
   async function garantirGrupoDoRoteiro(roteiroId: string, guiaId: string) {
     try {
-      await fetch('/api/grupos/garantir-grupo-roteiro', {
+      const response = await fetch('/api/grupos/garantir-grupo-roteiro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -698,8 +698,18 @@ export default function GuiaNovoRoteiroPage() {
           guia_id: guiaId
         })
       })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        console.warn('Grupo do roteiro não foi criado agora:', data?.erro || data?.message || response.status)
+        return null
+      }
+
+      return data?.grupo || data?.data || null
     } catch (error) {
       console.warn('Grupo do roteiro não foi criado agora. O fluxo poderá sincronizar depois:', error)
+      return null
     }
   }
 
@@ -858,9 +868,13 @@ export default function GuiaNovoRoteiroPage() {
         throw new Error('O roteiro foi salvo, mas o ID não foi retornado.')
       }
 
-      await garantirGrupoDoRoteiro(String(roteiroCriado.id), user.id)
+      const grupo = await garantirGrupoDoRoteiro(String(roteiroCriado.id), user.id)
 
-      setMensagem('Roteiro criado e enviado para aprovação do Admin.')
+      setMensagem(
+        grupo?.id
+          ? 'Roteiro criado, grupo da experiência disponível e enviado para aprovação do Admin.'
+          : 'Roteiro criado e enviado para aprovação do Admin. O grupo poderá ser sincronizado automaticamente.'
+      )
       window.setTimeout(() => {
         router.push('/guia/roteiros')
       }, 900)
@@ -1411,8 +1425,11 @@ const styles = `
 
   .imageCard {
     grid-column: 2;
-    position: sticky;
-    top: 96px;
+    position: relative;
+    top: auto;
+    align-self: start;
+    height: fit-content;
+    overflow: visible;
   }
 
   .fullWidth {

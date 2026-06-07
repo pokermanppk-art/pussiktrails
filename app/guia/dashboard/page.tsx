@@ -631,11 +631,13 @@ export default function GuiaDashboardPage() {
     reservasDoGuia.slice(0, 4).forEach((reserva: Reserva) => {
       fallback.push({
         id: `reserva-${reserva.id}`,
-        titulo: pagamentoConfirmado(reserva) ? 'Reserva confirmada' : 'Reserva aguardando pagamento',
-        texto: `${reserva.cliente_nome || 'Cliente'} · ${reserva.roteiro_titulo || 'Roteiro'}`,
+        titulo: pagamentoConfirmado(reserva) ? 'Reserva confirmada' : 'Reserva feita',
+        texto: pagamentoConfirmado(reserva)
+          ? `${reserva.roteiro_titulo || 'Roteiro'} teve uma reserva confirmada.`
+          : 'Uma nova reserva foi realizada no PrussikTrails.',
         emoji: pagamentoConfirmado(reserva) ? '✅' : '🎒',
         tipo: 'geral',
-        destino: '/guia/roteiros',
+        destino: '/guia/financeiro',
         created_at: reserva.created_at,
       })
     })
@@ -679,17 +681,45 @@ export default function GuiaDashboardPage() {
 
   function montarNotificacaoGeral(log: Record<string, unknown>, id: string): Notificacao {
     const acao = normalizar(textoSeguro(log.acao) || textoSeguro(log.tipo) || textoSeguro(log.descricao))
-    const nome = textoSeguro(log.nome) || textoSeguro(log.nome_usuario) || textoSeguro(log.guia_nome) || 'Alguém'
     const isDoGuia = textoSeguro(log.usuario_id) === id || textoSeguro(log.user_id) === id || textoSeguro(log.guia_id) === id
+    const destinoRaw = textoSeguro(log.destino) || textoSeguro(log.rota) || textoSeguro(log.url)
 
     if (acao.includes('roteiro')) {
       return {
         id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
         titulo: isDoGuia ? 'Seu roteiro movimentou' : 'Novo roteiro publicado',
-        texto: isDoGuia ? 'Um roteiro seu teve atualização ou movimento.' : `${nome} publicou ou atualizou um roteiro.`,
+        texto: isDoGuia
+          ? 'Um roteiro seu teve atualização ou movimento.'
+          : 'Um novo roteiro movimentou a comunidade PrussikTrails.',
         emoji: '🧭',
         tipo: 'geral',
-        destino: '/guia/roteiros',
+        destino: destinoRaw.startsWith('/roteiros/') ? destinoRaw : '/guia/roteiros',
+        created_at: textoSeguro(log.created_at) || null,
+      }
+    }
+
+    if (acao.includes('reserva') || acao.includes('pagamento')) {
+      return {
+        id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
+        titulo: acao.includes('confirm') || acao.includes('pago') ? 'Reserva confirmada' : 'Reserva feita',
+        texto: acao.includes('confirm') || acao.includes('pago')
+          ? 'Uma reserva teve pagamento confirmado.'
+          : 'Uma nova reserva foi realizada no PrussikTrails.',
+        emoji: acao.includes('confirm') || acao.includes('pago') ? '✅' : '🎟️',
+        tipo: 'geral',
+        destino: '/guia/financeiro',
+        created_at: textoSeguro(log.created_at) || null,
+      }
+    }
+
+    if (acao.includes('avaliacao')) {
+      return {
+        id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
+        titulo: 'Nova avaliação',
+        texto: 'Uma experiência recebeu uma nova avaliação.',
+        emoji: '⭐',
+        tipo: 'geral',
+        destino: '/guia/avaliacoes',
         created_at: textoSeguro(log.created_at) || null,
       }
     }
@@ -698,7 +728,7 @@ export default function GuiaDashboardPage() {
       return {
         id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
         titulo: 'Foto na comunidade',
-        texto: `${nome} publicou uma foto de aventura.`,
+        texto: 'Uma foto de aventura foi publicada na comunidade.',
         emoji: '📷',
         tipo: 'geral',
         destino: '/guia/dashboard',
@@ -710,8 +740,20 @@ export default function GuiaDashboardPage() {
       return {
         id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
         titulo: 'Foto curtida',
-        texto: `${nome} curtiu uma foto da comunidade.`,
+        texto: 'Uma foto da comunidade recebeu uma curtida.',
         emoji: '❤️',
+        tipo: 'geral',
+        destino: '/guia/dashboard',
+        created_at: textoSeguro(log.created_at) || null,
+      }
+    }
+
+    if (acao.includes('cadastro') || acao.includes('usuario') || acao.includes('usuário')) {
+      return {
+        id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
+        titulo: 'Nova pessoa na comunidade',
+        texto: 'Alguém começou sua jornada no PrussikTrails.',
+        emoji: '🌿',
         tipo: 'geral',
         destino: '/guia/dashboard',
         created_at: textoSeguro(log.created_at) || null,
@@ -721,7 +763,7 @@ export default function GuiaDashboardPage() {
     return {
       id: textoSeguro(log.id) || `log-${Math.random().toString(36).slice(2)}`,
       titulo: 'Movimento na comunidade',
-      texto: textoSeguro(log.detalhes) || textoSeguro(log.descricao) || `${nome} movimentou a PrussikTrails.`,
+      texto: 'A comunidade PrussikTrails teve uma nova movimentação.',
       emoji: '🌿',
       tipo: 'geral',
       destino: '/guia/dashboard',
@@ -817,42 +859,59 @@ export default function GuiaDashboardPage() {
     return notificacoesAtivas.slice(0, 4)
   }, [notificacoesAtivas])
 
-  const pendenciasDoGuia = useMemo(() => {
+  const cardsOperacionais = useMemo(() => {
     return [
       {
-        titulo: 'Reservas pendentes',
-        valor: stats.reservasPendentes,
-        texto: 'Clientes aguardando confirmação, pagamento ou acompanhamento.',
-        destino: '/guia/financeiro',
-        icone: '🎒',
-        destaque: stats.reservasPendentes > 0,
-      },
-      {
-        titulo: 'Roteiros em análise',
-        valor: stats.roteirosPendentes,
-        texto: 'Experiências que ainda precisam de revisão ou ajuste.',
+        titulo: 'Roteiros',
+        valor: stats.roteirosAtivos,
+        texto: `${stats.roteirosPendentes} em análise · editar e acompanhar experiências.`,
         destino: '/guia/roteiros',
         icone: '🧭',
         destaque: stats.roteirosPendentes > 0,
       },
       {
-        titulo: 'Movimentos na COM',
-        valor: notificacoesCom.length,
-        texto: 'Novidades da comunidade ligadas ao guia e aos seguidores.',
-        destino: 'com',
-        icone: '🌿',
-        destaque: notificacoesCom.length > 0,
+        titulo: 'Novo roteiro',
+        valor: '+',
+        texto: 'Cadastrar uma nova experiência para aprovação.',
+        destino: '/guia/roteiros/novo',
+        icone: '＋',
+        destaque: false,
       },
       {
-        titulo: 'Avaliações recebidas',
+        titulo: 'Grupos',
+        valor: stats.reservasConfirmadas,
+        texto: 'Comunicação liberada para reservas pagas e confirmadas.',
+        destino: '/guia/grupos',
+        icone: '💬',
+        destaque: stats.reservasConfirmadas > 0,
+      },
+      {
+        titulo: 'Avaliações',
         valor: avaliacoes.length,
-        texto: stats.mediaAvaliacoes > 0 ? `Média atual ${stats.mediaAvaliacoes.toFixed(1)} estrelas.` : 'Aguardando os primeiros retornos dos clientes.',
+        texto: stats.mediaAvaliacoes > 0
+          ? `Média atual ${stats.mediaAvaliacoes.toFixed(1)} estrelas.`
+          : 'Aguardando os primeiros retornos dos clientes.',
         destino: '/guia/avaliacoes',
         icone: '⭐',
         destaque: avaliacoes.length > 0,
       },
+      {
+        titulo: 'COM',
+        valor: notificacoesCom.length,
+        texto: 'Movimentos relacionados aos guias e pessoas que você acompanha.',
+        destino: 'com',
+        icone: '🌿',
+        destaque: notificacoesCom.length > 0,
+      },
     ]
-  }, [stats.reservasPendentes, stats.roteirosPendentes, stats.mediaAvaliacoes, notificacoesCom.length, avaliacoes.length])
+  }, [
+    stats.roteirosAtivos,
+    stats.roteirosPendentes,
+    stats.reservasConfirmadas,
+    stats.mediaAvaliacoes,
+    notificacoesCom.length,
+    avaliacoes.length,
+  ])
 
   if (carregando || !user) {
     return (
@@ -919,10 +978,16 @@ export default function GuiaDashboardPage() {
             type="button"
             className="heroFinanceCard"
             onClick={() => router.push('/guia/financeiro')}
+            aria-label="Abrir resumo financeiro do guia"
           >
-            <span>Receita confirmada</span>
+            <span>Resumo financeiro</span>
             <strong>{formatarMoeda(stats.receitaConfirmada)}</strong>
-            <small>{stats.reservasConfirmadas} reserva(s) confirmada(s)</small>
+            <small>Receita confirmada · {stats.reservasConfirmadas} reserva(s)</small>
+
+            <div className="financeMiniLine">
+              <b>{formatarMoeda(stats.receitaPendente)}</b>
+              <em>pendente</em>
+            </div>
           </button>
         </section>
 
@@ -933,8 +998,8 @@ export default function GuiaDashboardPage() {
         <section className="commandPanel">
           <div className="panelHeader commandHeader">
             <div>
-              <h2>Pendências do guia</h2>
-              <p>O que merece atenção antes de publicar novas experiências.</p>
+              <h2>Central do guia</h2>
+              <p>Ações e indicadores reunidos sem cards repetidos.</p>
             </div>
             <button type="button" onClick={atualizar} disabled={atualizando}>
               {atualizando ? 'Atualizando...' : 'Atualizar'}
@@ -942,7 +1007,7 @@ export default function GuiaDashboardPage() {
           </div>
 
           <div className="commandGrid">
-            {pendenciasDoGuia.map((item) => (
+            {cardsOperacionais.map((item) => (
               <button
                 type="button"
                 key={item.titulo}
@@ -966,56 +1031,12 @@ export default function GuiaDashboardPage() {
           </div>
         </section>
 
-        <section className="quickGrid">
-          <button className="quickCard" type="button" onClick={() => router.push('/guia/roteiros')}>
-            <span className="quickIcon route">🧭</span>
-            <strong>Meus roteiros</strong>
-            <small>{stats.roteirosAtivos} ativo(s), {stats.roteirosPendentes} em análise.</small>
-          </button>
-
-          <button className="quickCard" type="button" onClick={() => router.push('/guia/roteiros/novo')}>
-            <span className="quickIcon plus">＋</span>
-            <strong>Novo roteiro</strong>
-            <small>Publicar uma experiência com dados completos.</small>
-          </button>
-
-          <button className="quickCard" type="button" onClick={() => router.push('/guia/financeiro')}>
-            <span className="quickIcon money">R$</span>
-            <strong>Financeiro</strong>
-            <small>{formatarMoeda(stats.receitaPendente)} pendente.</small>
-          </button>
-
-          <button className="quickCard" type="button" onClick={() => router.push('/guia/grupos')}>
-            <span className="quickIcon group">💬</span>
-            <strong>Grupos</strong>
-            <small>Administrar comunicação por roteiro.</small>
-          </button>
-        </section>
-
-        <section className="momentGrid">
-          <article>
-            <span>Clientes</span>
-            <strong>{stats.clientes}</strong>
-          </article>
-          <article>
-            <span>Reservas pendentes</span>
-            <strong>{stats.reservasPendentes}</strong>
-          </article>
-          <article>
-            <span>Avaliação média</span>
-            <strong>{stats.mediaAvaliacoes > 0 ? stats.mediaAvaliacoes.toFixed(1) : '-'}</strong>
-          </article>
-          <article>
-            <span>COM</span>
-            <strong>{notificacoesCom.length}</strong>
-          </article>
-        </section>
-
+        
         <section className="notificationsPanel">
           <div className="panelHeader compactHeader">
             <div>
               <h2>Notificações</h2>
-              <p>Resumo rápido para o guia.</p>
+              <p>ALL mostra movimentos sem expor nome de cliente. COM mostra interações relacionadas ao guia.</p>
             </div>
             <div className="tabs">
               <button
@@ -1023,7 +1044,7 @@ export default function GuiaDashboardPage() {
                 className={abaNotificacao === 'geral' ? 'active' : ''}
                 onClick={() => mudarAbaNotificacao('geral')}
               >
-                Geral
+                ALL
               </button>
               <button
                 type="button"
@@ -1045,7 +1066,7 @@ export default function GuiaDashboardPage() {
                   key={notificacao.id}
                   className="notificationItem"
                   onClick={() => {
-                    if (abaNotificacao === 'com' && notificacao.destino) {
+                    if (notificacao.destino) {
                       router.push(notificacao.destino)
                     }
                   }}
@@ -1064,13 +1085,24 @@ export default function GuiaDashboardPage() {
 
         <section className="mainGrid">
           <div className="leftColumn">
-            <section className="panel">
+            <section
+              className="panel panelClickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => router.push('/guia/roteiros')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  router.push('/guia/roteiros')
+                }
+              }}
+              aria-label="Abrir meus roteiros"
+            >
               <div className="panelHeader">
                 <div>
                   <h2>Roteiros recentes</h2>
-                  <p>Últimos roteiros cadastrados ou movimentados.</p>
+                  <p>Últimos roteiros cadastrados ou movimentados. Toque no card para abrir seus roteiros.</p>
                 </div>
-                <button type="button" onClick={() => router.push('/guia/roteiros')}>Ver todos</button>
               </div>
 
               <div className="list">
@@ -1106,13 +1138,24 @@ export default function GuiaDashboardPage() {
               </div>
             </section>
 
-            <section className="panel panelSpacing">
+            <section
+              className="panel panelSpacing panelClickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => router.push('/guia/financeiro')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  router.push('/guia/financeiro')
+                }
+              }}
+              aria-label="Abrir financeiro e reservas recentes"
+            >
               <div className="panelHeader">
                 <div>
                   <h2>Reservas recentes</h2>
-                  <p>Clientes, pagamentos e próximos compromissos.</p>
+                  <p>Clientes, pagamentos e próximos compromissos. Toque no card para abrir o financeiro.</p>
                 </div>
-                <button type="button" onClick={() => router.push('/guia/financeiro')}>Financeiro</button>
               </div>
 
               <div className="list compactList">
@@ -1142,13 +1185,24 @@ export default function GuiaDashboardPage() {
           <aside className="rightColumn">
             <PerguntasRoteirosCard />
 
-            <section className="panel">
+            <section
+              className="panel panelClickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => router.push('/guia/avaliacoes')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  router.push('/guia/avaliacoes')
+                }
+              }}
+              aria-label="Abrir painel de avaliações"
+            >
               <div className="panelHeader compactHeader">
                 <div>
                   <h2>Avaliações</h2>
-                  <p>Últimos retornos dos clientes.</p>
+                  <p>Últimos retornos dos clientes. Toque no card para abrir o painel.</p>
                 </div>
-                <button type="button" onClick={() => router.push('/guia/avaliacoes')}>Ver painel</button>
               </div>
 
               <div className="reviewList">
@@ -1160,7 +1214,8 @@ export default function GuiaDashboardPage() {
                       type="button"
                       key={avaliacao.id}
                       className="reviewItem"
-                      onClick={() => {
+                      onClick={(event) => {
+                        event.stopPropagation()
                         if (avaliacao.cliente_id) router.push(`/cliente/publico/${avaliacao.cliente_id}`)
                       }}
                     >
@@ -1449,6 +1504,34 @@ const estilos = `
     font-weight: 750;
   }
 
+  .financeMiniLine {
+    margin-top: 14px;
+    border-radius: 18px;
+    padding: 11px 12px;
+    background: rgba(255, 253, 247, 0.13);
+    border: 1px solid rgba(255, 253, 247, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .financeMiniLine b {
+    color: #ffffff;
+    font-size: 15px;
+    line-height: 1;
+    font-weight: 950;
+  }
+
+  .financeMiniLine em {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
   .notice {
     margin-top: 14px;
     border-radius: 18px;
@@ -1475,6 +1558,29 @@ const estilos = `
     box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
     border-radius: 30px;
     overflow: hidden;
+  }
+
+  .panelClickable {
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .panelClickable:hover,
+  .panelClickable:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(32, 60, 46, 0.14);
+    box-shadow: 0 18px 46px rgba(15, 23, 42, 0.09);
+    outline: none;
+  }
+
+  .panelClickable .panelHeader {
+    pointer-events: none;
+  }
+
+  .panelClickable .routeItem,
+  .panelClickable .reviewItem {
+    position: relative;
+    z-index: 2;
   }
 
   .commandPanel {
@@ -1526,7 +1632,7 @@ const estilos = `
 
   .commandGrid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 10px;
     padding: 14px;
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import AvatarCropModal from '@/components/AvatarCropModal'
@@ -229,6 +229,12 @@ function normalizar(valor: any) {
     .trim()
 }
 
+function classeVisualMedalha(valor?: string | null) {
+  return normalizar(valor)
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 function numero(valor: any) {
   const n = Number(valor || 0)
   return Number.isFinite(n) ? n : 0
@@ -271,6 +277,7 @@ export default function PerfilGuiaPage() {
   const [guia, setGuia] = useState<any>(null)
 
   const [bio, setBio] = useState('')
+  const [nomePerfil, setNomePerfil] = useState('')
   const [editandoBio, setEditandoBio] = useState(false)
 
   const [pixTipo, setPixTipo] = useState('')
@@ -288,6 +295,8 @@ export default function PerfilGuiaPage() {
   const [carregando, setCarregando] = useState(true)
   const [salvandoBio, setSalvandoBio] = useState(false)
   const [salvandoDados, setSalvandoDados] = useState(false)
+  const [modalDadosGuiaAberto, setModalDadosGuiaAberto] = useState(false)
+  const [medalhaSelecionada, setMedalhaSelecionada] = useState<MedalhaGuiaVisual | null>(null)
 
   const [menuAberto, setMenuAberto] = useState(false)
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false)
@@ -550,6 +559,7 @@ export default function PerfilGuiaPage() {
 
       if (guiaData) {
         setGuia(guiaData)
+        setNomePerfil(guiaData.nome || '')
         setBio(guiaData.bio_guia || guiaData.bio || '')
         setPixTipo(guiaData.pix_tipo || '')
         setPixChave(guiaData.pix_chave || '')
@@ -646,61 +656,124 @@ export default function PerfilGuiaPage() {
   const salvarBio = async () => {
     if (!user?.id) return
 
+    const nomeLimpo = String(nomePerfil || '').trim()
+    const bioLimpa = String(bio || '').trim()
+
+    if (!nomeLimpo) {
+      setErro('Informe o nome público do guia.')
+      return
+    }
+
     setSalvandoBio(true)
     setErro('')
     setMensagem('')
 
     try {
-      const response = await fetch('/api/usuario/bio', {
+      let usuarioPerfilAtualizado: Record<string, any> = {}
+
+      try {
+        const perfilResponse = await fetch('/api/usuario/perfil', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            usuarioId: user.id,
+            usuario_id: user.id,
+            guiaId: user.id,
+            tipoUsuario: 'guia',
+            tipo: 'guia',
+            nome: nomeLimpo
+          })
+        })
+
+        const perfilData = await perfilResponse.json().catch(() => null)
+
+        if (!perfilResponse.ok || perfilData?.sucesso === false || perfilData?.success === false) {
+          throw new Error(
+            perfilData?.erro ||
+              perfilData?.error ||
+              perfilData?.message ||
+              `Erro HTTP ${perfilResponse.status} ao salvar nome público.`
+          )
+        }
+
+        usuarioPerfilAtualizado = perfilData?.usuario || perfilData?.user || perfilData?.data || {}
+      } catch (perfilError) {
+        console.warn('Fallback ao salvar nome do guia pelo Supabase:', perfilError)
+
+        const usuarioNomeAtualizado = await atualizarUsuarioComFallback(user.id, {
+          nome: nomeLimpo,
+          updated_at: new Date().toISOString()
+        })
+
+        usuarioPerfilAtualizado = usuarioNomeAtualizado || {}
+      }
+
+      const bioResponse = await fetch('/api/usuario/bio', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           userId: user.id,
+          usuarioId: user.id,
+          usuario_id: user.id,
           guiaId: user.id,
           tipoUsuario: 'guia',
           tipo: 'guia',
-          bio
+          bio: bioLimpa
         })
       })
 
-      const data = await response.json().catch(() => null)
+      const bioData = await bioResponse.json().catch(() => null)
 
-      if (!response.ok || data?.sucesso === false || data?.success === false) {
+      if (!bioResponse.ok || bioData?.sucesso === false || bioData?.success === false) {
         throw new Error(
-          data?.erro ||
-            data?.error ||
-            data?.message ||
-            `Erro HTTP ${response.status} ao salvar biografia.`
+          bioData?.erro ||
+            bioData?.error ||
+            bioData?.message ||
+            `Erro HTTP ${bioResponse.status} ao salvar biografia.`
         )
       }
 
-      const bioSalva = String(data?.bio ?? bio)
-      const usuarioAtualizado = data?.usuario || data?.user || data?.data || {}
+      const bioSalva = String(bioData?.bio ?? bioData?.usuario?.bio_guia ?? bioData?.usuario?.bio ?? bioLimpa)
+      const usuarioBioAtualizado = bioData?.usuario || bioData?.user || bioData?.data || {}
+
+      const usuarioAtualizado = {
+        ...usuarioPerfilAtualizado,
+        ...usuarioBioAtualizado,
+        nome: nomeLimpo,
+        bio_guia: bioSalva,
+        bio: bioSalva
+      }
 
       setGuia((prev: any) => ({
         ...prev,
-        ...usuarioAtualizado,
-        bio_guia: bioSalva,
-        bio: bioSalva
+        ...usuarioAtualizado
       }))
 
       const localUserAtualizado: UsuarioLocal = {
         ...(user || {}),
         ...usuarioAtualizado,
         id: user.id,
-        tipo: 'guia'
+        tipo: 'guia',
+        nome: nomeLimpo,
+        bio: bioSalva
       }
 
       localStorage.setItem('user', JSON.stringify(localUserAtualizado))
       setUser(localUserAtualizado)
+      setNomePerfil(nomeLimpo)
       setBio(bioSalva)
       setEditandoBio(false)
-      setMensagem('Biografia atualizada com sucesso.')
+      setMensagem('Nome e biografia atualizados com sucesso.')
+
+      await carregarDados(user.id)
     } catch (error: any) {
-      console.error('Erro ao salvar bio:', error)
-      setErro(error?.message || 'Não foi possível salvar a biografia.')
+      console.error('Erro ao salvar nome/bio:', error)
+      setErro(error?.message || 'Não foi possível salvar nome e biografia.')
     } finally {
       setSalvandoBio(false)
       setTimeout(() => setMensagem(''), 2800)
@@ -812,6 +885,12 @@ export default function PerfilGuiaPage() {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('userId', guiaId)
+      formData.append('usuarioId', guiaId)
+      formData.append('usuario_id', guiaId)
+      formData.append('guiaId', guiaId)
+      formData.append('guia_id', guiaId)
+      formData.append('tipoUsuario', 'guia')
+      formData.append('tipo', 'guia')
       formData.append('pasta', 'guias')
 
       const response = await fetch('/api/usuario/avatar', {
@@ -840,15 +919,34 @@ export default function PerfilGuiaPage() {
         )
       }
 
-      const publicUrl = data.publicUrl || data.url || ''
+      const usuarioResposta = data?.usuario || data?.user || data?.data || data?.perfil || {}
+
+      const publicUrl = String(
+        data?.avatarUrl ||
+          data?.avatar_url ||
+          data?.foto_url ||
+          data?.imagem_url ||
+          data?.publicUrl ||
+          data?.public_url ||
+          data?.url ||
+          data?.signedUrl ||
+          data?.signed_url ||
+          data?.pathUrl ||
+          data?.path_url ||
+          usuarioResposta?.avatar_url ||
+          usuarioResposta?.foto_url ||
+          usuarioResposta?.imagem_url ||
+          ''
+      ).trim()
 
       if (!publicUrl) {
-        throw new Error('A rota não retornou a URL pública da foto.')
+        console.error('Resposta sem URL pública em /api/usuario/avatar:', data)
+        throw new Error('A rota salvou ou respondeu, mas não informou a URL pública da foto.')
       }
 
       const usuarioAtualizado: UsuarioLocal = {
         ...(user || {}),
-        ...(data.usuario || data.data || {}),
+        ...(usuarioResposta || {}),
         id: guiaId,
         tipo: 'guia',
         avatar_url: publicUrl,
@@ -863,7 +961,7 @@ export default function PerfilGuiaPage() {
 
       setGuia((prev: any) => ({
         ...prev,
-        ...(data.usuario || data.data || {}),
+        ...(usuarioResposta || {}),
         id: guiaId,
         avatar_url: publicUrl,
         foto_url: publicUrl,
@@ -925,6 +1023,20 @@ export default function PerfilGuiaPage() {
     setNovaSenha('')
     setConfirmarSenha('')
     setModalSenhaAberto(true)
+  }
+
+  const abrirDadosGuiaPrivados = () => {
+    setMenuAberto(false)
+    setErro('')
+    setMensagem('')
+    setModalDadosGuiaAberto(true)
+  }
+
+  const abrirEdicaoBio = () => {
+    setMenuAberto(false)
+    setNomePerfil(nomeGuia())
+    setBio(guia?.bio_guia || guia?.bio || bio || '')
+    setEditandoBio(true)
   }
 
   const rotuloTipoChamado = (tipo?: string | null) => {
@@ -1385,6 +1497,33 @@ export default function PerfilGuiaPage() {
     }
   ]
 
+
+  const abrirPerfilPublicoGuia = () => {
+    const guiaIdPublico = String(user?.id || guia?.id || '').trim()
+
+    if (!guiaIdPublico) return
+
+    router.push(`/guia/publico/${guiaIdPublico}`)
+  }
+
+  const handleStatusCardKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+
+    event.preventDefault()
+    abrirPerfilPublicoGuia()
+  }
+
+  const abrirAvaliacoesGuia = () => {
+    router.push('/guia/avaliacoes')
+  }
+
+  const handleAvaliacoesCardKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+
+    event.preventDefault()
+    abrirAvaliacoesGuia()
+  }
+
   if (carregando) {
     return (
       <main className="loading">
@@ -1548,7 +1687,7 @@ export default function PerfilGuiaPage() {
           position: absolute;
           top: 50px;
           right: 0;
-          width: 230px;
+          width: 274px;
           background: #ffffff;
           border: 1px solid rgba(15,23,42,0.10);
           border-radius: 22px;
@@ -1569,8 +1708,8 @@ export default function PerfilGuiaPage() {
           font-weight: 900;
           cursor: pointer;
           display: flex;
-          align-items: center;
-          gap: 8px;
+          align-items: flex-start;
+          gap: 10px;
         }
 
         .menuButton:hover {
@@ -1579,6 +1718,36 @@ export default function PerfilGuiaPage() {
 
         .menuButton.danger {
           color: #991b1b;
+        }
+
+        .menuIcon {
+          width: 20px;
+          flex: 0 0 20px;
+          display: inline-flex;
+          justify-content: center;
+          line-height: 1.25;
+        }
+
+        .menuText {
+          min-width: 0;
+          display: grid;
+          gap: 2px;
+        }
+
+        .menuText strong {
+          display: block;
+          color: inherit;
+          font-size: 13px;
+          line-height: 1.2;
+          font-weight: 950;
+        }
+
+        .menuText small {
+          display: block;
+          color: #64748b;
+          font-size: 11px;
+          line-height: 1.35;
+          font-weight: 750;
         }
 
         .container {
@@ -1800,6 +1969,42 @@ export default function PerfilGuiaPage() {
           overflow: hidden;
         }
 
+
+        .statusProfileCard,
+        .clickableCard {
+          cursor: pointer;
+          transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        .statusProfileCard:hover,
+        .statusProfileCard:focus-visible,
+        .clickableCard:hover,
+        .clickableCard:focus-visible {
+          transform: translateY(-2px);
+          border-color: rgba(32,60,46,0.16);
+          box-shadow: 0 18px 42px rgba(15,23,42,0.10);
+          outline: none;
+        }
+
+        .heroBioText {
+          white-space: pre-wrap;
+        }
+
+        .statusOpenHint {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          background: #eef2e5;
+          color: #203c2e;
+          padding: 8px 11px;
+          font-size: 11px;
+          font-weight: 950;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+
         .cardHeader {
           padding: 18px 20px;
           border-bottom: 1px solid rgba(15,23,42,0.06);
@@ -1913,6 +2118,14 @@ export default function PerfilGuiaPage() {
 
         .field.full {
           grid-column: 1 / -1;
+        }
+
+        .editNameField {
+          margin-bottom: 12px;
+        }
+
+        .editBioField {
+          margin-bottom: 0;
         }
 
         .suporteTextarea {
@@ -2086,65 +2299,227 @@ export default function PerfilGuiaPage() {
 
         .unifiedMedalGrid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0,1fr));
+          grid-template-columns: repeat(5, minmax(0,1fr));
           gap: 12px;
+          align-items: start;
         }
 
         .unifiedMedal {
-          background:
-            radial-gradient(circle at 50% 0%, rgba(255,255,255,0.86), transparent 35%),
-            #fffdf7;
+          aspect-ratio: 1 / 1;
           border: 1px solid rgba(15,23,42,0.06);
           border-radius: 24px;
-          padding: 12px 10px 14px;
-          text-align: center;
-          transition: 0.2s ease;
-          min-height: 154px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: flex-start;
+          background:
+            radial-gradient(circle at 50% 0%, rgba(251,146,60,0.10), transparent 52%),
+            rgba(255,253,247,0.86);
+          display: grid;
+          place-items: center;
+          padding: 12px;
+          cursor: pointer;
+          color: inherit;
+          font: inherit;
+          transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+          overflow: hidden;
+        }
+
+        .unifiedMedal:hover {
+          transform: translateY(-2px);
+          border-color: rgba(153,27,27,0.18);
+          box-shadow: 0 14px 28px rgba(42,55,36,0.10);
         }
 
         .unifiedMedal.current {
-          border-color: rgba(153,27,27,0.24);
-          box-shadow: 0 18px 42px rgba(153,27,27,0.10);
+          border-color: rgba(153,27,27,0.22);
+          box-shadow: 0 16px 34px rgba(153,27,27,0.10);
+          background:
+            radial-gradient(circle at 50% 0%, rgba(251,146,60,0.16), transparent 54%),
+            #fffdf7;
         }
 
         .unifiedMedal.cadastur {
-          border-color: rgba(30,64,175,0.12);
+          border-color: rgba(37,99,235,0.16);
           background:
-            radial-gradient(circle at 50% 0%, rgba(219,234,254,0.72), transparent 38%),
+            radial-gradient(circle at 50% 0%, rgba(219,234,254,0.52), transparent 54%),
             #fffdf7;
         }
 
         .unifiedMedal.locked {
-          opacity: 0.38;
-          filter: grayscale(0.85);
+          background:
+            repeating-linear-gradient(
+              135deg,
+              rgba(23,32,24,0.025) 0,
+              rgba(23,32,24,0.025) 6px,
+              transparent 6px,
+              transparent 12px
+            ),
+            rgba(255,253,247,0.72);
+        }
+
+        .unifiedMedalFrame {
+          width: min(96px, 86%);
+          height: min(96px, 86%);
+          display: grid;
+          place-items: center;
+          background: transparent;
+          overflow: visible;
         }
 
         .unifiedMedalArt {
-          width: 86px;
-          height: 86px;
+          width: auto;
+          height: auto;
+          max-width: 86%;
+          max-height: 86%;
           object-fit: contain;
           display: block;
-          margin-bottom: 8px;
-          filter: drop-shadow(0 12px 18px rgba(17,24,39,0.14));
+          mix-blend-mode: multiply;
+          filter: drop-shadow(0 8px 12px rgba(23,32,24,0.10));
         }
 
-        .unifiedMedalName {
-          color: #172018;
-          font-size: 12px;
-          font-weight: 950;
-          line-height: 1.22;
+        .unifiedMedal.beta .unifiedMedalArt {
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-10%);
+          transform-origin: center center;
         }
 
-        .unifiedMedalMeta {
-          margin-top: 5px;
-          color: #64748b;
+        .unifiedMedal.cadastur .unifiedMedalArt {
+          max-width: 72%;
+          max-height: 84%;
+          transform: translateY(-6%);
+          transform-origin: center center;
+        }
+
+        .unifiedMedal.medalKey-cadastur-informado .unifiedMedalArt,
+        .unifiedMedal.medalKey-cadastur-preenchido .unifiedMedalArt {
+          max-width: 72%;
+          max-height: 84%;
+          transform: translateY(-6%);
+        }
+
+        .unifiedMedal.medalKey-guia-verificado .unifiedMedalArt,
+        .unifiedMedal.medalKey-guia-verificado-cadastur .unifiedMedalArt {
+          max-width: 72%;
+          max-height: 84%;
+          transform: translateY(-6%);
+        }
+
+        .unifiedMedal.medalKey-cadastur-ativo .unifiedMedalArt {
+          max-width: 68%;
+          max-height: 80%;
+          transform: translateY(-6%);
+        }
+
+        .unifiedMedal.medalKey-cadastur-bronze .unifiedMedalArt,
+        .unifiedMedal.medalKey-cadastur-prata .unifiedMedalArt,
+        .unifiedMedal.medalKey-cadastur-ouro .unifiedMedalArt,
+        .unifiedMedal.medalKey-cadastur-platina .unifiedMedalArt,
+        .unifiedMedal.medalKey-cadastur-onyx .unifiedMedalArt {
+          max-width: 56%;
+          max-height: 70%;
+          transform: translateY(-14%);
+        }
+
+        .unifiedMedal.progressao .unifiedMedalArt,
+        .unifiedMedal.atuacao .unifiedMedalArt {
+          max-width: 84%;
+          max-height: 84%;
+        }
+
+        .unifiedMedal.locked .unifiedMedalArt {
+          filter: grayscale(1) brightness(1.12) opacity(0.76) drop-shadow(0 8px 12px rgba(23,32,24,0.10));
+        }
+
+        .medalDetailArt {
+          width: 132px;
+          height: 132px;
+          margin: 2px auto 12px;
+          display: grid;
+          place-items: center;
+          background: transparent;
+          overflow: visible;
+        }
+
+        .medalDetailArt img {
+          width: auto;
+          height: auto;
+          max-width: 86%;
+          max-height: 86%;
+          object-fit: contain;
+          display: block;
+          filter: drop-shadow(0 12px 18px rgba(23,32,24,0.14));
+        }
+
+        .medalDetailArt.beta img {
+          max-width: 82%;
+          max-height: 82%;
+          transform: translateY(-10%);
+          transform-origin: center center;
+        }
+
+        .medalDetailArt.cadastur img {
+          max-width: 72%;
+          max-height: 84%;
+          transform: translateY(-6%);
+          transform-origin: center center;
+        }
+
+        .medalDetailArt.medalKey-cadastur-informado img,
+        .medalDetailArt.medalKey-cadastur-preenchido img,
+        .medalDetailArt.medalKey-guia-verificado img,
+        .medalDetailArt.medalKey-guia-verificado-cadastur img {
+          max-width: 72%;
+          max-height: 84%;
+          transform: translateY(-6%);
+        }
+
+        .medalDetailArt.medalKey-cadastur-ativo img {
+          max-width: 68%;
+          max-height: 80%;
+          transform: translateY(-6%);
+        }
+
+        .medalDetailArt.medalKey-cadastur-bronze img,
+        .medalDetailArt.medalKey-cadastur-prata img,
+        .medalDetailArt.medalKey-cadastur-ouro img,
+        .medalDetailArt.medalKey-cadastur-platina img,
+        .medalDetailArt.medalKey-cadastur-onyx img {
+          max-width: 56%;
+          max-height: 70%;
+          transform: translateY(-14%);
+        }
+
+        .medalStatusPill {
+          display: inline-flex;
+          border-radius: 999px;
+          padding: 7px 10px;
           font-size: 10px;
-          font-weight: 850;
-          line-height: 1.25;
+          font-weight: 950;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          background: #eef2e5;
+          color: #475569;
+          margin-bottom: 10px;
+        }
+
+        .medalStatusPill.unlocked {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .medalStatusPill.locked {
+          background: rgba(100,116,139,0.10);
+          color: #64748b;
+        }
+
+        .privacyNote {
+          border-radius: 18px;
+          background: rgba(32,60,46,0.06);
+          border: 1px solid rgba(32,60,46,0.10);
+          color: #203c2e;
+          padding: 12px 13px;
+          font-size: 12px;
+          line-height: 1.45;
+          font-weight: 800;
+          margin: 0 0 14px;
         }
 
         .reviewList {
@@ -2598,6 +2973,19 @@ export default function PerfilGuiaPage() {
         }
 
         @media (max-width: 760px) {
+          .heroText {
+            font-size: 13px;
+            line-height: 1.45;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+          }
+
+          .progressHeroCard {
+            display: none;
+          }
+
           .supportGrid {
             grid-template-columns: 1fr;
           }
@@ -2655,9 +3043,13 @@ export default function PerfilGuiaPage() {
           }
 
           .formGrid,
-          .statsGrid,
-          .unifiedMedalGrid {
+          .statsGrid {
             grid-template-columns: 1fr 1fr;
+          }
+
+          .unifiedMedalGrid {
+            grid-template-columns: repeat(4, minmax(0,1fr));
+            gap: 9px;
           }
 
           .cadasturStatusCard {
@@ -2671,18 +3063,41 @@ export default function PerfilGuiaPage() {
         }
 
         @media (max-width: 480px) {
+          .hero {
+            padding: 16px;
+          }
+
+          .heroGrid {
+            gap: 14px;
+          }
+
+          .avatarCard {
+            max-width: 150px;
+            justify-self: center;
+          }
+
+          .avatarBox {
+            height: 132px;
+            border-radius: 24px;
+          }
+
+          .cadasturBadge {
+            font-size: 11px;
+            padding: 7px 10px;
+          }
+
           .heroTitle {
             font-size: 38px;
           }
 
           .unifiedMedal {
-            min-height: 138px;
-            padding: 10px 8px 12px;
+            border-radius: 18px;
+            padding: 8px;
           }
 
-          .unifiedMedalArt {
-            width: 74px;
-            height: 74px;
+          .unifiedMedalFrame {
+            width: 82%;
+            height: 82%;
           }
 
           .formGrid,
@@ -2691,7 +3106,7 @@ export default function PerfilGuiaPage() {
           }
 
           .unifiedMedalGrid {
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(4, minmax(0,1fr));
           }
 
           .routeCard {
@@ -2742,9 +3157,37 @@ export default function PerfilGuiaPage() {
                 <button
                   type="button"
                   className="menuButton"
+                  onClick={abrirEdicaoBio}
+                >
+                  <span className="menuIcon">✏️</span>
+                  <span className="menuText">
+                    <strong>Editar bio pública</strong>
+                    <small>Apresentação que aparece no perfil do guia.</small>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="menuButton"
+                  onClick={abrirDadosGuiaPrivados}
+                >
+                  <span className="menuIcon">🔒</span>
+                  <span className="menuText">
+                    <strong>Dados privados</strong>
+                    <small>PIX, CADASTUR e atualizações ficam protegidos.</small>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="menuButton"
                   onClick={abrirSuporte}
                 >
-                  🛟 Ajuda e suporte
+                  <span className="menuIcon">🛟</span>
+                  <span className="menuText">
+                    <strong>Ajuda e suporte</strong>
+                    <small>Enviar dúvida, sugestão ou reportar bug.</small>
+                  </span>
                 </button>
 
                 <button
@@ -2752,7 +3195,11 @@ export default function PerfilGuiaPage() {
                   className="menuButton"
                   onClick={abrirAlterarSenha}
                 >
-                  🔐 Alterar senha
+                  <span className="menuIcon">🔐</span>
+                  <span className="menuText">
+                    <strong>Alterar senha</strong>
+                    <small>Atualizar o acesso da conta.</small>
+                  </span>
                 </button>
 
                 <button
@@ -2760,7 +3207,11 @@ export default function PerfilGuiaPage() {
                   className="menuButton danger"
                   onClick={sair}
                 >
-                  🚪 Sair
+                  <span className="menuIcon">🚪</span>
+                  <span className="menuText">
+                    <strong>Sair</strong>
+                    <small>Encerrar sessão neste dispositivo.</small>
+                  </span>
                 </button>
               </div>
             )}
@@ -2785,9 +3236,9 @@ export default function PerfilGuiaPage() {
                 )}
               </div>
 
-              <div className="avatarHint">
-                {enviandoAvatar ? 'Enviando foto...' : 'Clique para alterar sua foto'}
-              </div>
+              {enviandoAvatar && (
+                <div className="avatarHint">Enviando foto...</div>
+              )}
 
               <input
                 ref={fileInputRef}
@@ -2805,12 +3256,12 @@ export default function PerfilGuiaPage() {
                 {nomeGuia()}
               </h1>
 
-              <p className="heroText">
-                Organize sua presença como guia, acompanhe sua evolução, mantenha seus dados profissionais atualizados e fortaleça sua reputação dentro da comunidade PrussikTrails.
+              <p className="heroText heroBioText">
+                {bio || 'Sua bio ainda não foi preenchida. Use a engrenagem para editar seu nome público e escrever uma apresentação simples, humana e confiável para os aventureiros conhecerem melhor você.'}
               </p>
 
               <div className="cadasturBadge">
-                {cadasturInformado ? `CADASTUR: ${cadasturNumero}` : 'CADASTUR ainda não informado'}
+                {cadasturResumo.titulo}
               </div>
             </div>
 
@@ -2836,153 +3287,6 @@ export default function PerfilGuiaPage() {
             <section className="card">
               <div className="cardHeader">
                 <div>
-                  <h2 className="cardTitle">Bio do guia</h2>
-                  <div className="cardSub">
-                    Essa apresentação ajuda o cliente a entender seu estilo, sua experiência e sua forma de conduzir trilhas.
-                  </div>
-                </div>
-
-                {!editandoBio && (
-                  <button
-                    type="button"
-                    className="btn light"
-                    onClick={() => setEditandoBio(true)}
-                  >
-                    Editar bio
-                  </button>
-                )}
-              </div>
-
-              <div className="cardBody">
-                {editandoBio ? (
-                  <>
-                    <textarea
-                      className="textarea"
-                      value={bio}
-                      onChange={(event) => setBio(event.target.value)}
-                      placeholder="Conte quem você é, sua experiência, seu estilo de condução e o que os aventureiros podem esperar das suas trilhas."
-                    />
-
-                    <div className="actionRow">
-                      <button
-                        type="button"
-                        className="btn green"
-                        onClick={salvarBio}
-                        disabled={salvandoBio}
-                      >
-                        {salvandoBio ? 'Salvando...' : 'Salvar bio'}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn light"
-                        disabled={salvandoBio}
-                        onClick={() => {
-                          setBio(guia?.bio_guia || guia?.bio || '')
-                          setEditandoBio(false)
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="bioText">
-                    {bio || 'Sua bio ainda não foi preenchida. Escreva uma apresentação simples, humana e confiável para os aventureiros conhecerem melhor você.'}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="cardHeader">
-                <div>
-                  <h2 className="cardTitle">Recebimentos e credencial</h2>
-                  <div className="cardSub">
-                    A chave PIX fica privada para repasses. O CADASTUR inicia como informado e depende de confirmação do Admin para liberar as medalhas de verificação.
-                  </div>
-                </div>
-              </div>
-
-              <div className="cardBody">
-                <div className="formGrid">
-                  <div className="field">
-                    <label className="label">Tipo da chave PIX</label>
-                    <select
-                      className="select"
-                      value={pixTipo}
-                      onChange={(event) => setPixTipo(event.target.value)}
-                    >
-                      {PIX_TIPOS.map((tipo) => (
-                        <option key={tipo.value} value={tipo.value}>
-                          {tipo.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="field">
-                    <label className="label">Chave PIX para recebimentos</label>
-                    <input
-                      className="input"
-                      value={pixChave}
-                      onChange={(event) => setPixChave(event.target.value)}
-                      placeholder="Informe sua chave PIX"
-                    />
-                  </div>
-
-                  <div className="field full">
-                    <label className="label">CADASTUR</label>
-                    <input
-                      className="input"
-                      value={cadastur}
-                      onChange={(event) => setCadastur(event.target.value)}
-                      placeholder="Informe seu número CADASTUR"
-                    />
-                    <div className="helper">
-                      Ao salvar, a primeira medalha de CADASTUR informado poderá aparecer. A validação oficial depende de conferência administrativa.
-                    </div>
-                  </div>
-                </div>
-
-                <div className="cadasturStatusCard">
-                  <img
-                    className="cadasturStatusIcon"
-                    src={
-                      cadasturAtivo
-                        ? `${MEDALHA_CADASTUR_BASE}/03_cadastur_ativo.svg`
-                        : cadasturVerificado
-                          ? `${MEDALHA_CADASTUR_BASE}/02_guia_verificado.svg`
-                          : `${MEDALHA_CADASTUR_BASE}/01_cadastur_preenchido.svg`
-                    }
-                    alt={cadasturResumo.titulo}
-                  />
-
-                  <div>
-                    <div className="cadasturStatusTitle">{cadasturResumo.titulo}</div>
-                    <div className="cadasturStatusText">{cadasturResumo.descricao}</div>
-                    <span className={`cadasturStatusTag ${cadasturResumo.classe}`}>
-                      {cadasturResumo.classe}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="actionRow">
-                  <button
-                    type="button"
-                    className="btn green"
-                    onClick={salvarDadosPrivados}
-                    disabled={salvandoDados}
-                  >
-                    {salvandoDados ? 'Salvando...' : 'Salvar dados'}
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="cardHeader">
-                <div>
                   <h2 className="cardTitle">Medalhas do guia</h2>
                   <div className="cardSub">
                     Progressão, atuação na plataforma, conquistas Beta e credenciais CADASTUR em uma única coleção.
@@ -2993,21 +3297,22 @@ export default function PerfilGuiaPage() {
               <div className="cardBody">
                 <div className="unifiedMedalGrid">
                   {medalhasUnificadas.map((medalha) => (
-                    <div
+                    <button
+                      type="button"
                       key={`${medalha.categoria}-${medalha.nome}`}
-                      className={`unifiedMedal ${medalha.categoria} ${medalha.desbloqueado ? '' : 'locked'} ${medalha.destaque ? 'current' : ''}`}
+                      className={`unifiedMedal ${medalha.categoria} medalKey-${classeVisualMedalha(medalha.nome)} ${medalha.desbloqueado ? '' : 'locked'} ${medalha.destaque ? 'current' : ''}`}
                       title={medalha.nome}
+                      onClick={() => setMedalhaSelecionada(medalha)}
+                      aria-label={medalha.desbloqueado ? `Ver conquista ${medalha.nome}` : 'Ver medalha bloqueada'}
                     >
-                      <img
-                        className="unifiedMedalArt"
-                        src={medalha.svg}
-                        alt={medalha.nome}
-                      />
-                      <div className="unifiedMedalName">{medalha.nome}</div>
-                      <div className="unifiedMedalMeta">
-                        {medalha.desbloqueado ? medalha.subtitulo || 'Conquistada' : medalha.subtitulo || 'Bloqueada'}
-                      </div>
-                    </div>
+                      <span className="unifiedMedalFrame">
+                        <img
+                          className="unifiedMedalArt"
+                          src={medalha.svg}
+                          alt={medalha.desbloqueado ? medalha.nome : 'Medalha bloqueada'}
+                        />
+                      </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -3015,35 +3320,17 @@ export default function PerfilGuiaPage() {
           </div>
 
           <aside className="stack">
-            <section className="benefitCard">
-              <div className="benefitPill">
-                Benefício de fundador
-              </div>
-
-              <div className="benefitTitle">
-                Guia Pioneiro Beta
-              </div>
-
-              <div className="benefitText">
-                Durante a fase Beta, a taxa PrussikTrails será de 5% sobre cada reserva confirmada. Após o Beta, a taxa padrão passará para 7%.
-              </div>
-
-              <div className="benefitText">
-                Guias ativos nesta fase inicial poderão manter o benefício de 5% por tempo determinado e receber a medalha Guia Pioneiro Beta no perfil.
-              </div>
-
-              <div className="benefitText">
-                Taxa atual cadastrada: <strong>{Number(guia?.taxa_plataforma_percentual || 5).toFixed(2)}%</strong>
-              </div>
-            </section>
-
-            <section className="card">
+            <section
+              className="card statusProfileCard"
+              role="button"
+              tabIndex={0}
+              onClick={abrirPerfilPublicoGuia}
+              onKeyDown={handleStatusCardKeyDown}
+              aria-label="Abrir meu perfil público de guia"
+            >
               <div className="cardHeader">
                 <div>
-                  <h2 className="cardTitle">Leitura CADASTUR</h2>
-                  <div className="cardSub">
-                    A validação será concluída pelo Admin.
-                  </div>
+                  <h2 className="cardTitle">Status profissional</h2>
                 </div>
               </div>
 
@@ -3068,22 +3355,21 @@ export default function PerfilGuiaPage() {
               </div>
             </section>
 
-            <section className="card">
+            <section
+              className="card reviewsCard clickableCard"
+              role="button"
+              tabIndex={0}
+              onClick={abrirAvaliacoesGuia}
+              onKeyDown={handleAvaliacoesCardKeyDown}
+              aria-label="Abrir painel de avaliações do guia"
+            >
               <div className="cardHeader">
                 <div>
                   <h2 className="cardTitle">Avaliações</h2>
                   <div className="cardSub">
-                    Clique no nome do aventureiro para abrir o perfil público do cliente.
+                    Toque no card para abrir o painel completo. Toque em uma avaliação para ver o perfil público do cliente.
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  className="btn light"
-                  onClick={() => router.push('/guia/avaliacoes')}
-                >
-                  Ver painel
-                </button>
               </div>
 
               <div className="cardBody">
@@ -3099,12 +3385,14 @@ export default function PerfilGuiaPage() {
                         key={avaliacao.id}
                         role={avaliacao.cliente_id ? 'button' : undefined}
                         tabIndex={avaliacao.cliente_id ? 0 : undefined}
-                        onClick={() => {
+                        onClick={(event) => {
+                          event.stopPropagation()
                           if (avaliacao.cliente_id) {
                             router.push(`/cliente/publico/${avaliacao.cliente_id}`)
                           }
                         }}
                         onKeyDown={(event) => {
+                          event.stopPropagation()
                           if (avaliacao.cliente_id && (event.key === 'Enter' || event.key === ' ')) {
                             event.preventDefault()
                             router.push(`/cliente/publico/${avaliacao.cliente_id}`)
@@ -3156,6 +3444,209 @@ export default function PerfilGuiaPage() {
           onCancel={limparCropAvatar}
           onConfirm={confirmarCropAvatar}
         />
+      )}
+
+      {editandoBio && (
+        <div className="modalOverlay" onClick={() => !salvandoBio && setEditandoBio(false)}>
+          <section className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <h2 className="modalTitle">Editar perfil público</h2>
+              <div className="modalSub">
+                Nome e bio aparecem no card principal do seu perfil de guia.
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <div className="field">
+                <label className="label">Nome público</label>
+                <input
+                  className="input"
+                  value={nomePerfil}
+                  onChange={(event) => setNomePerfil(event.target.value)}
+                  placeholder="Nome que aparece para os aventureiros"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Bio pública</label>
+                <textarea
+                  className="textarea"
+                  value={bio}
+                  onChange={(event) => setBio(event.target.value)}
+                  placeholder="Conte quem você é, sua experiência, seu estilo de condução e o que os aventureiros podem esperar das suas trilhas."
+                />
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="btn green"
+                  onClick={salvarBio}
+                  disabled={salvandoBio}
+                >
+                  {salvandoBio ? 'Salvando...' : 'Salvar perfil'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn light"
+                  disabled={salvandoBio}
+                  onClick={() => {
+                    setNomePerfil(nomeGuia())
+                    setBio(guia?.bio_guia || guia?.bio || '')
+                    setEditandoBio(false)
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {modalDadosGuiaAberto && (
+        <div className="modalOverlay" onClick={() => !salvandoDados && setModalDadosGuiaAberto(false)}>
+          <section className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <h2 className="modalTitle">Dados privados do guia</h2>
+              <div className="modalSub">
+                Chave PIX, CADASTUR e atualizações profissionais ficam protegidos nesta área de configurações.
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <p className="privacyNote">
+                Estes dados não ficam expostos no corpo do perfil. O CADASTUR poderá aparecer publicamente apenas como credencial informada/verificada, conforme regra do app.
+              </p>
+
+              <div className="formGrid">
+                <div className="field">
+                  <label className="label">Tipo da chave PIX</label>
+                  <select
+                    className="select"
+                    value={pixTipo}
+                    onChange={(event) => setPixTipo(event.target.value)}
+                  >
+                    {PIX_TIPOS.map((tipo) => (
+                      <option key={tipo.value} value={tipo.value}>
+                        {tipo.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label className="label">Chave PIX para recebimentos</label>
+                  <input
+                    className="input"
+                    value={pixChave}
+                    onChange={(event) => setPixChave(event.target.value)}
+                    placeholder="Informe sua chave PIX"
+                  />
+                </div>
+
+                <div className="field full">
+                  <label className="label">CADASTUR</label>
+                  <input
+                    className="input"
+                    value={cadastur}
+                    onChange={(event) => setCadastur(event.target.value)}
+                    placeholder="Informe seu número CADASTUR"
+                  />
+                  <div className="helper">
+                    Ao salvar, o CADASTUR ficará como informado e aguardará conferência administrativa.
+                  </div>
+                </div>
+              </div>
+
+              <div className="cadasturStatusCard">
+                <img
+                  className="cadasturStatusIcon"
+                  src={
+                    cadasturAtivo
+                      ? `${MEDALHA_CADASTUR_BASE}/03_cadastur_ativo.svg`
+                      : cadasturVerificado
+                        ? `${MEDALHA_CADASTUR_BASE}/02_guia_verificado.svg`
+                        : `${MEDALHA_CADASTUR_BASE}/01_cadastur_preenchido.svg`
+                  }
+                  alt={cadasturResumo.titulo}
+                />
+
+                <div>
+                  <div className="cadasturStatusTitle">{cadasturResumo.titulo}</div>
+                  <div className="cadasturStatusText">{cadasturResumo.descricao}</div>
+                  <span className={`cadasturStatusTag ${cadasturResumo.classe}`}>
+                    {cadasturResumo.classe}
+                  </span>
+                </div>
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="btn green"
+                  onClick={async () => {
+                    await salvarDadosPrivados()
+                    setModalDadosGuiaAberto(false)
+                  }}
+                  disabled={salvandoDados}
+                >
+                  {salvandoDados ? 'Salvando...' : 'Salvar dados'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn light"
+                  disabled={salvandoDados}
+                  onClick={() => setModalDadosGuiaAberto(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {medalhaSelecionada && (
+        <div className="modalOverlay" onClick={() => setMedalhaSelecionada(null)}>
+          <section className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <h2 className="modalTitle">{medalhaSelecionada.desbloqueado ? medalhaSelecionada.nome : 'Conquista bloqueada'}</h2>
+              <div className="modalSub">
+                {medalhaSelecionada.desbloqueado
+                  ? medalhaSelecionada.subtitulo || 'Conquista desbloqueada no perfil do guia.'
+                  : 'Continue sua jornada como guia para revelar os detalhes desta conquista.'}
+              </div>
+            </div>
+
+            <div className="modalBody">
+              <div className={`medalDetailArt ${medalhaSelecionada.categoria || ''} medalKey-${classeVisualMedalha(medalhaSelecionada.nome)}`}>
+                <img
+                  src={medalhaSelecionada.svg}
+                  alt={medalhaSelecionada.desbloqueado ? medalhaSelecionada.nome : 'Medalha bloqueada'}
+                />
+              </div>
+
+              <div className={`medalStatusPill ${medalhaSelecionada.desbloqueado ? 'unlocked' : 'locked'}`}>
+                {medalhaSelecionada.desbloqueado ? 'Conquistada' : 'Bloqueada'}
+              </div>
+
+              <p className="helper">
+                Categoria: {medalhaSelecionada.categoria}. {medalhaSelecionada.desbloqueado
+                  ? 'Esta conquista já faz parte do Passaporte do Guia.'
+                  : 'A arte permanece visível como parte da coleção, mas os detalhes completos serão revelados ao desbloquear.'}
+              </p>
+
+              <div className="modalActions">
+                <button type="button" className="btn dark" onClick={() => setMedalhaSelecionada(null)}>
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
       )}
 
       {modalSuporteAberto && (

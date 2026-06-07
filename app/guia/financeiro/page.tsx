@@ -847,17 +847,16 @@ export default function GuiaFinanceiroPage() {
 
       <header className="topbar">
         <div className="topbarInner">
+          <div className="topbarSpacer" aria-hidden="true" />
+
           <button
             type="button"
-            className="brandHeader"
+            className="brandHeader brandLogoOnly"
             onClick={() => router.push('/guia/dashboard')}
-            aria-label="PrussikTrails"
+            aria-label="Voltar para a dashboard do guia"
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" className="brandLogo" />
-            <span className="brandTextBlock">
-              <span className="brandName">PrussikTrails</span>
-              <span className="brandSubtitle">Financeiro do guia</span>
-            </span>
+            <span className="brandSubtitle">Financeiro do guia</span>
           </button>
 
           <button
@@ -1172,9 +1171,9 @@ export default function GuiaFinanceiroPage() {
             </section>
 
             <section className="infoBox beta">
-              <h3>Taxa Beta</h3>
+              <h3>Benefício de fundador · Guia Pioneiro Beta</h3>
               <p>
-                Durante a fase Beta, a taxa PrussikTrails é de <strong>5%</strong>. Após o Beta, a taxa padrão passa para <strong>7%</strong>. Guias ativos nesta fase poderão manter o benefício por tempo determinado.
+                Durante a fase Beta, a taxa PrussikTrails é de <strong>5%</strong>. Após o Beta, a taxa padrão passa para <strong>7%</strong>. Guias ativos nesta fase poderão manter o benefício por tempo determinado e a conquista de Guia Pioneiro Beta no passaporte.
               </p>
             </section>
           </aside>
@@ -1305,59 +1304,64 @@ const estilos = `
     max-width: 1180px;
     margin: 0 auto;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+  }
+
+  .topbarSpacer {
+    width: 42px;
+    height: 42px;
+    pointer-events: none;
   }
 
   .brandHeader {
+    grid-column: 2;
+    justify-self: center;
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
-    gap: 11px;
+    justify-content: center;
+    gap: 4px;
     min-width: 0;
-    width: fit-content;
-    max-width: 100%;
+    max-width: min(520px, calc(100vw - 120px));
     border: 0;
     background: transparent;
     padding: 0;
-    text-align: left;
+    text-align: center;
     cursor: pointer;
     color: #203c2e;
   }
 
   .brandLogo {
-    width: 74px;
-    height: 46px;
+    width: clamp(140px, 34vw, 250px);
+    height: auto;
+    max-height: 58px;
     object-fit: contain;
-    flex: 0 0 auto;
     display: block;
   }
 
-  .brandTextBlock {
-    min-width: 0;
-    display: grid;
-    gap: 2px;
-  }
-
+  .brandTextBlock,
   .brandName {
-    color: #203c2e;
-    font-size: clamp(22px, 3vw, 34px);
-    font-weight: 950;
-    line-height: 0.96;
-    letter-spacing: -0.07em;
-    white-space: nowrap;
+    display: none;
   }
 
   .brandSubtitle {
+    display: block;
     color: #7b8372;
-    font-size: clamp(8px, 1vw, 11px);
-    font-weight: 950;
-    letter-spacing: 0.14em;
+    font-size: clamp(8px, 1.05vw, 12px);
+    font-weight: 850;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .profileButton {
+    grid-column: 3;
+    justify-self: end;
     width: 42px;
     height: 42px;
     border: 1px solid rgba(32,60,46,0.10);
@@ -2041,6 +2045,7 @@ const estilos = `
     }
 
     .topbarInner {
+      grid-template-columns: 36px minmax(0, 1fr) 36px;
       gap: 8px;
     }
 

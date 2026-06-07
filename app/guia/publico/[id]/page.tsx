@@ -1336,22 +1336,24 @@ export default function PerfilPublicoGuiaPage() {
           </div>
         </section>
 
-        <section className="quickStats">
-          <article>
-            <strong>{stats.totalRoteiros}</strong>
-            <span>roteiros realizados</span>
-          </article>
-          <article>
-            <strong>{stats.totalKm.toFixed(0)}</strong>
-            <span>km realizados</span>
-          </article>
-          <article>
-            <strong>{stats.totalClientes}</strong>
-            <span>clientes atendidos</span>
-          </article>
-          <article>
-            <strong>{stats.totalAvaliacoes}</strong>
-            <span>avaliações</span>
+        <section className="quickStats" aria-label="Resumo público do guia">
+          <article className="quickStatsCard">
+            <div className="quickStatItem">
+              <strong>{stats.totalRoteiros}</strong>
+              <span>roteiros realizados</span>
+            </div>
+            <div className="quickStatItem">
+              <strong>{stats.totalKm.toFixed(0)}</strong>
+              <span>km realizados</span>
+            </div>
+            <div className="quickStatItem">
+              <strong>{stats.totalClientes}</strong>
+              <span>clientes atendidos</span>
+            </div>
+            <div className="quickStatItem">
+              <strong>{stats.totalAvaliacoes}</strong>
+              <span>avaliações</span>
+            </div>
           </article>
         </section>
 
@@ -1382,15 +1384,17 @@ export default function PerfilPublicoGuiaPage() {
               </div>
             </section>
 
-            {principaisRoteiros.length > 0 && (
-              <section className="panel routesPanel">
-                <div className="panelHeader">
-                  <div>
-                    <h2>Experiências disponíveis</h2>
-                    <p>Alguns roteiros publicados por este guia.</p>
-                  </div>
+            <section className="panel routesPanel publishedRoutesPanel">
+              <div className="panelHeader">
+                <div>
+                  <h2>Roteiros publicados</h2>
+                  <p>Roteiros do guia disponíveis para a comunidade.</p>
                 </div>
+              </div>
 
+              {principaisRoteiros.length === 0 ? (
+                <div className="emptyState">Este guia ainda não tem roteiros publicados.</div>
+              ) : (
                 <div className="routeGrid">
                   {principaisRoteiros.map((roteiro: Roteiro) => {
                     const foto = fotoRoteiro(roteiro)
@@ -1412,8 +1416,8 @@ export default function PerfilPublicoGuiaPage() {
                     )
                   })}
                 </div>
-              </section>
-            )}
+              )}
+            </section>
           </div>
 
           <aside className="rightColumn">
@@ -1836,13 +1840,10 @@ const estilos = `
   }
 
   .quickStats {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
     margin: 16px 0;
   }
 
-  .quickStats article,
+  .quickStatsCard,
   .panel {
     background: rgba(255,255,255,0.88);
     border: 1px solid rgba(15,23,42,0.06);
@@ -1850,9 +1851,23 @@ const estilos = `
     box-shadow: 0 12px 34px rgba(15,23,42,0.06);
   }
 
-  .quickStats article {
-    padding: 16px;
+  .quickStatsCard {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    padding: 14px;
+    overflow: hidden;
+  }
+
+  .quickStatItem {
+    min-width: 0;
+    padding: 12px 14px;
     text-align: center;
+    border-right: 1px solid rgba(15,23,42,0.06);
+  }
+
+  .quickStatItem:last-child {
+    border-right: 0;
   }
 
   .quickStats strong {
@@ -1861,14 +1876,16 @@ const estilos = `
     font-size: 28px;
     font-weight: 950;
     letter-spacing: -0.06em;
+    line-height: 1;
   }
 
   .quickStats span {
     display: block;
-    margin-top: 4px;
+    margin-top: 5px;
     color: #64748b;
     font-size: 12px;
     font-weight: 850;
+    line-height: 1.25;
   }
 
   .mainGrid {
@@ -2753,17 +2770,36 @@ const estilos = `
       font-size: 12px;
     }
 
-    .quickStats {
+    .quickStatsCard {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      padding: 10px;
+      border-radius: 24px;
     }
 
-    .quickStats article {
-      padding: 12px;
-      border-radius: 22px;
+    .quickStatItem {
+      padding: 11px 8px;
+      border-right: 0;
+      border-bottom: 1px solid rgba(15,23,42,0.06);
+    }
+
+    .quickStatItem:nth-child(odd) {
+      border-right: 1px solid rgba(15,23,42,0.06);
+    }
+
+    .quickStatItem:nth-child(n + 3) {
+      border-bottom: 0;
     }
 
     .quickStats strong {
       font-size: 23px;
+    }
+
+    .quickStats span {
+      font-size: 10.5px;
+    }
+
+    .publishedRoutesPanel {
+      order: 2;
     }
 
     .panel {
