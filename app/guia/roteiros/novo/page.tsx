@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
@@ -460,6 +460,7 @@ export default function GuiaNovoRoteiroPage() {
   const [salvando, setSalvando] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
+  const [camposPendentes, setCamposPendentes] = useState<string[]>([])
 
   const [titulo, setTitulo] = useState('')
   const [descricao, setDescricao] = useState('')
@@ -497,30 +498,61 @@ export default function GuiaNovoRoteiroPage() {
   const avatarGuia = user?.avatar_url || user?.foto_url || user?.imagem_url || ''
   const nomeGuia = user?.nome || user?.name || user?.email || 'Guia'
 
-  const podeSalvar = useMemo(() => {
-    return (
-      texto(titulo).length >= 4 &&
-      texto(descricao).length >= 12 &&
-      texto(localizacao.endereco_local).length >= 3 &&
-      temCoordenadas(localizacao) &&
-      texto(dataRoteiro).length > 0 &&
-      texto(horaRoteiro).length > 0 &&
-      numeroDecimal(preco) > 0 &&
-      Boolean(imagemFile) &&
-      !salvando &&
-      !preparandoImagem
-    )
-  }, [
-    titulo,
-    descricao,
-    localizacao,
-    dataRoteiro,
-    horaRoteiro,
-    preco,
-    imagemFile,
-    salvando,
-    preparandoImagem
-  ])
+  function validarCamposObrigatorios() {
+    const pendencias: string[] = []
+
+    if (texto(titulo).length < 4) {
+      pendencias.push('Título do roteiro com pelo menos 4 caracteres.')
+    }
+
+    if (texto(descricao).length < 12) {
+      pendencias.push('Descrição curta com pelo menos 12 caracteres.')
+    }
+
+    if (texto(localizacao.endereco_local).length < 3) {
+      pendencias.push('Local principal do roteiro.')
+    }
+
+    if (!temCoordenadas(localizacao)) {
+      pendencias.push('Clique em “Localizar endereço” para confirmar as coordenadas.')
+    }
+
+    if (!texto(dataRoteiro)) {
+      pendencias.push('Data da experiência.')
+    }
+
+    if (!texto(horaRoteiro)) {
+      pendencias.push('Horário da experiência.')
+    }
+
+    if (numeroDecimal(preco) <= 0) {
+      pendencias.push('Valor por pessoa válido.')
+    }
+
+    if (!imagemFile) {
+      pendencias.push('Foto de capa do roteiro no padrão recomendado.')
+    }
+
+    return pendencias
+  }
+
+  function mostrarPendenciasFormulario(pendencias: string[]) {
+    setCamposPendentes(pendencias)
+
+    if (pendencias.length === 0) {
+      setErro('')
+      return
+    }
+
+    setErro(`Antes de avançar, complete ${pendencias.length === 1 ? 'este item' : 'estes itens'} abaixo.`)
+
+    window.requestAnimationFrame(() => {
+      const alerta = document.getElementById('pendencias-roteiro')
+      if (alerta) {
+        alerta.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    })
+  }
 
   async function iniciar() {
     setCarregando(true)
@@ -572,6 +604,7 @@ export default function GuiaNovoRoteiroPage() {
 
     setErro('')
     setMensagem('')
+    setCamposPendentes([])
 
     if (!file.type.startsWith('image/')) {
       setErro('Selecione uma imagem válida em JPG, PNG ou WebP.')
@@ -737,41 +770,14 @@ export default function GuiaNovoRoteiroPage() {
     const limiteNumero = Math.max(1, Math.floor(Number(limitePessoas || 1)))
     const dataHoraBrasil = montarDataHoraBrasil(dataLimpa, horaLimpa)
 
-    if (tituloLimpo.length < 4) {
-      setErro('Informe um título claro para o roteiro.')
+    const pendencias = validarCamposObrigatorios()
+
+    if (pendencias.length > 0) {
+      mostrarPendenciasFormulario(pendencias)
       return
     }
 
-    if (descricaoLimpa.length < 12) {
-      setErro('Escreva uma descrição curta para apresentar o roteiro.')
-      return
-    }
-
-    if (!localPrincipal) {
-      setErro('Informe o local principal do roteiro.')
-      return
-    }
-
-    if (!temCoordenadas(localizacao)) {
-      setErro('Clique em "Localizar endereço" antes de salvar o roteiro. Isso libera clima, mapa e segurança.')
-      return
-    }
-
-    if (!dataLimpa || !horaLimpa) {
-      setErro('Informe data e horário da experiência.')
-      return
-    }
-
-    if (precoNumero <= 0) {
-      setErro('Informe um valor válido para o roteiro.')
-      return
-    }
-
-    if (!imagemFile) {
-      setErro('Selecione uma foto de capa para o roteiro. O padrão recomendado é 1200 x 900 px.')
-      return
-    }
-
+    setCamposPendentes([])
     setSalvando(true)
 
     try {
@@ -946,6 +952,17 @@ export default function GuiaNovoRoteiroPage() {
 
         {erro && <div className="alert error">{erro}</div>}
         {mensagem && <div className="alert success">{mensagem}</div>}
+
+        {camposPendentes.length > 0 && (
+          <section className="validationBox" id="pendencias-roteiro" aria-live="polite">
+            <strong>Para avançar, complete:</strong>
+            <ul>
+              {camposPendentes.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <form className="formGrid" onSubmit={handleSubmit}>
           <section className="card mainCard">
@@ -1183,8 +1200,8 @@ export default function GuiaNovoRoteiroPage() {
 
           <section className="submitBar">
             <div>
-              <strong>Enviar para aprovação</strong>
-              <span>O roteiro ficará pendente até o Admin revisar e publicar.</span>
+              <strong>Avançar para aprovação</strong>
+              <span>Clique em avançar. Se faltar algo, o app informa o que precisa ser preenchido.</span>
             </div>
 
             <div className="submitActions">
@@ -1200,9 +1217,9 @@ export default function GuiaNovoRoteiroPage() {
               <button
                 type="submit"
                 className="primaryButton"
-                disabled={!podeSalvar}
+                disabled={salvando || preparandoImagem}
               >
-                {salvando ? 'Salvando...' : preparandoImagem ? 'Preparando imagem...' : 'Criar roteiro'}
+                {salvando ? 'Salvando...' : preparandoImagem ? 'Preparando imagem...' : 'Avançar'}
               </button>
             </div>
           </section>
@@ -1403,9 +1420,37 @@ const styles = `
     color: #166534;
   }
 
+  .validationBox {
+    margin-bottom: 14px;
+    border-radius: 22px;
+    padding: 15px 16px;
+    background: #fff7ed;
+    border: 1px solid rgba(234, 88, 12, 0.18);
+    color: #7c2d12;
+    box-shadow: 0 12px 30px rgba(234, 88, 12, 0.07);
+  }
+
+  .validationBox strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .validationBox ul {
+    margin: 9px 0 0;
+    padding-left: 18px;
+  }
+
+  .validationBox li {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 850;
+  }
+
   .formGrid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 390px;
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     align-items: start;
   }
@@ -1420,16 +1465,35 @@ const styles = `
   }
 
   .mainCard {
-    grid-column: 1;
+    grid-column: 1 / -1;
   }
 
   .imageCard {
-    grid-column: 2;
-    position: relative;
-    top: auto;
+    grid-column: 1 / -1;
+    position: static;
     align-self: start;
-    height: fit-content;
+    height: auto;
     overflow: visible;
+    display: grid;
+    grid-template-columns: minmax(260px, 520px) minmax(0, 1fr);
+    gap: 14px 18px;
+    align-items: start;
+  }
+
+  .imageCard .cardHeader {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+  }
+
+  .imageCard .uploadPreview {
+    grid-column: 1;
+    grid-row: 2 / span 4;
+  }
+
+  .imageCard .imageHelp,
+  .imageCard .imageInfo,
+  .imageCard .lightButton {
+    grid-column: 2;
   }
 
   .fullWidth {
@@ -1902,13 +1966,50 @@ const styles = `
 
   @media (max-width: 980px) {
     .hero,
-    .formGrid {
+    .validationBox {
+    margin-bottom: 14px;
+    border-radius: 22px;
+    padding: 15px 16px;
+    background: #fff7ed;
+    border: 1px solid rgba(234, 88, 12, 0.18);
+    color: #7c2d12;
+    box-shadow: 0 12px 30px rgba(234, 88, 12, 0.07);
+  }
+
+  .validationBox strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 950;
+  }
+
+  .validationBox ul {
+    margin: 9px 0 0;
+    padding-left: 18px;
+  }
+
+  .validationBox li {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 850;
+  }
+
+  .formGrid {
       grid-template-columns: 1fr;
     }
 
     .imageCard {
+      grid-column: 1 / -1;
+      grid-template-columns: 1fr;
+    }
+
+    .imageCard .cardHeader,
+    .imageCard .uploadPreview,
+    .imageCard .imageHelp,
+    .imageCard .imageInfo,
+    .imageCard .lightButton {
       grid-column: 1;
-      position: static;
+      grid-row: auto;
     }
   }
 
