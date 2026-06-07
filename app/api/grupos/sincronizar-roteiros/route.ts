@@ -2,33 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 export const runtime = 'nodejs'
 
+type AnyRecord = Record<string, any>
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseServiceKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  ''
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
-type ResultadoSincronizacao = {
-  roteiro_id: string
-  grupo_id?: string | null
-  titulo?: string | null
-  acao: 'criado' | 'atualizado' | 'existente' | 'ignorado' | 'erro'
-  mensagem: string
-  erro?: string | null
-}
+const CAMPOS_GUIA_ROTEIRO = ['id_guia', 'guia_id', 'user_id', 'usuario_id']
+const COLUNAS_USUARIO_MEMBRO = ['user_id', 'usuario_id', 'membro_id']
+const PAPEIS_GUIA = ['guia_admin', 'admin', 'guia']
+const PAPEIS_CLIENTE = ['cliente', 'participante', 'membro']
 
-function json(data: any, status = 200) {
-  return NextResponse.json(data, {
-    status,
-    headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      Pragma: 'no-cache',
-      Expires: '0'
-    }
-  })
+function json(data: AnyRecord, status = 200) {
+  return NextResponse.json(data, { status })
 }
 
 function getSupabaseAdmin() {
@@ -43,253 +30,196 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       persistSession: false,
-      autoRefreshToken: false
-    }
+      autoRefreshToken: false,
+    },
   })
 }
 
-function limparTexto(valor: any) {
+function texto(valor: unknown) {
   return String(valor || '').trim()
 }
 
-function normalizar(valor: any) {
-  return String(valor || '')
+function normalizar(valor: unknown) {
+  return texto(valor)
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
 }
 
-function uuidValido(valor: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    String(valor || '')
-  )
+function agoraIso() {
+  return new Date().toISOString()
 }
 
-function tituloRoteiro(roteiro: any) {
-  return (
-    limparTexto(roteiro?.titulo) ||
-    limparTexto(roteiro?.nome) ||
-    `Roteiro ${String(roteiro?.id || '').slice(0, 8)}`
-  )
+function tituloDoRoteiro(roteiro: AnyRecord) {
+  return texto(roteiro?.titulo || roteiro?.nome || roteiro?.name) || 'Roteiro PrussikTrails'
 }
 
-function guiaIdDoRoteiro(roteiro: any) {
-  return limparTexto(
-    roteiro?.id_guia ||
-      roteiro?.guia_id ||
-      roteiro?.user_id ||
-      roteiro?.usuario_id ||
-      ''
-  )
+function roteiroVisivelParaGrupo(roteiro: AnyRecord) {
+  const status = normalizar(roteiro?.status)
+
+  if (!status) return true
+
+  return ![
+    'excluido',
+    'excluida',
+    'excluído',
+    'excluída',
+    'cancelado',
+    'cancelada',
+    'arquivado',
+    'arquivada',
+    'rejeitado',
+    'rejeitada',
+  ].includes(status)
 }
 
-function statusRoteiro(roteiro: any) {
-  return limparTexto(roteiro?.status || '')
-}
-
-function statusGrupoInfo(status?: string | null) {
-  const valor = normalizar(status)
-
-  if (valor === 'ativo') {
-    return {
-      label: 'Ativo',
-      classe: 'badge-green',
-      tipo: 'success'
-    }
-  }
-
-  if (valor === 'encerrado' || valor === 'encerrada') {
-    return {
-      label: 'Encerrado',
-      classe: 'badge-red',
-      tipo: 'danger'
-    }
-  }
-
-  if (valor === 'pendente' || valor === 'aguardando') {
-    return {
-      label: 'Pendente',
-      classe: 'badge-yellow',
-      tipo: 'warning'
-    }
-  }
-
-  return {
-    label: status || 'Indefinido',
-    classe: 'badge-neutral',
-    tipo: 'neutral'
-  }
-}
-
-function erroDeColunaAusente(error: any) {
-  const texto = String(
-    error?.message ||
-      error?.details ||
-      error?.hint ||
-      ''
-  ).toLowerCase()
+function erroDeColunaAusente(error: AnyRecord) {
+  const mensagem = String(error?.message || error?.details || error?.hint || '').toLowerCase()
 
   return (
     error?.code === '42703' ||
     error?.code === 'PGRST204' ||
-    texto.includes('could not find') ||
-    texto.includes('schema cache') ||
-    texto.includes('column')
+    mensagem.includes('schema cache') ||
+    mensagem.includes('could not find') ||
+    mensagem.includes('column') ||
+    mensagem.includes('does not exist')
   )
 }
 
-function extrairColunaAusente(error: any) {
-  const texto = [
-    error?.message,
-    error?.details,
-    error?.hint
-  ]
-    .filter(Boolean)
-    .join(' ')
+function extrairColunaAusente(error: AnyRecord) {
+  const textoErro = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ')
 
-  const matchAspas = texto.match(/'([^']+)'/)
+  const matchTabelaColuna = textoErro.match(/[a-zA-Z0-9_]+\.([a-zA-Z0-9_]+)/)
+  if (matchTabelaColuna?.[1]) return matchTabelaColuna[1]
 
+  const matchAspas = textoErro.match(/'([^']+)'/)
   if (matchAspas?.[1]) return matchAspas[1]
 
-  const matchColumn = texto.match(/column\s+([a-zA-Z0-9_]+)/i)
-
+  const matchColumn = textoErro.match(/column\s+["']?([a-zA-Z0-9_]+)["']?/i)
   if (matchColumn?.[1]) return matchColumn[1]
-
-  const matchSchemaCache = texto.match(/'([a-zA-Z0-9_]+)'\s+column/i)
-
-  if (matchSchemaCache?.[1]) return matchSchemaCache[1]
 
   return ''
 }
 
-function erroTabelaInexistente(error: any) {
-  const texto = String(
-    error?.message ||
-      error?.details ||
-      error?.hint ||
-      ''
-  ).toLowerCase()
+function erroDePapelInvalido(error: AnyRecord) {
+  const mensagem = String(error?.message || error?.details || error?.hint || '').toLowerCase()
+  return error?.code === '23514' || mensagem.includes('check constraint')
+}
+
+function pagamentoConfirmado(reserva: AnyRecord) {
+  const status = normalizar(reserva?.status)
+  const pagamento = normalizar(
+    reserva?.pagamento_status ||
+      reserva?.status_pagamento ||
+      reserva?.paghiper_status ||
+      reserva?.payment_status ||
+      reserva?.status_payment ||
+      reserva?.status_transacao ||
+      reserva?.transaction_status
+  )
 
   return (
-    error?.code === '42P01' ||
-    texto.includes('does not exist') ||
-    texto.includes('relation') ||
-    texto.includes('table')
+    pagamento === 'pago' ||
+    pagamento === 'paid' ||
+    pagamento === 'confirmado' ||
+    pagamento === 'confirmada' ||
+    pagamento === 'aprovado' ||
+    pagamento === 'aprovada' ||
+    pagamento === 'approved' ||
+    status === 'pago' ||
+    status === 'paga' ||
+    status === 'confirmado' ||
+    status === 'confirmada' ||
+    status === 'realizada' ||
+    status === 'realizado'
   )
 }
 
-async function insertComFallback(
+async function inserirComFallback(
   supabase: any,
   tabela: string,
-  payloadOriginal: Record<string, any>
+  payloadOriginal: AnyRecord,
+  select = '*'
 ) {
-  let payloadAtual = { ...payloadOriginal }
-  const colunasIgnoradas: string[] = []
+  let payload = { ...payloadOriginal }
 
-  for (let tentativa = 0; tentativa < 25; tentativa++) {
+  for (let tentativa = 0; tentativa < 18; tentativa++) {
     const { data, error } = await supabase
       .from(tabela)
-      .insert(payloadAtual)
-      .select('*')
+      .insert(payload)
+      .select(select)
       .maybeSingle()
 
-    if (!error) {
-      return {
-        data,
-        colunasIgnoradas
-      }
-    }
+    if (!error) return data
 
-    if (!erroDeColunaAusente(error)) {
-      throw error
-    }
+    if (!erroDeColunaAusente(error)) throw error
 
     const coluna = extrairColunaAusente(error)
+    if (!coluna || !(coluna in payload)) throw error
 
-    if (!coluna || !(coluna in payloadAtual)) {
-      throw error
-    }
-
-    delete payloadAtual[coluna]
-    colunasIgnoradas.push(coluna)
+    delete payload[coluna]
   }
 
-  throw new Error(`Não foi possível inserir em ${tabela} após ajustar colunas.`)
+  throw new Error(`Não foi possível inserir em ${tabela}.`)
 }
 
-async function updateComFallback(
+async function atualizarComFallback(
   supabase: any,
   tabela: string,
   id: string,
-  payloadOriginal: Record<string, any>
+  payloadOriginal: AnyRecord,
+  select = '*'
 ) {
-  let payloadAtual = { ...payloadOriginal }
-  const colunasIgnoradas: string[] = []
+  let payload = { ...payloadOriginal }
 
-  for (let tentativa = 0; tentativa < 25; tentativa++) {
+  for (let tentativa = 0; tentativa < 18; tentativa++) {
     const { data, error } = await supabase
       .from(tabela)
-      .update(payloadAtual)
+      .update(payload)
       .eq('id', id)
-      .select('*')
+      .select(select)
       .maybeSingle()
 
-    if (!error) {
-      return {
-        data,
-        colunasIgnoradas
-      }
-    }
+    if (!error) return data
 
-    if (!erroDeColunaAusente(error)) {
-      throw error
-    }
+    if (!erroDeColunaAusente(error)) throw error
 
     const coluna = extrairColunaAusente(error)
+    if (!coluna || !(coluna in payload)) throw error
 
-    if (!coluna || !(coluna in payloadAtual)) {
-      throw error
-    }
+    delete payload[coluna]
 
-    delete payloadAtual[coluna]
-    colunasIgnoradas.push(coluna)
+    if (Object.keys(payload).length === 0) return null
   }
 
-  throw new Error(`Não foi possível atualizar ${tabela} após ajustar colunas.`)
+  throw new Error(`Não foi possível atualizar ${tabela}.`)
 }
 
-async function buscarRoteiros(supabase: any, filtros: {
-  roteiroId?: string
-  guiaId?: string
-  apenasComGuia?: boolean
-}) {
-  let query = supabase
-    .from('roteiros')
-    .select('*')
-    .order('created_at', { ascending: false })
+async function buscarRoteirosDoGuia(supabase: any, guiaId: string) {
+  const mapa = new Map<string, AnyRecord>()
 
-  if (filtros.roteiroId) {
-    query = query.eq('id', filtros.roteiroId)
+  for (const campo of CAMPOS_GUIA_ROTEIRO) {
+    const { data, error } = await supabase
+      .from('roteiros')
+      .select('*')
+      .eq(campo, guiaId)
+      .limit(500)
+
+    if (error) {
+      if (erroDeColunaAusente(error)) continue
+      console.warn(`Aviso ao buscar roteiros por ${campo}:`, error)
+      continue
+    }
+
+    ;((data || []) as AnyRecord[]).forEach((roteiro) => {
+      if (roteiro?.id && roteiroVisivelParaGrupo(roteiro)) {
+        mapa.set(String(roteiro.id), roteiro)
+      }
+    })
   }
 
-  const { data, error } = await query
-
-  if (error) {
-    throw error
-  }
-
-  let roteiros = Array.isArray(data) ? data : []
-
-  if (filtros.guiaId) {
-    roteiros = roteiros.filter((roteiro: any) => guiaIdDoRoteiro(roteiro) === filtros.guiaId)
-  }
-
-  if (filtros.apenasComGuia) {
-    roteiros = roteiros.filter((roteiro: any) => Boolean(guiaIdDoRoteiro(roteiro)))
-  }
-
-  return roteiros
+  return Array.from(mapa.values())
 }
 
 async function buscarGrupoPorRoteiro(supabase: any, roteiroId: string) {
@@ -297,379 +227,323 @@ async function buscarGrupoPorRoteiro(supabase: any, roteiroId: string) {
     .from('grupos_roteiros')
     .select('*')
     .eq('roteiro_id', roteiroId)
-    .maybeSingle()
+    .order('created_at', { ascending: true })
+    .limit(1)
 
-  if (!error) return data || null
-
-  if (erroTabelaInexistente(error)) {
-    throw new Error('Tabela grupos_roteiros não existe. Rode o SQL dos grupos antes de sincronizar.')
-  }
-
-  if (erroDeColunaAusente(error)) {
-    return null
-  }
-
-  throw error
+  if (error) throw error
+  return Array.isArray(data) && data.length > 0 ? data[0] : null
 }
 
-async function buscarMembroGrupo(supabase: any, grupoId: string, userId: string) {
-  const { data, error } = await supabase
-    .from('grupo_membros')
-    .select('*')
-    .eq('grupo_id', grupoId)
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (!error) return data || null
-
-  if (erroTabelaInexistente(error)) {
-    return null
-  }
-
-  if (erroDeColunaAusente(error)) {
-    return null
-  }
-
-  throw error
-}
-
-async function garantirGuiaComoAdmin(supabase: any, grupoId: string, guiaId: string) {
-  if (!grupoId || !guiaId) {
-    return {
-      sucesso: false,
-      mensagem: 'Grupo ou guia não informado.'
-    }
-  }
-
-  try {
-    const membroExistente = await buscarMembroGrupo(supabase, grupoId, guiaId)
-
-    if (membroExistente?.id) {
-      const payloadUpdate = {
-        papel: membroExistente.papel || 'guia',
-        role: membroExistente.role || 'admin',
-        tipo: membroExistente.tipo || 'guia',
-        status: membroExistente.status || 'ativo',
-        ativo: true,
-        updated_at: new Date().toISOString()
-      }
-
-      await updateComFallback(supabase, 'grupo_membros', membroExistente.id, payloadUpdate)
-
-      return {
-        sucesso: true,
-        mensagem: 'Guia já estava no grupo e foi mantido como administrador.'
-      }
-    }
-
-    const agora = new Date().toISOString()
-
-    const payload = {
-      grupo_id: grupoId,
-      user_id: guiaId,
-      usuario_id: guiaId,
-      guia_id: guiaId,
-      papel: 'guia',
-      role: 'admin',
-      tipo: 'guia',
-      status: 'ativo',
-      ativo: true,
-      created_at: agora,
-      updated_at: agora
-    }
-
-    await insertComFallback(supabase, 'grupo_membros', payload)
-
-    return {
-      sucesso: true,
-      mensagem: 'Guia adicionado como administrador do grupo.'
-    }
-  } catch (error: any) {
-    if (erroTabelaInexistente(error)) {
-      return {
-        sucesso: false,
-        mensagem: 'Tabela grupo_membros não existe. Grupo criado, mas membro não foi sincronizado.'
-      }
-    }
-
-    console.warn('Erro ao garantir guia como admin do grupo:', error)
-
-    return {
-      sucesso: false,
-      mensagem: error?.message || 'Não foi possível adicionar o guia como administrador do grupo.'
-    }
-  }
-}
-
-async function criarGrupoParaRoteiro(supabase: any, roteiro: any) {
-  const roteiroId = limparTexto(roteiro?.id)
-  const guiaId = guiaIdDoRoteiro(roteiro)
-  const titulo = tituloRoteiro(roteiro)
-  const agora = new Date().toISOString()
-
-  if (!roteiroId) {
-    return {
-      roteiro_id: '',
-      grupo_id: null,
-      titulo,
-      acao: 'erro' as const,
-      mensagem: 'Roteiro sem ID.',
-      erro: 'Roteiro sem ID.'
-    }
-  }
-
-  if (!guiaId) {
-    return {
-      roteiro_id: roteiroId,
-      grupo_id: null,
-      titulo,
-      acao: 'ignorado' as const,
-      mensagem: 'Roteiro ignorado porque não possui guia vinculado.',
-      erro: null
-    }
-  }
+async function criarGrupo(supabase: any, roteiro: AnyRecord, guiaId: string) {
+  const tituloRoteiro = tituloDoRoteiro(roteiro)
+  const agora = agoraIso()
 
   const payload = {
-    roteiro_id: roteiroId,
+    roteiro_id: roteiro.id,
     guia_id: guiaId,
-    id_guia: guiaId,
-    admin_id: guiaId,
-    titulo,
-    nome: titulo,
-    descricao:
-      limparTexto(roteiro?.descricao) ||
-      `Grupo interno do roteiro ${titulo}.`,
+    titulo: `Grupo - ${tituloRoteiro}`,
+    descricao: `Grupo interno do roteiro ${tituloRoteiro}.`,
+    aviso_fixado: 'Grupo criado automaticamente. Clientes entram somente após pagamento confirmado.',
     status: 'ativo',
-    ativo: true,
-    tipo: 'roteiro',
-    origem: 'sincronizacao',
-    aviso_fixado: null,
+    permite_mensagens: true,
     created_at: agora,
-    updated_at: agora
+    updated_at: agora,
   }
-
-  const resultado = await insertComFallback(supabase, 'grupos_roteiros', payload)
-  const grupo = resultado.data
-
-  if (!grupo?.id) {
-    return {
-      roteiro_id: roteiroId,
-      grupo_id: null,
-      titulo,
-      acao: 'erro' as const,
-      mensagem: 'Grupo inserido, mas ID não retornou.',
-      erro: 'Grupo inserido, mas ID não retornou.'
-    }
-  }
-
-  const membro = await garantirGuiaComoAdmin(supabase, grupo.id, guiaId)
-
-  return {
-    roteiro_id: roteiroId,
-    grupo_id: grupo.id,
-    titulo,
-    acao: 'criado' as const,
-    mensagem: membro.sucesso
-      ? 'Grupo criado e guia adicionado como administrador.'
-      : `Grupo criado. ${membro.mensagem}`,
-    erro: membro.sucesso ? null : membro.mensagem
-  }
-}
-
-async function atualizarGrupoDoRoteiro(supabase: any, grupo: any, roteiro: any) {
-  const roteiroId = limparTexto(roteiro?.id)
-  const guiaId = guiaIdDoRoteiro(roteiro)
-  const titulo = tituloRoteiro(roteiro)
-
-  if (!grupo?.id) {
-    return {
-      roteiro_id: roteiroId,
-      grupo_id: null,
-      titulo,
-      acao: 'erro' as const,
-      mensagem: 'Grupo existente sem ID.',
-      erro: 'Grupo existente sem ID.'
-    }
-  }
-
-  const payload = {
-    roteiro_id: roteiroId,
-    guia_id: guiaId || grupo?.guia_id || grupo?.id_guia || null,
-    id_guia: guiaId || grupo?.id_guia || grupo?.guia_id || null,
-    titulo: grupo?.titulo || titulo,
-    nome: grupo?.nome || titulo,
-    descricao:
-      grupo?.descricao ||
-      limparTexto(roteiro?.descricao) ||
-      `Grupo interno do roteiro ${titulo}.`,
-    status: grupo?.status || 'ativo',
-    ativo: grupo?.ativo ?? true,
-    updated_at: new Date().toISOString()
-  }
-
-  await updateComFallback(supabase, 'grupos_roteiros', grupo.id, payload)
-
-  let membroMensagem = 'Guia não informado para sincronizar membro.'
-
-  if (guiaId) {
-    const membro = await garantirGuiaComoAdmin(supabase, grupo.id, guiaId)
-    membroMensagem = membro.mensagem
-  }
-
-  return {
-    roteiro_id: roteiroId,
-    grupo_id: grupo.id,
-    titulo,
-    acao: 'atualizado' as const,
-    mensagem: `Grupo existente atualizado. ${membroMensagem}`,
-    erro: null
-  }
-}
-
-async function sincronizarRoteiro(supabase: any, roteiro: any) {
-  const roteiroId = limparTexto(roteiro?.id)
-  const titulo = tituloRoteiro(roteiro)
 
   try {
-    if (!roteiroId) {
-      return {
-        roteiro_id: '',
-        grupo_id: null,
-        titulo,
-        acao: 'erro' as const,
-        mensagem: 'Roteiro sem ID.',
-        erro: 'Roteiro sem ID.'
-      }
-    }
-
-    const grupoExistente = await buscarGrupoPorRoteiro(supabase, roteiroId)
-
-    if (grupoExistente?.id) {
-      return await atualizarGrupoDoRoteiro(supabase, grupoExistente, roteiro)
-    }
-
-    return await criarGrupoParaRoteiro(supabase, roteiro)
+    const grupo = await inserirComFallback(supabase, 'grupos_roteiros', payload)
+    if (grupo?.id) return grupo
   } catch (error: any) {
-    console.error(`Erro ao sincronizar grupo do roteiro ${roteiroId}:`, error)
-
-    return {
-      roteiro_id: roteiroId,
-      grupo_id: null,
-      titulo,
-      acao: 'erro' as const,
-      mensagem: error?.message || 'Erro ao sincronizar roteiro.',
-      erro: error?.message || 'Erro ao sincronizar roteiro.'
+    if (error?.code === '23505') {
+      const existente = await buscarGrupoPorRoteiro(supabase, String(roteiro.id))
+      if (existente?.id) return existente
     }
+
+    throw error
   }
+
+  throw new Error(`Não foi possível criar grupo do roteiro ${tituloRoteiro}.`)
 }
 
-function resumirResultados(resultados: ResultadoSincronizacao[]) {
-  return {
-    total: resultados.length,
-    criados: resultados.filter((item) => item.acao === 'criado').length,
-    atualizados: resultados.filter((item) => item.acao === 'atualizado').length,
-    existentes: resultados.filter((item) => item.acao === 'existente').length,
-    ignorados: resultados.filter((item) => item.acao === 'ignorado').length,
-    erros: resultados.filter((item) => item.acao === 'erro').length
-  }
-}
+async function garantirGrupo(supabase: any, roteiro: AnyRecord, guiaId: string) {
+  let grupo = await buscarGrupoPorRoteiro(supabase, String(roteiro.id))
+  let novo = false
 
-async function executarSincronizacao(request: NextRequest, metodo: 'GET' | 'POST') {
-  try {
-    const supabase = getSupabaseAdmin()
-    const { searchParams } = new URL(request.url)
-
-    let body: any = {}
-
-    if (metodo === 'POST') {
-      body = await request.json().catch(() => ({}))
-    }
-
-    const roteiroId = limparTexto(
-      body.roteiroId ||
-        body.roteiro_id ||
-        searchParams.get('roteiroId') ||
-        searchParams.get('roteiro_id') ||
-        ''
-    )
-
-    const guiaId = limparTexto(
-      body.guiaId ||
-        body.guia_id ||
-        body.id_guia ||
-        searchParams.get('guiaId') ||
-        searchParams.get('guia_id') ||
-        searchParams.get('id_guia') ||
-        ''
-    )
-
-    const limiteRaw =
-      body.limite ||
-      body.limit ||
-      searchParams.get('limite') ||
-      searchParams.get('limit') ||
-      ''
-
-    const limite = Math.max(
-      1,
-      Math.min(
-        Number(limiteRaw || 500),
-        2000
-      )
-    )
-
-    if (roteiroId && !uuidValido(roteiroId)) {
-      return json(
-        {
-          sucesso: false,
-          erro: 'roteiroId inválido.'
-        },
-        400
-      )
-    }
-
-    if (guiaId && !uuidValido(guiaId)) {
-      return json(
-        {
-          sucesso: false,
-          erro: 'guiaId inválido.'
-        },
-        400
-      )
-    }
-
-    const roteirosTodos = await buscarRoteiros(supabase, {
-      roteiroId: roteiroId || undefined,
-      guiaId: guiaId || undefined,
-      apenasComGuia: true
+  if (!grupo?.id) {
+    grupo = await criarGrupo(supabase, roteiro, guiaId)
+    novo = true
+  } else {
+    const atualizado = await atualizarComFallback(supabase, 'grupos_roteiros', grupo.id, {
+      guia_id: guiaId,
+      titulo: grupo.titulo || `Grupo - ${tituloDoRoteiro(roteiro)}`,
+      descricao: grupo.descricao || `Grupo interno do roteiro ${tituloDoRoteiro(roteiro)}.`,
+      status: grupo.status || 'ativo',
+      permite_mensagens: grupo.permite_mensagens ?? true,
+      updated_at: agoraIso(),
+    }).catch((error: any) => {
+      console.warn('Aviso ao atualizar grupo existente:', error)
+      return null
     })
 
-    const roteiros = roteirosTodos.slice(0, limite)
+    if (atualizado?.id) grupo = atualizado
+  }
 
-    const resultados: ResultadoSincronizacao[] = []
+  if (novo) {
+    await inserirComFallback(supabase, 'grupo_mensagens', {
+      grupo_id: grupo.id,
+      user_id: null,
+      mensagem: `Grupo interno criado automaticamente para o roteiro ${tituloDoRoteiro(roteiro)}.`,
+      tipo: 'sistema',
+      status: 'ativa',
+      created_at: agoraIso(),
+      updated_at: agoraIso(),
+    }).catch((error: any) => {
+      console.warn('Aviso ao criar mensagem inicial do grupo:', error)
+    })
+  }
 
-    for (const roteiro of roteiros) {
-      const resultado = await sincronizarRoteiro(supabase, roteiro)
-      resultados.push(resultado)
+  return { grupo, novo }
+}
+
+async function descobrirMembro(supabase: any, grupoId: string, userId: string) {
+  for (const colunaUsuario of COLUNAS_USUARIO_MEMBRO) {
+    const { data, error } = await supabase
+      .from('grupo_membros')
+      .select('*')
+      .eq('grupo_id', grupoId)
+      .eq(colunaUsuario, userId)
+      .maybeSingle()
+
+    if (!error) {
+      return {
+        colunaUsuario,
+        membro: data || null,
+      }
     }
 
-    const resumo = resumirResultados(resultados)
+    if (erroDeColunaAusente(error)) continue
+    throw error
+  }
+
+  throw new Error('Não foi possível identificar a coluna de usuário em grupo_membros.')
+}
+
+async function inserirOuAtualizarMembro(
+  supabase: any,
+  params: {
+    grupoId: string
+    userId: string
+    reservaId?: string | null
+    papeis: string[]
+  }
+) {
+  const { colunaUsuario, membro } = await descobrirMembro(supabase, params.grupoId, params.userId)
+  let ultimoErro: any = null
+
+  for (const papel of params.papeis) {
+    const agora = agoraIso()
+    const payload: AnyRecord = {
+      grupo_id: params.grupoId,
+      [colunaUsuario]: params.userId,
+      reserva_id: params.reservaId || null,
+      papel,
+      status: 'ativo',
+      updated_at: agora,
+    }
+
+    try {
+      if (membro?.id) {
+        const atualizado = await atualizarComFallback(supabase, 'grupo_membros', membro.id, payload)
+        return {
+          membro: atualizado || membro,
+          novo: false,
+          papel,
+        }
+      }
+
+      const novo = await inserirComFallback(supabase, 'grupo_membros', {
+        ...payload,
+        entrou_em: agora,
+        created_at: agora,
+      })
+
+      return {
+        membro: novo,
+        novo: true,
+        papel,
+      }
+    } catch (error: any) {
+      ultimoErro = error
+
+      if (error?.code === '23505') {
+        const busca = await descobrirMembro(supabase, params.grupoId, params.userId)
+        if (busca.membro?.id) {
+          return {
+            membro: busca.membro,
+            novo: false,
+            papel,
+          }
+        }
+      }
+
+      if (erroDePapelInvalido(error)) continue
+      throw error
+    }
+  }
+
+  throw ultimoErro || new Error('Não foi possível inserir membro no grupo.')
+}
+
+async function garantirGuiaAdmin(supabase: any, grupoId: string, guiaId: string) {
+  return inserirOuAtualizarMembro(supabase, {
+    grupoId,
+    userId: guiaId,
+    reservaId: null,
+    papeis: PAPEIS_GUIA,
+  })
+}
+
+async function garantirClientePago(supabase: any, grupoId: string, reserva: AnyRecord) {
+  const clienteId = texto(reserva?.cliente_id || reserva?.id_cliente || reserva?.usuario_id || reserva?.user_id)
+
+  if (!clienteId || !reserva?.id || !pagamentoConfirmado(reserva)) {
+    return {
+      liberado: false,
+      novo: false,
+    }
+  }
+
+  const resultado = await inserirOuAtualizarMembro(supabase, {
+    grupoId,
+    userId: clienteId,
+    reservaId: reserva.id,
+    papeis: PAPEIS_CLIENTE,
+  })
+
+  if (resultado.novo) {
+    await inserirComFallback(supabase, 'grupo_mensagens', {
+      grupo_id: grupoId,
+      user_id: null,
+      reserva_id: reserva.id,
+      mensagem: 'Um novo participante com pagamento confirmado entrou no grupo da experiência.',
+      tipo: 'sistema',
+      status: 'ativa',
+      created_at: agoraIso(),
+      updated_at: agoraIso(),
+    }).catch((error: any) => {
+      console.warn('Aviso ao criar mensagem de entrada de cliente:', error)
+    })
+  }
+
+  return {
+    liberado: true,
+    novo: Boolean(resultado.novo),
+  }
+}
+
+async function buscarReservasDosRoteiros(supabase: any, roteiroIds: string[]) {
+  if (roteiroIds.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('reservas')
+    .select('*')
+    .in('roteiro_id', roteiroIds)
+    .limit(5000)
+
+  if (error) throw error
+  return (data || []) as AnyRecord[]
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = getSupabaseAdmin()
+    const body = await request.json().catch(() => ({}))
+    const guiaId = texto(body.guiaId || body.guia_id || body.id_guia || body.userId || body.user_id)
+
+    if (!guiaId) {
+      return json(
+        {
+          sucesso: false,
+          erro: 'Informe guiaId para sincronizar os grupos dos roteiros.',
+        },
+        400
+      )
+    }
+
+    const roteiros = await buscarRoteirosDoGuia(supabase, guiaId)
+    const roteiroIds = roteiros.map((roteiro) => String(roteiro.id)).filter(Boolean)
+    const reservas = await buscarReservasDosRoteiros(supabase, roteiroIds)
+
+    const reservasPorRoteiro = new Map<string, AnyRecord[]>()
+    reservas.forEach((reserva) => {
+      const roteiroId = texto(reserva.roteiro_id || reserva.id_roteiro)
+      if (!roteiroId) return
+      const lista = reservasPorRoteiro.get(roteiroId) || []
+      lista.push(reserva)
+      reservasPorRoteiro.set(roteiroId, lista)
+    })
+
+    let gruposCriados = 0
+    let gruposGarantidos = 0
+    let guiasGarantidos = 0
+    let clientesLiberados = 0
+    let clientesNovos = 0
+    let reservasPagas = 0
+    let falhas = 0
+    const detalhesFalhas: AnyRecord[] = []
+    const grupos: AnyRecord[] = []
+
+    for (const roteiro of roteiros) {
+      try {
+        const { grupo, novo } = await garantirGrupo(supabase, roteiro, guiaId)
+        if (novo) gruposCriados += 1
+        gruposGarantidos += 1
+
+        const guiaAdmin = await garantirGuiaAdmin(supabase, grupo.id, guiaId)
+        if (guiaAdmin?.membro?.id) guiasGarantidos += 1
+
+        const reservasDoRoteiro = reservasPorRoteiro.get(String(roteiro.id)) || []
+        const reservasConfirmadas = reservasDoRoteiro.filter(pagamentoConfirmado)
+        reservasPagas += reservasConfirmadas.length
+
+        for (const reserva of reservasConfirmadas) {
+          const cliente = await garantirClientePago(supabase, grupo.id, reserva)
+          if (cliente.liberado) clientesLiberados += 1
+          if (cliente.novo) clientesNovos += 1
+        }
+
+        grupos.push({
+          id: grupo.id,
+          roteiro_id: grupo.roteiro_id,
+          titulo: grupo.titulo,
+          grupoNovo: novo,
+          reservas_confirmadas: reservasConfirmadas.length,
+        })
+      } catch (error: any) {
+        falhas += 1
+        detalhesFalhas.push({
+          roteiro_id: roteiro.id,
+          titulo: tituloDoRoteiro(roteiro),
+          erro: error?.message || 'Erro ao sincronizar roteiro.',
+        })
+        console.error('Falha ao sincronizar grupo do roteiro:', roteiro?.id, error)
+      }
+    }
 
     return json({
-      sucesso: resumo.erros === 0,
-      mensagem:
-        resumo.erros === 0
-          ? 'Sincronização de grupos concluída.'
-          : 'Sincronização concluída com alguns erros.',
-      resumo,
-      filtros: {
-        roteiro_id: roteiroId || null,
-        guia_id: guiaId || null,
-        limite,
-        roteiros_encontrados: roteirosTodos.length,
-        roteiros_processados: roteiros.length
-      },
-      resultados
+      sucesso: true,
+      mensagem: 'Sincronização de grupos concluída.',
+      guiaId,
+      roteirosEncontrados: roteiros.length,
+      gruposCriados,
+      gruposGarantidos,
+      guiasGarantidos,
+      reservasPagas,
+      clientesLiberados,
+      clientesNovos,
+      falhas,
+      detalhesFalhas,
+      grupos,
     })
   } catch (error: any) {
     console.error('Erro em /api/grupos/sincronizar-roteiros:', error)
@@ -677,17 +551,18 @@ async function executarSincronizacao(request: NextRequest, metodo: 'GET' | 'POST
     return json(
       {
         sucesso: false,
-        erro: error?.message || 'Erro interno ao sincronizar grupos dos roteiros.'
+        erro: error?.message || 'Erro interno ao sincronizar grupos dos roteiros.',
       },
       500
     )
   }
 }
 
-export async function GET(request: NextRequest) {
-  return executarSincronizacao(request, 'GET')
-}
-
-export async function POST(request: NextRequest) {
-  return executarSincronizacao(request, 'POST')
+export async function GET() {
+  return json({
+    sucesso: true,
+    rota: '/api/grupos/sincronizar-roteiros',
+    metodo: 'POST',
+    mensagem: 'Rota ativa. Envie guiaId para criar/garantir grupos dos roteiros e liberar clientes pagos.',
+  })
 }

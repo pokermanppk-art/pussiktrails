@@ -218,10 +218,11 @@ async function buscarGrupoPorRoteiro(supabase: any, roteiroId: string) {
     .from('grupos_roteiros')
     .select('*')
     .eq('roteiro_id', roteiroId)
-    .maybeSingle()
+    .order('created_at', { ascending: true })
+    .limit(1)
 
   if (error) throw error
-  return data || null
+  return Array.isArray(data) && data.length > 0 ? data[0] : null
 }
 
 async function criarGrupo(
@@ -615,10 +616,13 @@ export async function POST(request: NextRequest) {
           reservaId: reserva.id
         })
         clienteLiberado = true
-        await criarMensagemSistemaClienteLiberado(supabase, {
-          grupoId: grupo.id,
-          reservaId: reserva.id
-        })
+
+        if (clienteParticipante?.novo) {
+          await criarMensagemSistemaClienteLiberado(supabase, {
+            grupoId: grupo.id,
+            reservaId: reserva.id
+          })
+        }
       }
     }
 

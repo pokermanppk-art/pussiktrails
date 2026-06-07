@@ -64,7 +64,9 @@ type Reserva = {
 type MembroGrupo = {
   id: string
   grupo_id: string
-  user_id: string
+  user_id?: string | null
+  usuario_id?: string | null
+  membro_id?: string | null
   reserva_id?: string | null
   papel?: string | null
   status?: string | null
@@ -97,7 +99,7 @@ export default function GuiaGrupoDetalhePage() {
   const iniciouRef = useRef(false)
   const fimMensagensRef = useRef<HTMLDivElement | null>(null)
 
-  const grupoId = String(params?.grupoId || '')
+  const grupoId = String(params?.grupoId || params?.id || '')
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
   const [grupo, setGrupo] = useState<GrupoRoteiro | null>(null)
@@ -188,6 +190,25 @@ export default function GuiaGrupoDetalhePage() {
 
   const nomeBanco = (usuario?: UsuarioBanco | null) => {
     return usuario?.nome || usuario?.name || usuario?.email || 'Participante'
+  }
+
+  const membroUserId = (membro?: MembroGrupo | null) => {
+    return String(
+      membro?.user_id ||
+        membro?.usuario_id ||
+        membro?.membro_id ||
+        ''
+    ).trim()
+  }
+
+  const papelCliente = (papel?: string | null) => {
+    const valor = normalizar(papel)
+    return valor === 'cliente' || valor === 'participante' || valor === 'membro'
+  }
+
+  const papelGuiaAdmin = (papel?: string | null) => {
+    const valor = normalizar(papel)
+    return valor === 'guia_admin' || valor === 'admin' || valor === 'guia'
   }
 
   const iniciais = (nome?: string | null) => {
@@ -356,7 +377,7 @@ export default function GuiaGrupoDetalhePage() {
     const userIds = Array.from(
       new Set(
         membrosBase
-          .map((membro) => membro.user_id)
+          .map((membro) => membroUserId(membro))
           .filter(Boolean)
       )
     )
@@ -375,7 +396,7 @@ export default function GuiaGrupoDetalhePage() {
     }
 
     const membrosComUsuario = membrosBase.map((membro) => {
-      const usuario = usuarios.find((item) => item.id === membro.user_id)
+      const usuario = usuarios.find((item) => item.id === membroUserId(membro))
 
       return {
         ...membro,
@@ -681,7 +702,7 @@ export default function GuiaGrupoDetalhePage() {
     return mensagem.tipo === 'aviso_guia'
   }
 
-  const clientesConfirmados = membros.filter((membro) => membro.papel === 'cliente')
+  const clientesConfirmados = membros.filter((membro) => papelCliente(membro.papel))
   const reservasConfirmadas = reservas.filter(pagamentoConfirmado)
 
   const pessoasConfirmadas = reservasConfirmadas.reduce(
@@ -1713,7 +1734,7 @@ export default function GuiaGrupoDetalhePage() {
                           </div>
 
                           <div className="memberRole">
-                            {membro.papel === 'guia_admin'
+                            {papelGuiaAdmin(membro.papel)
                               ? 'Guia administrador'
                               : 'Cliente confirmado'}
                           </div>

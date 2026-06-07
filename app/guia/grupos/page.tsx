@@ -157,6 +157,7 @@ export default function GuiaGruposPage() {
       }
 
       setUser(parsedUser)
+      await sincronizarMeusGruposSilencioso(parsedUser.id)
       await carregarGrupos(parsedUser.id)
     } catch (error) {
       console.error('Erro ao iniciar grupos do guia:', error)
@@ -181,6 +182,34 @@ export default function GuiaGruposPage() {
   const primeiroNome = (valor?: string | null) => {
     const nome = String(valor || 'Guia').trim()
     return nome.split(' ')[0] || 'Guia'
+  }
+
+  const papelCliente = (papel?: string | null) => {
+    const valor = normalizar(papel)
+    return valor === 'cliente' || valor === 'participante' || valor === 'membro'
+  }
+
+  const sincronizarMeusGruposSilencioso = async (guiaId: string) => {
+    try {
+      const response = await fetch('/api/grupos/sincronizar-roteiros', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          guiaId
+        })
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.sucesso) {
+        console.warn('Sincronização automática dos grupos indisponível:', data)
+      }
+    } catch (error) {
+      console.warn('Erro na sincronização automática dos grupos:', error)
+    }
   }
 
   const tituloRoteiro = (item?: Roteiro | null) => {
@@ -372,7 +401,7 @@ export default function GuiaGruposPage() {
         null
 
       const membrosGrupo = membros.filter((membro) => membro.grupo_id === grupo.id)
-      const clientesGrupo = membrosGrupo.filter((membro) => membro.papel === 'cliente')
+      const clientesGrupo = membrosGrupo.filter((membro) => papelCliente(membro.papel))
       const mensagensGrupo = mensagens.filter((mensagem) => mensagem.grupo_id === grupo.id)
       const notificacoesGrupo = notificacoes.filter((notificacao) => notificacao.grupo_id === grupo.id)
 
