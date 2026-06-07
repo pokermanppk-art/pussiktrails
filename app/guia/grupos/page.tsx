@@ -4,7 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 type UsuarioLocal = {
-  id: string
+  id?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  guia_id?: string | null
   nome?: string | null
   name?: string | null
   email?: string | null
@@ -125,6 +128,7 @@ export default function GuiaGruposPage() {
   const [mensagem, setMensagem] = useState('')
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'ativo' | 'encerrado' | 'arquivado'>('todos')
+  const [abaTempo, setAbaTempo] = useState<'ativos' | 'historico'>('ativos')
   const [stats, setStats] = useState<Stats>(statsInicial)
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
 
@@ -155,9 +159,17 @@ export default function GuiaGruposPage() {
         return
       }
 
-      setUser(parsedUser)
-      await sincronizarMeusGruposSilencioso(parsedUser.id)
-      await carregarGrupos(parsedUser.id)
+      const guiaId = extrairUsuarioId(parsedUser)
+
+      if (!guiaId) {
+        localStorage.removeItem('user')
+        router.replace('/login')
+        return
+      }
+
+      const usuarioNormalizado = { ...parsedUser, id: guiaId }
+      setUser(usuarioNormalizado)
+      await carregarGrupos(guiaId)
     } catch (error) {
       console.error('Erro ao iniciar grupos do guia:', error)
       setErro('Não foi possível carregar seus grupos agora.')
@@ -172,6 +184,86 @@ export default function GuiaGruposPage() {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .trim()
+  }
+
+  const extrairUsuarioId = (usuario?: UsuarioLocal | null) => {
+    return String(
+      usuario?.id ||
+        usuario?.user_id ||
+        usuario?.usuario_id ||
+        usuario?.guia_id ||
+        ''
+    ).trim()
+  }
+
+  const dataSegura = (valor?: string | null) => {
+    const texto = String(valor || '').trim()
+    if (!texto) return null
+
+    const matchBR = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/)
+    if (matchBR) {
+      const [, dia, mes, ano, hora = '12', minuto = '00'] = matchBR
+      const dataBR = new Date(Number(ano), Number(mes) - 1, Number(dia), Number(hora), Number(minuto))
+      return Number.isNaN(dataBR.getTime()) ? null : dataBR
+    }
+
+    const data = new Date(texto)
+    if (Number.isNaN(data.getTime())) return null
+    return data
+  }
+
+  const dataPrincipalGrupo = (grupo?: GrupoCompleto | null) => {
+    const roteiro = grupo?.roteiro
+    return dataSegura(
+      roteiro?.data_roteiro ||
+        roteiro?.data_saida ||
+        roteiro?.data ||
+        grupo?.created_at ||
+        ''
+    )
+  }
+
+  const grupoTemRoteiroValido = (grupo: GrupoCompleto) => {
+    if (!grupo?.roteiro?.id) return false
+
+    const statusRoteiro = normalizar(grupo.roteiro.status)
+    const statusGrupo = normalizar(grupo.status || 'ativo')
+
+    const statusOculto = [
+      'excluido',
+      'excluida',
+      'excluído',
+      'excluída',
+      'cancelado',
+      'cancelada',
+      'rejeitado',
+      'rejeitada',
+      'rascunho',
+      'inativo',
+      'inativa'
+    ]
+
+    if (statusOculto.includes(statusRoteiro)) return false
+    if (statusGrupo === 'arquivado') return false
+
+    return true
+  }
+
+  const grupoEhHistorico = (grupo: GrupoCompleto) => {
+    const statusGrupo = normalizar(grupo.status || 'ativo')
+    if (statusGrupo === 'encerrado') return true
+
+    const data = dataPrincipalGrupo(grupo)
+    if (!data) return false
+
+    const fimDoDia = new Date(data)
+    fimDoDia.setHours(23, 59, 59, 999)
+
+    return fimDoDia.getTime() < Date.now()
+  }
+
+  const grupoEhAtual = (grupo: GrupoCompleto) => {
+    return grupoTemRoteiroValido(grupo) && !grupoEhHistorico(grupo)
   }
 
   const nomeUsuario = (usuario?: UsuarioLocal | null) => {
@@ -401,6 +493,7 @@ export default function GuiaGruposPage() {
   }
 
   const abrirGrupo = (grupo: GrupoCompleto) => {
+    if (!grupo?.id) return
     router.push(`/guia/grupos/${grupo.id}`)
   }
 
@@ -422,10 +515,39 @@ export default function GuiaGruposPage() {
     return <span className="badge badge-neutral">Grupo</span>
   }
 
+  const gruposValidos = useMemo(
+    () => grupos.filter((grupo) => grupoTemRoteiroValido(grupo)),
+    [grupos]
+  )
+
+  const gruposAtuais = useMemo(
+    () => gruposValidos.filter((grupo) => grupoEhAtual(grupo)),
+    [gruposValidos]
+  )
+
+  const gruposHistorico = useMemo(
+    () => gruposValidos.filter((grupo) => grupoEhHistorico(grupo)),
+    [gruposValidos]
+  )
+
+  const statsTela = useMemo(() => {
+    const base = abaTempo === 'ativos' ? gruposAtuais : gruposHistorico
+
+    return {
+      totalGrupos: base.length,
+      gruposAtivos: gruposAtuais.length,
+      gruposHistorico: gruposHistorico.length,
+      clientesConfirmados: base.reduce((total, grupo) => total + Number(grupo.clientes_count || 0), 0),
+      reservasConfirmadas: base.reduce((total, grupo) => total + Number(grupo.reservas_confirmadas || 0), 0),
+      notificacoesNaoLidas: base.reduce((total, grupo) => total + Number(grupo.notificacoes_nao_lidas || 0), 0),
+    }
+  }, [abaTempo, gruposAtuais, gruposHistorico])
+
   const gruposFiltrados = useMemo(() => {
     const termo = normalizar(busca)
+    const base = abaTempo === 'ativos' ? gruposAtuais : gruposHistorico
 
-    return grupos.filter((grupo) => {
+    return base.filter((grupo) => {
       const texto = normalizar(
         [
           grupo.titulo,
@@ -445,7 +567,7 @@ export default function GuiaGruposPage() {
 
       return passaBusca && passaStatus
     })
-  }, [grupos, busca, filtroStatus])
+  }, [abaTempo, gruposAtuais, gruposHistorico, busca, filtroStatus])
 
   if (carregando) {
     return (
@@ -1035,6 +1157,94 @@ export default function GuiaGruposPage() {
           font-weight: 700;
         }
 
+
+
+        .internalHeader {
+          padding: 8px 12px;
+          background: rgba(255, 253, 247, 0.92);
+        }
+
+        .cleanHeaderInner {
+          position: relative;
+          justify-content: center;
+        }
+
+        .brandLogoOnly {
+          border: 0;
+          background: transparent;
+          padding: 0;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .brandLogoOnly img {
+          width: clamp(150px, 30vw, 245px);
+          max-height: 56px;
+          height: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .cleanHeaderActions {
+          position: absolute;
+          right: 0;
+          top: 50%;
+          transform: translateY(-50%);
+        }
+
+        .tabBar {
+          display: inline-flex;
+          gap: 6px;
+          align-items: center;
+          background: rgba(238, 242, 229, 0.92);
+          border: 1px solid rgba(15, 23, 42, 0.06);
+          border-radius: 999px;
+          padding: 5px;
+          margin: 0 0 16px;
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+        }
+
+        .tabBar button {
+          border: 0;
+          border-radius: 999px;
+          background: transparent;
+          color: #64748b;
+          padding: 10px 15px;
+          font-size: 12px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: 0.18s ease;
+        }
+
+        .tabBar button.active {
+          background: #172018;
+          color: #ffffff;
+          box-shadow: 0 10px 20px rgba(23, 32, 24, 0.14);
+        }
+
+        .tabBar span {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 22px;
+          height: 22px;
+          margin-left: 6px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.18);
+          font-size: 11px;
+        }
+
+        .openHint {
+          color: #172018;
+          background: #eef2e5;
+          border-radius: 999px;
+          padding: 8px 11px;
+          font-size: 11px;
+          font-weight: 950;
+        }
+
         @media (max-width: 1040px) {
           .heroContent {
             grid-template-columns: 1fr;
@@ -1061,6 +1271,26 @@ export default function GuiaGruposPage() {
 
           .headerActions .hideMobile {
             display: none;
+          }
+
+          .cleanHeaderActions {
+            right: 0;
+          }
+
+          .brandLogoOnly img {
+            width: clamp(140px, 48vw, 210px);
+            max-height: 50px;
+          }
+
+          .tabBar {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            border-radius: 24px;
+          }
+
+          .tabBar button {
+            padding: 10px 8px;
           }
 
           .container {
@@ -1118,29 +1348,18 @@ export default function GuiaGruposPage() {
         }
       `}</style>
 
-      <header className="header">
-        <div className="headerInner">
-          <div
-            className="brand"
+      <header className="header internalHeader">
+        <div className="headerInner cleanHeaderInner">
+          <button
+            type="button"
+            className="brandLogoOnly"
             onClick={() => router.push('/guia/dashboard')}
+            aria-label="Voltar para a dashboard do guia"
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          </button>
 
-            <div>
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Grupos dos roteiros</div>
-            </div>
-          </div>
-
-          <div className="headerActions">
-            <button
-              type="button"
-              className="iconBtn hideMobile"
-              onClick={() => router.push('/guia/dashboard')}
-            >
-              Dashboard
-            </button>
-
+          <div className="headerActions cleanHeaderActions">
             <button
               type="button"
               className="iconBtn hideMobile"
@@ -1153,14 +1372,6 @@ export default function GuiaGruposPage() {
             <button
               type="button"
               className="iconBtn primary"
-              onClick={() => router.push('/guia/roteiros/novo')}
-            >
-              Novo roteiro
-            </button>
-
-            <button
-              type="button"
-              className="iconBtn"
               onClick={() => router.push('/guia/perfil')}
             >
               Perfil
@@ -1193,7 +1404,7 @@ export default function GuiaGruposPage() {
 
             <aside className="heroCard">
               <div className="heroCardLabel">Grupos ativos</div>
-              <div className="heroCardValue">{stats.gruposAtivos}</div>
+              <div className="heroCardValue">{statsTela.gruposAtivos}</div>
               <div className="heroCardText">
                 Clientes só entram nos grupos após pagamento confirmado.
               </div>
@@ -1213,8 +1424,7 @@ export default function GuiaGruposPage() {
           <div>
             <div className="syncTitle">Sincronizar grupos antigos</div>
             <div className="syncText">
-              Use este botão para criar grupos em roteiros cadastrados antes dessa funcionalidade.
-              Roteiros novos já criam grupo automaticamente.
+              Use somente quando algum roteiro atual não aparecer. A listagem carrega rápido e separa automaticamente grupos atuais e históricos.
             </div>
           </div>
 
@@ -1230,29 +1440,47 @@ export default function GuiaGruposPage() {
 
         <section className="statsGrid">
           <article className="statCard">
-            <div className="statValue">{stats.totalGrupos}</div>
-            <div className="statLabel">grupos criados</div>
+            <div className="statValue">{statsTela.gruposAtivos}</div>
+            <div className="statLabel">grupos atuais</div>
           </article>
 
           <article className="statCard">
-            <div className="statValue">{stats.gruposAtivos}</div>
-            <div className="statLabel">grupos ativos</div>
+            <div className="statValue">{statsTela.gruposHistorico}</div>
+            <div className="statLabel">no histórico</div>
           </article>
 
           <article className="statCard">
-            <div className="statValue">{stats.clientesConfirmados}</div>
-            <div className="statLabel">clientes nos grupos</div>
+            <div className="statValue">{statsTela.clientesConfirmados}</div>
+            <div className="statLabel">clientes no filtro</div>
           </article>
 
           <article className="statCard">
-            <div className="statValue">{stats.reservasConfirmadas}</div>
+            <div className="statValue">{statsTela.reservasConfirmadas}</div>
             <div className="statLabel">reservas confirmadas</div>
           </article>
 
           <article className="statCard">
-            <div className="statValue">{stats.notificacoesNaoLidas}</div>
+            <div className="statValue">{statsTela.notificacoesNaoLidas}</div>
             <div className="statLabel">avisos não lidos</div>
           </article>
+        </section>
+
+        <section className="tabBar" aria-label="Filtro de grupos por data">
+          <button
+            type="button"
+            className={abaTempo === 'ativos' ? 'active' : ''}
+            onClick={() => setAbaTempo('ativos')}
+          >
+            Ativos agora <span>{gruposAtuais.length}</span>
+          </button>
+
+          <button
+            type="button"
+            className={abaTempo === 'historico' ? 'active' : ''}
+            onClick={() => setAbaTempo('historico')}
+          >
+            Histórico <span>{gruposHistorico.length}</span>
+          </button>
         </section>
 
         <section className="toolbar">
@@ -1277,7 +1505,7 @@ export default function GuiaGruposPage() {
 
         {gruposFiltrados.length === 0 ? (
           <div className="empty">
-            Nenhum grupo encontrado. Ao criar um roteiro, o grupo interno será criado automaticamente.
+            {abaTempo === 'ativos' ? 'Nenhum grupo ativo encontrado. Roteiros com data passada ficam no Histórico.' : 'Nenhum grupo no histórico encontrado.'}
           </div>
         ) : (
           <section className="grid">
@@ -1368,17 +1596,7 @@ export default function GuiaGruposPage() {
                       <span className="valueText">
                         {formatarMoeda(grupo.valor_confirmado)}
                       </span>
-
-                      <button
-                        type="button"
-                        className="iconBtn primary"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          abrirGrupo(grupo)
-                        }}
-                      >
-                        Administrar
-                      </button>
+                      <span className="openHint">Toque para administrar</span>
                     </div>
                   </div>
                 </article>

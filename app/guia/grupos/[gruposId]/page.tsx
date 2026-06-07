@@ -5,7 +5,10 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
 type UsuarioLocal = {
-  id: string
+  id?: string | null
+  user_id?: string | null
+  usuario_id?: string | null
+  guia_id?: string | null
   nome?: string | null
   name?: string | null
   email?: string | null
@@ -93,13 +96,39 @@ type UsuarioBanco = {
   email?: string | null
 }
 
+function texto(valor: unknown) {
+  return String(valor || '').trim()
+}
+
+function extrairParametroGrupo(params: any) {
+  const direto = params?.grupoId || params?.id || params?.grupo_id
+
+  if (Array.isArray(direto)) return texto(direto[0])
+  if (direto) return texto(direto)
+
+  const primeiroValor = Object.values(params || {}).find(Boolean) as any
+
+  if (Array.isArray(primeiroValor)) return texto(primeiroValor[0])
+  return texto(primeiroValor)
+}
+
+function extrairUsuarioId(usuario: any) {
+  return texto(
+    usuario?.id ||
+      usuario?.user_id ||
+      usuario?.usuario_id ||
+      usuario?.guia_id ||
+      ''
+  )
+}
+
 export default function GuiaGrupoDetalhePage() {
   const router = useRouter()
   const params = useParams()
   const iniciouRef = useRef(false)
   const fimMensagensRef = useRef<HTMLDivElement | null>(null)
 
-  const grupoId = String(params?.grupoId || params?.id || '')
+  const grupoId = extrairParametroGrupo(params)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
   const [grupo, setGrupo] = useState<GrupoRoteiro | null>(null)
@@ -161,13 +190,22 @@ export default function GuiaGrupoDetalhePage() {
         return
       }
 
+      const guiaId = extrairUsuarioId(parsedUser)
+
+      if (!guiaId) {
+        localStorage.removeItem('user')
+        router.replace('/login')
+        return
+      }
+
       if (!grupoId) {
         setErro('Grupo não identificado.')
         return
       }
 
-      setUser(parsedUser)
-      await carregarGrupoCompleto(parsedUser.id)
+      const usuarioNormalizado = { ...parsedUser, id: guiaId }
+      setUser(usuarioNormalizado)
+      await carregarGrupoCompleto(guiaId)
     } catch (error) {
       console.error('Erro ao iniciar grupo do guia:', error)
       setErro('Não foi possível carregar o grupo agora.')
@@ -318,17 +356,20 @@ export default function GuiaGrupoDetalhePage() {
     setGrupo(grupoAtual)
     setAvisoTexto(grupoAtual.aviso_fixado || '')
 
-    if (grupoAtual.guia_id !== userId) {
-      const { data: membroData, error: membroError } = await supabase
+    if (texto(grupoAtual.guia_id) !== userId) {
+      const { data: membrosPermissao, error: membroError } = await supabase
         .from('grupo_membros')
         .select('*')
         .eq('grupo_id', grupoAtual.id)
-        .eq('user_id', userId)
-        .eq('papel', 'guia_admin')
         .eq('status', 'ativo')
-        .maybeSingle()
 
-      if (membroError || !membroData?.id) {
+      const membroPermitido = Array.isArray(membrosPermissao)
+        ? (membrosPermissao as MembroGrupo[]).some((membro) => {
+            return membroUserId(membro) === userId && papelGuiaAdmin(membro.papel)
+          })
+        : false
+
+      if (membroError || !membroPermitido) {
         setErro('Você não tem permissão para administrar este grupo.')
         setAcessoLiberado(false)
         return
@@ -1365,6 +1406,43 @@ export default function GuiaGrupoDetalhePage() {
           gap: 12px;
         }
 
+
+
+        .internalHeader {
+          padding: 8px 12px;
+          background: rgba(255, 253, 247, 0.92);
+        }
+
+        .cleanHeaderInner {
+          position: relative;
+          justify-content: center;
+        }
+
+        .brandLogoOnly {
+          border: 0;
+          background: transparent;
+          padding: 0;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .brandLogoOnly img {
+          width: clamp(150px, 30vw, 245px);
+          max-height: 56px;
+          height: auto;
+          object-fit: contain;
+          display: block;
+        }
+
+        .cleanHeaderActions {
+          position: absolute;
+          right: 0;
+          top: 50%;
+          transform: translateY(-50%);
+        }
+
         @media (max-width: 1040px) {
           .mainGrid,
           .heroContent {
@@ -1388,6 +1466,15 @@ export default function GuiaGrupoDetalhePage() {
 
           .headerActions .hideMobile {
             display: none;
+          }
+
+          .cleanHeaderActions {
+            right: 0;
+          }
+
+          .brandLogoOnly img {
+            width: clamp(140px, 48vw, 210px);
+            max-height: 50px;
           }
 
           .container {
@@ -1443,21 +1530,18 @@ export default function GuiaGrupoDetalhePage() {
         }
       `}</style>
 
-      <header className="header">
-        <div className="headerInner">
-          <div
-            className="brand"
+      <header className="header internalHeader">
+        <div className="headerInner cleanHeaderInner">
+          <button
+            type="button"
+            className="brandLogoOnly"
             onClick={() => router.push('/guia/dashboard')}
+            aria-label="Voltar para a dashboard do guia"
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
+          </button>
 
-            <div>
-              <div className="brandTitle">PrussikTrails</div>
-              <div className="brandSub">Administração do grupo</div>
-            </div>
-          </div>
-
-          <div className="headerActions">
+          <div className="headerActions cleanHeaderActions">
             <button
               type="button"
               className="iconBtn hideMobile"
