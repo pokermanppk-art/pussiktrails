@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
 
 type UsuarioLocal = {
   id: string
@@ -297,178 +296,52 @@ export default function GuiaGruposPage() {
     setErro('')
     setMensagem('')
 
-    const { data: gruposData, error: gruposError } = await supabase
-      .from('grupos_roteiros')
-      .select('*')
-      .eq('guia_id', guiaId)
-      .order('created_at', { ascending: false })
+    try {
+      const response = await fetch('/api/grupos/listar-guia', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          guiaId
+        })
+      })
 
-    if (gruposError) {
-      console.error('Erro ao buscar grupos do guia:', gruposError)
-      setErro('Não foi possível buscar os grupos dos seus roteiros.')
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.sucesso) {
+        throw new Error(
+          data?.erro ||
+            data?.message ||
+            data?.detalhe ||
+            'Não foi possível buscar os grupos dos seus roteiros.'
+        )
+      }
+
+      const gruposApi = Array.isArray(data?.grupos)
+        ? (data.grupos as GrupoCompleto[])
+        : []
+
+      setGrupos(gruposApi)
+
+      setStats({
+        totalGrupos: Number(data?.stats?.totalGrupos || 0),
+        gruposAtivos: Number(data?.stats?.gruposAtivos || 0),
+        clientesConfirmados: Number(data?.stats?.clientesConfirmados || 0),
+        reservasConfirmadas: Number(data?.stats?.reservasConfirmadas || 0),
+        notificacoesNaoLidas: Number(data?.stats?.notificacoesNaoLidas || 0)
+      })
+
+      setUltimaAtualizacao(
+        data?.ultimaAtualizacao || new Date().toLocaleTimeString('pt-BR')
+      )
+    } catch (error: any) {
+      console.error('Erro ao buscar grupos do guia via API:', error)
+      setErro(error?.message || 'Não foi possível buscar os grupos dos seus roteiros.')
       setGrupos([])
       setStats(statsInicial)
-      return
     }
-
-    const gruposBase = (gruposData || []) as GrupoRoteiro[]
-
-    if (gruposBase.length === 0) {
-      setGrupos([])
-      setStats(statsInicial)
-      setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
-      return
-    }
-
-    const grupoIds = gruposBase.map((grupo) => grupo.id)
-
-    const roteiroIds = Array.from(
-      new Set(
-        gruposBase
-          .map((grupo) => grupo.roteiro_id)
-          .filter(Boolean) as string[]
-      )
-    )
-
-    let roteiros: Roteiro[] = []
-
-    if (roteiroIds.length > 0) {
-      const { data: roteirosData, error: roteirosError } = await supabase
-        .from('roteiros')
-        .select('*')
-        .in('id', roteiroIds)
-
-      if (!roteirosError) {
-        roteiros = (roteirosData || []) as Roteiro[]
-      }
-    }
-
-    let membros: GrupoMembro[] = []
-
-    const { data: membrosData, error: membrosError } = await supabase
-      .from('grupo_membros')
-      .select('*')
-      .in('grupo_id', grupoIds)
-      .eq('status', 'ativo')
-
-    if (!membrosError) {
-      membros = (membrosData || []) as GrupoMembro[]
-    }
-
-    let mensagens: GrupoMensagem[] = []
-
-    const { data: mensagensData, error: mensagensError } = await supabase
-      .from('grupo_mensagens')
-      .select('*')
-      .in('grupo_id', grupoIds)
-      .eq('status', 'ativa')
-      .order('created_at', { ascending: false })
-      .limit(200)
-
-    if (!mensagensError) {
-      mensagens = (mensagensData || []) as GrupoMensagem[]
-    }
-
-    let notificacoes: GrupoNotificacao[] = []
-
-    const { data: notificacoesData, error: notificacoesError } = await supabase
-      .from('grupo_notificacoes')
-      .select('*')
-      .in('grupo_id', grupoIds)
-      .eq('user_id_destino', guiaId)
-      .eq('lida', false)
-
-    if (!notificacoesError) {
-      notificacoes = (notificacoesData || []) as GrupoNotificacao[]
-    }
-
-    let reservas: Reserva[] = []
-
-    if (roteiroIds.length > 0) {
-      const { data: reservasData, error: reservasError } = await supabase
-        .from('reservas')
-        .select('*')
-        .in('roteiro_id', roteiroIds)
-
-      if (!reservasError) {
-        reservas = (reservasData || []) as Reserva[]
-      }
-    }
-
-    const gruposCompletos: GrupoCompleto[] = gruposBase.map((grupo) => {
-      const roteiro =
-        roteiros.find((item) => item.id === grupo.roteiro_id) ||
-        null
-
-      const membrosGrupo = membros.filter((membro) => membro.grupo_id === grupo.id)
-      const clientesGrupo = membrosGrupo.filter((membro) => papelCliente(membro.papel))
-      const mensagensGrupo = mensagens.filter((mensagem) => mensagem.grupo_id === grupo.id)
-      const notificacoesGrupo = notificacoes.filter((notificacao) => notificacao.grupo_id === grupo.id)
-
-      const reservasGrupo = reservas.filter(
-        (reserva) => reserva.roteiro_id && reserva.roteiro_id === grupo.roteiro_id
-      )
-
-      const reservasConfirmadas = reservasGrupo.filter(pagamentoConfirmado)
-
-      const pessoasConfirmadas = reservasConfirmadas.reduce(
-        (total, reserva) => total + Number(reserva.quantidade_pessoas || 0),
-        0
-      )
-
-      const valorConfirmado = reservasConfirmadas.reduce(
-        (total, reserva) => total + Number(reserva.valor_total || 0),
-        0
-      )
-
-      const ultimaMensagem =
-        mensagensGrupo.sort((a, b) => {
-          const dataA = new Date(a.created_at || '').getTime()
-          const dataB = new Date(b.created_at || '').getTime()
-
-          return (Number.isNaN(dataB) ? 0 : dataB) - (Number.isNaN(dataA) ? 0 : dataA)
-        })[0] || null
-
-      return {
-        ...grupo,
-        roteiro,
-        membros_count: membrosGrupo.length,
-        clientes_count: clientesGrupo.length,
-        mensagens_count: mensagensGrupo.length,
-        notificacoes_nao_lidas: notificacoesGrupo.length,
-        reservas_confirmadas: reservasConfirmadas.length,
-        pessoas_confirmadas: pessoasConfirmadas,
-        valor_confirmado: valorConfirmado,
-        ultima_mensagem: ultimaMensagem
-      }
-    })
-
-    const totalClientes = gruposCompletos.reduce(
-      (total, grupo) => total + grupo.clientes_count,
-      0
-    )
-
-    const totalReservasConfirmadas = gruposCompletos.reduce(
-      (total, grupo) => total + grupo.reservas_confirmadas,
-      0
-    )
-
-    const totalNotificacoes = gruposCompletos.reduce(
-      (total, grupo) => total + grupo.notificacoes_nao_lidas,
-      0
-    )
-
-    setGrupos(gruposCompletos)
-
-    setStats({
-      totalGrupos: gruposCompletos.length,
-      gruposAtivos: gruposCompletos.filter((grupo) => normalizar(grupo.status) === 'ativo').length,
-      clientesConfirmados: totalClientes,
-      reservasConfirmadas: totalReservasConfirmadas,
-      notificacoesNaoLidas: totalNotificacoes
-    })
-
-    setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
   }
 
   const atualizar = async () => {
