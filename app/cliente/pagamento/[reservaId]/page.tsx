@@ -272,6 +272,7 @@ export default function ClientePagamentoReservaPage() {
   const [gerandoPix, setGerandoPix] = useState(false)
   const [copiado, setCopiado] = useState(false)
   const [mensagem, setMensagem] = useState('')
+  const [politicaCancelamentoAberta, setPoliticaCancelamentoAberta] = useState(false)
 
   useEffect(() => {
     if (iniciouRef.current) return
@@ -558,6 +559,21 @@ export default function ClientePagamentoReservaPage() {
                 </div>
               </div>
             </article>
+
+            <button
+              type="button"
+              className="cancelPolicyCard"
+              onClick={() => setPoliticaCancelamentoAberta(true)}
+              aria-label="Abrir política de cancelamento, reembolso e Saldo de Jornada"
+            >
+              <span className="policyIcon">↩</span>
+              <span className="policyContent">
+                <span className="microLabel">Cancelamento e reembolso</span>
+                <strong>Confira a política antes de gerar o PIX</strong>
+                <small>Inclui arrependimento em até 7 dias, reembolso proporcional, Saldo de Jornada e análise excepcional.</small>
+              </span>
+              <span className="policyArrow">›</span>
+            </button>
           </div>
 
           <aside className="paymentPanel">
@@ -609,6 +625,76 @@ export default function ClientePagamentoReservaPage() {
           </aside>
         </section>
       </section>
+
+      {politicaCancelamentoAberta && (
+        <div className="modalOverlay" role="dialog" aria-modal="true" aria-label="Política de cancelamento e reembolso">
+          <section className="policyModal">
+            <div className="modalHeader">
+              <div>
+                <span className="microLabel">Política do cliente</span>
+                <h2>Cancelamento, reembolso e Saldo de Jornada</h2>
+                <p>Estas regras são apresentadas antes do pagamento para garantir clareza ao cliente e organização operacional da experiência.</p>
+              </div>
+
+              <button
+                type="button"
+                className="closeModal"
+                onClick={() => setPoliticaCancelamentoAberta(false)}
+                aria-label="Fechar política de cancelamento"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="policyIntro">
+              <strong>Resumo objetivo</strong>
+              <span>O valor a restituir pode variar conforme o prazo do cancelamento, os custos já assumidos, a organização do guia e a possibilidade de ocupar novamente a vaga.</span>
+            </div>
+
+            <div className="policyTable">
+              <div className="policyRow highlight">
+                <strong>Até 7 dias da compra, desde que antes da data do roteiro</strong>
+                <span>Reembolso integral ou Saldo de Jornada integral.</span>
+              </div>
+
+              <div className="policyRow">
+                <strong>Mais de 7 dias antes da data do roteiro</strong>
+                <span>Reembolso de 90% ou Saldo de Jornada de 100%.</span>
+              </div>
+
+              <div className="policyRow">
+                <strong>Entre 7 e 3 dias antes do roteiro</strong>
+                <span>Reembolso de 70% ou Saldo de Jornada de 85%.</span>
+              </div>
+
+              <div className="policyRow">
+                <strong>Entre 72h e 24h antes do roteiro</strong>
+                <span>Reembolso de 50% ou Saldo de Jornada de 70%.</span>
+              </div>
+
+              <div className="policyRow warning">
+                <strong>Menos de 24h antes ou não comparecimento</strong>
+                <span>Sem reembolso automático; análise excepcional por saúde, força maior ou decisão do guia/plataforma.</span>
+              </div>
+            </div>
+
+            <div className="policyText">
+              <h3>Condições importantes</h3>
+              <p>O direito de arrependimento será respeitado quando aplicável à contratação online, desde que exercido antes da realização ou início da experiência.</p>
+              <p>Cancelamentos feitos pelo guia, pela plataforma, por segurança, clima severo, inviabilidade operacional ou força maior poderão gerar remarcação, reembolso ou Saldo de Jornada, conforme o caso.</p>
+              <p>O acesso ao grupo interno do roteiro é liberado após confirmação do pagamento. Em caso de cancelamento, o acesso poderá ser encerrado ou limitado, preservando registros administrativos necessários.</p>
+            </div>
+
+            <button
+              type="button"
+              className="primaryButton"
+              onClick={() => setPoliticaCancelamentoAberta(false)}
+            >
+              Entendi a política
+            </button>
+          </section>
+        </div>
+      )}
     </main>
   )
 }
@@ -1044,6 +1130,221 @@ const styles = `
     outline: none;
   }
 
+  .cancelPolicyCard {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) 22px;
+    gap: 12px;
+    align-items: center;
+    text-align: left;
+    border: 1px solid rgba(212,179,90,0.24);
+    border-radius: 28px;
+    background:
+      radial-gradient(circle at 100% 0%, rgba(212,179,90,0.18), transparent 36%),
+      rgba(255,253,247,0.88);
+    box-shadow: 0 14px 34px rgba(15,23,42,0.055);
+    padding: 16px;
+    cursor: pointer;
+    color: #172018;
+    transition: 0.18s ease;
+  }
+
+  .cancelPolicyCard:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 44px rgba(15,23,42,0.09);
+    border-color: rgba(212,179,90,0.38);
+  }
+
+  .policyIcon {
+    width: 46px;
+    height: 46px;
+    border-radius: 18px;
+    background: #203c2e;
+    color: #fffdf7;
+    display: grid;
+    place-items: center;
+    font-size: 22px;
+    font-weight: 950;
+  }
+
+  .policyContent {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .policyContent strong {
+    color: #172018;
+    font-size: 15px;
+    line-height: 1.15;
+    font-weight: 950;
+    letter-spacing: -0.03em;
+  }
+
+  .policyContent small {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 780;
+  }
+
+  .policyArrow {
+    color: #203c2e;
+    font-size: 28px;
+    line-height: 1;
+    font-weight: 850;
+  }
+
+  .modalOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8, 13, 7, 0.54);
+    backdrop-filter: blur(12px);
+  }
+
+  .policyModal {
+    width: min(760px, 100%);
+    max-height: calc(100dvh - 28px);
+    overflow: auto;
+    border-radius: 32px;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(132,204,22,0.13), transparent 30%),
+      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 100%);
+    border: 1px solid rgba(255,255,255,0.70);
+    box-shadow: 0 34px 90px rgba(0,0,0,0.28);
+    padding: 22px;
+  }
+
+  .modalHeader {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: flex-start;
+  }
+
+  .modalHeader h2 {
+    margin: 8px 0 0;
+    color: #172018;
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 0.95;
+    font-weight: 950;
+    letter-spacing: -0.065em;
+  }
+
+  .modalHeader p {
+    max-width: 620px;
+    margin: 10px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.5;
+    font-weight: 760;
+  }
+
+  .closeModal {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(15,23,42,0.08);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.78);
+    color: #172018;
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .policyIntro {
+    margin-top: 16px;
+    border-radius: 22px;
+    background: rgba(32,60,46,0.08);
+    border: 1px solid rgba(32,60,46,0.10);
+    padding: 14px;
+    display: grid;
+    gap: 5px;
+  }
+
+  .policyIntro strong,
+  .policyText h3 {
+    color: #203c2e;
+    font-size: 14px;
+    font-weight: 950;
+    margin: 0;
+  }
+
+  .policyIntro span {
+    color: #4b5563;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 760;
+  }
+
+  .policyTable {
+    margin-top: 14px;
+    display: grid;
+    gap: 9px;
+  }
+
+  .policyRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.72fr);
+    gap: 12px;
+    align-items: center;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.76);
+    border: 1px solid rgba(15,23,42,0.06);
+    padding: 13px;
+  }
+
+  .policyRow.highlight {
+    border-color: rgba(22,163,74,0.18);
+    background: rgba(236,253,245,0.82);
+  }
+
+  .policyRow.warning {
+    border-color: rgba(217,119,6,0.18);
+    background: rgba(254,243,199,0.72);
+  }
+
+  .policyRow strong {
+    color: #172018;
+    font-size: 13px;
+    line-height: 1.32;
+    font-weight: 950;
+  }
+
+  .policyRow span {
+    color: #4b5563;
+    font-size: 12.5px;
+    line-height: 1.38;
+    font-weight: 800;
+  }
+
+  .policyText {
+    margin-top: 15px;
+    border-radius: 22px;
+    background: rgba(255,253,247,0.70);
+    border: 1px solid rgba(15,23,42,0.055);
+    padding: 15px;
+  }
+
+  .policyText p {
+    margin: 8px 0 0;
+    color: #64748b;
+    font-size: 12.5px;
+    line-height: 1.55;
+    font-weight: 740;
+  }
+
+  .policyModal .primaryButton {
+    margin-top: 14px;
+  }
+
   @media (max-width: 980px) {
     .titleArea,
     .checkoutGrid,
@@ -1108,8 +1409,19 @@ const styles = `
     }
 
     .detailsGrid,
-    .rowList {
+    .rowList,
+    .policyRow {
       grid-template-columns: 1fr;
+    }
+
+    .policyModal {
+      border-radius: 26px;
+      padding: 18px;
+    }
+
+    .modalOverlay {
+      align-items: flex-end;
+      padding: 10px;
     }
 
     .subActions {
