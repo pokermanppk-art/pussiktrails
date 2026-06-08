@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
 type AnyRecord = Record<string, any>
@@ -76,11 +76,25 @@ function iniciais(nome?: string | null) {
 
 export default function ClienteGrupoPage() {
   const router = useRouter()
-  const params = useParams()
-  const iniciouRef = useRef(false)
+  const params = useParams<Record<string, string | string[]>>()
+  const grupoCarregadoRef = useRef('')
   const fimMensagensRef = useRef<HTMLDivElement | null>(null)
 
-  const grupoId = texto(params?.grupoId || params?.id || '')
+  const grupoId = useMemo(() => {
+    const direto = params?.grupoId || params?.id || params?.grupo || params?.slug
+    const valorDireto = Array.isArray(direto) ? direto[0] : direto
+
+    if (valorDireto) return texto(valorDireto)
+
+    const valores = Object.values(params || {})
+
+    for (const valor of valores) {
+      const item = Array.isArray(valor) ? valor[0] : valor
+      if (item) return texto(item)
+    }
+
+    return ''
+  }, [params])
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
   const [grupo, setGrupo] = useState<AnyRecord | null>(null)
@@ -98,11 +112,18 @@ export default function ClienteGrupoPage() {
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState('')
 
   useEffect(() => {
-    if (iniciouRef.current) return
-    iniciouRef.current = true
+    if (!grupoId) {
+      setCarregando(false)
+      setErro('Grupo não identificado. Volte para seus grupos e tente novamente.')
+      return
+    }
+
+    if (grupoCarregadoRef.current === grupoId) return
+
+    grupoCarregadoRef.current = grupoId
     iniciar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [grupoId])
 
   useEffect(() => {
     if (!user?.id || !grupo?.id || !acessoLiberado) return
@@ -247,7 +268,7 @@ export default function ClienteGrupoPage() {
   if (carregando) {
     return (
       <main className="loadingScreen">
-        <style jsx>{loadingStyles}</style>
+        <style>{loadingStyles}</style>
         <div className="spinner" />
         <p>Abrindo grupo da aventura...</p>
       </main>
@@ -262,7 +283,7 @@ export default function ClienteGrupoPage() {
 
   return (
     <main className="page">
-      <style jsx>{styles}</style>
+      <style>{styles}</style>
 
       <header className="topbar">
         <div className="topbarInner">
