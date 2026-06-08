@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 type AnyRecord = Record<string, any>
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
-function json(data: AnyRecord, status = 200) {
+function json(data: any, status = 200) {
   return NextResponse.json(data, { status })
 }
 
@@ -20,8 +20,8 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       persistSession: false,
-      autoRefreshToken: false
-    }
+      autoRefreshToken: false,
+    },
   })
 }
 
@@ -36,18 +36,26 @@ function normalizar(valor: unknown) {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
-function idUsuarioDeMembro(membro: AnyRecord) {
-  return texto(membro.user_id || membro.usuario_id || membro.membro_id || membro.cliente_id || membro.guia_id)
+function primeiroValor(registro: AnyRecord | null | undefined, campos: string[]) {
+  for (const campo of campos) {
+    const valor = texto(registro?.[campo])
+    if (valor) return valor
+  }
+  return ''
 }
 
-function papelGuiaAdmin(papel: unknown) {
-  const valor = normalizar(papel)
-  return valor === 'guia_admin' || valor === 'admin' || valor === 'guia' || valor === 'administrador'
+function usuarioIdDeMembro(membro: AnyRecord) {
+  return primeiroValor(membro, ['user_id', 'usuario_id', 'membro_id', 'cliente_id', 'guia_id'])
 }
 
 function papelCliente(papel: unknown) {
   const valor = normalizar(papel)
   return valor === 'cliente' || valor === 'participante' || valor === 'membro'
+}
+
+function papelGuiaAdmin(papel: unknown) {
+  const valor = normalizar(papel)
+  return valor === 'guia_admin' || valor === 'guia' || valor === 'admin'
 }
 
 function pagamentoConfirmado(reserva: AnyRecord) {
@@ -61,7 +69,6 @@ function pagamentoConfirmado(reserva: AnyRecord) {
       reserva.transaction_status ||
       reserva.status_transacao
   )
-
   const status = normalizar(reserva.status)
 
   const confirmados = new Set([
@@ -77,51 +84,79 @@ function pagamentoConfirmado(reserva: AnyRecord) {
     'complete',
     'succeeded',
     'success',
-    'sucesso',
     'liquidado',
     'liquidada',
     'realizado',
     'realizada',
-    'concluido',
-    'concluida',
-    'concluído',
-    'concluída'
   ])
 
   return confirmados.has(pagamento) || confirmados.has(status)
 }
 
-function nomeUsuario(usuario?: AnyRecord | null) {
-  return usuario?.nome || usuario?.name || usuario?.email || 'Participante'
-}
-
-async function buscarGrupo(supabase: any, grupoOuRoteiroId: string) {
-  const id = texto(grupoOuRoteiroId)
-
-  if (!id) return null
-
-  const porId = await supabase
+async function buscarGrupo(supabase: any, grupoId: string) {
+  const { data, error } = await supabase
     .from('grupos_roteiros')
     .select('*')
-    .eq('id', id)
+    .eq('id', grupoId)
     .maybeSingle()
 
-  if (porId.error) throw porId.error
-  if (porId.data?.id) return porId.data as AnyRecord
-
-  const porRoteiro = await supabase
-    .from('grupos_roteiros')
-    .select('*')
-    .eq('roteiro_id', id)
-    .maybeSingle()
-
-  if (porRoteiro.error) throw porRoteiro.error
-  return (porRoteiro.data || null) as AnyRecord | null
+  if (error) throw error
+  return (data || null) as AnyRecord | null
 }
 
-async function buscarUsuarios(supabase: any, ids: string[]) {
+async function buscarGrupoPorRoteiro(supabase: any, roteiroId: string) {
+  const { data, error } = await supabase
+    .from('grupos_roteiros')
+    .select('*')
+    .eq('roteiro_id', roteiroId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return (data || null) as AnyRecord | null
+}
+
+async function validarGuiaAdmin(supabase: any, grupo: AnyRecord, guiaId: string) {
+  if (!guiaId) return false
+
+  if (texto(grupo.guia_id) === guiaId) return true
+
+  const { data, error } = await supabase
+    .from('grupo_membros')
+    .select('*')
+    .eq('grupo_id', grupo.id)
+    .eq('status', 'ativo')
+
+  if (error) throw error
+
+  const membros = Array.isArray(data) ? (data as AnyRecord[]) : []
+
+  return membros.some((membro) => {
+    const id = usuarioIdDeMembro(membro)
+    return id === guiaId && papelGuiaAdmin(membro.papel)
+  })
+}
+
+async function carregarRoteiro(supabase: any, roteiroId: string) {
+  if (!roteiroId) return null
+
+  const { data, error } = await supabase
+    .from('roteiros')
+    .select('*')
+    .eq('id', roteiroId)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('Aviso ao buscar roteiro do grupo:', error)
+    return null
+  }
+
+  return (data || null) as AnyRecord | null
+}
+
+async function carregarUsuariosPorIds(supabase: any, ids: string[]) {
   const idsUnicos = Array.from(new Set(ids.map(texto).filter(Boolean)))
-
   if (idsUnicos.length === 0) return [] as AnyRecord[]
 
   const { data, error } = await supabase
@@ -130,224 +165,351 @@ async function buscarUsuarios(supabase: any, ids: string[]) {
     .in('id', idsUnicos)
 
   if (error) {
-    console.warn('Aviso ao buscar usuários do grupo:', error)
+    console.warn('Aviso ao buscar usuários:', error)
     return [] as AnyRecord[]
   }
 
-  return (data || []) as AnyRecord[]
+  return Array.isArray(data) ? (data as AnyRecord[]) : []
 }
 
-async function carregarDetalheGrupo(
-  supabase: any,
-  params: {
-    grupoId: string
-    guiaId: string
-    marcarLidas?: boolean
-  }
-) {
-  const grupoId = texto(params.grupoId)
-  const guiaId = texto(params.guiaId)
-
-  if (!grupoId) {
-    return {
-      status: 400,
-      body: {
-        sucesso: false,
-        erro: 'Grupo não identificado.'
-      }
-    }
-  }
-
-  if (!guiaId) {
-    return {
-      status: 401,
-      body: {
-        sucesso: false,
-        erro: 'Guia não identificado.'
-      }
-    }
-  }
-
-  const grupo = await buscarGrupo(supabase, grupoId)
-
-  if (!grupo?.id) {
-    return {
-      status: 404,
-      body: {
-        sucesso: false,
-        erro: 'Não foi possível localizar o grupo.',
-        grupoId
-      }
-    }
-  }
-
-  const { data: membrosData, error: membrosError } = await supabase
+async function carregarMembros(supabase: any, grupoId: string) {
+  const { data, error } = await supabase
     .from('grupo_membros')
     .select('*')
-    .eq('grupo_id', grupo.id)
+    .eq('grupo_id', grupoId)
     .eq('status', 'ativo')
     .order('entrou_em', { ascending: true })
 
-  if (membrosError) throw membrosError
+  if (error) {
+    console.warn('Aviso ao buscar membros:', error)
+    return [] as AnyRecord[]
+  }
 
-  const membrosBase = (membrosData || []) as AnyRecord[]
+  const membrosBase = Array.isArray(data) ? (data as AnyRecord[]) : []
+  const usuarios = await carregarUsuariosPorIds(supabase, membrosBase.map(usuarioIdDeMembro))
 
-  const guiaEhDonoDoGrupo = texto(grupo.guia_id) === guiaId
-  const guiaEhMembroAdmin = membrosBase.some((membro) => {
-    return idUsuarioDeMembro(membro) === guiaId && papelGuiaAdmin(membro.papel)
-  })
+  return membrosBase.map((membro): AnyRecord => {
+    const usuarioId = usuarioIdDeMembro(membro)
+    const usuario = usuarios.find((item) => item.id === usuarioId)
 
-  if (!guiaEhDonoDoGrupo && !guiaEhMembroAdmin) {
     return {
-      status: 403,
-      body: {
-        sucesso: false,
-        erro: 'Você não tem permissão para administrar este grupo.',
-        detalhe: 'O guia logado não é o guia_id do grupo e não consta como guia_admin ativo.',
-        grupo: {
-          id: grupo.id,
-          roteiro_id: grupo.roteiro_id,
-          guia_id: grupo.guia_id,
-          titulo: grupo.titulo,
-          status: grupo.status
-        },
-        guiaId
-      }
+      ...membro,
+      user_id: membro.user_id || membro.usuario_id || membro.membro_id || usuarioId,
+      usuario_nome: usuario?.nome || usuario?.name || usuario?.email || 'Participante',
+      usuario_email: usuario?.email || '',
+      usuario_avatar_url: usuario?.avatar_url || usuario?.foto_url || usuario?.imagem_url || '',
     }
+  })
+}
+
+async function carregarReservas(supabase: any, roteiroId: string) {
+  if (!roteiroId) return [] as AnyRecord[]
+
+  const { data, error } = await supabase
+    .from('reservas')
+    .select('*')
+    .eq('roteiro_id', roteiroId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.warn('Aviso ao buscar reservas:', error)
+    return [] as AnyRecord[]
   }
 
-  let roteiro: AnyRecord | null = null
+  const reservasBase = Array.isArray(data) ? (data as AnyRecord[]) : []
+  const usuarios = await carregarUsuariosPorIds(
+    supabase,
+    reservasBase.map((reserva) => texto(reserva.cliente_id || reserva.id_cliente || reserva.clienteId))
+  )
 
-  if (grupo.roteiro_id) {
-    const { data: roteiroData, error: roteiroError } = await supabase
-      .from('roteiros')
-      .select('*')
-      .eq('id', grupo.roteiro_id)
-      .maybeSingle()
+  return reservasBase.map((reserva): AnyRecord => {
+    const clienteId = texto(reserva.cliente_id || reserva.id_cliente || reserva.clienteId)
+    const cliente = usuarios.find((item) => item.id === clienteId)
 
-    if (!roteiroError && roteiroData?.id) {
-      roteiro = roteiroData as AnyRecord
+    return {
+      ...reserva,
+      cliente_id: clienteId,
+      cliente_nome: cliente?.nome || cliente?.name || cliente?.email || 'Cliente',
+      cliente_email: cliente?.email || '',
+      cliente_avatar_url: cliente?.avatar_url || cliente?.foto_url || cliente?.imagem_url || '',
     }
-  }
+  })
+}
 
-  let reservas: AnyRecord[] = []
-
-  if (grupo.roteiro_id) {
-    const { data: reservasData, error: reservasError } = await supabase
-      .from('reservas')
-      .select('*')
-      .eq('roteiro_id', grupo.roteiro_id)
-      .order('created_at', { ascending: false })
-
-    if (!reservasError && Array.isArray(reservasData)) {
-      reservas = reservasData as AnyRecord[]
-    }
-  }
-
-  const { data: mensagensData, error: mensagensError } = await supabase
+async function carregarMensagensAtivas(supabase: any, grupoId: string) {
+  const { data, error } = await supabase
     .from('grupo_mensagens')
     .select('*')
-    .eq('grupo_id', grupo.id)
+    .eq('grupo_id', grupoId)
     .eq('status', 'ativa')
     .order('created_at', { ascending: true })
     .limit(250)
 
-  if (mensagensError) throw mensagensError
+  if (error) {
+    console.warn('Aviso ao buscar mensagens:', error)
+    return [] as AnyRecord[]
+  }
 
-  const mensagensBase = (mensagensData || []) as AnyRecord[]
+  const mensagensBase = Array.isArray(data) ? (data as AnyRecord[]) : []
+  const usuarios = await carregarUsuariosPorIds(
+    supabase,
+    mensagensBase.map((mensagem) => texto(mensagem.user_id || mensagem.usuario_id))
+  )
 
-  const usuarioIds = [
-    ...membrosBase.map(idUsuarioDeMembro),
-    ...mensagensBase.map((mensagem) => texto(mensagem.user_id || mensagem.usuario_id)),
-    ...reservas.map((reserva) => texto(reserva.cliente_id || reserva.id_cliente || reserva.clienteId))
-  ].filter(Boolean)
-
-  const usuarios = await buscarUsuarios(supabase, usuarioIds)
-
-  const usuarioPorId = new Map<string, AnyRecord>()
-  usuarios.forEach((usuario) => {
-    if (usuario?.id) usuarioPorId.set(String(usuario.id), usuario)
-  })
-
-  const membros: AnyRecord[] = membrosBase.map((membro): AnyRecord => {
-    const usuarioId = idUsuarioDeMembro(membro)
-    const usuario = usuarioPorId.get(usuarioId)
-
-    return {
-      ...membro,
-      user_id: membro.user_id || usuarioId,
-      usuario_nome: nomeUsuario(usuario),
-      usuario_email: usuario?.email || ''
-    }
-  })
-
-  const mensagens: AnyRecord[] = mensagensBase.map((mensagem): AnyRecord => {
-    const usuarioId = texto(mensagem.user_id || mensagem.usuario_id)
-    const usuario = usuarioPorId.get(usuarioId)
+  return mensagensBase.map((mensagem): AnyRecord => {
+    const userId = texto(mensagem.user_id || mensagem.usuario_id)
+    const usuario = usuarios.find((item) => item.id === userId)
 
     return {
       ...mensagem,
-      user_id: mensagem.user_id || usuarioId || null,
-      usuario_nome: usuarioId ? nomeUsuario(usuario) : 'Sistema'
+      user_id: userId || null,
+      usuario_nome: userId ? usuario?.nome || usuario?.name || usuario?.email || 'Participante' : 'Sistema',
     }
   })
+}
 
-  const reservasComCliente: AnyRecord[] = reservas.map((reserva): AnyRecord => {
-    const clienteId = texto(reserva.cliente_id || reserva.id_cliente || reserva.clienteId)
-    const cliente = usuarioPorId.get(clienteId)
+async function marcarNotificacoesComoLidas(supabase: any, grupoId: string, userId: string) {
+  if (!grupoId || !userId) return
 
-    return {
-      ...reserva,
-      cliente_id: reserva.cliente_id || clienteId || null,
-      cliente_nome: nomeUsuario(cliente),
-      cliente_email: cliente?.email || ''
-    }
-  })
+  const { error } = await supabase
+    .from('grupo_notificacoes')
+    .update({
+      lida: true,
+      lida_em: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('grupo_id', grupoId)
+    .eq('user_id_destino', userId)
+    .eq('lida', false)
 
-  const reservasConfirmadas: AnyRecord[] = reservasComCliente.filter((reserva: AnyRecord) => pagamentoConfirmado(reserva))
-  const membrosClientes: AnyRecord[] = membros.filter((membro: AnyRecord) => papelCliente(membro['papel']))
+  if (error) console.warn('Aviso ao marcar notificações como lidas:', error)
+}
+
+async function detalheGrupo(supabase: any, grupo: AnyRecord, guiaId: string) {
+  const roteiro = await carregarRoteiro(supabase, texto(grupo.roteiro_id))
+  const membros = await carregarMembros(supabase, grupo.id)
+  const reservas = await carregarReservas(supabase, texto(grupo.roteiro_id))
+  const mensagens = await carregarMensagensAtivas(supabase, grupo.id)
+  const reservasConfirmadas = reservas.filter(pagamentoConfirmado)
+  const clientesConfirmados = membros.filter((membro) => papelCliente(membro.papel))
 
   const pessoasConfirmadas = reservasConfirmadas.reduce(
-    (total: number, reserva: AnyRecord) => total + Number(reserva['quantidade_pessoas'] || 0),
+    (total, reserva) => total + Number(reserva['quantidade_pessoas'] || 0),
     0
   )
 
   const valorConfirmado = reservasConfirmadas.reduce(
-    (total: number, reserva: AnyRecord) => total + Number(reserva['valor_total'] || 0),
+    (total, reserva) => total + Number(reserva['valor_total'] || 0),
     0
   )
 
-  if (params.marcarLidas !== false) {
-    await supabase
-      .from('grupo_notificacoes')
-      .update({
-        lida: true,
-        lida_em: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('grupo_id', grupo.id)
-      .eq('user_id_destino', guiaId)
-      .eq('lida', false)
-  }
+  await marcarNotificacoesComoLidas(supabase, grupo.id, guiaId)
 
   return {
-    status: 200,
-    body: {
-      sucesso: true,
-      grupo,
-      roteiro,
-      membros,
-      mensagens,
-      reservas: reservasComCliente,
-      stats: {
-        clientesConfirmados: membrosClientes.length,
-        reservasConfirmadas: reservasConfirmadas.length,
-        pessoasConfirmadas,
-        valorConfirmado
-      },
-      ultimaAtualizacao: new Date().toLocaleTimeString('pt-BR')
-    }
+    grupo,
+    roteiro,
+    membros,
+    mensagens,
+    reservas,
+    stats: {
+      clientesConfirmados: clientesConfirmados.length,
+      reservasConfirmadas: reservasConfirmadas.length,
+      pessoasConfirmadas,
+      valorConfirmado,
+    },
+    ultimaAtualizacao: new Date().toLocaleTimeString('pt-BR'),
   }
+}
+
+async function inserirMensagemSistema(supabase: any, grupoId: string, mensagem: string) {
+  const { error } = await supabase.from('grupo_mensagens').insert({
+    grupo_id: grupoId,
+    user_id: null,
+    mensagem,
+    tipo: 'sistema',
+    status: 'ativa',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  })
+
+  if (error) console.warn('Aviso ao criar mensagem de sistema:', error)
+}
+
+async function arquivarMensagensAtivas(supabase: any, grupoId: string) {
+  const basePayload = {
+    updated_at: new Date().toISOString(),
+  }
+
+  const tentativa = await supabase
+    .from('grupo_mensagens')
+    .update({
+      ...basePayload,
+      status: 'historico_admin',
+    })
+    .eq('grupo_id', grupoId)
+    .eq('status', 'ativa')
+
+  if (!tentativa.error) return
+
+  console.warn('Falha ao arquivar mensagens como historico_admin; tentando arquivada:', tentativa.error)
+
+  const fallback = await supabase
+    .from('grupo_mensagens')
+    .update({
+      ...basePayload,
+      status: 'arquivada',
+    })
+    .eq('grupo_id', grupoId)
+    .eq('status', 'ativa')
+
+  if (fallback.error) throw fallback.error
+}
+
+async function desativarClientesAntigos(supabase: any, grupoId: string) {
+  const { data, error } = await supabase
+    .from('grupo_membros')
+    .select('*')
+    .eq('grupo_id', grupoId)
+    .eq('status', 'ativo')
+
+  if (error) {
+    console.warn('Aviso ao buscar membros para desativar:', error)
+    return
+  }
+
+  const membros = Array.isArray(data) ? (data as AnyRecord[]) : []
+  const clientes = membros.filter((membro) => papelCliente(membro.papel)).map((membro) => membro.id).filter(Boolean)
+
+  if (clientes.length === 0) return
+
+  const tentativa = await supabase
+    .from('grupo_membros')
+    .update({ status: 'historico', updated_at: new Date().toISOString() })
+    .in('id', clientes)
+
+  if (!tentativa.error) return
+
+  console.warn('Falha ao mover clientes para historico; tentando inativo:', tentativa.error)
+
+  const fallback = await supabase
+    .from('grupo_membros')
+    .update({ status: 'inativo', updated_at: new Date().toISOString() })
+    .in('id', clientes)
+
+  if (fallback.error) throw fallback.error
+}
+
+async function encerrarGrupo(supabase: any, grupo: AnyRecord, motivo: string) {
+  const agora = new Date().toISOString()
+
+  const { data, error } = await supabase
+    .from('grupos_roteiros')
+    .update({
+      status: 'encerrado',
+      permite_mensagens: false,
+      encerrado_em: agora,
+      encerrado_motivo: motivo || 'Grupo finalizado pelo guia após o roteiro.',
+      updated_at: agora,
+    })
+    .eq('id', grupo.id)
+    .select('*')
+    .maybeSingle()
+
+  if (error) throw error
+
+  await inserirMensagemSistema(
+    supabase,
+    grupo.id,
+    'O guia finalizou este grupo. O histórico ficará preservado para consulta administrativa.'
+  )
+
+  return (data || grupo) as AnyRecord
+}
+
+async function iniciarNovoCiclo(supabase: any, grupo: AnyRecord) {
+  const agora = new Date().toISOString()
+
+  await arquivarMensagensAtivas(supabase, grupo.id)
+  await desativarClientesAntigos(supabase, grupo.id)
+
+  const { data, error } = await supabase
+    .from('grupos_roteiros')
+    .update({
+      status: 'ativo',
+      permite_mensagens: true,
+      encerrado_em: null,
+      encerrado_motivo: null,
+      aviso_fixado: null,
+      updated_at: agora,
+    })
+    .eq('id', grupo.id)
+    .select('*')
+    .maybeSingle()
+
+  if (error) throw error
+
+  await inserirMensagemSistema(
+    supabase,
+    grupo.id,
+    'Novo ciclo do roteiro iniciado. O chat começa limpo para a próxima data.'
+  )
+
+  return (data || grupo) as AnyRecord
+}
+
+async function enviarMensagem(supabase: any, grupo: AnyRecord, guiaId: string, mensagem: string) {
+  const permiteMensagens = grupo.permite_mensagens !== false && normalizar(grupo.status) === 'ativo'
+
+  if (!permiteMensagens) {
+    throw new Error('Este grupo está encerrado. Reabra para uma nova data antes de enviar mensagens.')
+  }
+
+  const textoMensagem = texto(mensagem)
+  if (!textoMensagem) throw new Error('Digite uma mensagem.')
+
+  const { error } = await supabase.from('grupo_mensagens').insert({
+    grupo_id: grupo.id,
+    user_id: guiaId,
+    mensagem: textoMensagem,
+    tipo: 'texto',
+    status: 'ativa',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  })
+
+  if (error) throw error
+}
+
+async function salvarAviso(supabase: any, grupo: AnyRecord, guiaId: string, aviso: string) {
+  const textoAviso = texto(aviso)
+
+  const { data, error } = await supabase
+    .from('grupos_roteiros')
+    .update({
+      aviso_fixado: textoAviso || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', grupo.id)
+    .select('*')
+    .maybeSingle()
+
+  if (error) throw error
+
+  if (textoAviso && normalizar(data?.status) === 'ativo') {
+    const { error: msgError } = await supabase.from('grupo_mensagens').insert({
+      grupo_id: grupo.id,
+      user_id: guiaId,
+      mensagem: `Aviso do guia: ${textoAviso}`,
+      tipo: 'aviso_guia',
+      status: 'ativa',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+
+    if (msgError) console.warn('Aviso ao inserir mensagem de aviso fixado:', msgError)
+  }
+
+  return (data || grupo) as AnyRecord
 }
 
 export async function POST(request: NextRequest) {
@@ -355,126 +517,83 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin()
     const body = await request.json().catch(() => ({}))
 
-    const acao = normalizar(body?.acao || body?.action || 'detalhe')
-    const grupoId = texto(body?.grupoId || body?.grupo_id || body?.id || body?.roteiroId || body?.roteiro_id)
+    const acao = normalizar(body?.acao || body?.action || 'detalhar')
     const guiaId = texto(body?.guiaId || body?.guia_id || body?.userId || body?.user_id)
+    const grupoId = texto(body?.grupoId || body?.grupo_id || body?.id)
+    const roteiroId = texto(body?.roteiroId || body?.roteiro_id)
 
-    const carregado = await carregarDetalheGrupo(supabase, {
-      grupoId,
-      guiaId,
-      marcarLidas: acao === 'detalhe'
-    })
-
-    if (carregado.status !== 200) {
-      return json(carregado.body, carregado.status)
+    if (!guiaId) {
+      return json({ sucesso: false, erro: 'Informe guiaId.' }, 400)
     }
 
-    const grupo = carregado.body.grupo as AnyRecord
+    let grupo: AnyRecord | null = null
+
+    if (grupoId) grupo = await buscarGrupo(supabase, grupoId)
+    if (!grupo && roteiroId) grupo = await buscarGrupoPorRoteiro(supabase, roteiroId)
+
+    if (!grupo?.id) {
+      return json({ sucesso: false, erro: 'Grupo não encontrado.' }, 404)
+    }
+
+    const autorizado = await validarGuiaAdmin(supabase, grupo, guiaId)
+
+    if (!autorizado) {
+      return json(
+        {
+          sucesso: false,
+          erro: 'Você não tem permissão para administrar este grupo.',
+          detalhe: 'Apenas o guia vinculado ao roteiro ou membro guia_admin ativo pode administrar.',
+        },
+        403
+      )
+    }
+
+    let grupoAtual: AnyRecord = grupo as AnyRecord
 
     if (acao === 'enviar_mensagem') {
-      const mensagem = texto(body?.mensagem || body?.texto)
+      await enviarMensagem(supabase, grupoAtual, guiaId, body?.mensagem)
 
-      if (!mensagem) {
-        return json({ sucesso: false, erro: 'Informe a mensagem.' }, 400)
+      const grupoRecarregado = await buscarGrupo(supabase, texto(grupoAtual.id))
+      if (grupoRecarregado?.id) {
+        grupoAtual = grupoRecarregado
       }
-
-      const { error } = await supabase
-        .from('grupo_mensagens')
-        .insert({
-          grupo_id: grupo.id,
-          user_id: guiaId,
-          mensagem,
-          tipo: 'texto',
-          status: 'ativa',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-
-      if (error) throw error
     }
 
     if (acao === 'salvar_aviso') {
-      const aviso = texto(body?.aviso || body?.aviso_fixado || body?.texto)
-
-      const { error } = await supabase
-        .from('grupos_roteiros')
-        .update({
-          aviso_fixado: aviso || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', grupo.id)
-
-      if (error) throw error
-
-      if (aviso) {
-        await supabase
-          .from('grupo_mensagens')
-          .insert({
-            grupo_id: grupo.id,
-            user_id: guiaId,
-            mensagem: `Aviso do guia: ${aviso}`,
-            tipo: 'aviso_guia',
-            status: 'ativa',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-      }
+      grupoAtual = await salvarAviso(
+        supabase,
+        grupoAtual,
+        guiaId,
+        body?.aviso || body?.aviso_fixado
+      )
     }
 
-    if (acao === 'encerrar') {
-      const { error } = await supabase
-        .from('grupos_roteiros')
-        .update({
-          status: 'encerrado',
-          encerrado_em: new Date().toISOString(),
-          encerrado_motivo: texto(body?.motivo) || 'Encerrado pelo guia.',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', grupo.id)
-
-      if (error) throw error
-
-      await supabase
-        .from('grupo_mensagens')
-        .insert({
-          grupo_id: grupo.id,
-          user_id: null,
-          mensagem: 'O guia encerrou este grupo.',
-          tipo: 'sistema',
-          status: 'ativa',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
+    if (acao === 'encerrar_grupo' || acao === 'finalizar_grupo') {
+      grupoAtual = await encerrarGrupo(
+        supabase,
+        grupoAtual,
+        texto(body?.motivo || body?.encerrado_motivo)
+      )
     }
 
-    if (acao === 'detalhe') {
-      return json(carregado.body)
+    if (acao === 'iniciar_novo_ciclo' || acao === 'reabrir_grupo' || acao === 'reiniciar_chat') {
+      grupoAtual = await iniciarNovoCiclo(supabase, grupoAtual)
     }
 
-    const atualizado = await carregarDetalheGrupo(supabase, {
-      grupoId: grupo.id,
-      guiaId,
-      marcarLidas: false
-    })
+    const detalhe = await detalheGrupo(supabase, grupoAtual, guiaId)
 
     return json({
-      ...atualizado.body,
-      mensagem:
-        acao === 'enviar_mensagem'
-          ? 'Mensagem enviada.'
-          : acao === 'salvar_aviso'
-            ? 'Aviso do grupo atualizado.'
-            : acao === 'encerrar'
-              ? 'Grupo encerrado.'
-              : 'Grupo atualizado.'
-    }, atualizado.status)
+      sucesso: true,
+      acao,
+      ...detalhe,
+    })
   } catch (error: any) {
     console.error('Erro em /api/grupos/detalhe-guia:', error)
 
     return json(
       {
         sucesso: false,
-        erro: error?.message || 'Erro interno ao carregar o grupo do guia.'
+        erro: error?.message || 'Erro interno ao carregar/administrar grupo.',
       },
       500
     )
@@ -486,6 +605,6 @@ export async function GET() {
     sucesso: true,
     rota: '/api/grupos/detalhe-guia',
     metodo: 'POST',
-    mensagem: 'Envie grupoId e guiaId para carregar/administrar o grupo do guia.'
+    acoes: ['detalhar', 'enviar_mensagem', 'salvar_aviso', 'finalizar_grupo', 'iniciar_novo_ciclo'],
   })
 }

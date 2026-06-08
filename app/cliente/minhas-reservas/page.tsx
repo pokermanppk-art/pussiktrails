@@ -649,12 +649,21 @@ export default function ClienteMinhasReservasPage() {
         throw new Error(data?.erro || 'Não foi possível liberar o grupo agora.')
       }
 
-      const grupoId = texto(data?.grupo_id || data?.grupo?.id)
-      const destino = grupoId
-        ? `/cliente/grupos?grupoId=${encodeURIComponent(grupoId)}`
-        : `/cliente/grupos?roteiroId=${encodeURIComponent(roteiroId)}&reservaId=${encodeURIComponent(String(reserva.id))}`
+      const redirectClienteUrl = texto(data?.redirectClienteUrl || data?.redirectUrl)
+      const grupoId = texto(
+        data?.grupo_id ||
+          data?.grupo?.id ||
+          (redirectClienteUrl.includes('/cliente/grupos/')
+            ? redirectClienteUrl.split('/cliente/grupos/')[1]
+            : '')
+      )
 
-      router.push(destino)
+      if (grupoId) {
+        router.push(`/cliente/grupos/${encodeURIComponent(grupoId)}`)
+        return
+      }
+
+      router.push('/cliente/grupos')
     } catch (error) {
       console.error('Erro ao abrir grupo:', error)
       setErro(error instanceof Error ? error.message : 'Não foi possível abrir o grupo agora.')

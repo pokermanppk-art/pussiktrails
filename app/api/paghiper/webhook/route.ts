@@ -493,7 +493,7 @@ async function liberarGrupoDaReserva(
   const baseUrl = appUrl || request.nextUrl.origin
 
   try {
-    const response = await fetch(`${baseUrl}/api/grupos/garantir-acesso`, {
+    const response = await fetch(`${baseUrl}/api/grupos/garantir-grupo-roteiro`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
