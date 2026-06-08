@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
 type AnyRecord = Record<string, any>
 
@@ -97,7 +97,6 @@ function tempoRelativo(valor?: string | null) {
 
 export default function ClienteGruposPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const iniciouRef = useRef(false)
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
@@ -136,7 +135,10 @@ export default function ClienteGruposPage() {
       setUser(usuarioNormalizado)
       await carregarGrupos(usuarioId)
 
-      const grupoIdDireto = texto(searchParams.get('grupoId'))
+      const grupoIdDireto = typeof window !== 'undefined'
+        ? texto(new URLSearchParams(window.location.search).get('grupoId'))
+        : ''
+
       if (grupoIdDireto) {
         router.replace(`/cliente/grupos/${grupoIdDireto}`)
       }
