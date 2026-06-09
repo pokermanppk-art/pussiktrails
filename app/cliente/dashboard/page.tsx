@@ -73,6 +73,23 @@ type Notificacao = {
   created_at?: string | null;
 };
 
+type MedalhaResumo = {
+  id?: string | null;
+  nome?: string | null;
+  titulo?: string | null;
+  descricao?: string | null;
+  imagem_url?: string | null;
+  image_url?: string | null;
+  foto_url?: string | null;
+  icone_url?: string | null;
+  icon_url?: string | null;
+  svg_url?: string | null;
+  caminho_svg?: string | null;
+  desbloqueada_em?: string | null;
+  unlocked_at?: string | null;
+  created_at?: string | null;
+};
+
 const statsInicial: Stats = {
   totalKm: 0,
   totalTrilhas: 0,
@@ -82,6 +99,9 @@ const statsInicial: Stats = {
   totalMedalhas: 0,
   ultimaAtividade: "Ainda sem atividade registrada",
 };
+
+
+const LIMITE_NOTIFICACOES_CARD = 5;
 
 const notificacaoVaziaAll: Notificacao = {
   id: "empty-all",
@@ -178,6 +198,45 @@ function localRoteiro(roteiro?: Roteiro | null) {
 
 function precoRoteiro(roteiro?: Roteiro | null) {
   return numeroSeguro(roteiro?.preco ?? roteiro?.valor);
+}
+
+function nomeMedalhaResumo(medalha?: MedalhaResumo | null) {
+  return texto(medalha?.nome || medalha?.titulo) || "Nova conquista";
+}
+
+function imagemMedalhaResumo(medalha?: MedalhaResumo | null) {
+  return texto(
+    medalha?.imagem_url ||
+      medalha?.image_url ||
+      medalha?.foto_url ||
+      medalha?.icone_url ||
+      medalha?.icon_url ||
+      medalha?.svg_url ||
+      medalha?.caminho_svg,
+  );
+}
+
+function dataMedalhaResumo(medalha?: MedalhaResumo | null) {
+  return texto(medalha?.desbloqueada_em || medalha?.unlocked_at || medalha?.created_at);
+}
+
+function extrairUltimaMedalha(data: AnyRecord): MedalhaResumo | null {
+  const candidatos = [
+    data?.ultimaMedalha,
+    data?.ultima_medalha,
+    data?.ultimaConquista,
+    data?.ultima_conquista,
+    data?.conquistaRecente,
+    data?.conquista_recente,
+    Array.isArray(data?.medalhasDesbloqueadas) ? data.medalhasDesbloqueadas[0] : null,
+    Array.isArray(data?.medalhas_desbloqueadas) ? data.medalhas_desbloqueadas[0] : null,
+    Array.isArray(data?.conquistas) ? data.conquistas[0] : null,
+    Array.isArray(data?.medalhas) ? data.medalhas[0] : null,
+    Array.isArray(data?.usuario?.medalhas) ? data.usuario.medalhas[0] : null,
+  ];
+
+  const medalha = candidatos.find((item) => item && typeof item === "object");
+  return medalha ? (medalha as MedalhaResumo) : null;
 }
 
 async function buscarMapaRoteirosPorIds(ids: string[]) {
@@ -878,6 +937,7 @@ export default function ClienteDashboardPage() {
   const [roteirosQuentes, setRoteirosQuentes] = useState<Roteiro[]>([]);
   const [activeHotTrail, setActiveHotTrail] = useState(0);
   const [proximasReservas, setProximasReservas] = useState<Reserva[]>([]);
+  const [ultimaMedalha, setUltimaMedalha] = useState<MedalhaResumo | null>(null);
   const [notificacoesAll, setNotificacoesAll] = useState<Notificacao[]>([]);
   const [notificacoesCom, setNotificacoesCom] = useState<Notificacao[]>([]);
   const [abaNotificacoes, setAbaNotificacoes] = useState<"all" | "com">("all");
@@ -912,7 +972,7 @@ export default function ClienteDashboardPage() {
       return [
         abaNotificacoes === "all" ? notificacaoVaziaAll : notificacaoVaziaCom,
       ];
-    return lista;
+    return lista.slice(0, LIMITE_NOTIFICACOES_CARD);
   }, [abaNotificacoes, notificacoesAll, notificacoesCom]);
 
   const roteiroAtivo = useMemo(() => {
@@ -1037,6 +1097,7 @@ export default function ClienteDashboardPage() {
       setActiveHotTrail(0);
 
       setStats({ ...statsInicial, ...(data?.stats || {}) });
+      setUltimaMedalha(extrairUltimaMedalha(data || {}));
       setProximasReservas(
         Array.isArray(data?.proximasReservas) ? data.proximasReservas : [],
       );
@@ -1078,7 +1139,7 @@ export default function ClienteDashboardPage() {
         .sort(compararDataDesc)
         .slice(0, 12);
 
-      setNotificacoesCom(listaCom);
+      setNotificacoesCom(listaCom.slice(0, LIMITE_NOTIFICACOES_CARD));
 
       const roteirosDaComNoAll = listaCom
         .filter(
@@ -1090,7 +1151,7 @@ export default function ClienteDashboardPage() {
         .map((item, index) => normalizarRoteiroComParaAll(item, index));
 
       setNotificacoesAll(
-        mesclarNotificacoes([roteirosDaComNoAll, notificacoesGerais]),
+        mesclarNotificacoes([roteirosDaComNoAll, notificacoesGerais]).slice(0, LIMITE_NOTIFICACOES_CARD),
       );
     } catch (error) {
       console.error("Erro ao carregar resumo da dashboard:", error);
@@ -1138,7 +1199,7 @@ export default function ClienteDashboardPage() {
             aria-label="Dashboard do cliente PrussikTrails"
           >
             <strong>PrussikTrails</strong>
-            <span>Dashboard do aventureiro</span>
+            <span>Passaporte do aventureiro</span>
           </button>
 
           <button
@@ -1159,11 +1220,11 @@ export default function ClienteDashboardPage() {
       <section className="shell">
         <section className="hero">
           <div className="heroText">
-            <div className="eyebrow">Dashboard do aventureiro</div>
-            <h1>Olá, {nome.split(" ")[0] || "aventureiro"}.</h1>
+            <div className="eyebrow">Passaporte do aventureiro</div>
+            <h1>Olá, {nome.split(" ")[0] || "aventureiro"}. A próxima história começa fora da tela.</h1>
             <p>
-              Acompanhe reservas, conquistas, roteiros publicados e movimentos
-              da comunidade outdoor.
+              Escolha o roteiro, reserve sua vaga e acompanhe sua jornada, conquistas
+              e movimentos da comunidade outdoor. A sua próxima aventura começa aqui.
             </p>
           </div>
 
@@ -1241,9 +1302,44 @@ export default function ClienteDashboardPage() {
             </div>
           </article>
 
-          <article>
-            <span>Medalhas</span>
-            <strong>{stats.totalMedalhas}</strong>
+          <article
+            className="statsMedalCard"
+            role="button"
+            tabIndex={0}
+            onClick={() => router.push("/cliente/perfil")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                router.push("/cliente/perfil");
+              }
+            }}
+            aria-label="Abrir medalhas e conquistas"
+          >
+            <div className="medalStatContent">
+              <div className="medalStatText">
+                <span>Conquistas</span>
+                <strong>{stats.totalMedalhas}</strong>
+                <small>
+                  {ultimaMedalha
+                    ? `Última medalha: ${nomeMedalhaResumo(ultimaMedalha)}`
+                    : "Sua próxima medalha aparece aqui."}
+                </small>
+              </div>
+
+              <div className="lastMedalPreview" aria-hidden="true">
+                {imagemMedalhaResumo(ultimaMedalha) ? (
+                  <img src={imagemMedalhaResumo(ultimaMedalha)} alt="" />
+                ) : (
+                  <b>🏅</b>
+                )}
+              </div>
+            </div>
+
+            {ultimaMedalha && dataMedalhaResumo(ultimaMedalha) && (
+              <em className="medalUnlockedAt">
+                Desbloqueada em {formatarDataHora(dataMedalhaResumo(ultimaMedalha))}
+              </em>
+            )}
           </article>
 
           <article
@@ -1444,6 +1540,16 @@ const styles = `
   .journeySplit strong { display: block; white-space: nowrap; }
   .statsProfileCard { cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; background: radial-gradient(circle at 100% 0%, rgba(251,146,60,0.13), transparent 42%), rgba(255,255,255,0.92) !important; }
   .statsProfileCard:hover, .statsProfileCard:focus-visible { transform: translateY(-2px); border-color: rgba(32,60,46,0.16); box-shadow: 0 18px 42px rgba(15,23,42,0.10); outline: none; }
+  .statsMedalCard { cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; background: radial-gradient(circle at 88% 4%, rgba(212,179,90,0.22), transparent 42%), rgba(255,255,255,0.94) !important; overflow: hidden; }
+  .statsMedalCard:hover, .statsMedalCard:focus-visible { transform: translateY(-2px); border-color: rgba(212,179,90,0.30); box-shadow: 0 18px 42px rgba(15,23,42,0.10); outline: none; }
+  .medalStatContent { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
+  .medalStatText { min-width: 0; }
+  .medalStatText strong { display: block; font-size: 24px; }
+  .medalStatText small { display: block; margin-top: 6px; color: #64748b; font-size: 11px; line-height: 1.28; font-weight: 850; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .lastMedalPreview { width: 58px; height: 58px; flex: 0 0 auto; border-radius: 20px; background: radial-gradient(circle at 50% 32%, rgba(212,179,90,0.24), transparent 54%), #fffdf7; border: 1px solid rgba(212,179,90,0.20); display: flex; align-items: center; justify-content: center; box-shadow: 0 14px 32px rgba(32,60,46,0.10); overflow: hidden; }
+  .lastMedalPreview img { width: 78%; height: 78%; object-fit: contain; display: block; filter: drop-shadow(0 10px 16px rgba(15,23,42,0.16)); }
+  .lastMedalPreview b { font-size: 28px; }
+  .medalUnlockedAt { display: block; margin-top: 9px; color: #9a7b2f; font-size: 10px; line-height: 1.2; font-style: normal; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; }
   .profileStatContent { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .profileStatAvatar { width: 46px; height: 46px; border-radius: 999px; flex: 0 0 auto; overflow: hidden; background: #203c2e; color: #fffdf7; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 22px rgba(15,23,42,0.08); }
   .profileStatAvatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1476,5 +1582,5 @@ const styles = `
   .reservationList strong { display: block; color: #172018; font-size: 12px; line-height: 1.25; font-weight: 950; }
   .reservationList small { display: block; margin-top: 3px; color: #64748b; font-size: 11px; font-weight: 750; line-height: 1.35; }
   @media (max-width: 1040px) { .hero, .mainGrid { grid-template-columns: 1fr; } .statsGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 720px) { .topbar { padding: 7px 10px; } .topbarInner { grid-template-columns: 1fr auto; } .brandName { grid-column: 1; justify-self: start; align-items: flex-start; max-width: calc(100vw - 96px); text-align: left; } .brandName strong { font-size: clamp(23px, 8.2vw, 34px); letter-spacing: -0.07em; } .brandName span { font-size: 7.5px; letter-spacing: 0.12em; max-width: calc(100vw - 112px); overflow: hidden; text-overflow: ellipsis; } .avatarMini { grid-column: 2; width: 36px; height: 36px; box-shadow: none; } .shell { padding: 12px 9px 40px; } .heroText, .homeHotCard, .panel { border-radius: 24px; } .heroText { padding: 20px; } .heroText h1 { font-size: 42px; } .homeHotVisual { min-height: 320px; } .statsGrid { grid-template-columns: 1fr; } .journeySplit { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tabs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; } .tabs button { width: 100%; } }
+  @media (max-width: 720px) { .topbar { padding: 7px 10px; } .topbarInner { grid-template-columns: 1fr auto; } .brandName { grid-column: 1; justify-self: start; align-items: flex-start; max-width: calc(100vw - 96px); text-align: left; } .brandName strong { font-size: clamp(23px, 8.2vw, 34px); letter-spacing: -0.07em; } .brandName span { font-size: 7.5px; letter-spacing: 0.12em; max-width: calc(100vw - 112px); overflow: hidden; text-overflow: ellipsis; } .avatarMini { grid-column: 2; width: 36px; height: 36px; box-shadow: none; } .shell { padding: 12px 9px 40px; } .heroText, .homeHotCard, .panel { border-radius: 24px; } .heroText { padding: 20px; } .heroText h1 { font-size: 39px; line-height: .94; } .homeHotVisual { min-height: 320px; } .statsGrid { grid-template-columns: 1fr; } .journeySplit { grid-template-columns: repeat(2, minmax(0, 1fr)); } .medalStatContent { gap: 12px; } .lastMedalPreview { width: 54px; height: 54px; border-radius: 18px; } .tabs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; } .tabs button { width: 100%; } }
 `;
