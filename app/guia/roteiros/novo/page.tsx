@@ -85,6 +85,10 @@ function normalizar(valor: unknown) {
     .trim()
 }
 
+function somenteNumeros(valor: unknown) {
+  return texto(valor).replace(/\D/g, '')
+}
+
 function numeroDecimal(valor: string) {
   const limpo = texto(valor)
     .replace(/[^\d,.-]/g, '')
@@ -93,6 +97,74 @@ function numeroDecimal(valor: string) {
 
   const n = Number(limpo)
   return Number.isFinite(n) ? n : 0
+}
+
+function formatarMoedaDigitavel(valor: string) {
+  const numeros = somenteNumeros(valor).slice(0, 10)
+
+  if (!numeros) return ''
+
+  const centavos = Number(numeros) / 100
+
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).format(centavos)
+}
+
+function formatarDataDigitavel(valor: string) {
+  const numeros = somenteNumeros(valor).slice(0, 8)
+
+  if (numeros.length <= 2) return numeros
+
+  if (numeros.length <= 4) {
+    return `${numeros.slice(0, 2)}/${numeros.slice(2)}`
+  }
+
+  return `${numeros.slice(0, 2)}/${numeros.slice(2, 4)}/${numeros.slice(4, 8)}`
+}
+
+function converterDataDigitavelParaISO(valor: string) {
+  const numeros = somenteNumeros(valor)
+
+  if (numeros.length !== 8) return ''
+
+  const dia = Number(numeros.slice(0, 2))
+  const mes = Number(numeros.slice(2, 4))
+  const ano = Number(numeros.slice(4, 8))
+
+  if (!dia || !mes || !ano) return ''
+
+  const data = new Date(ano, mes - 1, dia)
+
+  if (
+    data.getFullYear() !== ano ||
+    data.getMonth() !== mes - 1 ||
+    data.getDate() !== dia
+  ) {
+    return ''
+  }
+
+  return `${String(ano).padStart(4, '0')}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+}
+
+function formatarHoraDigitavel(valor: string) {
+  const numeros = somenteNumeros(valor).slice(0, 4)
+
+  if (numeros.length <= 2) return numeros
+
+  return `${numeros.slice(0, 2)}:${numeros.slice(2, 4)}`
+}
+
+function horaDigitavelValida(valor: string) {
+  const partes = texto(valor).split(':')
+
+  if (partes.length !== 2 || partes[0].length !== 2 || partes[1].length !== 2) return false
+
+  const hora = Number(partes[0])
+  const minuto = Number(partes[1])
+
+  return Number.isInteger(hora) && Number.isInteger(minuto) && hora >= 0 && hora <= 23 && minuto >= 0 && minuto <= 59
 }
 
 function slugify(valor: string) {
@@ -519,10 +591,14 @@ export default function GuiaNovoRoteiroPage() {
 
     if (!texto(dataRoteiro)) {
       pendencias.push('Data da experiência.')
+    } else if (!converterDataDigitavelParaISO(dataRoteiro)) {
+      pendencias.push('Data da experiência em formato válido: dd/mm/aaaa.')
     }
 
     if (!texto(horaRoteiro)) {
       pendencias.push('Horário da experiência.')
+    } else if (!horaDigitavelValida(horaRoteiro)) {
+      pendencias.push('Horário da experiência em formato válido: hh:mm.')
     }
 
     if (numeroDecimal(preco) <= 0) {
@@ -530,7 +606,7 @@ export default function GuiaNovoRoteiroPage() {
     }
 
     if (!imagemFile) {
-      pendencias.push('Foto de capa do roteiro no padrão recomendado.')
+      pendencias.push('Foto de capa do roteiro.')
     }
 
     return pendencias
@@ -762,7 +838,8 @@ export default function GuiaNovoRoteiroPage() {
     const localPrincipal = texto(localizacao.endereco_local)
     const pontoReferencia = texto(localizacao.ponto_referencia)
     const localFormatado = texto(localizacao.endereco_formatado) || localPrincipal
-    const dataLimpa = texto(dataRoteiro)
+    const dataDigitada = texto(dataRoteiro)
+    const dataLimpa = converterDataDigitavelParaISO(dataDigitada)
     const horaLimpa = texto(horaRoteiro)
     const precoNumero = numeroDecimal(preco)
     const kmNumero = numeroDecimal(km)
@@ -940,14 +1017,10 @@ export default function GuiaNovoRoteiroPage() {
             <p className="eyebrow">Guia PrussikTrails</p>
             <h1>Crie uma nova experiência.</h1>
             <p>
-              Cadastre o roteiro com informações claras, foto padronizada e dados operacionais para o Admin revisar antes de publicar.
+              Cadastre a experiência com informações claras, localização confirmada e dados operacionais para o Admin revisar antes de publicar.
             </p>
           </div>
 
-          <div className="heroTip">
-            <strong>Padrão da foto</strong>
-            <span>Imagem recomendada: 1200 x 900 px, formato horizontal, boa iluminação e ponto principal centralizado.</span>
-          </div>
         </section>
 
         {erro && <div className="alert error">{erro}</div>}
@@ -1002,18 +1075,24 @@ export default function GuiaNovoRoteiroPage() {
               <label className="field">
                 <span>Data *</span>
                 <input
-                  type="date"
+                  type="text"
                   value={dataRoteiro}
-                  onChange={(event) => setDataRoteiro(event.target.value)}
+                  onChange={(event) => setDataRoteiro(formatarDataDigitavel(event.target.value))}
+                  placeholder="dd/mm/aaaa"
+                  inputMode="numeric"
+                  maxLength={10}
                 />
               </label>
 
               <label className="field">
                 <span>Hora *</span>
                 <input
-                  type="time"
+                  type="text"
                   value={horaRoteiro}
-                  onChange={(event) => setHoraRoteiro(event.target.value)}
+                  onChange={(event) => setHoraRoteiro(formatarHoraDigitavel(event.target.value))}
+                  placeholder="hh:mm"
+                  inputMode="numeric"
+                  maxLength={5}
                 />
               </label>
 
@@ -1021,9 +1100,9 @@ export default function GuiaNovoRoteiroPage() {
                 <span>Valor por pessoa *</span>
                 <input
                   value={preco}
-                  onChange={(event) => setPreco(event.target.value)}
-                  placeholder="Ex.: 120,00"
-                  inputMode="decimal"
+                  onChange={(event) => setPreco(formatarMoedaDigitavel(event.target.value))}
+                  placeholder="R$ 120,00"
+                  inputMode="numeric"
                 />
               </label>
 
@@ -1110,9 +1189,8 @@ export default function GuiaNovoRoteiroPage() {
             />
 
             <div className="imageHelp">
-              <strong>Imagem recomendada:</strong>
-              <span>1200 x 900 px · formato horizontal · boa iluminação · ponto principal centralizado.</span>
-              <span>O sistema fará corte central em 4:3 e salvará a foto compactada em WebP.</span>
+              <strong>Dica rápida:</strong>
+              <span>Use uma foto horizontal, bem iluminada e com o ponto principal centralizado.</span>
             </div>
 
             {imagemInfo && (
@@ -1247,6 +1325,13 @@ const styles = `
       sans-serif;
   }
 
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
   .page {
     min-height: 100vh;
     min-height: 100dvh;
@@ -1263,12 +1348,12 @@ const styles = `
     top: 0;
     z-index: 40;
     min-height: 76px;
-    padding: 8px 18px;
-    background: rgba(255, 253, 247, 0.90);
+    padding: 8px max(18px, calc((100vw - 1180px) / 2));
+    background: rgba(255, 253, 247, 0.92);
     border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     backdrop-filter: blur(18px);
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 14px;
   }
@@ -1300,13 +1385,14 @@ const styles = `
     font-weight: 950;
     letter-spacing: 0.14em;
     text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .profileButton {
     width: 42px;
     height: 42px;
     border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(255, 255, 255, 0.78);
+    background: rgba(255, 255, 255, 0.82);
     color: #172018;
     border-radius: 999px;
     display: inline-flex;
@@ -1315,6 +1401,7 @@ const styles = `
     overflow: hidden;
     cursor: pointer;
     font-weight: 950;
+    box-shadow: 0 10px 22px rgba(32, 60, 46, 0.08);
   }
 
   .profileButton img {
@@ -1331,14 +1418,7 @@ const styles = `
   }
 
   .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    gap: 18px;
-    align-items: stretch;
     margin-bottom: 16px;
-  }
-
-  .hero > div:first-child {
     border-radius: 34px;
     padding: clamp(22px, 4vw, 38px);
     background:
@@ -1346,6 +1426,25 @@ const styles = `
       radial-gradient(circle at top right, rgba(190, 242, 100, 0.25), transparent 35%);
     color: #fffdf7;
     box-shadow: 0 22px 58px rgba(32, 60, 46, 0.18);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(to bottom, black, transparent);
+    pointer-events: none;
+  }
+
+  .hero > div {
+    position: relative;
+    z-index: 1;
   }
 
   .eyebrow {
@@ -1359,6 +1458,7 @@ const styles = `
 
   .hero h1 {
     margin: 0;
+    max-width: 760px;
     font-size: clamp(42px, 6vw, 72px);
     line-height: 0.92;
     letter-spacing: -0.08em;
@@ -1366,37 +1466,12 @@ const styles = `
   }
 
   .hero p {
-    max-width: 720px;
+    max-width: 760px;
     margin: 16px 0 0;
     color: rgba(255, 253, 247, 0.78);
     font-size: 15px;
     line-height: 1.55;
     font-weight: 750;
-  }
-
-  .heroTip {
-    border-radius: 34px;
-    padding: 22px;
-    background: rgba(255, 253, 247, 0.84);
-    border: 1px solid rgba(32, 60, 46, 0.08);
-    box-shadow: 0 18px 44px rgba(32, 60, 46, 0.08);
-    display: grid;
-    align-content: center;
-    gap: 8px;
-  }
-
-  .heroTip strong {
-    color: #203c2e;
-    font-size: 20px;
-    font-weight: 950;
-    letter-spacing: -0.04em;
-  }
-
-  .heroTip span {
-    color: rgba(23, 32, 24, 0.66);
-    font-size: 13px;
-    line-height: 1.55;
-    font-weight: 800;
   }
 
   .alert {
@@ -1464,16 +1539,14 @@ const styles = `
     min-width: 0;
   }
 
-  .mainCard {
+  .mainCard,
+  .fullWidth,
+  .submitBar {
     grid-column: 1 / -1;
   }
 
   .imageCard {
     grid-column: 1 / -1;
-    position: static;
-    align-self: start;
-    height: auto;
-    overflow: visible;
     display: grid;
     grid-template-columns: minmax(260px, 520px) minmax(0, 1fr);
     gap: 14px 18px;
@@ -1494,10 +1567,6 @@ const styles = `
   .imageCard .imageInfo,
   .imageCard .lightButton {
     grid-column: 2;
-  }
-
-  .fullWidth {
-    grid-column: 1 / -1;
   }
 
   .cardHeader {
@@ -1569,14 +1638,14 @@ const styles = `
   select {
     width: 100%;
     border: 1px solid rgba(32, 60, 46, 0.10);
-    background: rgba(255, 255, 255, 0.74);
+    background: rgba(255, 255, 255, 0.76);
     color: #172018;
     border-radius: 18px;
     padding: 13px 14px;
-    font: inherit;
     font-size: 14px;
     font-weight: 750;
     outline: none;
+    min-width: 0;
   }
 
   textarea {
@@ -1611,6 +1680,7 @@ const styles = `
     text-align: center;
     color: #203c2e;
     transition: 0.2s ease;
+    min-height: 210px;
   }
 
   .uploadPreview:hover {
@@ -1653,7 +1723,7 @@ const styles = `
 
   .imageHelp,
   .imageInfo {
-    margin-top: 12px;
+    margin-top: 0;
     border-radius: 20px;
     padding: 13px;
     background: rgba(32, 60, 46, 0.05);
@@ -1686,7 +1756,6 @@ const styles = `
     font-style: normal;
     font-weight: 850;
   }
-
 
   .geoBox {
     border-radius: 26px;
@@ -1869,7 +1938,6 @@ const styles = `
   }
 
   .submitBar {
-    grid-column: 1 / -1;
     border-radius: 26px;
     background: rgba(23, 32, 24, 0.94);
     color: #fffdf7;
@@ -1900,6 +1968,7 @@ const styles = `
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .primaryButton,
@@ -1932,8 +2001,8 @@ const styles = `
   }
 
   .lightButton {
-    width: 100%;
-    margin-top: 12px;
+    width: fit-content;
+    margin-top: 0;
     background: #fffdf7;
     color: #203c2e;
     border: 1px solid rgba(32, 60, 46, 0.12);
@@ -1965,41 +2034,11 @@ const styles = `
   }
 
   @media (max-width: 980px) {
-    .hero,
-    .validationBox {
-    margin-bottom: 14px;
-    border-radius: 22px;
-    padding: 15px 16px;
-    background: #fff7ed;
-    border: 1px solid rgba(234, 88, 12, 0.18);
-    color: #7c2d12;
-    box-shadow: 0 12px 30px rgba(234, 88, 12, 0.07);
-  }
-
-  .validationBox strong {
-    display: block;
-    font-size: 13px;
-    font-weight: 950;
-  }
-
-  .validationBox ul {
-    margin: 9px 0 0;
-    padding-left: 18px;
-  }
-
-  .validationBox li {
-    margin-top: 4px;
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 850;
-  }
-
-  .formGrid {
-      grid-template-columns: 1fr;
+    .container {
+      width: min(100% - 24px, 1180px);
     }
 
     .imageCard {
-      grid-column: 1 / -1;
       grid-template-columns: 1fr;
     }
 
@@ -2011,206 +2050,180 @@ const styles = `
       grid-column: 1;
       grid-row: auto;
     }
+
+    .lightButton {
+      width: 100%;
+    }
   }
 
   @media (max-width: 700px) {
+    .page {
+      padding-bottom: 28px;
+    }
+
     .header {
       min-height: 66px;
       padding: 7px 12px;
+      grid-template-columns: 1fr 38px;
+      gap: 8px;
     }
 
     .brand {
       gap: 8px;
+      overflow: hidden;
     }
 
     .brand img {
-      width: 96px;
+      width: 98px;
       height: 44px;
+      flex: 0 0 auto;
     }
 
     .brand span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       font-size: 8px;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.10em;
+      white-space: nowrap;
     }
 
     .profileButton {
       width: 36px;
       height: 36px;
+      box-shadow: none;
     }
 
     .container {
-      width: min(100% - 20px, 1180px);
-      padding-top: 14px;
+      width: min(100% - 18px, 1180px);
+      padding-top: 12px;
     }
 
-    .hero > div:first-child,
-    .heroTip,
+    .hero,
     .card {
       border-radius: 24px;
     }
 
-    .hero > div:first-child {
+    .hero {
       padding: 22px;
+      margin-bottom: 12px;
     }
 
     .hero h1 {
-      font-size: 40px;
+      font-size: clamp(36px, 12vw, 44px);
+      letter-spacing: -0.075em;
+    }
+
+    .hero p {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .card {
+      padding: 15px;
+      box-shadow: 0 10px 30px rgba(32, 60, 46, 0.06);
+    }
+
+    .cardHeader {
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .cardHeader > span {
+      width: 34px;
+      height: 34px;
+      border-radius: 13px;
+      font-size: 12px;
+    }
+
+    .cardHeader h2,
+    .geoHeader h2 {
+      font-size: 20px;
+    }
+
+    .cardHeader p,
+    .geoHeader p {
+      font-size: 12px;
     }
 
     .fieldsGrid,
-  
-  .geoBox {
-    border-radius: 26px;
-    padding: 18px;
-    background: rgba(255, 253, 247, 0.78);
-    border: 1px solid rgba(32, 60, 46, 0.10);
-    box-shadow: 0 16px 38px rgba(32, 60, 46, 0.07);
-  }
-
-  .geoHeader {
-    margin-bottom: 14px;
-  }
-
-  .geoEyebrow {
-    color: #dc2626;
-    font-size: 11px;
-    font-weight: 950;
-    text-transform: uppercase;
-    letter-spacing: 0.13em;
-  }
-
-  .geoHeader h2 {
-    margin: 6px 0 0;
-    color: #203c2e;
-    font-size: 22px;
-    line-height: 1;
-    font-weight: 950;
-    letter-spacing: -0.045em;
-  }
-
-  .geoHeader p {
-    margin: 7px 0 0;
-    color: rgba(23, 32, 24, 0.62);
-    font-size: 13px;
-    line-height: 1.45;
-    font-weight: 750;
-  }
-
-  .geoFields {
-    display: grid;
-    gap: 12px;
-  }
-
-  .geoActions {
-    margin-top: 14px;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .geoActions span {
-    color: #64748b;
-    font-size: 12px;
-    font-weight: 750;
-    line-height: 1.4;
-  }
-
-  .geoButton {
-    border: 0;
-    border-radius: 999px;
-    background: #203c2e;
-    color: #fffdf7;
-    padding: 12px 16px;
-    font-size: 13px;
-    font-weight: 950;
-    cursor: pointer;
-    transition: 0.18s ease;
-  }
-
-  .geoButton:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 14px 28px rgba(32, 60, 46, 0.18);
-  }
-
-  .geoButton:disabled {
-    opacity: 0.58;
-    cursor: not-allowed;
-  }
-
-  .geoResult {
-    margin-top: 14px;
-    border-radius: 20px;
-    padding: 14px;
-    background: rgba(236, 253, 245, 0.82);
-    border: 1px solid rgba(22, 163, 74, 0.18);
-    color: #14532d;
-    display: grid;
-    gap: 4px;
-  }
-
-  .geoResult strong {
-    font-size: 13px;
-    font-weight: 950;
-  }
-
-  .geoResult span,
-  .geoResult small {
-    color: #166534;
-    font-size: 13px;
-    line-height: 1.45;
-    font-weight: 760;
-  }
-
-  .geoResult em {
-    color: #64748b;
-    font-size: 11px;
-    line-height: 1.35;
-    font-style: normal;
-    font-weight: 850;
-  }
-
-  .geoOk,
-  .geoErro {
-    margin-top: 12px;
-    border-radius: 16px;
-    padding: 11px 12px;
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 850;
-  }
-
-  .geoOk {
-    background: rgba(22, 163, 74, 0.08);
-    border: 1px solid rgba(22, 163, 74, 0.16);
-    color: #166534;
-  }
-
-  .geoErro {
-    background: rgba(153, 27, 27, 0.08);
-    border: 1px solid rgba(153, 27, 27, 0.16);
-    color: #7f1d1d;
-  }
-
-  .difficultyGrid {
+    .difficultyGrid {
       grid-template-columns: 1fr;
+    }
+
+    input,
+    textarea,
+    select {
+      border-radius: 16px;
+      padding: 12px 13px;
+      font-size: 14px;
+    }
+
+    textarea {
+      min-height: 104px;
+    }
+
+    textarea.large {
+      min-height: 150px;
+    }
+
+    .geoBox {
+      border-radius: 20px;
+      padding: 14px;
+      box-shadow: none;
+    }
+
+    .geoActions {
+      display: grid;
+      gap: 8px;
+    }
+
+    .geoButton,
+    .primaryButton,
+    .secondaryButton {
+      width: 100%;
+    }
+
+    .uploadPreview {
+      min-height: 0;
+      border-radius: 20px;
+    }
+
+    .uploadPreview strong {
+      font-size: 16px;
+    }
+
+    .imageHelp,
+    .imageInfo {
+      border-radius: 18px;
+      padding: 12px;
     }
 
     .submitBar {
       border-radius: 22px;
       align-items: stretch;
       flex-direction: column;
+      padding: 15px;
     }
 
     .submitActions {
       display: grid;
+      grid-template-columns: 1fr;
       width: 100%;
     }
+  }
 
-    .primaryButton,
-    .secondaryButton,
-    .geoButton {
-      width: 100%;
+  @media (max-width: 420px) {
+    .brand span {
+      max-width: 150px;
+    }
+
+    .hero h1 {
+      font-size: 36px;
+    }
+
+    .cardHeader {
+      align-items: center;
     }
   }
 `
