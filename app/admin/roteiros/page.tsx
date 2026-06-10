@@ -23,6 +23,7 @@ type UsuarioBanco = {
   avatar_url?: string | null
   foto_url?: string | null
   imagem_url?: string | null
+  [key: string]: any
 }
 
 type Roteiro = {
@@ -67,6 +68,9 @@ type Roteiro = {
   embarque_data?: string | null
   embarque_data_hora?: string | null
   hora_trilha?: string | null
+  hora_roteiro?: string | null
+  hora_saida?: string | null
+  hora?: string | null
   foto_capa?: string | null
   foto_url?: string | null
   imagem_url?: string | null
@@ -96,17 +100,20 @@ type Reserva = {
   status?: string | null
   pagamento_status?: string | null
   created_at?: string | null
+  [key: string]: any
 }
 
 type GrupoRoteiro = {
   id: string
   roteiro_id?: string | null
+  id_roteiro?: string | null
   guia_id?: string | null
   titulo?: string | null
   nome?: string | null
   status?: string | null
   ativo?: boolean | null
   created_at?: string | null
+  [key: string]: any
 }
 
 type Avaliacao = {
@@ -115,6 +122,7 @@ type Avaliacao = {
   nota?: number | null
   status?: string | null
   created_at?: string | null
+  [key: string]: any
 }
 
 type RoteiroCompleto = Roteiro & {
@@ -210,7 +218,7 @@ const statsInicial: Stats = {
   semGrupo: 0,
   receitaConfirmada: 0,
   reservasConfirmadas: 0,
-  mediaAvaliacoes: 0
+  mediaAvaliacoes: 0,
 }
 
 const statusLabels: Record<FiltroStatus, string> = {
@@ -221,7 +229,7 @@ const statusLabels: Record<FiltroStatus, string> = {
   reprovados: 'Reprovados',
   com_reservas: 'Com reservas',
   sem_grupo: 'Sem grupo',
-  ocultados: 'Ocultados'
+  ocultados: 'Ocultados',
 }
 
 function texto(valor: unknown) {
@@ -239,7 +247,7 @@ function normalizarTexto(valor?: string | null) {
 function formatarMoeda(valor: unknown) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
-    currency: 'BRL'
+    currency: 'BRL',
   }).format(Number(valor || 0))
 }
 
@@ -369,7 +377,7 @@ export default function AdminRoteirosPage() {
     hora: '',
     local: '',
     preco: '',
-    observacaoAdmin: ''
+    observacaoAdmin: '',
   })
 
   const [carregando, setCarregando] = useState(true)
@@ -423,7 +431,6 @@ export default function AdminRoteirosPage() {
       }
 
       setUser(parsedUser)
-
       await Promise.all([carregarRoteiros(), carregarSolicitacoes()])
     } catch (error) {
       console.error('Erro ao iniciar roteiros admin:', error)
@@ -435,6 +442,10 @@ export default function AdminRoteirosPage() {
 
   function nomeUsuario(usuario?: UsuarioLocal | UsuarioBanco | null) {
     return usuario?.nome || usuario?.name || usuario?.email || 'Usuário'
+  }
+
+  function primeiroNome(usuario?: UsuarioLocal | null) {
+    return nomeUsuario(usuario).split(' ')[0] || 'Admin'
   }
 
   function tituloRoteiro(roteiro?: Roteiro | null) {
@@ -483,7 +494,13 @@ export default function AdminRoteirosPage() {
   }
 
   function horaRoteiro(roteiro?: Roteiro | null) {
-    return roteiro?.hora_trilha || extrairHoraInput(roteiro?.embarque_data_hora || roteiro?.proxima_data || '')
+    return (
+      roteiro?.hora_trilha ||
+      roteiro?.hora_roteiro ||
+      roteiro?.hora_saida ||
+      roteiro?.hora ||
+      extrairHoraInput(roteiro?.embarque_data_hora || roteiro?.proxima_data || '')
+    )
   }
 
   function imagemRoteiro(roteiro?: Roteiro | null) {
@@ -515,7 +532,6 @@ export default function AdminRoteirosPage() {
     if (Number.isNaN(data.getTime())) return false
 
     const agora = new Date()
-
     return data.getFullYear() === agora.getFullYear() && data.getMonth() === agora.getMonth()
   }
 
@@ -615,7 +631,6 @@ export default function AdminRoteirosPage() {
 
     const roteirosBase = ((roteirosData || []) as Roteiro[]).filter((roteiro) => Boolean(roteiro.id))
     const roteiroIds = roteirosBase.map((roteiro) => roteiro.id)
-
     const guiaIds = Array.from(new Set(roteirosBase.map(guiaIdDoRoteiro).filter(Boolean)))
 
     let guias: UsuarioBanco[] = []
@@ -626,7 +641,7 @@ export default function AdminRoteirosPage() {
     if (guiaIds.length > 0) {
       const { data: guiasData, error: guiasError } = await supabase
         .from('users')
-        .select('id, nome, name, email, tipo, avatar_url, foto_url, imagem_url')
+        .select('*')
         .in('id', guiaIds)
 
       if (guiasError) console.warn('Erro ao buscar guias dos roteiros:', guiasError)
@@ -654,7 +669,7 @@ export default function AdminRoteirosPage() {
 
       const { data: avaliacoesData, error: avaliacoesError } = await supabase
         .from('avaliacoes')
-        .select('id, roteiro_id, nota, status, created_at')
+        .select('*')
         .in('roteiro_id', roteiroIds)
         .limit(2500)
 
@@ -664,7 +679,7 @@ export default function AdminRoteirosPage() {
 
     const roteirosCompletos: RoteiroCompleto[] = roteirosBase.map((roteiro) => {
       const guiaId = guiaIdDoRoteiro(roteiro)
-      const guia = guias.find((item) => item.id === guiaId) || null
+      const guia = guias.find((item) => String(item.id) === String(guiaId)) || null
 
       const reservasDoRoteiro = reservas.filter((reserva) => {
         const reservaRoteiroId = texto(reserva.roteiro_id || reserva.id_roteiro)
@@ -672,24 +687,19 @@ export default function AdminRoteirosPage() {
       })
 
       const reservasConfirmadas = reservasDoRoteiro.filter(pagamentoConfirmado)
-
       const receitaConfirmada = reservasConfirmadas.reduce(
         (total, reserva) => total + Number(reserva.valor_total || 0),
         0
       )
 
-      const grupo = grupos.find((item) => item.roteiro_id === roteiro.id) || null
+      const grupo = grupos.find((item) => texto(item.roteiro_id || item.id_roteiro) === roteiro.id) || null
 
       const avaliacoesDoRoteiro = avaliacoes.filter((avaliacao) => {
         const status = normalizarTexto(avaliacao.status)
         return avaliacao.roteiro_id === roteiro.id && (!status || status === 'publicada')
       })
 
-      const somaNotas = avaliacoesDoRoteiro.reduce(
-        (total, avaliacao) => total + Number(avaliacao.nota || 0),
-        0
-      )
-
+      const somaNotas = avaliacoesDoRoteiro.reduce((total, avaliacao) => total + Number(avaliacao.nota || 0), 0)
       const mediaAvaliacao = avaliacoesDoRoteiro.length > 0 ? somaNotas / avaliacoesDoRoteiro.length : 0
 
       return {
@@ -703,27 +713,19 @@ export default function AdminRoteirosPage() {
         reservas_confirmadas: reservasConfirmadas.length,
         receita_confirmada: receitaConfirmada,
         media_avaliacao: mediaAvaliacao,
-        total_avaliacoes: avaliacoesDoRoteiro.length
+        total_avaliacoes: avaliacoesDoRoteiro.length,
       }
     })
 
     const roteirosVisiveis = roteirosCompletos.filter((roteiro) => !roteiroOcultado(roteiro))
-    const receitaConfirmada = roteirosVisiveis.reduce(
-      (total, roteiro) => total + Number(roteiro.receita_confirmada || 0),
+    const receitaConfirmada = roteirosVisiveis.reduce((total, roteiro) => total + Number(roteiro.receita_confirmada || 0), 0)
+    const totalAvaliacoes = roteirosVisiveis.reduce((total, roteiro) => total + Number(roteiro.total_avaliacoes || 0), 0)
+    const somaMediasPonderadas = roteirosVisiveis.reduce(
+      (total, roteiro) => total + Number(roteiro.media_avaliacao || 0) * Number(roteiro.total_avaliacoes || 0),
       0
     )
-
-    const totalAvaliacoes = roteirosVisiveis.reduce(
-      (total, roteiro) => total + Number(roteiro.total_avaliacoes || 0),
-      0
-    )
-
-    const somaMediasPonderadas = roteirosVisiveis.reduce((total, roteiro) => {
-      return total + Number(roteiro.media_avaliacao || 0) * Number(roteiro.total_avaliacoes || 0)
-    }, 0)
 
     setRoteiros(roteirosCompletos)
-
     setStats({
       total: roteirosVisiveis.length,
       ativos: roteirosVisiveis.filter(roteiroAtivo).length,
@@ -736,7 +738,7 @@ export default function AdminRoteirosPage() {
       semGrupo: roteirosVisiveis.filter((roteiro) => !roteiro.grupo?.id).length,
       receitaConfirmada,
       reservasConfirmadas: reservas.filter(pagamentoConfirmado).length,
-      mediaAvaliacoes: totalAvaliacoes > 0 ? somaMediasPonderadas / totalAvaliacoes : 0
+      mediaAvaliacoes: totalAvaliacoes > 0 ? somaMediasPonderadas / totalAvaliacoes : 0,
     })
 
     setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR'))
@@ -749,8 +751,8 @@ export default function AdminRoteirosPage() {
       const response = await fetch('/api/admin/roteiros/solicitacoes-atualizacao?status=pendente&limite=80', {
         headers: {
           'Cache-Control': 'no-store',
-          Pragma: 'no-cache'
-        }
+          Pragma: 'no-cache',
+        },
       })
 
       const data = await response.json().catch(() => null)
@@ -791,11 +793,9 @@ export default function AdminRoteirosPage() {
       const { error } = await supabase.from('roteiros').update(payloadAtual).eq('id', roteiroId)
 
       if (!error) return true
-
       if (!erroDeColunaAusente(error)) throw error
 
       const coluna = extrairColunaAusente(error)
-
       if (!coluna || !(coluna in payloadAtual)) throw error
 
       delete payloadAtual[coluna]
@@ -812,15 +812,13 @@ export default function AdminRoteirosPage() {
         await atualizarRoteiroComFallback(roteiroId, {
           status,
           ativo,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
 
         return status
       } catch (error: any) {
         ultimoErro = error
-
         if (!erroDeConstraintStatus(error)) throw error
-
         console.warn(`Status "${status}" recusado pelo banco. Tentando próximo...`, error)
       }
     }
@@ -899,7 +897,7 @@ export default function AdminRoteirosPage() {
       const response = await fetch('/api/grupos/garantir-grupo-roteiro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roteiroId: roteiro.id })
+        body: JSON.stringify({ roteiroId: roteiro.id }),
       })
 
       const data = await response.json().catch(() => null)
@@ -941,14 +939,12 @@ export default function AdminRoteirosPage() {
     if (!confirmar) return
 
     const motivo = window.prompt('Informe o motivo administrativo da remoção:')
-
     if (!motivo || !motivo.trim()) {
       setErro('Exclusão cancelada. O motivo é obrigatório.')
       return
     }
 
     const podeSugerirExclusaoDefinitiva = !temReservas && !temReceita && !temGrupo
-
     const modo = window.prompt(
       podeSugerirExclusaoDefinitiva
         ? 'Digite APAGAR para excluir definitivamente ou OCULTAR para apenas desativar. Na dúvida, use OCULTAR.'
@@ -958,14 +954,12 @@ export default function AdminRoteirosPage() {
     if (!modo) return
 
     const modoNormalizado = modo.trim().toUpperCase()
-
     if (modoNormalizado !== 'APAGAR' && modoNormalizado !== 'OCULTAR') {
       setErro('Opção inválida. Digite apenas APAGAR ou OCULTAR.')
       return
     }
 
     const definitivo = modoNormalizado === 'APAGAR' && podeSugerirExclusaoDefinitiva
-
     const segundaConfirmacao = window.confirm(
       definitivo
         ? `Confirma a EXCLUSÃO DEFINITIVA do roteiro "${titulo}"?`
@@ -986,8 +980,8 @@ export default function AdminRoteirosPage() {
           roteiroId: roteiro.id,
           adminId: user?.id || null,
           motivo: motivo.trim(),
-          definitivo
-        })
+          definitivo,
+        }),
       })
 
       const data = await response.json().catch(() => null)
@@ -1009,7 +1003,6 @@ export default function AdminRoteirosPage() {
 
   function abrirSolicitacao(solicitacao: SolicitacaoAtualizacao) {
     const dados = solicitacao.dados_solicitados || {}
-
     const dataSolicitada = texto(dados.data || solicitacao.data_solicitada)
     const horaSolicitada = texto(dados.hora || solicitacao.hora_solicitada)
 
@@ -1021,7 +1014,7 @@ export default function AdminRoteirosPage() {
       hora: extrairHoraInput(horaSolicitada),
       local: texto(dados.local || solicitacao.local_solicitado),
       preco: normalizarPrecoInput(dados.preco ?? solicitacao.preco_solicitado),
-      observacaoAdmin: texto(solicitacao.observacao_admin)
+      observacaoAdmin: texto(solicitacao.observacao_admin),
     })
   }
 
@@ -1036,7 +1029,7 @@ export default function AdminRoteirosPage() {
       hora: '',
       local: '',
       preco: '',
-      observacaoAdmin: ''
+      observacaoAdmin: '',
     })
   }
 
@@ -1050,7 +1043,6 @@ export default function AdminRoteirosPage() {
 
     try {
       const precoNumerico = numeroInput(solicitacaoForm.preco)
-
       const response = await fetch('/api/admin/roteiros/solicitacoes-atualizacao', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1064,12 +1056,11 @@ export default function AdminRoteirosPage() {
           hora: solicitacaoForm.hora,
           local: solicitacaoForm.local,
           preco: precoNumerico,
-          observacaoAdmin: solicitacaoForm.observacaoAdmin
-        })
+          observacaoAdmin: solicitacaoForm.observacaoAdmin,
+        }),
       })
 
       const data = await response.json().catch(() => null)
-
       if (!response.ok || data?.sucesso === false) {
         throw new Error(data?.erro || data?.message || 'Não foi possível aprovar a solicitação.')
       }
@@ -1104,12 +1095,11 @@ export default function AdminRoteirosPage() {
           solicitacaoId: solicitacaoSelecionada.id,
           adminId: user.id,
           acao: 'rejeitar',
-          observacaoAdmin: solicitacaoForm.observacaoAdmin
-        })
+          observacaoAdmin: solicitacaoForm.observacaoAdmin,
+        }),
       })
 
       const data = await response.json().catch(() => null)
-
       if (!response.ok || data?.sucesso === false) {
         throw new Error(data?.erro || data?.message || 'Não foi possível rejeitar a solicitação.')
       }
@@ -1184,8 +1174,8 @@ export default function AdminRoteirosPage() {
           senhaAtual,
           senha_atual: senhaAtual,
           novaSenha,
-          nova_senha: novaSenha
-        })
+          nova_senha: novaSenha,
+        }),
       })
 
       const data = await response.json().catch(() => null)
@@ -1221,7 +1211,6 @@ export default function AdminRoteirosPage() {
     localStorage.removeItem('usuario')
     localStorage.removeItem('token')
     localStorage.removeItem('session')
-
     router.replace('/login')
   }
 
@@ -1230,7 +1219,6 @@ export default function AdminRoteirosPage() {
 
     return roteiros.filter((roteiro) => {
       const ocultado = roteiroOcultado(roteiro)
-
       const passaStatus =
         (filtroStatus === 'todos' && !ocultado) ||
         (filtroStatus === 'ativos' && !ocultado && roteiroAtivo(roteiro)) ||
@@ -1254,7 +1242,7 @@ export default function AdminRoteirosPage() {
           roteiro.dificuldade,
           roteiro.recorrencia,
           roteiro.guia_nome,
-          localRoteiro(roteiro)
+          localRoteiro(roteiro),
         ].join(' ')
       )
 
@@ -1267,7 +1255,6 @@ export default function AdminRoteirosPage() {
     if (roteiroAtivo(roteiro)) return <span className="badge green">Ativo</span>
     if (roteiroPendente(roteiro)) return <span className="badge yellow">Em análise</span>
     if (roteiroReprovado(roteiro)) return <span className="badge red">Reprovado</span>
-
     return <span className="badge neutral">Pausado</span>
   }
 
@@ -1305,14 +1292,19 @@ export default function AdminRoteirosPage() {
             aria-label="Voltar para dashboard Admin"
           >
             <img src="/logo-prussik-display.png" alt="PrussikTrails" />
-            <span>Admin · Roteiros</span>
+            <span className="brandText">
+              <strong>PrussikTrails Admin</strong>
+              <small>Central de roteiros</small>
+            </span>
           </button>
 
           <div className="headerActions">
+            <button type="button" className="topBtn light" onClick={() => router.push('/admin/dashboard')}>
+              Dashboard
+            </button>
             <button type="button" className="topBtn light" onClick={atualizarTudo} disabled={atualizando}>
               {atualizando ? 'Atualizando...' : 'Atualizar'}
             </button>
-
             <button type="button" className="gearBtn" onClick={() => setMenuAberto((aberto) => !aberto)}>
               ⚙️
             </button>
@@ -1337,48 +1329,62 @@ export default function AdminRoteirosPage() {
       <div className="container">
         <section className="hero">
           <div>
-            <div className="eyebrow">Central de comando</div>
-            <h1>Roteiros e solicitações</h1>
+            <div className="eyebrow">Administração de oferta</div>
+            <h1>
+              Roteiros, solicitações e <span>controle operacional.</span>
+            </h1>
             <p>
               Aprove, pause, oculte, acompanhe grupos e analise as solicitações de atualização enviadas pelos guias.
+              {ultimaAtualizacao && (
+                <>
+                  <br />
+                  Atualizado às {ultimaAtualizacao}.
+                </>
+              )}
             </p>
           </div>
 
-          <div className="heroAside">
+          <aside className="heroAside" onClick={() => setFiltroStatus('pendentes')}>
+            <span>Solicitações pendentes</span>
             <strong>{solicitacoes.length}</strong>
-            <span>solicitações pendentes</span>
-            <small>{ultimaAtualizacao ? `Atualizado às ${ultimaAtualizacao}` : 'Aguardando atualização'}</small>
-          </div>
+            <small>{stats.ativos} roteiro(s) ativo(s) · {stats.semGrupo} sem grupo interno.</small>
+          </aside>
         </section>
 
         {mensagem && <div className="alert success">{mensagem}</div>}
         {erro && <div className="alert error">{erro}</div>}
 
         <section className="statsGrid">
-          <article className="statCard">
-            <span>Total</span>
+          <button type="button" className="statCard" onClick={() => setFiltroStatus('todos')}>
+            <span>🧭</span>
             <strong>{stats.total}</strong>
-          </article>
-          <article className="statCard">
-            <span>Ativos</span>
+            <small>roteiros visíveis</small>
+          </button>
+          <button type="button" className="statCard" onClick={() => setFiltroStatus('ativos')}>
+            <span>✅</span>
             <strong>{stats.ativos}</strong>
-          </article>
-          <article className="statCard">
-            <span>Em análise</span>
+            <small>ativos no app</small>
+          </button>
+          <button type="button" className="statCard" onClick={() => setFiltroStatus('pendentes')}>
+            <span>🕓</span>
             <strong>{stats.pendentes}</strong>
-          </article>
-          <article className="statCard">
-            <span>Com reservas</span>
+            <small>em análise</small>
+          </button>
+          <button type="button" className="statCard" onClick={() => setFiltroStatus('com_reservas')}>
+            <span>🎒</span>
             <strong>{stats.comReservas}</strong>
-          </article>
-          <article className="statCard">
-            <span>Receita confirmada</span>
+            <small>com reservas</small>
+          </button>
+          <button type="button" className="statCard" onClick={() => setFiltroStatus('sem_grupo')}>
+            <span>💬</span>
+            <strong>{stats.semGrupo}</strong>
+            <small>sem grupo interno</small>
+          </button>
+          <button type="button" className="statCard" onClick={() => setFiltroStatus('todos')}>
+            <span>💰</span>
             <strong>{formatarMoeda(stats.receitaConfirmada)}</strong>
-          </article>
-          <article className="statCard">
-            <span>Avaliação média</span>
-            <strong>{formatarNota(stats.mediaAvaliacoes)}</strong>
-          </article>
+            <small>receita confirmada</small>
+          </button>
         </section>
 
         <section className="panel requestPanel">
@@ -1419,7 +1425,7 @@ export default function AdminRoteirosPage() {
                         <strong>{solicitacao.guia_nome || 'Guia'}</strong>
                       </div>
                       <div>
-                        <span>Data/hora solicitada</span>
+                        <span>Data/hora</span>
                         <strong>{formatarDataHoraOperacional(dataSolicitada, horaSolicitada)}</strong>
                       </div>
                       <div>
@@ -1494,7 +1500,6 @@ export default function AdminRoteirosPage() {
             <div className="routesGrid">
               {roteirosFiltrados.map((roteiro) => {
                 const imagem = imagemRoteiro(roteiro)
-                const status = statusRoteiro(roteiro)
 
                 return (
                   <article className="routeCard" key={roteiro.id}>
@@ -1735,7 +1740,7 @@ export default function AdminRoteirosPage() {
               </div>
 
               <div className="modalNotice">
-                Data e hora são enviadas como texto operacional para evitar alteração automática por fuso horário. A API deve aplicar o timestamp completo com fuso -03:00 quando necessário.
+                Data e hora são enviadas como texto operacional para evitar alteração automática por fuso horário.
               </div>
 
               <div className="modalActions">
@@ -1894,952 +1899,126 @@ export default function AdminRoteirosPage() {
 }
 
 const styles = `
-  * {
-    box-sizing: border-box;
-  }
-
-  body {
-    margin: 0;
-    background: #f6f7f1;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  }
-
-  .page,
-  .loading {
-    min-height: 100vh;
-    min-height: 100dvh;
-    color: #172018;
-    background:
-      radial-gradient(circle at 10% 0%, rgba(132, 204, 22, 0.16), transparent 28%),
-      radial-gradient(circle at 90% 10%, rgba(251, 146, 60, 0.14), transparent 28%),
-      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 48%, #eef2e5 100%);
-  }
-
-  .loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .loadingCard {
-    width: min(360px, calc(100vw - 32px));
-    border-radius: 30px;
-    background: rgba(255, 255, 255, 0.92);
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
-    padding: 28px;
-    text-align: center;
-    font-weight: 900;
-    color: #203c2e;
-  }
-
-  .loadingCard img {
-    height: 64px;
-    width: auto;
-    margin-bottom: 12px;
-  }
-
-  .header {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    background: rgba(255, 253, 247, 0.90);
-    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-    backdrop-filter: blur(18px);
-    padding: 8px 14px;
-  }
-
-  .headerInner {
-    max-width: 1180px;
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .brand {
-    border: 0;
-    background: transparent;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    width: fit-content;
-    max-width: 100%;
-    min-width: 0;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .brand img {
-    width: 104px;
-    height: 56px;
-    object-fit: contain;
-    display: block;
-    flex: 0 0 auto;
-  }
-
-  .brand span {
-    color: #203c2e;
-    font-size: clamp(19px, 2.5vw, 30px);
-    line-height: 1;
-    font-weight: 950;
-    letter-spacing: -0.06em;
-    white-space: nowrap;
-  }
-
-  .headerActions {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
-  .gearBtn,
-  .topBtn,
-  .smallBtn,
-  .linkBtn,
-  .filterPill,
-  .modalClose,
-  .menuButton {
-    font-family: inherit;
-  }
-
-  .gearBtn {
-    width: 42px;
-    height: 42px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(255, 255, 255, 0.84);
-    color: #172018;
-    border-radius: 999px;
-    cursor: pointer;
-    font-size: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
-  }
-
-  .settingsMenu {
-    position: absolute;
-    top: 52px;
-    right: 0;
-    width: 232px;
-    background: #ffffff;
-    border: 1px solid rgba(15, 23, 42, 0.10);
-    border-radius: 22px;
-    box-shadow: 0 22px 60px rgba(15, 23, 42, 0.16);
-    padding: 8px;
-    z-index: 80;
-  }
-
-  .menuButton {
-    width: 100%;
-    border: none;
-    background: transparent;
-    color: #172018;
-    padding: 12px 13px;
-    border-radius: 16px;
-    text-align: left;
-    font-size: 13px;
-    font-weight: 900;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .menuButton:hover {
-    background: #f8fafc;
-  }
-
-  .menuButton.danger {
-    color: #991b1b;
-  }
-
-  .container {
-    max-width: 1180px;
-    margin: 0 auto;
-    padding: 22px 16px 54px;
-  }
-
-  .hero {
-    position: relative;
-    overflow: hidden;
-    border-radius: 38px;
-    padding: 28px;
-    background:
-      linear-gradient(135deg, rgba(23, 32, 24, 0.80), rgba(23, 32, 24, 0.42)),
-      radial-gradient(circle at top right, rgba(190, 242, 100, 0.30), transparent 34%),
-      linear-gradient(135deg, #1f331f 0%, #647a49 46%, #d7c6a1 100%);
-    color: #ffffff;
-    box-shadow: 0 24px 60px rgba(23, 32, 24, 0.18);
-    margin-bottom: 16px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 220px;
-    gap: 20px;
-    align-items: end;
-  }
-
-  .eyebrow {
-    display: inline-flex;
-    width: fit-content;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    background: rgba(255, 255, 255, 0.12);
-    color: #f7fee7;
-    padding: 8px 12px;
-    font-size: 11px;
-    font-weight: 950;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    margin-bottom: 12px;
-  }
-
-  .hero h1 {
-    margin: 0;
-    font-size: clamp(40px, 5.6vw, 72px);
-    line-height: 0.92;
-    font-weight: 950;
-    letter-spacing: -0.085em;
-  }
-
-  .hero p {
-    max-width: 690px;
-    color: rgba(255, 255, 255, 0.82);
-    line-height: 1.6;
-    margin: 14px 0 0;
-    font-size: 14px;
-    font-weight: 650;
-  }
-
-  .heroAside {
-    background: rgba(255, 255, 255, 0.14);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 28px;
-    padding: 18px;
-    backdrop-filter: blur(14px);
-  }
-
-  .heroAside strong {
-    display: block;
-    color: #bef264;
-    font-size: 42px;
-    line-height: 1;
-    font-weight: 950;
-    letter-spacing: -0.06em;
-  }
-
-  .heroAside span,
-  .heroAside small {
-    display: block;
-    color: rgba(255, 255, 255, 0.78);
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 800;
-    margin-top: 6px;
-  }
-
-  .alert {
-    border-radius: 18px;
-    padding: 13px 15px;
-    margin-bottom: 16px;
-    font-size: 13px;
-    font-weight: 850;
-    line-height: 1.45;
-  }
-
-  .alert.success {
-    background: #ecfdf5;
-    border: 1px solid #bbf7d0;
-    color: #166534;
-  }
-
-  .alert.error {
-    background: #fee2e2;
-    border: 1px solid #fecaca;
-    color: #991b1b;
-  }
-
-  .statsGrid {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-
-  .statCard,
-  .panel,
-  .requestCard,
-  .routeCard,
-  .modal,
-  .compareBox,
-  .detailGrid > div {
-    background: rgba(255, 255, 255, 0.90);
-    border: 1px solid rgba(15, 23, 42, 0.06);
-    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
-  }
-
-  .statCard {
-    border-radius: 24px;
-    padding: 16px;
-  }
-
-  .statCard span,
-  .routeInfo span,
-  .detailGrid span,
-  .requestMeta span,
-  .compareBox span,
-  .miniLabel,
-  .field span {
-    display: block;
-    color: #64748b;
-    font-size: 10px;
-    font-weight: 950;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    margin-bottom: 6px;
-  }
-
-  .statCard strong {
-    color: #172018;
-    font-size: 20px;
-    line-height: 1;
-    font-weight: 950;
-    letter-spacing: -0.05em;
-  }
-
-  .panel {
-    border-radius: 30px;
-    padding: 18px;
-    margin-bottom: 16px;
-    overflow: hidden;
-  }
-
-  .requestPanel {
-    background:
-      radial-gradient(circle at top right, rgba(190, 242, 100, 0.12), transparent 34%),
-      rgba(255, 255, 255, 0.92);
-  }
-
-  .panelHeader {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 14px;
-    flex-wrap: wrap;
-    margin-bottom: 16px;
-  }
-
-  .panelHeader h2 {
-    margin: 0;
-    color: #172018;
-    font-size: 24px;
-    line-height: 1;
-    font-weight: 950;
-    letter-spacing: -0.055em;
-  }
-
-  .panelHeader p {
-    margin: 6px 0 0;
-    color: #64748b;
-    font-size: 13px;
-    line-height: 1.45;
-    font-weight: 750;
-  }
-
-  .filters {
-    display: grid;
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-
-  .searchInput,
-  .field input,
-  .field textarea {
-    width: 100%;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: #fffdf7;
-    border-radius: 18px;
-    padding: 13px 14px;
-    font-size: 14px;
-    color: #172018;
-    outline: none;
-    font-weight: 750;
-  }
-
-  .field textarea {
-    min-height: 110px;
-    resize: vertical;
-    line-height: 1.55;
-  }
-
-  .searchInput:focus,
-  .field input:focus,
-  .field textarea:focus {
-    border-color: #84cc16;
-    box-shadow: 0 0 0 4px rgba(132, 204, 22, 0.12);
-  }
-
-  .filterPills {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .filterPill {
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: #fffdf7;
-    color: #475569;
-    border-radius: 999px;
-    padding: 9px 12px;
-    font-size: 12px;
-    font-weight: 950;
-    cursor: pointer;
-  }
-
-  .filterPill.active {
-    background: #172018;
-    color: #ffffff;
-  }
-
-  .requestGrid,
-  .routesGrid {
-    display: grid;
-    gap: 12px;
-  }
-
-  .requestGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .requestCard,
-  .routeCard {
-    border-radius: 26px;
-    overflow: hidden;
-  }
-
-  .requestCard {
-    padding: 16px;
-  }
-
-  .requestTop,
-  .routeTopLine,
-  .reviewTop {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: flex-start;
-  }
-
-  .requestTop strong,
-  .compareBox strong {
-    display: block;
-    color: #172018;
-    font-size: 16px;
-    line-height: 1.15;
-    font-weight: 950;
-    letter-spacing: -0.035em;
-  }
-
-  .requestMeta {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 12px;
-  }
-
-  .requestMeta div,
-  .routeInfo div,
-  .detailGrid > div {
-    border-radius: 18px;
-    background: rgba(32, 60, 46, 0.045);
-    padding: 11px;
-    min-width: 0;
-  }
-
-  .requestMeta strong,
-  .routeInfo strong,
-  .detailGrid strong {
-    display: block;
-    color: #203c2e;
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 900;
-    overflow-wrap: anywhere;
-  }
-
-  .routeCard {
-    display: grid;
-    grid-template-columns: 240px minmax(0, 1fr);
-    align-items: stretch;
-  }
-
-  .routeImage {
-    min-height: 232px;
-    background: #eef2e5;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #64748b;
-    font-size: 42px;
-    overflow: hidden;
-  }
-
-  .routeImage img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .routeBody {
-    padding: 16px;
-    min-width: 0;
-  }
-
-  .badgesWrap,
-  .cardActions,
-  .modalActions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .routeBody h3 {
-    margin: 12px 0 0;
-    color: #172018;
-    font-size: 23px;
-    line-height: 1;
-    font-weight: 950;
-    letter-spacing: -0.055em;
-  }
-
-  .routeBody p {
-    margin: 9px 0 0;
-    color: #64748b;
-    font-size: 13px;
-    line-height: 1.55;
-    font-weight: 700;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .routeInfo,
-  .detailGrid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 14px;
-  }
-
-  .cardActions {
-    margin-top: 14px;
-  }
-
-  .badge {
-    display: inline-flex;
-    border-radius: 999px;
-    padding: 7px 9px;
-    font-size: 10px;
-    font-weight: 950;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-
-  .badge.green {
-    background: #dcfce7;
-    color: #166534;
-  }
-
-  .badge.yellow {
-    background: #fef3c7;
-    color: #92400e;
-  }
-
-  .badge.red {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-
-  .badge.blue {
-    background: #dbeafe;
-    color: #1d4ed8;
-  }
-
-  .badge.neutral {
-    background: #f1f5f9;
-    color: #475569;
-  }
-
-  .smallBtn,
-  .topBtn,
-  .linkBtn {
-    border: none;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 950;
-    cursor: pointer;
-    transition: 0.18s ease;
-    white-space: nowrap;
-  }
-
-  .smallBtn,
-  .topBtn {
-    padding: 10px 13px;
-  }
-
-  .smallBtn:hover:not(:disabled),
-  .topBtn:hover:not(:disabled),
-  .linkBtn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10);
-  }
-
-  .smallBtn:disabled,
-  .topBtn:disabled,
-  .linkBtn:disabled {
-    opacity: 0.62;
-    cursor: not-allowed;
-  }
-
-  .smallBtn.dark,
-  .topBtn.dark {
-    background: #172018;
-    color: #ffffff;
-  }
-
-  .smallBtn.light,
-  .topBtn.light {
-    background: #eef2e5;
-    color: #475569;
-  }
-
-  .smallBtn.green {
-    background: #16a34a;
-    color: #ffffff;
-  }
-
-  .smallBtn.warn {
-    background: #f59e0b;
-    color: #ffffff;
-  }
-
-  .smallBtn.blue {
-    background: #2563eb;
-    color: #ffffff;
-  }
-
-  .smallBtn.danger {
-    background: #991b1b;
-    color: #ffffff;
-  }
-
-  .smallBtn.dangerSoft {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-
-  .linkBtn {
-    background: transparent;
-    color: #64748b;
-    padding: 5px 0;
-    text-decoration: underline;
-  }
-
-  .emptyBox {
-    border: 1px dashed rgba(15, 23, 42, 0.16);
-    border-radius: 22px;
-    padding: 22px;
-    color: #64748b;
-    text-align: center;
-    font-size: 13px;
-    line-height: 1.5;
-    font-weight: 750;
-    background: #fffdf7;
-  }
-
-  .adminRequestNote {
-    border-radius: 18px;
-    background: #fff7ed;
-    border: 1px solid #fed7aa;
-    padding: 14px;
-    margin-top: 12px;
-  }
-
-  .adminRequestNote.compact {
-    padding: 12px;
-  }
-
-  .adminRequestNote.neutralNote {
-    background: #f8fafc;
-    border-color: rgba(15, 23, 42, 0.08);
-  }
-
-  .adminRequestNote strong {
-    display: block;
-    color: #9a3412;
-    font-size: 11px;
-    font-weight: 950;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-bottom: 6px;
-  }
-
-  .adminRequestNote.neutralNote strong {
-    color: #475569;
-  }
-
-  .adminRequestNote p {
-    margin: 0;
-    color: #7c2d12;
-    font-size: 13px;
-    line-height: 1.55;
-    font-weight: 750;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .adminRequestNote.neutralNote p {
-    color: #475569;
-  }
-
-  .modalOverlay {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    background: rgba(15, 23, 42, 0.52);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-    backdrop-filter: blur(8px);
-  }
-
-  .modal {
-    width: 100%;
-    max-width: 460px;
-    max-height: calc(100vh - 36px);
-    overflow: auto;
-    border-radius: 28px;
-  }
-
-  .bigModal {
-    max-width: 880px;
-  }
-
-  .modalHeader {
-    padding: 20px;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-  }
-
-  .modalHeader h2 {
-    margin: 0;
-    color: #172018;
-    font-size: 24px;
-    line-height: 1;
-    font-weight: 950;
-    letter-spacing: -0.055em;
-  }
-
-  .modalHeader p {
-    margin: 6px 0 0;
-    color: #64748b;
-    font-size: 13px;
-    line-height: 1.45;
-    font-weight: 750;
-  }
-
-  .modalClose {
-    width: 38px;
-    height: 38px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: #f8fafc;
-    color: #172018;
-    border-radius: 999px;
-    font-size: 24px;
-    line-height: 1;
-    font-weight: 800;
-    cursor: pointer;
-  }
-
-  .modalBody {
-    padding: 20px;
-    display: grid;
-    gap: 14px;
-  }
-
-  .compareGrid,
-  .formGrid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .compareBox {
-    border-radius: 22px;
-    padding: 14px;
-    min-width: 0;
-  }
-
-  .compareBox.requested {
-    background: #f0fdf4;
-    border-color: #bbf7d0;
-  }
-
-  .compareBox p {
-    color: #64748b;
-    font-size: 13px;
-    line-height: 1.5;
-    font-weight: 700;
-    margin: 8px 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .compareBox small {
-    color: #203c2e;
-    font-size: 12px;
-    font-weight: 900;
-  }
-
-  .field {
-    display: grid;
-    gap: 7px;
-  }
-
-  .field.full {
-    grid-column: 1 / -1;
-  }
-
-  .modalNotice {
-    border-radius: 18px;
-    padding: 12px 13px;
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
-    color: #1d4ed8;
-    font-size: 12px;
-    font-weight: 800;
-    line-height: 1.45;
-  }
-
-  .modalActions {
-    justify-content: flex-end;
-  }
-
-  @media (max-width: 1100px) {
-    .statsGrid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .routeCard {
-      grid-template-columns: 200px minmax(0, 1fr);
-    }
-
-    .routeInfo {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 820px) {
-    .headerInner {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-
-    .brand img {
-      width: 82px;
-      height: 46px;
-    }
-
-    .brand span {
-      font-size: 18px;
-    }
-
-    .topBtn {
-      display: none;
-    }
-
-    .container {
-      padding: 16px 12px 42px;
-    }
-
-    .hero {
-      grid-template-columns: 1fr;
-      border-radius: 28px;
-      padding: 22px;
-    }
-
-    .hero h1 {
-      font-size: 42px;
-    }
-
-    .statsGrid,
-    .requestGrid,
-    .compareGrid,
-    .formGrid,
-    .detailGrid,
-    .requestMeta {
-      grid-template-columns: 1fr;
-    }
-
-    .panel {
-      border-radius: 24px;
-      padding: 14px;
-    }
-
-    .routeCard {
-      grid-template-columns: 1fr;
-    }
-
-    .routeImage {
-      min-height: 190px;
-    }
-
-    .routeBody h3 {
-      font-size: 21px;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .brand span {
-      display: none;
-    }
-
-    .statsGrid,
-    .routeInfo {
-      grid-template-columns: 1fr;
-    }
-
-    .cardActions,
-    .modalActions {
-      display: grid;
-      grid-template-columns: 1fr;
-      width: 100%;
-    }
-
-    .smallBtn,
-    .topBtn {
-      width: 100%;
-    }
-
-    .modalOverlay {
-      padding: 10px;
-      align-items: flex-end;
-    }
-
-    .modal {
-      border-radius: 26px 26px 18px 18px;
-      max-height: calc(100vh - 20px);
-    }
-  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  button, input, textarea { font: inherit; }
+  .page, .loading { min-height: 100vh; min-height: 100dvh; color: #0f172a; background: radial-gradient(circle at 0% 0%, rgba(34,197,94,0.10), transparent 30%), radial-gradient(circle at 100% 0%, rgba(59,130,246,0.10), transparent 30%), linear-gradient(180deg,#f8fafc 0%,#eef2f7 100%); }
+  .loading { display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .loadingCard { width: min(360px, calc(100vw - 32px)); border-radius: 30px; background: rgba(15,23,42,.92); border: 1px solid rgba(148,163,184,.18); box-shadow: 0 24px 70px rgba(15,23,42,.28); padding: 28px; text-align: center; font-weight: 900; color: #e5e7eb; }
+  .loadingCard img { height: 64px; width: auto; margin-bottom: 12px; }
+  .header { position: sticky; top: 0; z-index: 50; background: rgba(248,250,252,.88); border-bottom: 1px solid rgba(15,23,42,.08); backdrop-filter: blur(18px); padding: 12px 18px; }
+  .headerInner { max-width: 1240px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .brand { border: 0; background: transparent; padding: 0; display: inline-flex; align-items: center; gap: 10px; width: fit-content; max-width: 100%; min-width: 0; cursor: pointer; text-align: left; }
+  .brand img { height: 40px; width: auto; display: block; flex: 0 0 auto; }
+  .brandText { min-width: 0; display: grid; gap: 3px; }
+  .brandText strong { color: #0f172a; font-size: 17px; line-height: 1; font-weight: 950; letter-spacing: -0.045em; white-space: nowrap; }
+  .brandText small { color: #64748b; font-size: 11px; line-height: 1; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .headerActions { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .gearBtn { width: 42px; height: 42px; border: 1px solid rgba(15,23,42,.10); background: rgba(255,255,255,.86); color: #0f172a; border-radius: 999px; cursor: pointer; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 8px 20px rgba(15,23,42,.05); transition: .2s ease; }
+  .gearBtn:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(15,23,42,.10); }
+  .settingsMenu { position: absolute; top: 50px; right: 0; width: 232px; background: #ffffff; border: 1px solid rgba(15,23,42,.10); border-radius: 22px; box-shadow: 0 22px 60px rgba(15,23,42,.16); padding: 8px; z-index: 80; }
+  .menuButton { width: 100%; border: none; background: transparent; color: #0f172a; padding: 12px 13px; border-radius: 16px; text-align: left; font-size: 13px; font-weight: 900; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .menuButton:hover { background: #f8fafc; }
+  .menuButton.danger { color: #991b1b; }
+  .container { max-width: 1240px; margin: 0 auto; padding: 24px 18px 52px; }
+  .hero { position: relative; overflow: hidden; border-radius: 34px; padding: 28px; background: radial-gradient(circle at top right, rgba(34,197,94,.18), transparent 30%), linear-gradient(135deg,#0f172a,#1e293b); color: #ffffff; box-shadow: 0 24px 70px rgba(15,23,42,.22); margin-bottom: 18px; display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 22px; align-items: end; }
+  .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to bottom, black, transparent); pointer-events: none; }
+  .hero > * { position: relative; z-index: 2; }
+  .eyebrow { display: inline-flex; width: fit-content; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: #bbf7d0; padding: 8px 12px; font-size: 11px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 14px; }
+  .hero h1 { margin: 0; font-size: clamp(38px, 5.5vw, 68px); line-height: .94; font-weight: 950; letter-spacing: -.08em; }
+  .hero h1 span { color: #86efac; }
+  .hero p { max-width: 780px; color: rgba(255,255,255,.76); line-height: 1.6; margin: 16px 0 0; font-size: 14px; font-weight: 650; }
+  .heroAside { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16); border-radius: 28px; padding: 20px; backdrop-filter: blur(14px); cursor: pointer; transition: .2s ease; }
+  .heroAside:hover { transform: translateY(-2px); box-shadow: 0 20px 50px rgba(0,0,0,.20); }
+  .heroAside span { display: block; color: rgba(255,255,255,.66); font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: .10em; }
+  .heroAside strong { display: block; color: #ffffff; font-size: 46px; line-height: 1; font-weight: 950; letter-spacing: -.07em; margin-top: 8px; }
+  .heroAside small { display: block; color: rgba(255,255,255,.72); font-size: 12px; line-height: 1.45; font-weight: 750; margin-top: 8px; }
+  .alert { border-radius: 18px; padding: 13px 15px; margin-bottom: 16px; font-size: 13px; font-weight: 850; line-height: 1.45; }
+  .alert.success { background: #ecfdf5; border: 1px solid #bbf7d0; color: #166534; }
+  .alert.error { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; }
+  .statsGrid { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }
+  .statCard { border: 1px solid rgba(15,23,42,.08); background: rgba(255,255,255,.88); border-radius: 24px; padding: 15px; box-shadow: 0 10px 30px rgba(15,23,42,.06); cursor: pointer; transition: .2s ease; text-align: left; min-height: 132px; }
+  .statCard:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(15,23,42,.10); }
+  .statCard > span:first-child { width: 38px; height: 38px; border-radius: 16px; background: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: 11px; }
+  .statCard strong { color: #0f172a; font-size: 25px; line-height: 1; font-weight: 950; letter-spacing: -.06em; overflow-wrap: anywhere; }
+  .statCard small { display: block; color: #64748b; font-size: 11px; line-height: 1.35; font-weight: 850; margin-top: 7px; }
+  .panel { background: rgba(255,255,255,.92); border: 1px solid rgba(15,23,42,.08); border-radius: 28px; box-shadow: 0 12px 34px rgba(15,23,42,.07); padding: 18px; margin-bottom: 18px; overflow: hidden; }
+  .requestPanel { background: radial-gradient(circle at top right, rgba(34,197,94,.10), transparent 34%), rgba(255,255,255,.92); }
+  .panelHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+  .panelHeader h2 { margin: 0; color: #0f172a; font-size: 22px; line-height: 1.1; font-weight: 950; letter-spacing: -.045em; }
+  .panelHeader p { margin: 6px 0 0; color: #64748b; font-size: 13px; line-height: 1.45; font-weight: 750; }
+  .filters { display: grid; gap: 12px; margin-bottom: 16px; }
+  .searchInput, .field input, .field textarea { width: 100%; border: 1px solid rgba(15,23,42,.10); background: #ffffff; border-radius: 18px; padding: 13px 14px; font-size: 14px; color: #0f172a; outline: none; font-weight: 750; }
+  .field textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
+  .searchInput:focus, .field input:focus, .field textarea:focus { border-color: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.10); }
+  .filterPills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filterPill { border: 1px solid rgba(15,23,42,.08); background: #ffffff; color: #475569; border-radius: 999px; padding: 9px 12px; font-size: 12px; font-weight: 950; cursor: pointer; }
+  .filterPill.active { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+  .requestGrid, .routesGrid { display: grid; gap: 12px; }
+  .requestGrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .requestCard, .routeCard, .modal, .compareBox, .detailGrid > div { background: rgba(255,255,255,.96); border: 1px solid rgba(15,23,42,.08); box-shadow: 0 10px 28px rgba(15,23,42,.06); }
+  .requestCard, .routeCard { border-radius: 24px; overflow: hidden; }
+  .requestCard { padding: 16px; }
+  .requestTop, .routeTopLine { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .requestTop strong, .compareBox strong { display: block; color: #0f172a; font-size: 16px; line-height: 1.15; font-weight: 950; letter-spacing: -.035em; }
+  .requestMeta { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+  .requestMeta div, .routeInfo div, .detailGrid > div { border-radius: 18px; background: #f8fafc; padding: 11px; min-width: 0; }
+  .statCard span:not(:first-child), .routeInfo span, .detailGrid span, .requestMeta span, .compareBox span, .miniLabel, .field span { display: block; color: #64748b; font-size: 10px; font-weight: 950; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px; }
+  .requestMeta strong, .routeInfo strong, .detailGrid strong { display: block; color: #0f172a; font-size: 12px; line-height: 1.35; font-weight: 900; overflow-wrap: anywhere; }
+  .routeCard { display: grid; grid-template-columns: 244px minmax(0,1fr); align-items: stretch; }
+  .routeImage { min-height: 232px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 42px; overflow: hidden; }
+  .routeImage img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .routeBody { padding: 16px; min-width: 0; }
+  .badgesWrap, .cardActions, .modalActions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .routeBody h3 { margin: 12px 0 0; color: #0f172a; font-size: 23px; line-height: 1.02; font-weight: 950; letter-spacing: -.055em; }
+  .routeBody p { margin: 9px 0 0; color: #64748b; font-size: 13px; line-height: 1.55; font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .routeInfo, .detailGrid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin-top: 14px; }
+  .cardActions { margin-top: 14px; }
+  .badge { display: inline-flex; border-radius: 999px; padding: 7px 9px; font-size: 10px; font-weight: 950; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+  .badge.green { background: #dcfce7; color: #166534; }
+  .badge.yellow { background: #fef3c7; color: #92400e; }
+  .badge.red { background: #fee2e2; color: #991b1b; }
+  .badge.blue { background: #dbeafe; color: #1d4ed8; }
+  .badge.neutral { background: #f1f5f9; color: #475569; }
+  .smallBtn, .topBtn, .linkBtn { border: none; border-radius: 999px; font-size: 12px; font-weight: 950; cursor: pointer; transition: .18s ease; white-space: nowrap; }
+  .smallBtn, .topBtn { padding: 10px 13px; }
+  .smallBtn:hover:not(:disabled), .topBtn:hover:not(:disabled), .linkBtn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(15,23,42,.10); }
+  .smallBtn:disabled, .topBtn:disabled, .linkBtn:disabled { opacity: .62; cursor: not-allowed; }
+  .smallBtn.dark, .topBtn.dark { background: #0f172a; color: #ffffff; }
+  .smallBtn.light, .topBtn.light { background: #f1f5f9; color: #475569; border: 1px solid rgba(15,23,42,.08); }
+  .smallBtn.green { background: #16a34a; color: #ffffff; }
+  .smallBtn.warn { background: #f59e0b; color: #ffffff; }
+  .smallBtn.blue { background: #2563eb; color: #ffffff; }
+  .smallBtn.danger { background: #991b1b; color: #ffffff; }
+  .smallBtn.dangerSoft { background: #fee2e2; color: #991b1b; }
+  .linkBtn { background: transparent; color: #64748b; padding: 5px 0; text-decoration: underline; }
+  .emptyBox { border: 1px dashed rgba(15,23,42,.16); border-radius: 22px; padding: 22px; color: #64748b; text-align: center; font-size: 13px; line-height: 1.5; font-weight: 750; background: #ffffff; }
+  .adminRequestNote { border-radius: 18px; background: #fff7ed; border: 1px solid #fed7aa; padding: 14px; margin-top: 12px; }
+  .adminRequestNote.compact { padding: 12px; }
+  .adminRequestNote.neutralNote { background: #f8fafc; border-color: rgba(15,23,42,.08); }
+  .adminRequestNote strong { display: block; color: #9a3412; font-size: 11px; font-weight: 950; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+  .adminRequestNote.neutralNote strong { color: #475569; }
+  .adminRequestNote p { margin: 0; color: #7c2d12; font-size: 13px; line-height: 1.55; font-weight: 750; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .adminRequestNote.neutralNote p { color: #475569; }
+  .modalOverlay { position: fixed; inset: 0; z-index: 100; background: rgba(15,23,42,.54); display: flex; align-items: center; justify-content: center; padding: 18px; backdrop-filter: blur(8px); }
+  .modal { width: 100%; max-width: 460px; max-height: calc(100vh - 36px); overflow: auto; border-radius: 28px; }
+  .bigModal { max-width: 880px; }
+  .modalHeader { padding: 20px; border-bottom: 1px solid rgba(15,23,42,.08); display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .modalHeader h2 { margin: 0; color: #0f172a; font-size: 24px; line-height: 1; font-weight: 950; letter-spacing: -.055em; }
+  .modalHeader p { margin: 6px 0 0; color: #64748b; font-size: 13px; line-height: 1.45; font-weight: 750; }
+  .modalClose { width: 38px; height: 38px; border: 1px solid rgba(15,23,42,.08); background: #f8fafc; color: #0f172a; border-radius: 999px; font-size: 24px; line-height: 1; font-weight: 800; cursor: pointer; }
+  .modalBody { padding: 20px; display: grid; gap: 14px; }
+  .compareGrid, .formGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+  .compareBox { border-radius: 22px; padding: 14px; min-width: 0; }
+  .compareBox.requested { background: #f0fdf4; border-color: #bbf7d0; }
+  .compareBox p { color: #64748b; font-size: 13px; line-height: 1.5; font-weight: 700; margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .compareBox small { color: #0f172a; font-size: 12px; font-weight: 900; }
+  .field { display: grid; gap: 7px; }
+  .field.full { grid-column: 1 / -1; }
+  .modalNotice { border-radius: 18px; padding: 12px 13px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; font-size: 12px; font-weight: 800; line-height: 1.45; }
+  .modalActions { justify-content: flex-end; }
+  @media (max-width: 1180px) { .statsGrid { grid-template-columns: repeat(3,minmax(0,1fr)); } .routeCard { grid-template-columns: 210px minmax(0,1fr); } .routeInfo { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; } .requestGrid { grid-template-columns: 1fr; } .routeCard { grid-template-columns: 1fr; } .routeImage { min-height: 220px; } }
+  @media (max-width: 720px) { .header { padding: 10px 12px; } .brandText strong, .brandText small { display: none; } .container { padding: 16px 12px 42px; } .hero, .panel { border-radius: 24px; } .hero { padding: 22px; } .hero h1 { font-size: 38px; } .statsGrid, .compareGrid, .formGrid, .detailGrid, .requestMeta { grid-template-columns: 1fr; } .topBtn.light:first-child { display: none; } .routeInfo { grid-template-columns: 1fr; } .panel { padding: 14px; } .filterPills { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; } .filterPill { flex: 0 0 auto; } }
+  @media (max-width: 480px) { .statsGrid { grid-template-columns: 1fr; } .cardActions, .modalActions { display: grid; grid-template-columns: 1fr; width: 100%; } .smallBtn, .topBtn { width: 100%; } .modalOverlay { padding: 10px; align-items: flex-end; } .modal { border-radius: 26px 26px 18px 18px; max-height: calc(100vh - 20px); } }
 `
