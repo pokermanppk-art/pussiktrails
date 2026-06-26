@@ -3,6 +3,7 @@
 import { CSSProperties, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+import LegalFooter from '../components/LegalFooter'
 
 type AnyRecord = Record<string, any>
 
@@ -1288,6 +1289,8 @@ export default function HomePage() {
           </article>
         </section>
       </div>
+
+      <LegalFooter />
     </main>
   )
 }

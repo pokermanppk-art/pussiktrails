@@ -1,5 +1,5 @@
-import LegalDocumentPage from '@/components/LegalDocumentPage'
+import LegalDocumentPage from '../../components/LegalDocumentPage'
 
-export default function Page() {
+export default function TermoDoGuiaPage() {
   return <LegalDocumentPage documento="termo_guia" />
 }

@@ -1,42 +1,219 @@
 import Link from 'next/link'
-import { DOCUMENTOS_LEGAIS, type DocumentoLegalCodigo } from '@/lib/legalDocuments'
+import { DOCUMENTOS_LEGAIS, type DocumentoLegalCodigo } from '../lib/legalDocuments'
 
-export default function LegalDocumentPage({ documento }: { documento: DocumentoLegalCodigo }) {
-  const doc = DOCUMENTOS_LEGAIS[documento]
-  const linhas = doc.texto.split('\n')
+type DocumentoLegalPageProps = {
+  documento: DocumentoLegalCodigo
+}
+
+type LegalNavItem = {
+  codigo: DocumentoLegalCodigo
+  label: string
+  href: string
+}
+
+const LEGAL_NAV: LegalNavItem[] = [
+  {
+    codigo: 'termos_uso',
+    label: 'Termos',
+    href: '/termos',
+  },
+  {
+    codigo: 'politica_privacidade',
+    label: 'Privacidade',
+    href: '/politica-de-privacidade',
+  },
+  {
+    codigo: 'politica_cookies',
+    label: 'Cookies',
+    href: '/politica-de-cookies',
+  },
+  {
+    codigo: 'fornecedores',
+    label: 'Fornecedores',
+    href: '/fornecedores',
+  },
+  {
+    codigo: 'termo_guia',
+    label: 'Termo do Guia',
+    href: '/termo-do-guia',
+  },
+  {
+    codigo: 'termo_riscos',
+    label: 'Termo de Riscos',
+    href: '/termo-de-riscos',
+  },
+]
+
+const RESUMOS: Record<DocumentoLegalCodigo, string> = {
+  termos_uso:
+    'Regras gerais da PrussikTrails, cadastro, marketplace outdoor, responsabilidades, pagamentos, grupos, avaliações, conduta, limites de responsabilidade, Beta e aceite geral.',
+  politica_privacidade:
+    'Tratamento de dados pessoais, LGPD, retenção, compartilhamento, segurança e direitos dos titulares.',
+  politica_cookies:
+    'Uso de cookies, localStorage, analytics, segurança, preferências de navegação e tecnologias similares.',
+  fornecedores:
+    'Lista de fornecedores tecnológicos utilizados pela PrussikTrails, incluindo infraestrutura, hospedagem, banco de dados, pagamentos e serviços auxiliares.',
+  termo_guia:
+    'Responsabilidade, confidencialidade, tratamento de dados, segurança operacional, atuação independente e regras aplicáveis aos Guias.',
+  termo_riscos:
+    'Ciência de riscos outdoor, declaração de participação, informações de saúde, menores, acompanhantes e aceite antes da reserva.',
+}
+
+const MARCADOR_INICIAL: Record<DocumentoLegalCodigo, string> = {
+  termos_uso: 'PARTE I',
+  politica_privacidade: 'PARTE II',
+  politica_cookies: 'ANEXO II',
+  fornecedores: 'ANEXO III',
+  termo_guia: 'ANEXO IV',
+  termo_riscos: 'ANEXO V',
+}
+
+function texto(valor: unknown): string {
+  return String(valor || '').trim()
+}
+
+function removerCapaInicial(conteudoOriginal: string, documento: DocumentoLegalCodigo): string {
+  const conteudo = texto(conteudoOriginal)
+  const marcador = MARCADOR_INICIAL[documento]
+
+  if (!conteudo || !marcador) return conteudo
+
+  const posicao = conteudo.indexOf(marcador)
+
+  if (posicao <= 0) return conteudo
+
+  return conteudo.slice(posicao).trim()
+}
+
+function renderizarBloco(bloco: string, index: number) {
+  const textoBloco = bloco.trim()
+
+  if (!textoBloco) return null
+
+  const tituloPrincipal =
+    /^PARTE\s+[IVXLCDM]+/i.test(textoBloco) ||
+    /^ANEXO\s+[IVXLCDM]+/i.test(textoBloco)
+
+  const tituloSecundario =
+    textoBloco.length <= 130 &&
+    (
+      textoBloco === textoBloco.toUpperCase() ||
+      /^[0-9]+(\.[0-9]+)*\.?\s+/.test(textoBloco)
+    )
+
+  const pareceTabela = textoBloco.includes(' | ')
+  const pareceLista = /^[-•]\s+/.test(textoBloco)
+
+  if (tituloPrincipal) {
+    return (
+      <h2 key={`h2-${index}`} className="legal-doc-h2">
+        {textoBloco}
+      </h2>
+    )
+  }
+
+  if (tituloSecundario) {
+    return (
+      <h3 key={`h3-${index}`} className="legal-doc-h3">
+        {textoBloco}
+      </h3>
+    )
+  }
+
+  if (pareceTabela) {
+    return (
+      <p key={`table-${index}`} className="legal-doc-table-line">
+        {textoBloco}
+      </p>
+    )
+  }
+
+  if (pareceLista) {
+    return (
+      <p key={`list-${index}`} className="legal-doc-list-line">
+        {textoBloco}
+      </p>
+    )
+  }
 
   return (
-    <main className="legalPage">
-      <section className="legalHero">
-        <Link href="/">← Voltar para PrussikTrails</Link>
-        <p>Documentos legais</p>
-        <h1>{doc.titulo}</h1>
-        <span>Versão {doc.versao} • Atualizado em {doc.ultimaAtualizacao}</span>
+    <p key={`p-${index}`} className="legal-doc-p">
+      {textoBloco}
+    </p>
+  )
+}
+
+export default function LegalDocumentPage({ documento }: DocumentoLegalPageProps) {
+  const doc = DOCUMENTOS_LEGAIS[documento]
+
+  if (!doc) {
+    return (
+      <main className="legal-page">
+        <section className="legal-hero">
+          <div className="legal-shell">
+            <Link href="/" className="legal-back">
+              ← Voltar para PrussikTrails
+            </Link>
+
+            <p className="legal-kicker">Documentos legais</p>
+            <h1>Documento não encontrado</h1>
+          </div>
+        </section>
+
+        <style>{styles}</style>
+      </main>
+    )
+  }
+
+  const resumo = RESUMOS[documento] || doc.descricao
+  const conteudo = removerCapaInicial(texto(doc.texto), documento) || resumo
+
+  const blocos = conteudo
+    .replace(/\r/g, '')
+    .split(/\n{2,}/)
+    .map((bloco) => bloco.trim())
+    .filter(Boolean)
+
+  return (
+    <main className="legal-page">
+      <section className="legal-hero">
+        <div className="legal-shell">
+          <Link href="/" className="legal-back">
+            ← Voltar para PrussikTrails
+          </Link>
+
+          <p className="legal-kicker">Documentos legais</p>
+          <h1>{doc.titulo}</h1>
+
+          <p className="legal-version">
+            Versão {doc.versao} • Atualizado em 17/06/2026
+          </p>
+        </div>
       </section>
 
-      <section className="legalContent">
-        <aside>
-          <strong>Resumo</strong>
-          <p>{doc.resumo}</p>
-          <nav>
-            <Link href="/termos">Termos</Link>
-            <Link href="/politica-de-privacidade">Privacidade</Link>
-            <Link href="/politica-de-cookies">Cookies</Link>
-            <Link href="/fornecedores">Fornecedores</Link>
-            <Link href="/termo-do-guia">Termo do Guia</Link>
-            <Link href="/termo-de-riscos">Termo de Riscos</Link>
-          </nav>
-        </aside>
+      <section className="legal-body">
+        <div className="legal-shell legal-grid">
+          <aside className="legal-sidebar">
+            <h2>Resumo</h2>
+            <p>{resumo}</p>
 
-        <article>
-          {linhas.map((linha, index) => {
-            const t = linha.trim()
-            if (!t) return <br key={index} />
-            const heading = t === t.toUpperCase() || /^\d+(\.\d+)*\.\s/.test(t) || t.startsWith('ANEXO') || t.startsWith('PARTE')
-            if (heading) return <h2 key={index}>{t}</h2>
-            return <p key={index}>{t}</p>
-          })}
-        </article>
+            <nav className="legal-nav" aria-label="Navegação dos documentos legais">
+              {LEGAL_NAV.map((item) => (
+                <Link
+                  key={item.codigo}
+                  href={item.href}
+                  className={item.codigo === documento ? 'active' : ''}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          </aside>
+
+          <article className="legal-card">
+            {blocos.map((bloco, index) => renderizarBloco(bloco, index))}
+          </article>
+        </div>
       </section>
 
       <style>{styles}</style>
@@ -45,21 +222,250 @@ export default function LegalDocumentPage({ documento }: { documento: DocumentoL
 }
 
 const styles = `
-.legalPage { min-height: 100vh; background: #fffdf7; color: #203c2e; }
-.legalHero { padding: 38px 20px 34px; background: linear-gradient(135deg,#203c2e,#294735); color: #fffdf7; }
-.legalHero > * { width: min(1180px, 100%); margin-left: auto; margin-right: auto; }
-.legalHero a { display: block; color: #fffdf7; text-decoration: none; opacity: .82; margin-bottom: 22px; }
-.legalHero p { margin-top: 0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .14em; font-size: 12px; opacity: .75; }
-.legalHero h1 { margin-top: 0; margin-bottom: 10px; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(34px, 6vw, 64px); line-height: 1; }
-.legalHero span { display: block; opacity: .78; }
-.legalContent { width: min(1180px, 100%); margin: 0 auto; padding: 34px 20px 60px; display: grid; grid-template-columns: 300px 1fr; gap: 28px; align-items: start; }
-aside { position: sticky; top: 18px; padding: 18px; border-radius: 24px; background: #f3f5ea; border: 1px solid rgba(32,60,46,.1); }
-aside strong { display: block; margin-bottom: 8px; }
-aside p { color: rgba(32,60,46,.72); font-size: 14px; line-height: 1.55; margin-top: 0; }
-aside nav { display: grid; gap: 8px; margin-top: 14px; }
-aside a { text-decoration: none; color: #203c2e; padding: 10px 12px; border-radius: 14px; background: #fffdf7; font-size: 13px; font-weight: 800; }
-article { padding: 26px; border-radius: 26px; background: white; border: 1px solid rgba(32,60,46,.08); box-shadow: 0 18px 54px rgba(32,60,46,.08); }
-article h2 { margin: 22px 0 10px; font-size: 18px; color: #203c2e; line-height: 1.35; }
-article p { margin: 0 0 10px; color: rgba(32,60,46,.84); font-size: 15px; line-height: 1.66; }
-@media (max-width: 860px) { .legalContent { grid-template-columns: 1fr; } aside { position: static; } article { padding: 20px; } }
+  .legal-page {
+    min-height: 100vh;
+    background: #fffdf7;
+    color: #203c2e;
+  }
+
+  .legal-shell {
+    width: min(1160px, calc(100% - 36px));
+    margin: 0 auto;
+  }
+
+  .legal-hero {
+    background: #203c2e;
+    color: #fffdf7;
+    padding: 42px 0 36px;
+  }
+
+  .legal-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 28px;
+    color: rgba(255, 253, 247, 0.76);
+    text-decoration: none;
+    font-size: 0.92rem;
+    font-weight: 800;
+  }
+
+  .legal-back:hover {
+    color: #fffdf7;
+    text-decoration: underline;
+  }
+
+  .legal-kicker {
+    margin: 0 0 10px;
+    color: rgba(255, 253, 247, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 0.74rem;
+    font-weight: 950;
+  }
+
+  .legal-hero h1 {
+    margin: 0;
+    color: #fffdf7;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: clamp(3rem, 7vw, 5.2rem);
+    line-height: 0.94;
+    letter-spacing: -0.065em;
+  }
+
+  .legal-version {
+    margin: 16px 0 0;
+    color: rgba(255, 253, 247, 0.72);
+    font-size: 0.92rem;
+    font-weight: 800;
+  }
+
+  .legal-body {
+    background:
+      radial-gradient(circle at top left, rgba(212, 179, 90, 0.14), transparent 34%),
+      linear-gradient(180deg, #fffdf7 0%, #f3f5ea 100%);
+    padding: 34px 0 72px;
+  }
+
+  .legal-grid {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+  }
+
+  .legal-sidebar {
+    position: sticky;
+    top: 24px;
+    border-radius: 24px;
+    padding: 18px;
+    background: #f3f5ea;
+    border: 1px solid rgba(32, 60, 46, 0.12);
+    box-shadow: 0 18px 50px rgba(32, 60, 46, 0.06);
+  }
+
+  .legal-sidebar h2 {
+    margin: 2px 0 10px;
+    color: #203c2e;
+    font-size: 0.94rem;
+    font-weight: 950;
+  }
+
+  .legal-sidebar p {
+    margin: 0 0 16px;
+    color: #607060;
+    font-size: 0.94rem;
+    line-height: 1.52;
+  }
+
+  .legal-nav {
+    display: grid;
+    gap: 9px;
+  }
+
+  .legal-nav a {
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 9px 13px;
+    border-radius: 14px;
+    background: rgba(255, 253, 247, 0.86);
+    color: #203c2e;
+    text-decoration: none;
+    font-size: 0.86rem;
+    font-weight: 950;
+    border: 1px solid rgba(32, 60, 46, 0.04);
+  }
+
+  .legal-nav a:hover {
+    border-color: rgba(212, 179, 90, 0.46);
+    background: rgba(212, 179, 90, 0.12);
+  }
+
+  .legal-nav a.active {
+    background: #203c2e;
+    color: #fffdf7;
+    border-color: #203c2e;
+  }
+
+  .legal-card {
+    min-height: 640px;
+    border-radius: 28px;
+    padding: 46px 46px 54px;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(32, 60, 46, 0.08);
+    box-shadow: 0 24px 70px rgba(32, 60, 46, 0.08);
+  }
+
+  .legal-doc-h2 {
+    margin: 0 0 42px;
+    color: #00352b;
+    font-size: 1.15rem;
+    line-height: 1.35;
+    font-weight: 950;
+    letter-spacing: -0.02em;
+  }
+
+  .legal-doc-h2:not(:first-child) {
+    margin-top: 44px;
+  }
+
+  .legal-doc-h3 {
+    margin: 0 0 34px;
+    color: #00352b;
+    font-size: 1.08rem;
+    line-height: 1.4;
+    font-weight: 950;
+  }
+
+  .legal-doc-p,
+  .legal-doc-list-line,
+  .legal-doc-table-line {
+    margin: 0 0 34px;
+    color: #123b33;
+    font-size: 1rem;
+    line-height: 1.46;
+    white-space: pre-wrap;
+  }
+
+  .legal-doc-p strong {
+    font-weight: 950;
+  }
+
+  .legal-doc-list-line {
+    padding-left: 14px;
+    border-left: 3px solid rgba(212, 179, 90, 0.55);
+  }
+
+  .legal-doc-table-line {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #f3f5ea;
+    border: 1px solid rgba(32, 60, 46, 0.08);
+    font-size: 0.92rem;
+  }
+
+  @media (max-width: 900px) {
+    .legal-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .legal-sidebar {
+      position: static;
+    }
+
+    .legal-nav {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 720px) {
+    .legal-shell {
+      width: min(100% - 28px, 1160px);
+    }
+
+    .legal-hero {
+      padding: 32px 0 30px;
+    }
+
+    .legal-back {
+      margin-bottom: 22px;
+    }
+
+    .legal-body {
+      padding: 24px 0 52px;
+    }
+
+    .legal-sidebar {
+      border-radius: 22px;
+      padding: 16px;
+    }
+
+    .legal-nav {
+      grid-template-columns: 1fr;
+    }
+
+    .legal-card {
+      border-radius: 24px;
+      padding: 28px 22px 36px;
+    }
+
+    .legal-doc-h2 {
+      margin-bottom: 28px;
+      font-size: 1.05rem;
+    }
+
+    .legal-doc-h3 {
+      margin-bottom: 24px;
+      font-size: 1rem;
+    }
+
+    .legal-doc-p,
+    .legal-doc-list-line,
+    .legal-doc-table-line {
+      margin-bottom: 24px;
+      font-size: 0.94rem;
+      line-height: 1.58;
+    }
+  }
 `
