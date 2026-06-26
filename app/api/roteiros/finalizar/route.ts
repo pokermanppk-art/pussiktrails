@@ -57,14 +57,17 @@ function erroDeColunaAusente(error: AnyRecord | null | undefined) {
 function extrairColunaAusente(error: AnyRecord | null | undefined) {
   const textoErro = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ')
 
+  // Erros do PostgREST costumam vir como:
+  // Could not find the 'finalizada_em' column of 'reservas' in the schema cache
+  // Por isso precisamos priorizar o conteúdo entre aspas antes do padrão genérico "column ...".
+  const matchAspas = textoErro.match(/'([^']+)'/)
+  if (matchAspas?.[1]) return matchAspas[1]
+
   const matchTabelaColuna = textoErro.match(/[a-zA-Z0-9_]+\.([a-zA-Z0-9_]+)/)
   if (matchTabelaColuna?.[1]) return matchTabelaColuna[1]
 
   const matchColumn = textoErro.match(/column\s+["']?([a-zA-Z0-9_]+)["']?/i)
-  if (matchColumn?.[1]) return matchColumn[1]
-
-  const matchAspas = textoErro.match(/'([^']+)'/)
-  if (matchAspas?.[1]) return matchAspas[1]
+  if (matchColumn?.[1] && matchColumn[1] !== 'of') return matchColumn[1]
 
   return ''
 }
@@ -383,11 +386,11 @@ async function atualizarReservasComoRealizadas(supabase: any, reservas: AnyRecor
         ids,
         {
           status,
-          realizada_em: new Date().toISOString(),
-          finalizada_em: new Date().toISOString(),
+          // A tabela reservas do projeto atual não possui finalizada_em.
+          // updated_at também pode variar; se não existir, o fallback remove sem quebrar.
           updated_at: new Date().toISOString(),
         },
-        'id, status, cliente_id, roteiro_id, id_roteiro'
+        'id, status, cliente_id, roteiro_id'
       )
 
       return { statusUsado: status, atualizadas }

@@ -308,7 +308,10 @@ function podeFinalizarRoteiro(roteiro: Roteiro) {
   if (roteiroJaRealizadoOperacionalmente(roteiro)) return false
   if (!roteiroDataPassou(roteiro)) return false
 
-  return Number(roteiro.reservas_pagas || 0) > 0
+  // Deve aparecer também quando o roteiro já foi pausado manualmente antes.
+  // Havendo reservas pagas, elas serão marcadas como realizadas; se não houver,
+  // o roteiro/grupo ainda podem ser encerrados operacionalmente.
+  return true
 }
 
 function dataPrincipal(roteiro: Roteiro) {
@@ -792,7 +795,7 @@ async function confirmarSolicitacaoAtualizacao() {
     if (!guiaId || !roteiro.id) return
 
     if (!podeFinalizarRoteiro(roteiro)) {
-      setErro('Este roteiro só pode ser finalizado depois da data da experiência e quando houver reserva paga/confirmada ainda não realizada.')
+      setErro('Este roteiro só pode ser finalizado depois da data da experiência, desde que ainda não esteja encerrado/removido.')
       return
     }
 

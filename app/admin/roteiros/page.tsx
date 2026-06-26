@@ -619,7 +619,9 @@ export default function AdminRoteirosPage() {
     if (roteiroJaRealizadoOperacionalmente(roteiro)) return false
     if (!roteiroDataPassou(roteiro)) return false
 
-    return Number(roteiro.reservas_confirmadas || 0) > 0
+    // Admin também deve conseguir encerrar roteiro pausado/sem reservas,
+    // para fechar o ciclo operacional e preservar histórico.
+    return true
   }
 
   function statusRoteiro(roteiro: Roteiro) {
@@ -902,7 +904,7 @@ export default function AdminRoteirosPage() {
     if (!roteiro?.id || !user?.id) return
 
     if (!podeFinalizarRoteiro(roteiro)) {
-      setErro('Este roteiro só pode ser marcado como realizado depois da data da experiência e quando houver reserva paga/confirmada ainda não realizada.')
+      setErro('Este roteiro só pode ser marcado como realizado depois da data da experiência, desde que ainda não esteja encerrado/removido.')
       return
     }
 

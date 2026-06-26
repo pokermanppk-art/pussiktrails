@@ -100,6 +100,135 @@ const statsInicial: Stats = {
   ultimaAtividade: "Ainda sem atividade registrada",
 };
 
+function numeroDeCampos(objeto: AnyRecord | null | undefined, campos: string[], fallback = 0) {
+  if (!objeto || typeof objeto !== "object") return fallback;
+
+  for (const campo of campos) {
+    const valor = objeto[campo];
+    if (valor !== undefined && valor !== null && valor !== "") {
+      const numero = Number(valor);
+      if (Number.isFinite(numero)) return numero;
+    }
+  }
+
+  return fallback;
+}
+
+function textoDeCampos(objeto: AnyRecord | null | undefined, campos: string[], fallback = "") {
+  if (!objeto || typeof objeto !== "object") return fallback;
+
+  for (const campo of campos) {
+    const valor = texto(objeto[campo]);
+    if (valor) return valor;
+  }
+
+  return fallback;
+}
+
+function normalizarStatsDashboard(data: AnyRecord | null | undefined): Stats {
+  const stats = (data?.stats || {}) as AnyRecord;
+  const metricas = (data?.metricas || data?.estatisticas || data?.resumo || {}) as AnyRecord;
+  const usuario = (data?.usuario || data?.cliente || {}) as AnyRecord;
+
+  const fontes = [stats, metricas, usuario, data || {}];
+
+  function n(campos: string[], fallback = 0) {
+    for (const fonte of fontes) {
+      const valor = numeroDeCampos(fonte, campos, Number.NaN);
+      if (Number.isFinite(valor)) return valor;
+    }
+    return fallback;
+  }
+
+  function s(campos: string[], fallback = statsInicial.ultimaAtividade) {
+    for (const fonte of fontes) {
+      const valor = textoDeCampos(fonte, campos, "");
+      if (valor) return valor;
+    }
+    return fallback;
+  }
+
+  return {
+    totalKm: n([
+      "totalKm",
+      "total_km",
+      "kmPercorridos",
+      "km_percorridos",
+      "km_realizados",
+      "quilometragem",
+      "distancia_total",
+      "distanciaTotal",
+    ]),
+    totalTrilhas: n([
+      "totalTrilhas",
+      "total_trilhas",
+      "trilhasRealizadas",
+      "trilhas_realizadas",
+      "roteirosRealizados",
+      "roteiros_realizados",
+      "experienciasRealizadas",
+      "experiencias_realizadas",
+    ]),
+    reservasPendentes: n([
+      "reservasPendentes",
+      "reservas_pendentes",
+      "pendentes",
+      "reservasAguardandoPagamento",
+      "reservas_aguardando_pagamento",
+    ]),
+    reservasConfirmadas: n([
+      "reservasConfirmadas",
+      "reservas_confirmadas",
+      "confirmadas",
+      "reservasPagas",
+      "reservas_pagas",
+    ]),
+    reservasRealizadas: n([
+      "reservasRealizadas",
+      "reservas_realizadas",
+      "realizadas",
+      "trilhasRealizadas",
+      "trilhas_realizadas",
+    ]),
+    totalMedalhas: n([
+      "totalMedalhas",
+      "total_medalhas",
+      "medalhas",
+      "medalhasConquistadas",
+      "medalhas_conquistadas",
+      "conquistas",
+      "totalConquistas",
+      "total_conquistas",
+    ]),
+    ultimaAtividade: s([
+      "ultimaAtividade",
+      "ultima_atividade",
+      "ultimaAtividadeEm",
+      "ultima_atividade_em",
+      "ultimaAtualizacao",
+      "ultima_atualizacao",
+    ]),
+  };
+}
+
+function mesclarStats(principal: Stats, complemento?: AnyRecord | null): Stats {
+  if (!complemento) return principal;
+
+  const normalizado = normalizarStatsDashboard(complemento);
+
+  return {
+    totalKm: normalizado.totalKm || principal.totalKm,
+    totalTrilhas: normalizado.totalTrilhas || principal.totalTrilhas,
+    reservasPendentes: normalizado.reservasPendentes || principal.reservasPendentes,
+    reservasConfirmadas: normalizado.reservasConfirmadas || principal.reservasConfirmadas,
+    reservasRealizadas: normalizado.reservasRealizadas || principal.reservasRealizadas,
+    totalMedalhas: normalizado.totalMedalhas || principal.totalMedalhas,
+    ultimaAtividade:
+      normalizado.ultimaAtividade !== statsInicial.ultimaAtividade
+        ? normalizado.ultimaAtividade
+        : principal.ultimaAtividade,
+  };
+}
 
 const LIMITE_NOTIFICACOES_CARD = 5;
 
@@ -931,6 +1060,7 @@ function roteiroPublicado(roteiro: AnyRecord) {
 export default function ClienteDashboardPage() {
   const router = useRouter();
   const iniciouRef = useRef(false);
+  const ultimaCargaRef = useRef(0);
 
   const [user, setUser] = useState<UsuarioLocal | null>(null);
   const [stats, setStats] = useState<Stats>(statsInicial);
@@ -957,6 +1087,28 @@ export default function ClienteDashboardPage() {
     router.prefetch("/cliente/minhas-reservas");
     router.prefetch("/roteiros");
   }, [router]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    function atualizarAoVoltarParaTela() {
+      const agora = Date.now();
+      const passouTempoMinimo = agora - ultimaCargaRef.current > 25000;
+
+      if (document.visibilityState === "visible" && passouTempoMinimo) {
+        carregarResumo(user.id, true);
+      }
+    }
+
+    window.addEventListener("focus", atualizarAoVoltarParaTela);
+    document.addEventListener("visibilitychange", atualizarAoVoltarParaTela);
+
+    return () => {
+      window.removeEventListener("focus", atualizarAoVoltarParaTela);
+      document.removeEventListener("visibilitychange", atualizarAoVoltarParaTela);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   useEffect(() => {
     if (roteirosQuentes.length <= 1) return;
@@ -1047,6 +1199,28 @@ export default function ClienteDashboardPage() {
     }
   }
 
+  async function carregarEstatisticasCliente(clienteId: string) {
+    if (!clienteId) return null;
+
+    try {
+      const response = await fetch(
+        `/api/cliente/estatisticas?clienteId=${encodeURIComponent(clienteId)}&userId=${encodeURIComponent(clienteId)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok || data?.sucesso === false) return null;
+
+      return data as AnyRecord;
+    } catch (error) {
+      console.warn("Não foi possível carregar estatísticas complementares do cliente:", error);
+      return null;
+    }
+  }
+
   async function carregarResumo(clienteId: string, silencioso = false) {
     if (!clienteId) return;
 
@@ -1096,7 +1270,11 @@ export default function ClienteDashboardPage() {
       );
       setActiveHotTrail(0);
 
-      setStats({ ...statsInicial, ...(data?.stats || {}) });
+      const statsResumo = normalizarStatsDashboard(data || {});
+      const estatisticasComplementares = await carregarEstatisticasCliente(
+        data?.usuario?.id || clienteId,
+      );
+      setStats(mesclarStats(statsResumo, estatisticasComplementares));
       setUltimaMedalha(extrairUltimaMedalha(data || {}));
       setProximasReservas(
         Array.isArray(data?.proximasReservas) ? data.proximasReservas : [],
@@ -1104,6 +1282,7 @@ export default function ClienteDashboardPage() {
       setUltimaAtualizacao(
         data?.ultimaAtualizacao || new Date().toLocaleTimeString("pt-BR"),
       );
+      ultimaCargaRef.current = Date.now();
 
       const notificacoesBase: AnyRecord[] = Array.isArray(data?.notificacoes)
         ? data.notificacoes
@@ -1295,10 +1474,37 @@ export default function ClienteDashboardPage() {
 
         <section className="statsGrid">
           <article className="statsJourneyCard">
-            <span>Jornada</span>
+            <span>Jornada realizada</span>
             <div className="journeySplit">
               <strong>{formatarKm(stats.totalKm)} km</strong>
               <strong>{stats.totalTrilhas} trilhas</strong>
+            </div>
+            <small className="metricHint">Conta apenas roteiros finalizados como realizados.</small>
+          </article>
+
+          <article
+            className="statsReservationsCard"
+            role="button"
+            tabIndex={0}
+            onClick={() => router.push("/cliente/minhas-reservas")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                router.push("/cliente/minhas-reservas");
+              }
+            }}
+            aria-label="Abrir minhas reservas"
+          >
+            <span>Reservas</span>
+            <div className="reservationStatsSplit">
+              <strong>{stats.reservasConfirmadas}</strong>
+              <strong>{stats.reservasRealizadas}</strong>
+              <strong>{stats.reservasPendentes}</strong>
+            </div>
+            <div className="reservationStatsLabels">
+              <small>pagas</small>
+              <small>realizadas</small>
+              <small>pendentes</small>
             </div>
           </article>
 
@@ -1443,7 +1649,7 @@ export default function ClienteDashboardPage() {
             <div className="panelHeader compact">
               <div>
                 <h2>Minhas reservas</h2>
-                <p>Acompanhe suas próximas experiências.</p>
+                <p>Pagas: {stats.reservasConfirmadas} · Realizadas: {stats.reservasRealizadas} · Pendentes: {stats.reservasPendentes}</p>
               </div>
             </div>
 
@@ -1530,7 +1736,7 @@ const styles = `
   .hotMeta strong { color: #fff; }
   .hotClickHint { width: fit-content; border-radius: 999px; padding: 10px 13px; background: rgba(190,242,100,0.92); color: #172018; font-size: 12px; line-height: 1.2; font-weight: 950; box-shadow: 0 14px 30px rgba(15,23,42,0.16); }
   .notice { border-radius: 18px; padding: 13px 15px; margin-bottom: 16px; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-size: 13px; font-weight: 850; }
-  .statsGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .statsGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
   .statsGrid article, .panel { background: rgba(255,255,255,0.90); border: 1px solid rgba(15,23,42,0.06); box-shadow: 0 12px 34px rgba(15,23,42,0.06); }
   .statsGrid article { border-radius: 24px; padding: 16px; min-height: 88px; }
   .statsGrid span { display: block; color: #64748b; font-size: 10px; font-weight: 950; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 7px; }
@@ -1538,6 +1744,13 @@ const styles = `
   .statsJourneyCard { background: radial-gradient(circle at 100% 0%, rgba(132,204,22,0.14), transparent 42%), rgba(255,255,255,0.92) !important; }
   .journeySplit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end; }
   .journeySplit strong { display: block; white-space: nowrap; }
+  .metricHint { display: block; margin-top: 9px; color: #7b8372; font-size: 10px; line-height: 1.25; font-weight: 850; text-transform: none; letter-spacing: 0; }
+  .statsReservationsCard { cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; background: radial-gradient(circle at 100% 0%, rgba(34,197,94,0.14), transparent 42%), rgba(255,255,255,0.92) !important; }
+  .statsReservationsCard:hover, .statsReservationsCard:focus-visible { transform: translateY(-2px); border-color: rgba(32,60,46,0.16); box-shadow: 0 18px 42px rgba(15,23,42,0.10); outline: none; }
+  .reservationStatsSplit { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; align-items: end; }
+  .reservationStatsSplit strong { display: block; font-size: 22px; text-align: center; }
+  .reservationStatsLabels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 7px; }
+  .reservationStatsLabels small { display: block; color: #64748b; font-size: 9px; line-height: 1.15; font-weight: 900; text-align: center; text-transform: uppercase; letter-spacing: 0.05em; }
   .statsProfileCard { cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; background: radial-gradient(circle at 100% 0%, rgba(251,146,60,0.13), transparent 42%), rgba(255,255,255,0.92) !important; }
   .statsProfileCard:hover, .statsProfileCard:focus-visible { transform: translateY(-2px); border-color: rgba(32,60,46,0.16); box-shadow: 0 18px 42px rgba(15,23,42,0.10); outline: none; }
   .statsMedalCard { cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; background: radial-gradient(circle at 88% 4%, rgba(212,179,90,0.22), transparent 42%), rgba(255,255,255,0.94) !important; overflow: hidden; }
@@ -1581,6 +1794,6 @@ const styles = `
   .reservationList img, .reservationList > button > span:first-child { width: 46px; height: 46px; border-radius: 14px; object-fit: cover; background: #eef2e5; display: flex; align-items: center; justify-content: center; }
   .reservationList strong { display: block; color: #172018; font-size: 12px; line-height: 1.25; font-weight: 950; }
   .reservationList small { display: block; margin-top: 3px; color: #64748b; font-size: 11px; font-weight: 750; line-height: 1.35; }
-  @media (max-width: 1040px) { .hero, .mainGrid { grid-template-columns: 1fr; } .statsGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 1040px) { .hero, .mainGrid { grid-template-columns: 1fr; } .statsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 720px) { .topbar { padding: 7px 10px; } .topbarInner { grid-template-columns: 1fr auto; } .brandName { grid-column: 1; justify-self: start; align-items: flex-start; max-width: calc(100vw - 96px); text-align: left; } .brandName strong { font-size: clamp(23px, 8.2vw, 34px); letter-spacing: -0.07em; } .brandName span { font-size: 7.5px; letter-spacing: 0.12em; max-width: calc(100vw - 112px); overflow: hidden; text-overflow: ellipsis; } .avatarMini { grid-column: 2; width: 36px; height: 36px; box-shadow: none; } .shell { padding: 12px 9px 40px; } .heroText, .homeHotCard, .panel { border-radius: 24px; } .heroText { padding: 20px; } .heroText h1 { font-size: 39px; line-height: .94; } .homeHotVisual { min-height: 320px; } .statsGrid { grid-template-columns: 1fr; } .journeySplit { grid-template-columns: repeat(2, minmax(0, 1fr)); } .medalStatContent { gap: 12px; } .lastMedalPreview { width: 54px; height: 54px; border-radius: 18px; } .tabs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; border-radius: 18px; } .tabs button { width: 100%; } }
 `;
