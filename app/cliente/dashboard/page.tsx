@@ -1089,14 +1089,15 @@ export default function ClienteDashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    const userIdSeguro = texto(user?.id);
+    if (!userIdSeguro) return;
 
     function atualizarAoVoltarParaTela() {
       const agora = Date.now();
       const passouTempoMinimo = agora - ultimaCargaRef.current > 25000;
 
       if (document.visibilityState === "visible" && passouTempoMinimo) {
-        carregarResumo(user.id, true);
+        carregarResumo(userIdSeguro, true);
       }
     }
 
