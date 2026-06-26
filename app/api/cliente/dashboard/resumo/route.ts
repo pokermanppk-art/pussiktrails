@@ -50,8 +50,120 @@ function fotoRoteiro(roteiro?: AnyRecord | null) {
   return roteiro?.foto_capa || roteiro?.foto_url || roteiro?.imagem_url || ''
 }
 
+function primeiroValor(registro: AnyRecord | null | undefined, campos: string[]) {
+  for (const campo of campos) {
+    const valor = registro?.[campo]
+    if (valor !== null && valor !== undefined && String(valor).trim() !== '') return valor
+  }
+
+  return null
+}
+
+function idRoteiroDaReserva(reserva: AnyRecord) {
+  return texto(
+    primeiroValor(reserva, [
+      'roteiro_id',
+      'id_roteiro',
+      'roteiroId',
+      'roteiro',
+      'experiencia_id',
+      'experienciaId',
+    ])
+  )
+}
+
 function kmRoteiro(roteiro?: AnyRecord | null) {
-  return numero(roteiro?.km || roteiro?.distancia_km)
+  return numero(
+    primeiroValor(roteiro, [
+      'km',
+      'distancia_km',
+      'distanciaKm',
+      'distancia',
+      'quilometragem',
+      'km_total',
+      'distancia_total_km',
+      'percurso_km',
+    ])
+  )
+}
+
+function dataSegura(valor: unknown): Date | null {
+  if (!valor) return null
+
+  const raw = texto(valor)
+  if (!raw) return null
+
+  const matchDataBR = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/)
+  if (matchDataBR) {
+    const [, dia, mes, ano, hora = '12', minuto = '00'] = matchDataBR
+    const dataBR = new Date(Number(ano), Number(mes) - 1, Number(dia), Number(hora), Number(minuto))
+    if (!Number.isNaN(dataBR.getTime())) return dataBR
+  }
+
+  const data = new Date(raw)
+  if (Number.isNaN(data.getTime())) return null
+
+  const ano = data.getFullYear()
+  if (ano < 2020 || ano > 2100) return null
+
+  return data
+}
+
+function dataExecucaoRegistro(registro?: AnyRecord | null): Date | null {
+  const campos = [
+    'embarque_data_hora',
+    'saida_data_hora',
+    'data_hora',
+    'data_roteiro',
+    'data_trilha',
+    'data_inicio',
+    'data_saida',
+    'data_evento',
+    'data_realizacao',
+    'data_execucao',
+    'data_agendada',
+    'data_agendamento',
+    'inicio_em',
+    'realizado_em',
+    'executado_em',
+    'start_date',
+    'starts_at',
+    'data',
+  ]
+
+  for (const campo of campos) {
+    const data = dataSegura(registro?.[campo])
+    if (data) return data
+  }
+
+  return null
+}
+
+function dataJaPassou(registro?: AnyRecord | null) {
+  const data = dataExecucaoRegistro(registro)
+  if (!data) return false
+
+  const fimDoDia = new Date(data)
+  fimDoDia.setHours(23, 59, 59, 999)
+
+  return fimDoDia.getTime() < Date.now()
+}
+
+function statusExecutado(registro?: AnyRecord | null) {
+  const status = normalizar(registro?.status)
+
+  return [
+    'realizado',
+    'realizada',
+    'executado',
+    'executada',
+    'concluido',
+    'concluida',
+    'finalizado',
+    'finalizada',
+    'encerrado',
+    'encerrada',
+  ].includes(status)
 }
 
 function reservaCancelada(reserva: AnyRecord) {
@@ -97,6 +209,31 @@ function pagamentoConfirmado(reserva: AnyRecord) {
   )
 }
 
+function contaParaJornada(reserva: AnyRecord, roteiro?: AnyRecord | null) {
+  if (reservaCancelada(reserva)) return false
+
+  const roteiroStatus = normalizar(roteiro?.status)
+  if (
+    roteiroStatus === 'rascunho' ||
+    roteiroStatus === 'cancelado' ||
+    roteiroStatus === 'cancelada' ||
+    roteiroStatus === 'excluido' ||
+    roteiroStatus === 'excluida' ||
+    roteiroStatus === 'rejeitado' ||
+    roteiroStatus === 'rejeitada' ||
+    roteiroStatus === 'inativo' ||
+    roteiroStatus === 'inativa'
+  ) {
+    return false
+  }
+
+  // Regra operacional final:
+  // pagamento confirmado libera grupo/comunicação;
+  // somente reserva marcada como realizada soma trilhas, KM e medalhas.
+  if (statusExecutado(reserva)) return true
+
+  return false
+}
 function tempoRelativo(valor?: string | null) {
   if (!valor) return ''
 
@@ -311,7 +448,7 @@ export async function GET(request: NextRequest) {
         .select('*')
         .eq('cliente_id', clienteId)
         .order('created_at', { ascending: false })
-        .limit(60),
+        .limit(1000),
 
       supabase
         .from('usuarios_medalhas')
@@ -383,7 +520,7 @@ export async function GET(request: NextRequest) {
     const roteiroIdsReservas = Array.from(
       new Set(
         reservasBase
-          .map((reserva: AnyRecord) => texto(reserva.roteiro_id))
+          .map((reserva: AnyRecord) => idRoteiroDaReserva(reserva))
           .filter(Boolean)
       )
     )
@@ -429,13 +566,15 @@ export async function GET(request: NextRequest) {
 
     const reservasComRoteiro: AnyRecord[] = reservasBase.map(
       (reserva: AnyRecord): AnyRecord => {
+        const roteiroId = idRoteiroDaReserva(reserva)
         const roteiro =
           roteirosReservados.find(
-            (item: AnyRecord) => String(item.id) === String(reserva.roteiro_id)
+            (item: AnyRecord) => String(item.id) === roteiroId
           ) || null
 
         return {
           ...reserva,
+          roteiro_id_resolvido: roteiroId,
           roteiro,
           roteiro_titulo: tituloRoteiro(roteiro),
           roteiro_foto: fotoRoteiro(roteiro),
@@ -443,22 +582,21 @@ export async function GET(request: NextRequest) {
       }
     )
 
-    const reservasRealizadas: AnyRecord[] = reservasComRoteiro.filter(
-      (reserva: AnyRecord) => normalizar(reserva.status) === 'realizada'
-    )
+    const reservasJornada: AnyRecord[] = reservasComRoteiro.filter((reserva: AnyRecord) => {
+      return contaParaJornada(reserva, reserva.roteiro)
+    })
 
-    const totalKm = reservasRealizadas.reduce((soma: number, reserva: AnyRecord) => {
+    const totalKm = reservasJornada.reduce((soma: number, reserva: AnyRecord) => {
       return soma + kmRoteiro(reserva.roteiro)
     }, 0)
 
     const reservasPendentes = reservasComRoteiro.filter((reserva: AnyRecord) => {
       const status = normalizar(reserva.status)
-      return status === 'pendente' || status === 'aguardando'
+      return !reservaCancelada(reserva) && !pagamentoConfirmado(reserva) && (status === 'pendente' || status === 'aguardando')
     }).length
 
     const reservasConfirmadas = reservasComRoteiro.filter((reserva: AnyRecord) => {
-      const status = normalizar(reserva.status)
-      return status === 'confirmada'
+      return !reservaCancelada(reserva) && pagamentoConfirmado(reserva)
     }).length
 
     const proximasReservas: AnyRecord[] = reservasComRoteiro
@@ -605,10 +743,10 @@ export async function GET(request: NextRequest) {
       },
       stats: {
         totalKm,
-        totalTrilhas: reservasRealizadas.length,
+        totalTrilhas: reservasJornada.length,
         reservasPendentes,
         reservasConfirmadas,
-        reservasRealizadas: reservasRealizadas.length,
+        reservasRealizadas: reservasJornada.length,
         totalMedalhas: conquistadas.length,
         ultimaAtividade: reservasComRoteiro[0]?.created_at
           ? tempoRelativo(reservasComRoteiro[0].created_at)

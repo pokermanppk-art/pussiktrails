@@ -525,7 +525,7 @@ export async function GET(request: NextRequest) {
       usuarioAtualizado: Boolean(usuarioAtualizado),
     })
   } catch (error: any) {
-    console.error('Erro em /api/cliente/perfil/metricas:', error)
+    console.error('Erro em /api/cliente/estatisticas:', error)
 
     return json(
       {

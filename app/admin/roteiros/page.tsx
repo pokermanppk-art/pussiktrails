@@ -84,6 +84,8 @@ type Roteiro = {
   removido_em?: string | null
   removido_pelo_admin?: boolean | null
   removido_pelo_guia?: boolean | null
+  realizado_em?: string | null
+  finalizado_em?: string | null
   excluido_por?: string | null
   motivo_exclusao?: string | null
   exclusao_tipo?: string | null
@@ -133,6 +135,7 @@ type RoteiroCompleto = Roteiro & {
   guia_nome?: string
   total_reservas?: number
   reservas_confirmadas?: number
+  reservas_realizadas?: number
   receita_confirmada?: number
   media_avaliacao?: number
   total_avaliacoes?: number
@@ -385,6 +388,7 @@ export default function AdminRoteirosPage() {
   const [carregandoSolicitacoes, setCarregandoSolicitacoes] = useState(false)
   const [processandoSolicitacaoId, setProcessandoSolicitacaoId] = useState('')
   const [alterandoStatusId, setAlterandoStatusId] = useState('')
+  const [finalizandoId, setFinalizandoId] = useState('')
   const [criandoGrupoId, setCriandoGrupoId] = useState('')
   const [excluindoRoteiroId, setExcluindoRoteiroId] = useState('')
   const [menuAberto, setMenuAberto] = useState(false)
@@ -552,6 +556,72 @@ export default function AdminRoteirosPage() {
     )
   }
 
+  function reservaRealizada(reserva: Reserva) {
+    const status = normalizarTexto(reserva.status)
+
+    return (
+      status === 'realizada' ||
+      status === 'realizado' ||
+      status === 'concluida' ||
+      status === 'concluido' ||
+      status === 'finalizada' ||
+      status === 'finalizado' ||
+      status === 'executada' ||
+      status === 'executado'
+    )
+  }
+
+  function dataOperacionalRoteiro(roteiro?: Roteiro | null) {
+    return (
+      roteiro?.proxima_data ||
+      roteiro?.embarque_data_hora ||
+      roteiro?.data_roteiro ||
+      roteiro?.data_trilha ||
+      roteiro?.data_saida ||
+      roteiro?.data_inicio ||
+      roteiro?.embarque_data ||
+      null
+    )
+  }
+
+  function roteiroDataPassou(roteiro?: Roteiro | null) {
+    const valor = dataOperacionalRoteiro(roteiro)
+    if (!valor) return false
+
+    const raw = String(valor).trim()
+    const data = raw.length <= 10 ? new Date(`${raw.slice(0, 10)}T23:59:59`) : new Date(raw)
+
+    if (Number.isNaN(data.getTime())) return false
+
+    return data.getTime() < Date.now()
+  }
+
+  function roteiroJaRealizadoOperacionalmente(roteiro: RoteiroCompleto) {
+    const status = normalizarTexto(statusRoteiro(roteiro))
+
+    return (
+      status === 'realizada' ||
+      status === 'realizado' ||
+      status === 'concluida' ||
+      status === 'concluido' ||
+      status === 'finalizada' ||
+      status === 'finalizado' ||
+      status === 'encerrado' ||
+      Boolean(roteiro.realizado_em) ||
+      Boolean(roteiro.finalizado_em) ||
+      (Number(roteiro.reservas_confirmadas || 0) > 0 &&
+        Number(roteiro.reservas_realizadas || 0) >= Number(roteiro.reservas_confirmadas || 0))
+    )
+  }
+
+  function podeFinalizarRoteiro(roteiro: RoteiroCompleto) {
+    if (roteiroOcultado(roteiro)) return false
+    if (roteiroJaRealizadoOperacionalmente(roteiro)) return false
+    if (!roteiroDataPassou(roteiro)) return false
+
+    return Number(roteiro.reservas_confirmadas || 0) > 0
+  }
+
   function statusRoteiro(roteiro: Roteiro) {
     const status = normalizarTexto(roteiro.status)
 
@@ -687,6 +757,7 @@ export default function AdminRoteirosPage() {
       })
 
       const reservasConfirmadas = reservasDoRoteiro.filter(pagamentoConfirmado)
+      const reservasRealizadas = reservasDoRoteiro.filter(reservaRealizada)
       const receitaConfirmada = reservasConfirmadas.reduce(
         (total, reserva) => total + Number(reserva.valor_total || 0),
         0
@@ -711,6 +782,7 @@ export default function AdminRoteirosPage() {
         guia_nome: nomeUsuario(guia),
         total_reservas: reservasDoRoteiro.length,
         reservas_confirmadas: reservasConfirmadas.length,
+        reservas_realizadas: reservasRealizadas.length,
         receita_confirmada: receitaConfirmada,
         media_avaliacao: mediaAvaliacao,
         total_avaliacoes: avaliacoesDoRoteiro.length,
@@ -824,6 +896,51 @@ export default function AdminRoteirosPage() {
     }
 
     throw ultimoErro || new Error('Status não aceito pelo banco.')
+  }
+
+  async function finalizarRoteiroRealizado(roteiro: RoteiroCompleto) {
+    if (!roteiro?.id || !user?.id) return
+
+    if (!podeFinalizarRoteiro(roteiro)) {
+      setErro('Este roteiro só pode ser marcado como realizado depois da data da experiência e quando houver reserva paga/confirmada ainda não realizada.')
+      return
+    }
+
+    const confirmar = window.confirm(
+      `Marcar o roteiro "${tituloRoteiro(roteiro)}" como realizado?\n\n` +
+        'As reservas pagas serão marcadas como realizadas, o roteiro ficará pausado até nova atualização de data e o grupo interno será encerrado como histórico.'
+    )
+
+    if (!confirmar) return
+
+    setFinalizandoId(roteiro.id)
+    setMensagem('')
+    setErro('')
+
+    try {
+      const response = await fetch('/api/roteiros/finalizar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roteiroId: roteiro.id,
+          adminId: user.id,
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || data?.sucesso === false) {
+        throw new Error(data?.erro || 'Não foi possível marcar o roteiro como realizado.')
+      }
+
+      setMensagem(data?.mensagem || 'Roteiro marcado como realizado, pausado e grupo encerrado.')
+      await carregarRoteiros()
+    } catch (error: any) {
+      console.error('Erro ao finalizar roteiro como realizado:', error)
+      setErro(error?.message || 'Erro ao marcar roteiro como realizado.')
+    } finally {
+      setFinalizandoId('')
+    }
   }
 
   async function ativarRoteiro(roteiro: RoteiroCompleto) {
@@ -1554,6 +1671,10 @@ export default function AdminRoteirosPage() {
                           <span>Reservas</span>
                           <strong>{roteiro.total_reservas || 0}</strong>
                         </div>
+                        <div>
+                          <span>Realizadas</span>
+                          <strong>{roteiro.reservas_realizadas || 0}</strong>
+                        </div>
                       </div>
 
                       <div className="cardActions">
@@ -1563,6 +1684,17 @@ export default function AdminRoteirosPage() {
                         <button type="button" className="smallBtn light" onClick={() => setRoteiroSelecionado(roteiro)}>
                           Detalhes
                         </button>
+
+                        {podeFinalizarRoteiro(roteiro) ? (
+                          <button
+                            type="button"
+                            className="smallBtn green"
+                            onClick={() => finalizarRoteiroRealizado(roteiro)}
+                            disabled={finalizandoId === roteiro.id}
+                          >
+                            {finalizandoId === roteiro.id ? 'Finalizando...' : 'Marcar realizado'}
+                          </button>
+                        ) : null}
 
                         {roteiroAtivo(roteiro) ? (
                           <button

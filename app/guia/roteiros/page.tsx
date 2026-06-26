@@ -53,6 +53,8 @@ type Roteiro = {
   cancelado_em?: string | null
   cancelamento_motivo?: string | null
   cancelamento_motivo_codigo?: string | null
+  realizado_em?: string | null
+  finalizado_em?: string | null
   id_guia?: string | null
   guia_id?: string | null
   user_id?: string | null
@@ -62,6 +64,7 @@ type Roteiro = {
   reservas_total?: number
   reservas_pagas?: number
   reservas_pendentes?: number
+  reservas_realizadas?: number
 }
 
 type ReservaResumo = {
@@ -248,6 +251,66 @@ function pagamentoReservaConfirmado(reserva: ReservaResumo) {
   )
 }
 
+function reservaRealizada(reserva: ReservaResumo) {
+  const status = normalizar(reserva.status)
+
+  return (
+    status === 'realizada' ||
+    status === 'realizado' ||
+    status === 'concluida' ||
+    status === 'concluido' ||
+    status === 'finalizada' ||
+    status === 'finalizado' ||
+    status === 'executada' ||
+    status === 'executado'
+  )
+}
+
+function dataOperacionalRoteiro(roteiro: Roteiro) {
+  return (
+    roteiro.proxima_data ||
+    roteiro.embarque_data_hora ||
+    roteiro.embarque_data ||
+    roteiro.data_disponivel ||
+    roteiro.data_trilha ||
+    null
+  )
+}
+
+function roteiroDataPassou(roteiro: Roteiro) {
+  const valor = dataOperacionalRoteiro(roteiro)
+  if (!valor) return false
+
+  const raw = String(valor).trim()
+  const data = raw.length <= 10 ? new Date(`${raw.slice(0, 10)}T23:59:59`) : new Date(raw)
+
+  if (Number.isNaN(data.getTime())) return false
+
+  return data.getTime() < Date.now()
+}
+
+function roteiroJaRealizadoOperacionalmente(roteiro: Roteiro) {
+  const status = statusRoteiro(roteiro)
+
+  return (
+    status === 'encerrado' ||
+    Boolean(roteiro.realizado_em) ||
+    Boolean(roteiro.finalizado_em) ||
+    (Number(roteiro.reservas_pagas || 0) > 0 &&
+      Number(roteiro.reservas_realizadas || 0) >= Number(roteiro.reservas_pagas || 0))
+  )
+}
+
+function podeFinalizarRoteiro(roteiro: Roteiro) {
+  const status = statusRoteiro(roteiro)
+
+  if (status === 'cancelado' || status === 'removido' || status === 'rascunho') return false
+  if (roteiroJaRealizadoOperacionalmente(roteiro)) return false
+  if (!roteiroDataPassou(roteiro)) return false
+
+  return Number(roteiro.reservas_pagas || 0) > 0
+}
+
 function dataPrincipal(roteiro: Roteiro) {
   return (
     roteiro.proxima_data ||
@@ -364,6 +427,7 @@ export default function GuiaRoteirosPage() {
   const [filtroDificuldade, setFiltroDificuldade] = useState('todas')
   const [cancelando, setCancelando] = useState(false)
   const [removendoId, setRemovendoId] = useState('')
+  const [finalizandoId, setFinalizandoId] = useState('')
   const [roteiroCancelamento, setRoteiroCancelamento] = useState<Roteiro | null>(null)
   const [motivoCodigo, setMotivoCodigo] = useState(MOTIVOS_CANCELAMENTO[0].codigo)
   const [motivoDescricao, setMotivoDescricao] = useState(
@@ -498,6 +562,7 @@ const [enviandoAtualizacao, setEnviandoAtualizacao] = useState(false)
       })
 
       const pagas = reservasRoteiro.filter(pagamentoReservaConfirmado)
+      const realizadas = reservasRoteiro.filter(reservaRealizada)
       const pendentes = reservasRoteiro.filter(
         (reserva) => !pagamentoReservaConfirmado(reserva)
       )
@@ -507,6 +572,7 @@ const [enviandoAtualizacao, setEnviandoAtualizacao] = useState(false)
         reservas_total: reservasRoteiro.length,
         reservas_pagas: pagas.length,
         reservas_pendentes: pendentes.length,
+        reservas_realizadas: realizadas.length,
       }
     })
 
@@ -719,6 +785,54 @@ async function confirmarSolicitacaoAtualizacao() {
       setErro(error instanceof Error ? error.message : 'Erro ao cancelar roteiro.')
     } finally {
       setCancelando(false)
+    }
+  }
+
+  async function handleFinalizarRoteiro(roteiro: Roteiro) {
+    if (!guiaId || !roteiro.id) return
+
+    if (!podeFinalizarRoteiro(roteiro)) {
+      setErro('Este roteiro só pode ser finalizado depois da data da experiência e quando houver reserva paga/confirmada ainda não realizada.')
+      return
+    }
+
+    const confirma = window.confirm(
+      `Marcar o roteiro "${tituloRoteiro(roteiro)}" como realizado?\n\n` +
+        'As reservas pagas serão marcadas como realizadas, o roteiro ficará pausado até nova atualização de data e o grupo interno será encerrado como histórico.'
+    )
+
+    if (!confirma) return
+
+    try {
+      setFinalizandoId(roteiro.id)
+      setErro('')
+      setMensagem('')
+
+      const resposta = await fetch('/api/roteiros/finalizar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roteiroId: roteiro.id,
+          guiaId,
+        }),
+      })
+
+      const json = await resposta.json().catch(() => null)
+
+      if (!resposta.ok || !json?.sucesso) {
+        throw new Error(json?.erro || 'Não foi possível finalizar o roteiro.')
+      }
+
+      setMensagem(
+        json?.mensagem ||
+          'Roteiro finalizado. Reservas confirmadas foram marcadas como realizadas e o grupo foi encerrado.'
+      )
+      await carregarRoteiros(guiaId)
+    } catch (error) {
+      console.error('Erro ao finalizar roteiro:', error)
+      setErro(error instanceof Error ? error.message : 'Erro ao finalizar roteiro.')
+    } finally {
+      setFinalizandoId('')
     }
   }
 
@@ -1650,6 +1764,7 @@ async function confirmarSolicitacaoAtualizacao() {
                 const foto = fotoRoteiro(roteiro)
                 const totalReservas = Number(roteiro.reservas_total || 0)
                 const reservasPagas = Number(roteiro.reservas_pagas || 0)
+                const podeFinalizar = podeFinalizarRoteiro(roteiro)
                 const podeCancelar =
                   status === 'ativo' || status === 'pausado' || status === 'rascunho'
                 const podeRemover =
@@ -1732,6 +1847,11 @@ async function confirmarSolicitacaoAtualizacao() {
                         </div>
 
                         <div className="miniStat">
+                          <div className="miniValue">{Number(roteiro.reservas_realizadas || 0)}</div>
+                          <div className="miniLabel">realizadas</div>
+                        </div>
+
+                        <div className="miniStat">
                           <div className="miniValue">
                             {Number(roteiro.reservas_pendentes || 0)}
                           </div>
@@ -1764,6 +1884,17 @@ async function confirmarSolicitacaoAtualizacao() {
                             onClick={() => abrirModalAtualizacao(roteiro)}
                           >
                             Solicitar att
+                          </button>
+                        ) : null}
+
+                        {podeFinalizar ? (
+                          <button
+                            type="button"
+                            className="btn btnGreen"
+                            onClick={() => handleFinalizarRoteiro(roteiro)}
+                            disabled={finalizandoId === roteiro.id}
+                          >
+                            {finalizandoId === roteiro.id ? 'Finalizando...' : 'Finalizar roteiro'}
                           </button>
                         ) : null}
 
