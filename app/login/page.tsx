@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 type UsuarioLocal = {
@@ -11,9 +12,34 @@ type UsuarioLocal = {
   avatar_url?: string | null
   foto_url?: string | null
   imagem_url?: string | null
+
+  // Campos opcionais que podem vir do /api/login.
+  created_at?: string | null
+  criado_em?: string | null
+  cadastrado_em?: string | null
+  data_cadastro?: string | null
+}
+
+type AceiteLegal = {
+  id?: string
+  codigo_documento?: string | null
+  documento_codigo?: string | null
+  documento?: string | null
+  tipo_documento?: string | null
+  contexto?: string | null
+  created_at?: string | null
+  aceito_em?: string | null
+}
+
+type LoginPendente = {
+  user: UsuarioLocal
+  destino: string
 }
 
 const LOGO_LOGIN_SRC = '/logo-login-montanha-prussik.jpg?v=20260528'
+
+const DATA_IMPLEMENTACAO_ACEITE = '2026-06-26T00:00:00-03:00'
+const CONTEXTO_ACEITE_RETROATIVO = 'login_retroativo_2026_06_26'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -22,7 +48,14 @@ export default function LoginPage() {
   const [senha, setSenha] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [mensagem, setMensagem] = useState('')
+  const [mensagemAceite, setMensagemAceite] = useState('')
   const [checandoSessao, setChecandoSessao] = useState(true)
+
+  const [loginPendente, setLoginPendente] = useState<LoginPendente | null>(null)
+  const [modalAceiteAberto, setModalAceiteAberto] = useState(false)
+  const [maioridadeConfirmada, setMaioridadeConfirmada] = useState(false)
+  const [termosConfirmados, setTermosConfirmados] = useState(false)
+  const [registrandoAceite, setRegistrandoAceite] = useState(false)
 
   useEffect(() => {
     const userData = localStorage.getItem('user')
@@ -143,12 +176,133 @@ export default function LoginPage() {
     return '/cliente/dashboard'
   }
 
+  function tipoNormalizado(tipo?: string | null) {
+    return texto(tipo).toLowerCase()
+  }
+
+  function dataCadastroUsuario(user: UsuarioLocal) {
+    return (
+      texto(user.created_at) ||
+      texto(user.criado_em) ||
+      texto(user.cadastrado_em) ||
+      texto(user.data_cadastro)
+    )
+  }
+
+  function usuarioSujeitoAoAceiteRetroativo(user: UsuarioLocal) {
+    const tipo = tipoNormalizado(user.tipo)
+
+    // Admin não precisa receber o bloqueio jurídico público.
+    if (tipo === 'admin') return false
+
+    // A regra é para clientes e guias.
+    // Se o tipo vier vazio ou diferente, por segurança aplicamos a todos que não são admin.
+    const dataCadastro = dataCadastroUsuario(user)
+
+    if (!dataCadastro) return true
+
+    const cadastro = new Date(dataCadastro)
+    const corte = new Date(DATA_IMPLEMENTACAO_ACEITE)
+
+    if (Number.isNaN(cadastro.getTime())) return true
+
+    return cadastro.getTime() < corte.getTime()
+  }
+
+  function documentosObrigatoriosPorUsuario(tipo?: string | null) {
+    const t = tipoNormalizado(tipo)
+
+    const documentos = ['termos_uso', 'politica_privacidade', 'politica_cookies']
+
+    if (t === 'guia') {
+      documentos.push('termo_guia')
+    }
+
+    return documentos
+  }
+
+  function chaveAceiteLocal(userId: string) {
+    return `prussik_aceite_retroativo_${CONTEXTO_ACEITE_RETROATIVO}_${userId}`
+  }
+
+  function codigoDoAceite(aceite: AceiteLegal) {
+    return (
+      texto(aceite.codigo_documento) ||
+      texto(aceite.documento_codigo) ||
+      texto(aceite.documento) ||
+      texto(aceite.tipo_documento)
+    )
+  }
+
+  async function usuarioJaTemAceitesNecessarios(user: UsuarioLocal) {
+    const userId = texto(user.id)
+
+    if (!userId) return false
+
+    if (localStorage.getItem(chaveAceiteLocal(userId)) === 'sim') {
+      return true
+    }
+
+    try {
+      const resposta = await fetch(`/api/legal/meus-aceites?userId=${encodeURIComponent(userId)}`, {
+        method: 'GET',
+        cache: 'no-store',
+      })
+
+      const json = await resposta.json().catch(() => ({}))
+
+      if (!resposta.ok) {
+        return false
+      }
+
+      const lista: AceiteLegal[] =
+        Array.isArray(json?.aceites)
+          ? json.aceites
+          : Array.isArray(json?.data)
+            ? json.data
+            : Array.isArray(json)
+              ? json
+              : []
+
+      const jaRegistrouAceiteRetroativo = lista.some(
+        (aceite) => texto(aceite.contexto) === CONTEXTO_ACEITE_RETROATIVO
+      )
+
+      if (jaRegistrouAceiteRetroativo) {
+        localStorage.setItem(chaveAceiteLocal(userId), 'sim')
+        return true
+      }
+
+      const codigosAceitos = new Set(lista.map(codigoDoAceite).filter(Boolean))
+      const obrigatorios = documentosObrigatoriosPorUsuario(user.tipo)
+
+      const temTodos = obrigatorios.every((codigo) => codigosAceitos.has(codigo))
+
+      if (temTodos) {
+        localStorage.setItem(chaveAceiteLocal(userId), 'sim')
+        return true
+      }
+
+      return false
+    } catch (error) {
+      console.warn('Não foi possível verificar aceites legais:', error)
+      return false
+    }
+  }
+
+  function concluirLogin(user: UsuarioLocal, destino: string) {
+    localStorage.setItem('user', JSON.stringify(user))
+    localStorage.removeItem('redirectAfterLogin')
+    router.replace(destino)
+  }
+
   async function entrar(event: FormEvent) {
     event.preventDefault()
 
     if (carregando) return
 
     setMensagem('')
+    setMensagemAceite('')
 
     const loginFinal = normalizarLogin(login)
     const cpfLimpo = limparCpf(loginFinal)
@@ -194,16 +348,95 @@ export default function LoginPage() {
       const user: UsuarioLocal = data.user
       const destino = data.redirectTo || rotaPorTipo(user.tipo)
 
-      localStorage.setItem('user', JSON.stringify(user))
-      localStorage.removeItem('redirectAfterLogin')
+      if (usuarioSujeitoAoAceiteRetroativo(user)) {
+        const jaAceitou = await usuarioJaTemAceitesNecessarios(user)
 
-      router.replace(destino)
+        if (!jaAceitou) {
+          setLoginPendente({ user, destino })
+          setMaioridadeConfirmada(false)
+          setTermosConfirmados(false)
+          setMensagem('')
+          setMensagemAceite('')
+          setModalAceiteAberto(true)
+          setCarregando(false)
+          return
+        }
+      }
+
+      concluirLogin(user, destino)
     } catch (error) {
       console.error('Erro no login:', error)
       setMensagem('Erro ao fazer login. Tente novamente.')
       setCarregando(false)
     }
   }
+
+  async function confirmarAceiteRetroativo() {
+    if (!loginPendente || registrandoAceite) return
+
+    if (!maioridadeConfirmada || !termosConfirmados) {
+      setMensagemAceite('Para continuar, confirme a maioridade e o aceite dos documentos legais.')
+      return
+    }
+
+    const user = loginPendente.user
+    const destino = loginPendente.destino
+    const userId = texto(user.id)
+    const tipos = documentosObrigatoriosPorUsuario(user.tipo)
+
+    if (!userId) {
+      setMensagemAceite('Não foi possível identificar o usuário para registrar o aceite.')
+      return
+    }
+
+    setRegistrandoAceite(true)
+    setMensagemAceite('')
+
+    try {
+      for (const documentoCodigo of tipos) {
+        const resposta = await fetch('/api/legal/aceite', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+          body: JSON.stringify({
+            userId,
+            documentoCodigo,
+            contexto: CONTEXTO_ACEITE_RETROATIVO,
+            origem: 'login',
+            observacao:
+              'Aceite retroativo apresentado no primeiro login após implementação dos documentos legais.',
+          }),
+        })
+
+        const json = await resposta.json().catch(() => ({}))
+
+        if (!resposta.ok) {
+          throw new Error(
+            json?.erro ||
+              json?.error ||
+              json?.message ||
+              `Não foi possível registrar o aceite do documento ${documentoCodigo}.`
+          )
+        }
+      }
+
+      localStorage.setItem(chaveAceiteLocal(userId), 'sim')
+      setModalAceiteAberto(false)
+      setLoginPendente(null)
+      concluirLogin(user, destino)
+    } catch (error: any) {
+      console.error('Erro ao registrar aceite retroativo:', error)
+      setMensagemAceite(error?.message || 'Não foi possível registrar o aceite. Tente novamente.')
+    } finally {
+      setRegistrandoAceite(false)
+    }
+  }
+
+  const documentosLoginPendente = useMemo(() => {
+    return documentosObrigatoriosPorUsuario(loginPendente?.user.tipo)
+  }, [loginPendente?.user.tipo])
 
   if (checandoSessao) {
     return (
@@ -529,6 +762,160 @@ export default function LoginPage() {
           font-weight: 750;
         }
 
+        .legalOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          background: rgba(15, 23, 42, 0.72);
+          backdrop-filter: blur(10px);
+        }
+
+        .legalModal {
+          width: min(720px, 100%);
+          max-height: min(90vh, 820px);
+          overflow: hidden;
+          border-radius: 28px;
+          background: #fffdf7;
+          color: #203c2e;
+          border: 1px solid rgba(212, 179, 90, 0.26);
+          box-shadow: 0 28px 88px rgba(15, 23, 42, 0.34);
+        }
+
+        .legalModalHeader {
+          padding: 28px 32px 22px;
+          background: linear-gradient(135deg, #203c2e 0%, #294735 100%);
+          color: #fffdf7;
+        }
+
+        .legalModalHeader p {
+          margin: 0 0 10px;
+          color: rgba(255, 253, 247, 0.72);
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+          font-size: 0.72rem;
+          font-weight: 900;
+        }
+
+        .legalModalHeader h2 {
+          margin: 0;
+          max-width: 620px;
+          font-size: clamp(1.8rem, 4vw, 3rem);
+          line-height: 1;
+          letter-spacing: -0.05em;
+          font-family: Georgia, 'Times New Roman', serif;
+        }
+
+        .legalModalHeader span {
+          display: block;
+          margin-top: 14px;
+          color: rgba(255, 253, 247, 0.82);
+          font-size: 0.92rem;
+          line-height: 1.55;
+        }
+
+        .legalModalBody {
+          padding: 24px 28px 10px;
+          max-height: 52vh;
+          overflow: auto;
+        }
+
+        .legalModalBody p {
+          margin: 0 0 16px;
+          color: #39483e;
+          line-height: 1.65;
+          font-size: 0.95rem;
+        }
+
+        .legalDocLinks {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-bottom: 18px;
+        }
+
+        .legalDocLinks a {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          padding: 8px 12px;
+          background: #f3f5ea;
+          border: 1px solid rgba(32, 60, 46, 0.12);
+          color: #203c2e;
+          text-decoration: none;
+          font-size: 0.82rem;
+          font-weight: 900;
+        }
+
+        .legalDocLinks a:hover {
+          border-color: rgba(212, 179, 90, 0.58);
+          background: rgba(212, 179, 90, 0.14);
+        }
+
+        .legalCheck {
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          margin: 0 0 14px;
+          color: #294735;
+          font-size: 0.92rem;
+          line-height: 1.5;
+          font-weight: 750;
+        }
+
+        .legalCheck input {
+          width: 18px;
+          height: 18px;
+          margin-top: 2px;
+          accent-color: #203c2e;
+          flex: 0 0 auto;
+        }
+
+        .legalError {
+          margin: 12px 0 0;
+          border-radius: 14px;
+          padding: 10px 12px;
+          background: #fef2f2;
+          color: #dc2626;
+          font-size: 0.86rem;
+          line-height: 1.45;
+          font-weight: 800;
+        }
+
+        .legalModalFooter {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+          padding: 18px 28px 24px;
+          border-top: 1px solid rgba(32, 60, 46, 0.08);
+          background: rgba(255, 253, 247, 0.96);
+        }
+
+        .legalModalFooter button {
+          border: 0;
+          border-radius: 999px;
+          padding: 12px 18px;
+          background: #203c2e;
+          color: #fffdf7;
+          cursor: pointer;
+          font-weight: 900;
+        }
+
+        .legalModalFooter button.secondary {
+          background: #f3f5ea;
+          color: #203c2e;
+          border: 1px solid rgba(32, 60, 46, 0.12);
+        }
+
+        .legalModalFooter button:disabled {
+          opacity: 0.48;
+          cursor: not-allowed;
+        }
+
         @media (max-width: 520px) {
           .page {
             align-items: flex-start;
@@ -582,6 +969,37 @@ export default function LoginPage() {
           .secondaryButton {
             padding: 14px;
             font-size: 15px;
+          }
+        }
+
+        @media (max-width: 720px) {
+          .legalOverlay {
+            padding: 0;
+            align-items: stretch;
+          }
+
+          .legalModal {
+            height: 100vh;
+            max-height: 100vh;
+            border-radius: 0;
+          }
+
+          .legalModalHeader {
+            padding: 26px 22px 20px;
+          }
+
+          .legalModalBody {
+            padding: 20px 18px 10px;
+            max-height: calc(100vh - 295px);
+          }
+
+          .legalModalFooter {
+            padding: 14px 18px 18px;
+            flex-direction: column-reverse;
+          }
+
+          .legalModalFooter button {
+            width: 100%;
           }
         }
 
@@ -699,6 +1117,98 @@ export default function LoginPage() {
           </p>
         </section>
       </div>
+
+      {modalAceiteAberto && loginPendente ? (
+        <div className="legalOverlay" role="dialog" aria-modal="true" aria-label="Confirmação de documentos legais">
+          <div className="legalModal">
+            <header className="legalModalHeader">
+              <p>PrussikTrails · atualização legal</p>
+              <h2>Confirmação necessária para continuar</h2>
+              <span>
+                Esta confirmação será solicitada uma única vez para usuários cadastrados antes da implementação dos documentos legais.
+              </span>
+            </header>
+
+            <section className="legalModalBody">
+              <p>
+                Para seguir usando a PrussikTrails, confirme a ciência e o aceite dos documentos
+                legais aplicáveis à sua conta.
+              </p>
+
+              <div className="legalDocLinks">
+                <Link href="/termos" target="_blank" rel="noopener noreferrer">
+                  Termos de Uso
+                </Link>
+
+                <Link href="/politica-de-privacidade" target="_blank" rel="noopener noreferrer">
+                  Política de Privacidade
+                </Link>
+
+                <Link href="/politica-de-cookies" target="_blank" rel="noopener noreferrer">
+                  Política de Cookies
+                </Link>
+
+                {documentosLoginPendente.includes('termo_guia') ? (
+                  <Link href="/termo-do-guia" target="_blank" rel="noopener noreferrer">
+                    Termo do Guia
+                  </Link>
+                ) : null}
+              </div>
+
+              <label className="legalCheck">
+                <input
+                  type="checkbox"
+                  checked={maioridadeConfirmada}
+                  onChange={(event) => setMaioridadeConfirmada(event.target.checked)}
+                />
+                <span>
+                  Declaro que tenho 18 anos ou mais e que minha conta não será utilizada por menor de idade.
+                </span>
+              </label>
+
+              <label className="legalCheck">
+                <input
+                  type="checkbox"
+                  checked={termosConfirmados}
+                  onChange={(event) => setTermosConfirmados(event.target.checked)}
+                />
+                <span>
+                  Li, compreendi e aceito os documentos legais aplicáveis à minha conta na PrussikTrails.
+                </span>
+              </label>
+
+              {mensagemAceite ? (
+                <div className="legalError">
+                  {mensagemAceite}
+                </div>
+              ) : null}
+            </section>
+
+            <footer className="legalModalFooter">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setModalAceiteAberto(false)
+                  setLoginPendente(null)
+                  setMensagem('Para acessar a plataforma, é necessário confirmar os documentos legais.')
+                }}
+                disabled={registrandoAceite}
+              >
+                Agora não
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmarAceiteRetroativo}
+                disabled={!maioridadeConfirmada || !termosConfirmados || registrandoAceite}
+              >
+                {registrandoAceite ? 'Registrando...' : 'Aceitar e continuar'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }
