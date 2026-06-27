@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 
 type UsuarioLocal = {
@@ -11,23 +11,24 @@ type UsuarioLocal = {
   email?: string | null
 }
 
-type AceiteLegal = {
-  id?: string
-  codigo_documento?: string | null
-  documento_codigo?: string | null
-  documento?: string | null
-  tipo_documento?: string | null
-  contexto?: string | null
-  created_at?: string | null
-  aceito_em?: string | null
-}
-
-type NotificacaoApp = {
+type NotificacaoStatus = {
   id: string
+  tipo: 'legal' | 'versao' | 'movimento' | 'reserva' | 'grupo' | 'sistema' | string
   titulo: string
   descricao: string
-  tipo: 'legal' | 'versao' | 'movimento'
+  prioridade?: 'baixa' | 'normal' | 'alta' | 'critica' | string
   acao?: string
+  href?: string
+  count?: number
+  metadata?: Record<string, unknown>
+}
+
+type StatusResponse = {
+  sucesso?: boolean
+  total?: number
+  badge?: number
+  notificacoes?: NotificacaoStatus[]
+  erro?: string
 }
 
 const APP_VERSION = '2026.06.26.legal-notifications-v1'
@@ -53,12 +54,30 @@ function texto(valor: unknown) {
   return String(valor || '').trim()
 }
 
+function tipoNormalizado(tipo?: string | null) {
+  return texto(tipo).toLowerCase()
+}
+
 function rotaSemModalAutomatico(pathname: string) {
   return ROTAS_SEM_MODAL_AUTOMATICO.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`))
 }
 
-function tipoNormalizado(tipo?: string | null) {
-  return texto(tipo).toLowerCase()
+function lerUsuarioLocal(): UsuarioLocal | null {
+  if (typeof window === 'undefined') return null
+
+  const raw = localStorage.getItem('user')
+
+  if (!raw) return null
+
+  try {
+    const user = JSON.parse(raw) as UsuarioLocal
+
+    if (!texto(user?.id)) return null
+
+    return user
+  } catch {
+    return null
+  }
 }
 
 function chaveAceiteLocal(userId: string) {
@@ -77,22 +96,15 @@ function documentosObrigatoriosPorUsuario(tipo?: string | null) {
   return documentos
 }
 
-function codigoDoAceite(aceite: AceiteLegal) {
-  return (
-    texto(aceite.codigo_documento) ||
-    texto(aceite.documento_codigo) ||
-    texto(aceite.documento) ||
-    texto(aceite.tipo_documento)
-  )
-}
-
 async function atualizarBadgeApp(total: number) {
   try {
-    localStorage.setItem('prussik_notification_count', String(total))
+    const valor = Math.max(0, Number(total || 0))
 
-    if (total > 0) {
+    localStorage.setItem('prussik_notification_count', String(valor))
+
+    if (valor > 0) {
       if ('setAppBadge' in navigator && typeof navigator.setAppBadge === 'function') {
-        await navigator.setAppBadge(total)
+        await navigator.setAppBadge(valor)
       }
 
       return
@@ -106,17 +118,16 @@ async function atualizarBadgeApp(total: number) {
   }
 }
 
-function lerUsuarioLocal(): UsuarioLocal | null {
-  const raw = localStorage.getItem('user')
-
-  if (!raw) return null
-
-  try {
-    const user = JSON.parse(raw) as UsuarioLocal
-    if (!texto(user?.id)) return null
-    return user
-  } catch {
-    return null
+function criarNotificacaoVersao(): NotificacaoStatus {
+  return {
+    id: 'versao-pwa',
+    tipo: 'versao',
+    titulo: 'Atualização recomendada',
+    descricao:
+      'Seu app instalado pode estar em uma versão antiga. Recomendamos remover o ícone antigo e instalar novamente.',
+    prioridade: 'alta',
+    acao: 'Ver instruções',
+    count: 1,
   }
 }
 
@@ -124,7 +135,7 @@ export default function PrussikNotificationGate() {
   const pathname = usePathname()
 
   const [user, setUser] = useState<UsuarioLocal | null>(null)
-  const [aceitePendente, setAceitePendente] = useState(false)
+  const [notificacoesApi, setNotificacoesApi] = useState<NotificacaoStatus[]>([])
   const [versaoPendente, setVersaoPendente] = useState(false)
   const [drawerAberto, setDrawerAberto] = useState(false)
   const [modalAceiteAberto, setModalAceiteAberto] = useState(false)
@@ -133,66 +144,30 @@ export default function PrussikNotificationGate() {
   const [termosConfirmados, setTermosConfirmados] = useState(false)
   const [registrandoAceite, setRegistrandoAceite] = useState(false)
   const [mensagemAceite, setMensagemAceite] = useState('')
+  const [erroStatus, setErroStatus] = useState('')
+  const [carregandoStatus, setCarregandoStatus] = useState(false)
 
-  async function verificarAceites(userAtual: UsuarioLocal) {
-    const userId = texto(userAtual.id)
-    const tipo = tipoNormalizado(userAtual.tipo)
+  const notificacaoLegal = useMemo(() => {
+    return notificacoesApi.find((notificacao) => notificacao.tipo === 'legal') || null
+  }, [notificacoesApi])
 
-    if (!userId) return false
-    if (tipo === 'admin') return false
+  const aceitePendente = Boolean(notificacaoLegal)
 
-    if (localStorage.getItem(chaveAceiteLocal(userId)) === 'sim') {
-      return false
+  const notificacoes = useMemo<NotificacaoStatus[]>(() => {
+    const lista = [...notificacoesApi]
+
+    if (versaoPendente && !lista.some((notificacao) => notificacao.id === 'versao-pwa')) {
+      lista.push(criarNotificacaoVersao())
     }
 
-    try {
-      const resposta = await fetch(`/api/legal/meus-aceites?userId=${encodeURIComponent(userId)}`, {
-        method: 'GET',
-        cache: 'no-store',
-      })
+    return lista
+  }, [notificacoesApi, versaoPendente])
 
-      const json = await resposta.json().catch(() => ({}))
+  const totalNotificacoes = useMemo(() => {
+    return notificacoes.reduce((soma, item) => soma + Math.max(1, Number(item.count || 1)), 0)
+  }, [notificacoes])
 
-      if (!resposta.ok) {
-        return true
-      }
-
-      const lista: AceiteLegal[] =
-        Array.isArray(json?.aceites)
-          ? json.aceites
-          : Array.isArray(json?.data)
-            ? json.data
-            : Array.isArray(json)
-              ? json
-              : []
-
-      const jaRegistrouAceiteRetroativo = lista.some(
-        (aceite) => texto(aceite.contexto) === CONTEXTO_ACEITE_RETROATIVO
-      )
-
-      if (jaRegistrouAceiteRetroativo) {
-        localStorage.setItem(chaveAceiteLocal(userId), 'sim')
-        return false
-      }
-
-      const codigosAceitos = new Set(lista.map(codigoDoAceite).filter(Boolean))
-      const obrigatorios = documentosObrigatoriosPorUsuario(userAtual.tipo)
-
-      const temTodos = obrigatorios.every((codigo) => codigosAceitos.has(codigo))
-
-      if (temTodos) {
-        localStorage.setItem(chaveAceiteLocal(userId), 'sim')
-        return false
-      }
-
-      return true
-    } catch (error) {
-      console.warn('Não foi possível verificar aceites legais:', error)
-      return true
-    }
-  }
-
-  function verificarVersaoPwa(userAtual: UsuarioLocal | null) {
+  const verificarVersaoPwa = useCallback((userAtual: UsuarioLocal | null) => {
     if (!userAtual?.id) {
       if (!localStorage.getItem(VERSION_STORAGE_KEY)) {
         localStorage.setItem(VERSION_STORAGE_KEY, APP_VERSION)
@@ -213,44 +188,61 @@ export default function PrussikNotificationGate() {
 
     if (jaReconheceuAtualizacao) return false
 
-    // Se não havia controle de versão salvo, é provável que seja uma instalação antiga.
     if (!versaoSalva) return true
 
     return versaoSalva !== APP_VERSION
-  }
+  }, [])
 
-  useEffect(() => {
-    let ativo = true
+  const carregarStatus = useCallback(async () => {
+    const userAtual = lerUsuarioLocal()
 
-    async function iniciar() {
-      const userAtual = lerUsuarioLocal()
+    setUser(userAtual)
 
-      if (!ativo) return
+    const temVersaoPendente = verificarVersaoPwa(userAtual)
+    setVersaoPendente(temVersaoPendente)
 
-      setUser(userAtual)
+    if (!userAtual?.id) {
+      setNotificacoesApi([])
+      setErroStatus('')
+      await atualizarBadgeApp(temVersaoPendente ? 1 : 0)
+      return
+    }
 
-      const temVersaoPendente = verificarVersaoPwa(userAtual)
-      setVersaoPendente(temVersaoPendente)
+    setCarregandoStatus(true)
 
-      if (!userAtual?.id) {
-        setAceitePendente(false)
-        await atualizarBadgeApp(temVersaoPendente ? 1 : 0)
-        return
+    try {
+      const params = new URLSearchParams({
+        userId: texto(userAtual.id),
+        tipoUsuario: texto(userAtual.tipo),
+      })
+
+      const resposta = await fetch(`/api/notificacoes/status?${params.toString()}`, {
+        method: 'GET',
+        cache: 'no-store',
+      })
+
+      const json = (await resposta.json().catch(() => ({}))) as StatusResponse
+
+      if (!resposta.ok || json?.sucesso === false) {
+        throw new Error(json?.erro || 'Não foi possível carregar notificações.')
       }
 
-      const temAceitePendente = await verificarAceites(userAtual)
+      const lista = Array.isArray(json?.notificacoes) ? json.notificacoes : []
 
-      if (!ativo) return
+      setNotificacoesApi(lista)
+      setErroStatus('')
 
-      setAceitePendente(temAceitePendente)
+      const totalApi = Number(json?.badge ?? json?.total ?? lista.length)
+      const totalFinal = Math.max(0, totalApi) + Number(temVersaoPendente)
 
-      const total = Number(temAceitePendente) + Number(temVersaoPendente)
-      await atualizarBadgeApp(total)
+      await atualizarBadgeApp(totalFinal)
 
       const caminho = pathname || '/'
 
       if (!rotaSemModalAutomatico(caminho)) {
-        if (temAceitePendente) {
+        const temLegal = lista.some((notificacao) => notificacao.tipo === 'legal')
+
+        if (temLegal) {
           setModalAceiteAberto(true)
           return
         }
@@ -259,45 +251,42 @@ export default function PrussikNotificationGate() {
           setModalVersaoAberto(true)
         }
       }
+    } catch (error: any) {
+      console.error('Erro ao carregar /api/notificacoes/status:', error)
+      setErroStatus(error?.message || 'Não foi possível carregar notificações.')
+      setNotificacoesApi([])
+
+      await atualizarBadgeApp(Number(temVersaoPendente))
+    } finally {
+      setCarregandoStatus(false)
+    }
+  }, [pathname, verificarVersaoPwa])
+
+  useEffect(() => {
+    carregarStatus()
+  }, [carregarStatus])
+
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        carregarStatus()
+      }
     }
 
-    iniciar()
+    window.addEventListener('focus', carregarStatus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    const interval = window.setInterval(() => {
+      carregarStatus()
+    }, 60_000)
 
     return () => {
-      ativo = false
+      window.removeEventListener('focus', carregarStatus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.clearInterval(interval)
     }
-  }, [pathname])
+  }, [carregarStatus])
 
-  const notificacoes = useMemo<NotificacaoApp[]>(() => {
-    const lista: NotificacaoApp[] = []
-
-    if (aceitePendente) {
-      lista.push({
-        id: 'aceite-legal',
-        tipo: 'legal',
-        titulo: 'Confirmação legal pendente',
-        descricao: 'Confirme os documentos legais atualizados para continuar usando a PrussikTrails.',
-        acao: 'Confirmar agora',
-      })
-    }
-
-    if (versaoPendente) {
-      lista.push({
-        id: 'versao-pwa',
-        tipo: 'versao',
-        titulo: 'Atualização recomendada',
-        descricao: 'Seu app instalado pode estar em uma versão antiga. Recomendamos remover e instalar novamente.',
-        acao: 'Ver instruções',
-      })
-    }
-
-    // Espaço reservado para o próximo passo:
-    // Aqui poderemos somar notificações de movimento em ALL/COM, mensagens, reservas,
-    // grupos e alertas internos quando a API de notificações estiver pronta.
-    return lista
-  }, [aceitePendente, versaoPendente])
-
-  const totalNotificacoes = notificacoes.length
   const documentosLoginPendente = documentosObrigatoriosPorUsuario(user?.tipo)
 
   async function confirmarAceiteLegal() {
@@ -347,13 +336,10 @@ export default function PrussikNotificationGate() {
       }
 
       localStorage.setItem(chaveAceiteLocal(userId), 'sim')
-      setAceitePendente(false)
       setModalAceiteAberto(false)
       setMaioridadeConfirmada(false)
       setTermosConfirmados(false)
-
-      const novoTotal = Number(versaoPendente)
-      await atualizarBadgeApp(novoTotal)
+      await carregarStatus()
     } catch (error: any) {
       console.error('Erro ao registrar aceite legal:', error)
       setMensagemAceite(error?.message || 'Não foi possível registrar o aceite. Tente novamente.')
@@ -369,8 +355,27 @@ export default function PrussikNotificationGate() {
     setVersaoPendente(false)
     setModalVersaoAberto(false)
 
-    const novoTotal = Number(aceitePendente)
-    await atualizarBadgeApp(novoTotal)
+    const totalApi = notificacoesApi.reduce((soma, item) => soma + Math.max(1, Number(item.count || 1)), 0)
+
+    await atualizarBadgeApp(totalApi)
+  }
+
+  function abrirNotificacao(notificacao: NotificacaoStatus) {
+    if (notificacao.tipo === 'legal') {
+      setDrawerAberto(false)
+      setModalAceiteAberto(true)
+      return
+    }
+
+    if (notificacao.tipo === 'versao') {
+      setDrawerAberto(false)
+      setModalVersaoAberto(true)
+      return
+    }
+
+    if (notificacao.href) {
+      window.location.href = notificacao.href
+    }
   }
 
   if (totalNotificacoes <= 0 && !modalAceiteAberto && !modalVersaoAberto) {
@@ -394,11 +399,21 @@ export default function PrussikNotificationGate() {
           {drawerAberto ? (
             <section className="prussikNotifyDrawer">
               <header>
-                <h3>Notificações</h3>
+                <div>
+                  <h3>Notificações</h3>
+                  {carregandoStatus ? <small>Atualizando...</small> : null}
+                </div>
+
                 <button type="button" onClick={() => setDrawerAberto(false)} aria-label="Fechar">
                   ×
                 </button>
               </header>
+
+              {erroStatus ? (
+                <div className="prussikNotifyError">
+                  {erroStatus}
+                </div>
+              ) : null}
 
               <div className="prussikNotifyList">
                 {notificacoes.map((notificacao) => (
@@ -406,29 +421,9 @@ export default function PrussikNotificationGate() {
                     <strong>{notificacao.titulo}</strong>
                     <p>{notificacao.descricao}</p>
 
-                    {notificacao.tipo === 'legal' ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDrawerAberto(false)
-                          setModalAceiteAberto(true)
-                        }}
-                      >
-                        {notificacao.acao}
-                      </button>
-                    ) : null}
-
-                    {notificacao.tipo === 'versao' ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDrawerAberto(false)
-                          setModalVersaoAberto(true)
-                        }}
-                      >
-                        {notificacao.acao}
-                      </button>
-                    ) : null}
+                    <button type="button" onClick={() => abrirNotificacao(notificacao)}>
+                      {notificacao.acao || 'Ver'}
+                    </button>
                   </article>
                 ))}
               </div>
@@ -639,12 +634,30 @@ export default function PrussikNotificationGate() {
           font-size: 16px;
         }
 
+        .prussikNotifyDrawer small {
+          display: block;
+          margin-top: 3px;
+          color: rgba(255, 253, 247, 0.72);
+          font-size: 11px;
+          font-weight: 700;
+        }
+
         .prussikNotifyDrawer header button {
           border: 0;
           background: transparent;
           color: #fffdf7;
           font-size: 24px;
           cursor: pointer;
+        }
+
+        .prussikNotifyError {
+          margin: 12px 14px 0;
+          border-radius: 14px;
+          padding: 10px 12px;
+          background: #fef2f2;
+          color: #dc2626;
+          font-size: 12px;
+          font-weight: 800;
         }
 
         .prussikNotifyList {
