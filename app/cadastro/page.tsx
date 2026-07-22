@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type TipoUsuario = "cliente" | "guia";
 
@@ -43,13 +43,23 @@ const formInicial: FormCadastro = {
   tipo: "cliente",
 };
 
-export default function CadastroPage() {
+function CadastroPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const conviteAfiliado = String(searchParams.get("convite") || "").trim();
+  const cadastroViaAfiliado = Boolean(conviteAfiliado);
+  const tipoSolicitado = String(searchParams.get("tipo") || "").toLowerCase();
 
   const [form, setForm] = useState<FormCadastro>(formInicial);
   const [carregando, setCarregando] = useState(false);
   const [mensagem, setMensagem] = useState("");
   const [tipoMensagem, setTipoMensagem] = useState<"erro" | "sucesso" | "">("");
+
+  useEffect(() => {
+    if (cadastroViaAfiliado || tipoSolicitado === "guia") {
+      setForm((prev) => ({ ...prev, tipo: "guia" }));
+    }
+  }, [cadastroViaAfiliado, tipoSolicitado]);
 
   useEffect(() => {
     const userData = localStorage.getItem("user");
@@ -173,6 +183,8 @@ export default function CadastroPage() {
   }
 
   function alterarTipo(tipo: TipoUsuario) {
+    if (cadastroViaAfiliado && tipo !== "guia") return;
+
     setMensagem("");
     setTipoMensagem("");
 
@@ -306,6 +318,7 @@ export default function CadastroPage() {
           password: form.senha,
           confirmar_senha: form.confirmar_senha,
           tipo: form.tipo,
+          affiliate_invitation_token: conviteAfiliado || null,
         }),
       });
 
@@ -346,9 +359,54 @@ export default function CadastroPage() {
         localStorage.setItem("user", JSON.stringify(usuario));
       }
 
+      let vinculoAfiliadoConfirmado = false;
+
+      if (conviteAfiliado && usuario.id && (usuario.tipo || form.tipo) === "guia") {
+        try {
+          const vinculoResponse = await fetch(
+            "/api/afiliados/convites/confirmar-cadastro",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              cache: "no-store",
+              body: JSON.stringify({
+                invitationToken: conviteAfiliado,
+                guideUserId: usuario.id,
+                guideName: usuario.nome || texto(form.nome),
+                guideEmail: usuario.email || texto(form.email).toLowerCase(),
+                guidePhone:
+                  usuario.telefone || usuario.celular || telefoneLimpo,
+              }),
+            },
+          );
+
+          const vinculoData = await vinculoResponse.json().catch(() => ({}));
+          vinculoAfiliadoConfirmado =
+            vinculoResponse.ok && Boolean(vinculoData?.sucesso);
+
+          if (!vinculoAfiliadoConfirmado) {
+            console.warn(
+              "Cadastro concluído, mas o vínculo do afiliado ficou pendente:",
+              vinculoData?.erro,
+            );
+          }
+        } catch (vinculoError) {
+          console.warn(
+            "Cadastro concluído, mas não foi possível confirmar o afiliado:",
+            vinculoError,
+          );
+        }
+      }
+
       setMensagem(
         form.tipo === "guia"
-          ? "Cadastro de guia realizado com sucesso. Vamos preparar sua área."
+          ? conviteAfiliado && vinculoAfiliadoConfirmado
+            ? "Cadastro de guia realizado e indicação vinculada com sucesso."
+            : conviteAfiliado
+              ? "Cadastro de guia realizado. A indicação será conferida pela equipe."
+              : "Cadastro de guia realizado com sucesso. Vamos preparar sua área."
           : "Cadastro realizado com sucesso. Vamos preparar sua área.",
       );
       setTipoMensagem("sucesso");
@@ -472,6 +530,19 @@ export default function CadastroPage() {
           font-size: 13px;
           line-height: 1.5;
           font-weight: 750;
+        }
+
+        .affiliateInvite {
+          margin: -4px 0 18px;
+          padding: 14px 16px;
+          border-radius: 18px;
+          background: #f0fdf4;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+          text-align: center;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 850;
         }
 
         .typeSelector {
@@ -769,12 +840,19 @@ export default function CadastroPage() {
             guia.
           </p>
 
+          {cadastroViaAfiliado ? (
+            <div className="affiliateInvite">
+              Você recebeu um convite individual de um afiliado PrussikTrails.
+              Conclua o cadastro como Guia para confirmar a indicação.
+            </div>
+          ) : null}
+
           <div className="typeSelector" aria-label="Tipo de cadastro">
             <button
               type="button"
               className={`typeButton ${form.tipo === "cliente" ? "active" : ""}`}
               onClick={() => alterarTipo("cliente")}
-              disabled={carregando}
+              disabled={carregando || cadastroViaAfiliado}
             >
               Sou aventureiro
             </button>
@@ -933,5 +1011,28 @@ export default function CadastroPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function CadastroPage() {
+  return (
+    <Suspense
+      fallback={
+        <main
+          style={{
+            minHeight: "100vh",
+            display: "grid",
+            placeItems: "center",
+            background: "#fffdf7",
+            color: "#203c2e",
+            fontWeight: 900,
+          }}
+        >
+          Abrindo o cadastro...
+        </main>
+      }
+    >
+      <CadastroPageContent />
+    </Suspense>
   );
 }
