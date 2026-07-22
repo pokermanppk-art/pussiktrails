@@ -1,4 +1,4 @@
-export const POLITICA_CANCELAMENTO_TEXTO = 'POLÍTICA DE CANCELAMENTO, REEMBOLSO, ESTORNO E SALDO DE JORNADA
+export const POLITICA_CANCELAMENTO_TEXTO = `POLÍTICA DE CANCELAMENTO, REEMBOLSO, ESTORNO E SALDO DE JORNADA
 
 PRUSSIKTRAILS
 
@@ -202,6 +202,468 @@ f) documentos que sustentem situação excepcional.
 
 Documento complementar aos Termos de Uso da PrussikTrails.
 
-Versão V1.1 — 22/07/2026.'
+Versão V1.1 — 22/07/2026.`;
 
-export const TERMO_AFILIADO_TEXTO = 'ANEXO VI\n\nTERMO DO PROGRAMA DE AFILIADOS PRUSSIKTRAILS\n\nVersão V1 — Programa de Afiliados Beta\n\nÚltima atualização: 22/07/2026\n\nOperadora da Plataforma: Ronny Ricky de Brito — Empresário Individual\n\nNome fantasia: PrussikTrails\n\nCNPJ: 62.394.914/0001-31\n\nSede: Rua Delmiro Perdiz, nº 05, Aliança, Ribeirão Pires/SP, CEP 09.403-440\n\nSite/App: www.prussiktrails.com.br e respectivos ambientes digitais oficiais\n\nContato: contato@prussiktrails.com.br\n\nDPO/LGPD: dpo@prussiktrails.com.br\n\nRESUMO EM LINGUAGEM SIMPLES\n\nO Programa permite que determinados Clientes ou Guias, previamente habilitados pelo Admin, indiquem novos Guias ou Clientes e recebam comissão quando essas indicações resultarem em vendas válidas.\n\nSer Afiliado não cria emprego, sociedade, representação ou renda garantida. A comissão somente será devida sobre venda rastreada, paga, realizada, conciliada e não cancelada, reembolsada, estornada ou considerada fraudulenta.\n\n1. OBJETO E ESCOPO\n\n1.1. Este Termo disciplina a participação no Programa de Afiliados, incluindo ativação, indicação, atribuição, cálculo, liberação, uso, saque, estorno, publicidade, proteção de dados, antifraude, suspensão e encerramento.\n\n1.2. Este Termo complementa os Termos de Uso, a Política de Privacidade, a Política de Cookies, a Política de Cancelamento, o Termo do Guia e o Termo de Ciência de Riscos.\n\n1.3. Este Termo prevalece exclusivamente nos assuntos próprios do Programa.\n\n2. DEFINIÇÕES\n\n2.1. Afiliado: Cliente ou Guia maior de 18 anos, habilitado pelo Admin e com aceite vigente.\n\n2.2. Perfil de Afiliado: permissão complementar vinculada à conta já existente.\n\n2.3. Guia Indicado: novo Guia atribuído validamente ao Afiliado.\n\n2.4. Cliente Indicado: novo Cliente atribuído validamente ao Afiliado.\n\n2.5. Link ou Código de Afiliado: identificador individual usado para atribuição.\n\n2.6. Venda Qualificada: reserva que atende aos requisitos de pagamento, realização, conciliação, regularidade e ausência de estorno.\n\n2.7. Comissão: valor eventualmente devido ao Afiliado por Venda Qualificada.\n\n2.8. Saldo de Comissões: registro interno de comissões pendentes, disponíveis, utilizadas, pagas, bloqueadas ou estornadas.\n\n2.9. Quadro de Comissionamento: regras comerciais vigentes exibidas na Dashboard.\n\n2.10. Conta Relacionada: conta com vínculo relevante que, analisado em conjunto com outros elementos, indique simulação, controle comum ou geração indevida de comissão.\n\n3. ACEITE E ELEGIBILIDADE\n\n3.1. A participação depende de:\n\na) conta ativa;\n\nb) idade mínima de 18 anos;\n\nc) habilitação pelo Admin;\n\nd) dados verdadeiros e atualizados;\n\ne) aceite eletrônico deste Termo;\n\nf) regularidade jurídica, financeira e operacional.\n\n3.2. A ativação é decisão comercial da PrussikTrails e não constitui direito automático.\n\n3.3. A Dashboard somente será liberada quando o Perfil de Afiliado estiver habilitado e o aceite da versão vigente estiver registrado.\n\n4. NATUREZA DA RELAÇÃO\n\n4.1. A participação possui natureza civil e comercial independente.\n\n4.2. Não cria emprego, subordinação, sociedade, associação, mandato, agência, franquia, representação comercial, exclusividade ou direito a benefícios trabalhistas.\n\n4.3. O Afiliado organiza livremente sua divulgação e não pode assumir obrigações em nome da PrussikTrails.\n\n4.4. Não há garantia de renda, vendas, acessos, permanência, comissão mínima ou exclusividade territorial.\n\n5. MODALIDADES\n\n5.1. O Admin poderá habilitar:\n\na) indicação de Guias;\n\nb) indicação de Clientes;\n\nc) ambas;\n\nd) campanhas especiais.\n\n5.2. O Programa possui apenas um nível.\n\n5.3. É proibido criar subafiliados, comissões em cadeia, pirâmide ou marketing multinível.\n\n6. LINK, CÓDIGO E ATRIBUIÇÃO\n\n6.1. O link e o código são pessoais, revogáveis e intransferíveis.\n\n6.2. A indicação poderá ser registrada por link, código informado no cadastro, campanha ou ajuste administrativo justificado.\n\n6.3. O código expressamente informado no cadastro poderá prevalecer sobre rastreamento automático anterior, salvo fraude ou regra de campanha.\n\n6.4. Na ausência de código, poderá prevalecer o último link válido dentro da janela de atribuição.\n\n6.5. Cada novo Usuário poderá possuir apenas um Afiliado indicador.\n\n6.6. O vínculo consolidado somente poderá ser alterado pelo Admin, mediante motivo e auditoria.\n\n6.7. A PrussikTrails não será obrigada a reconhecer atribuição sem evidência técnica suficiente, salvo erro comprovado da própria Plataforma.\n\n7. VENDA QUALIFICADA\n\n7.1. A comissão somente será devida quando a reserva:\n\na) estiver vinculada a indicação válida;\n\nb) tiver pagamento confirmado;\n\nc) corresponder a operação real;\n\nd) tiver roteiro realizado ou finalizado;\n\ne) passar pela conciliação;\n\nf) não estiver cancelada ou integralmente reembolsada;\n\ng) não estiver sujeita a chargeback ou fraude;\n\nh) atender às regras da campanha.\n\n7.2. O pagamento poderá criar comissão pendente, mas não imediatamente sacável.\n\n7.3. Valores pagos com créditos internos, descontos subsidiados, gorjetas, valores externos ou parcelas não elegíveis poderão ser excluídos da base de cálculo.\n\n8. INDICAÇÃO DE GUIAS\n\n8.1. O simples cadastro do Guia não gera comissão.\n\n8.2. O Guia deverá ser novo, fornecer dados verdadeiros, aceitar os documentos, ser aprovado e manter conta regular.\n\n8.3. A comissão incidirá sobre Vendas Qualificadas realizadas durante o prazo registrado no Quadro de Comissionamento.\n\n8.4. Encerrada a vigência, novas vendas deixam de gerar comissão, sem prejuízo das comissões já constituídas.\n\n8.5. Quando a comissão for suportada pela taxa da PrussikTrails, não haverá desconto adicional sobre o valor líquido do Guia indicado.\n\n9. INDICAÇÃO DE CLIENTES\n\n9.1. A modalidade somente estará ativa quando habilitada.\n\n9.2. O simples cadastro não gera comissão.\n\n9.3. O Cliente deverá concluir cadastro, pagamento e participação dentro dos prazos aplicáveis.\n\n9.4. Salvo campanha diferente, a comissão será limitada à primeira Venda Qualificada.\n\n10. AUTOINDICAÇÃO E CONTAS RELACIONADAS\n\n10.1. É proibida autoindicação, compra destinada a gerar comissão própria, criação de conta artificial, reserva simulada ou uso coordenado de conta relacionada.\n\n10.2. O Guia poderá comprar roteiro de outro Guia, mas não poderá comprar o próprio roteiro nem receber comissão por sua própria compra.\n\n10.3. Relações familiares ou residência comum não caracterizam automaticamente fraude, mas poderão ser analisadas.\n\n11. NÃO ACÚMULO\n\n11.1. Durante o Beta, salvo regra expressa, não haverá acúmulo automático de comissão pela indicação do Guia e do Cliente na mesma reserva.\n\n11.2. Na ausência de configuração diversa, prevalecerá a regra indicada pelo Admin, inicialmente a indicação do Guia.\n\n12. CÁLCULO\n\n12.1. A comissão poderá corresponder a:\n\na) percentual sobre o valor bruto elegível;\n\nb) percentual sobre a taxa da Plataforma;\n\nc) valor fixo;\n\nd) bonificação;\n\ne) modelo híbrido.\n\n12.2. O percentual, a base, a vigência e a versão comercial serão congelados na respectiva operação.\n\n12.3. Alterações futuras não reduzem retroativamente comissão já constituída.\n\n12.4. A comissão não poderá ultrapassar a margem autorizada, salvo campanha expressamente subsidiada.\n\n12.5. Exemplo Beta: em reserva de R$ 500,00, taxa PrussikTrails de 5% e comissão de 1%, o Guia recebe R$ 475,00, o Afiliado R$ 5,00 e a Plataforma R$ 20,00.\n\n13. STATUS\n\n13.1. Pendente: pagamento confirmado, ainda sujeito à realização e conciliação.\n\n13.2. Disponível: validada para uso ou saque.\n\n13.3. Em saque: reservada para solicitação.\n\n13.4. Paga: transferida ao Afiliado.\n\n13.5. Utilizada: empregada em roteiro.\n\n13.6. Convertida: transformada em Saldo de Jornada.\n\n13.7. Estornada: cancelada por reembolso, fraude, duplicidade, erro ou chargeback.\n\n13.8. Bloqueada: temporariamente indisponível durante análise.\n\n14. EXTRATO E CONTESTAÇÃO\n\n14.1. A Dashboard poderá exibir saldos, indicações, vendas, percentuais, comissões, usos, estornos e saques.\n\n14.2. Informações anteriores à conciliação poderão ser estimativas.\n\n14.3. Divergências deverão ser comunicadas com identificação da operação, data, valor e elementos disponíveis.\n\n14.4. Ajustes administrativos deverão registrar responsável, motivo, valor anterior, valor novo, data e hora.\n\n15. NATUREZA DO SALDO\n\n15.1. O Saldo de Comissões é registro interno decorrente do Programa.\n\n15.2. Não constitui conta bancária, conta de pagamento de uso geral, investimento, depósito remunerado, moeda digital ou serviço de transferência livre.\n\n15.3. O saldo não rende juros, não recebe aportes externos, não pode ser vendido e não pode ser transferido para outro Usuário.\n\n16. USO EM ROTEIROS\n\n16.1. O saldo disponível poderá ser utilizado integral ou parcialmente em roteiro publicado por outro Guia.\n\n16.2. O sistema registrará separadamente PIX, Saldo de Comissões, Saldo de Jornada e valor total.\n\n16.3. O uso de créditos internos não gera automaticamente nova comissão.\n\n16.4. O Guia não poderá comprar o próprio roteiro.\n\n17. CONVERSÃO EM SALDO DE JORNADA\n\n17.1. A conversão será voluntária, informada e irreversível depois de concluída.\n\n17.2. O Saldo de Jornada não poderá ser sacado ou transferido e seguirá a política aplicável às reservas.\n\n18. SAQUES\n\n18.1. Somente comissões disponíveis poderão ser solicitadas.\n\n18.2. O valor mínimo e o prazo serão exibidos no Quadro de Comissionamento.\n\n18.3. Durante o Beta, o valor mínimo padrão poderá ser de R$ 50,00.\n\n18.4. Será permitida apenas uma solicitação pendente por vez.\n\n18.5. O pagamento será realizado por PIX para chave válida e preferencialmente vinculada ao CPF ou CNPJ do Afiliado.\n\n18.6. Poderão ser solicitados documentos de identidade, titularidade, dados fiscais e autenticação adicional.\n\n18.7. A alteração recente da chave PIX poderá gerar bloqueio preventivo e nova confirmação.\n\n19. CANCELAMENTOS E ESTORNOS\n\n19.1. Cancelamento, reembolso, chargeback, fraude, duplicidade ou erro poderão cancelar ou estornar a comissão.\n\n19.2. Reembolso parcial poderá produzir recálculo proporcional.\n\n19.3. Se a comissão já tiver sido utilizada ou paga, a PrussikTrails poderá compensar valores futuros, registrar saldo devedor ou solicitar restituição.\n\n19.4. O motivo será indicado no extrato ou registro correspondente.\n\n20. OBRIGAÇÕES FISCAIS\n\n20.1. O Afiliado é responsável por suas obrigações fiscais, tributárias, contábeis, previdenciárias e cadastrais.\n\n20.2. A PrussikTrails poderá solicitar nota fiscal, recibo, CPF, CNPJ ou documento equivalente e efetuar retenções exigidas por lei.\n\n21. PUBLICIDADE E TRANSPARÊNCIA\n\n21.1. Toda divulgação deverá ser verdadeira, clara e identificável.\n\n21.2. O Afiliado deverá informar de forma visível que poderá receber comissão.\n\n21.3. Podem ser usadas expressões como “link de afiliado”, “publicidade”, “parceria remunerada” ou “posso receber comissão por reservas qualificadas”.\n\n21.4. É proibido prometer segurança absoluta, renda garantida, aprovação automática, vaga inexistente, desconto não autorizado ou vantagem falsa.\n\n22. PRÁTICAS PROIBIDAS\n\n22.1. São proibidos:\n\na) spam e listas compradas;\n\nb) bots, cliques automáticos e cookie stuffing;\n\nc) manipulação de rastreamento;\n\nd) reservas fictícias;\n\ne) perfis ou domínios que imitem canal oficial;\n\nf) uso indevido da marca;\n\ng) publicidade paga com a marca sem autorização;\n\nh) cashback, divisão de comissão ou desconto próprio não autorizado;\n\ni) pagamento por fora da Plataforma;\n\nj) manipulação de avaliações;\n\nk) conteúdo ilegal, discriminatório, abusivo ou que incentive prática outdoor irresponsável.\n\n23. MARCA E PROPRIEDADE INTELECTUAL\n\n23.1. O Afiliado recebe licença limitada, pessoal, não exclusiva, revogável, intransferível e sem sublicenciamento.\n\n23.2. Deve utilizar preferencialmente materiais oficiais.\n\n23.3. Não poderá registrar domínio, marca, perfil ou identidade que gere confusão com a PrussikTrails.\n\n23.4. Encerrada a participação, deverá cessar o uso da marca.\n\n24. DADOS PESSOAIS E LGPD\n\n24.1. A Dashboard exibirá somente dados necessários e preferencialmente abreviados.\n\n24.2. O Afiliado não terá acesso a CPF completo, endereço, dados bancários, dados de saúde, documentos, mensagens privadas ou dados completos de pagamento do indicado.\n\n24.3. É proibido extrair, vender, compartilhar ou reutilizar dados para finalidade incompatível.\n\n24.4. Incidentes de segurança deverão ser comunicados imediatamente, preferencialmente em até 24 horas da ciência.\n\n25. CONFIDENCIALIDADE\n\n25.1. O Afiliado manterá confidenciais informações não públicas, relatórios, regras antifraude, credenciais, dados técnicos, investigações e informações estratégicas.\n\n25.2. O dever permanecerá após o encerramento enquanto a informação conservar natureza confidencial.\n\n26. ANTIFRAUDE E AUDITORIA\n\n26.1. A PrussikTrails poderá utilizar análises manuais e automatizadas para detectar contas duplicadas, autoindicação, reservas simuladas, chargebacks, manipulação de links, documentos inconsistentes e spam.\n\n26.2. Valores poderão ser bloqueados durante análise, sem que isso represente conclusão automática de fraude.\n\n26.3. O Afiliado poderá apresentar esclarecimentos.\n\n26.4. Em regra, a análise não deverá ultrapassar 180 dias, salvo investigação oficial, processo, obrigação legal ou impedimento relevante.\n\n27. SUSPENSÃO E ENCERRAMENTO\n\n27.1. A participação poderá ser suspensa por dados desatualizados, documentos pendentes, suspeita de fraude, publicidade irregular, reclamações relevantes, alteração de chave PIX ou obrigação legal.\n\n27.2. O Afiliado poderá solicitar desligamento.\n\n27.3. A PrussikTrails poderá encerrar ordinariamente a participação mediante comunicação prévia.\n\n27.4. Fraude, spam grave, publicidade enganosa, violação de dados, uso indevido de marca, desvio de vendas, subafiliados ou marketing multinível poderão gerar encerramento imediato.\n\n27.5. O encerramento sem infração não elimina automaticamente comissões legítimas já constituídas.\n\n28. ALTERAÇÕES DO PROGRAMA\n\n28.1. Percentuais, prazos, bases, limites, modalidades e funcionalidades poderão ser alterados.\n\n28.2. Mudanças materiais serão comunicadas quando possível com antecedência.\n\n28.3. Novas condições serão aplicadas às vendas futuras.\n\n28.4. Comissões já constituídas preservarão a regra registrada na operação.\n\n29. FUNCIONAMENTO DA PLATAFORMA\n\n29.1. O Programa poderá passar por manutenção, testes, indisponibilidade e evolução própria da fase Beta.\n\n29.2. Não há garantia de funcionamento ininterrupto, número de acessos, conversão ou permanência de campanha.\n\n30. RESPONSABILIDADES\n\n30.1. O Afiliado responde pelo conteúdo que divulga, pela veracidade das afirmações, pelas campanhas próprias, proteção de credenciais e tributos que lhe competem.\n\n30.2. O Afiliado não pode confirmar reserva, alterar preço, prometer reembolso, aprovar Guia ou responder oficialmente pela PrussikTrails.\n\n31. COMUNICAÇÕES\n\n31.1. As comunicações poderão ocorrer pela Dashboard, notificação interna, e-mail cadastrado ou outro canal oficial.\n\n31.2. O Afiliado manterá seus dados atualizados.\n\n32. ACEITE ELETRÔNICO\n\n32.1. O aceite poderá ocorrer por checkbox, botão de confirmação, assinatura eletrônica ou outro meio válido.\n\n32.2. Poderão ser registrados nome, ID, CPF/CNPJ, e-mail, data, hora, versão, hash, IP, user agent, origem e contexto.\n\n32.3. O registro poderá ser utilizado para auditoria, suporte, cobrança, investigação e defesa de direitos.\n\n33. LEGISLAÇÃO E FORO\n\n33.1. Aplica-se a legislação brasileira.\n\n33.2. As partes buscarão solução administrativa pelos canais oficiais, sem impedir acesso ao Poder Judiciário.\n\n33.3. Fica eleito o Foro de Ribeirão Pires/SP, ressalvadas competências e direitos legais inderrogáveis.\n\n34. DECLARAÇÃO FINAL\n\nAo aceitar, o Afiliado declara que:\n\na) tem 18 anos ou mais;\n\nb) leu e compreendeu este Termo;\n\nc) não possui garantia de renda;\n\nd) identificará publicidade remunerada;\n\ne) não fará spam, fraude, subafiliados ou marketing multinível;\n\nf) não realizará autoindicação;\n\ng) respeitará a marca e os dados pessoais;\n\nh) aceita as regras de comissão, saque, uso e estorno;\n\ni) cumprirá os demais documentos da Plataforma.\n\n35. CHECKBOX SUGERIDO\n\n[ ] Declaro que tenho 18 anos ou mais, li, compreendi e aceito o Termo do Programa de Afiliados da PrussikTrails, incluindo as regras de indicação, atribuição, comissionamento, estorno, saque, uso do saldo, publicidade, proteção de dados, prevenção de fraudes e encerramento.\n\nANEXO A — QUADRO INICIAL DE COMISSIONAMENTO BETA\n\nIndicação de Guia: 1% sobre o valor bruto elegível, suportado pela taxa da PrussikTrails.\n\nVigência padrão: 12 meses.\n\nIndicação de Cliente: quando habilitada, primeira Venda Qualificada, com prazo de compra de até 90 dias.\n\nJanela de atribuição: 30 dias.\n\nSaque mínimo: R$ 50,00.\n\nNíveis: apenas um.\n\nAcúmulo de comissão: desativado no Beta, salvo configuração expressa.\n\nUso do saldo em roteiros: permitido.\n\nConversão em Saldo de Jornada: permitida e irreversível.\n\nDocumento operacional complementar aos Termos de Uso e à Política de Privacidade da PrussikTrails.\n\nVersão V1 — Programa de Afiliados Beta — 22/07/2026.'
+export const TERMO_AFILIADO_TEXTO = `ANEXO VI
+
+TERMO DO PROGRAMA DE AFILIADOS PRUSSIKTRAILS
+
+Versão V1 — Programa de Afiliados Beta
+
+Última atualização: 22/07/2026
+
+Operadora da Plataforma: Ronny Ricky de Brito — Empresário Individual
+
+Nome fantasia: PrussikTrails
+
+CNPJ: 62.394.914/0001-31
+
+Sede: Rua Delmiro Perdiz, nº 05, Aliança, Ribeirão Pires/SP, CEP 09.403-440
+
+Site/App: www.prussiktrails.com.br e respectivos ambientes digitais oficiais
+
+Contato: contato@prussiktrails.com.br
+
+DPO/LGPD: dpo@prussiktrails.com.br
+
+RESUMO EM LINGUAGEM SIMPLES
+
+O Programa permite que determinados Clientes ou Guias, previamente habilitados pelo Admin, indiquem novos Guias ou Clientes e recebam comissão quando essas indicações resultarem em vendas válidas.
+
+Ser Afiliado não cria emprego, sociedade, representação ou renda garantida. A comissão somente será devida sobre venda rastreada, paga, realizada, conciliada e não cancelada, reembolsada, estornada ou considerada fraudulenta.
+
+1. OBJETO E ESCOPO
+
+1.1. Este Termo disciplina a participação no Programa de Afiliados, incluindo ativação, indicação, atribuição, cálculo, liberação, uso, saque, estorno, publicidade, proteção de dados, antifraude, suspensão e encerramento.
+
+1.2. Este Termo complementa os Termos de Uso, a Política de Privacidade, a Política de Cookies, a Política de Cancelamento, o Termo do Guia e o Termo de Ciência de Riscos.
+
+1.3. Este Termo prevalece exclusivamente nos assuntos próprios do Programa.
+
+2. DEFINIÇÕES
+
+2.1. Afiliado: Cliente ou Guia maior de 18 anos, habilitado pelo Admin e com aceite vigente.
+
+2.2. Perfil de Afiliado: permissão complementar vinculada à conta já existente.
+
+2.3. Guia Indicado: novo Guia atribuído validamente ao Afiliado.
+
+2.4. Cliente Indicado: novo Cliente atribuído validamente ao Afiliado.
+
+2.5. Link ou Código de Afiliado: identificador individual usado para atribuição.
+
+2.6. Venda Qualificada: reserva que atende aos requisitos de pagamento, realização, conciliação, regularidade e ausência de estorno.
+
+2.7. Comissão: valor eventualmente devido ao Afiliado por Venda Qualificada.
+
+2.8. Saldo de Comissões: registro interno de comissões pendentes, disponíveis, utilizadas, pagas, bloqueadas ou estornadas.
+
+2.9. Quadro de Comissionamento: regras comerciais vigentes exibidas na Dashboard.
+
+2.10. Conta Relacionada: conta com vínculo relevante que, analisado em conjunto com outros elementos, indique simulação, controle comum ou geração indevida de comissão.
+
+3. ACEITE E ELEGIBILIDADE
+
+3.1. A participação depende de:
+
+a) conta ativa;
+
+b) idade mínima de 18 anos;
+
+c) habilitação pelo Admin;
+
+d) dados verdadeiros e atualizados;
+
+e) aceite eletrônico deste Termo;
+
+f) regularidade jurídica, financeira e operacional.
+
+3.2. A ativação é decisão comercial da PrussikTrails e não constitui direito automático.
+
+3.3. A Dashboard somente será liberada quando o Perfil de Afiliado estiver habilitado e o aceite da versão vigente estiver registrado.
+
+4. NATUREZA DA RELAÇÃO
+
+4.1. A participação possui natureza civil e comercial independente.
+
+4.2. Não cria emprego, subordinação, sociedade, associação, mandato, agência, franquia, representação comercial, exclusividade ou direito a benefícios trabalhistas.
+
+4.3. O Afiliado organiza livremente sua divulgação e não pode assumir obrigações em nome da PrussikTrails.
+
+4.4. Não há garantia de renda, vendas, acessos, permanência, comissão mínima ou exclusividade territorial.
+
+5. MODALIDADES
+
+5.1. O Admin poderá habilitar:
+
+a) indicação de Guias;
+
+b) indicação de Clientes;
+
+c) ambas;
+
+d) campanhas especiais.
+
+5.2. O Programa possui apenas um nível.
+
+5.3. É proibido criar subafiliados, comissões em cadeia, pirâmide ou marketing multinível.
+
+6. LINK, CÓDIGO E ATRIBUIÇÃO
+
+6.1. O link e o código são pessoais, revogáveis e intransferíveis.
+
+6.2. A indicação poderá ser registrada por link, código informado no cadastro, campanha ou ajuste administrativo justificado.
+
+6.3. O código expressamente informado no cadastro poderá prevalecer sobre rastreamento automático anterior, salvo fraude ou regra de campanha.
+
+6.4. Na ausência de código, poderá prevalecer o último link válido dentro da janela de atribuição.
+
+6.5. Cada novo Usuário poderá possuir apenas um Afiliado indicador.
+
+6.6. O vínculo consolidado somente poderá ser alterado pelo Admin, mediante motivo e auditoria.
+
+6.7. A PrussikTrails não será obrigada a reconhecer atribuição sem evidência técnica suficiente, salvo erro comprovado da própria Plataforma.
+
+7. VENDA QUALIFICADA
+
+7.1. A comissão somente será devida quando a reserva:
+
+a) estiver vinculada a indicação válida;
+
+b) tiver pagamento confirmado;
+
+c) corresponder a operação real;
+
+d) tiver roteiro realizado ou finalizado;
+
+e) passar pela conciliação;
+
+f) não estiver cancelada ou integralmente reembolsada;
+
+g) não estiver sujeita a chargeback ou fraude;
+
+h) atender às regras da campanha.
+
+7.2. O pagamento poderá criar comissão pendente, mas não imediatamente sacável.
+
+7.3. Valores pagos com créditos internos, descontos subsidiados, gorjetas, valores externos ou parcelas não elegíveis poderão ser excluídos da base de cálculo.
+
+8. INDICAÇÃO DE GUIAS
+
+8.1. O simples cadastro do Guia não gera comissão.
+
+8.2. O Guia deverá ser novo, fornecer dados verdadeiros, aceitar os documentos, ser aprovado e manter conta regular.
+
+8.3. A comissão incidirá sobre Vendas Qualificadas realizadas durante o prazo registrado no Quadro de Comissionamento.
+
+8.4. Encerrada a vigência, novas vendas deixam de gerar comissão, sem prejuízo das comissões já constituídas.
+
+8.5. Quando a comissão for suportada pela taxa da PrussikTrails, não haverá desconto adicional sobre o valor líquido do Guia indicado.
+
+9. INDICAÇÃO DE CLIENTES
+
+9.1. A modalidade somente estará ativa quando habilitada.
+
+9.2. O simples cadastro não gera comissão.
+
+9.3. O Cliente deverá concluir cadastro, pagamento e participação dentro dos prazos aplicáveis.
+
+9.4. Salvo campanha diferente, a comissão será limitada à primeira Venda Qualificada.
+
+10. AUTOINDICAÇÃO E CONTAS RELACIONADAS
+
+10.1. É proibida autoindicação, compra destinada a gerar comissão própria, criação de conta artificial, reserva simulada ou uso coordenado de conta relacionada.
+
+10.2. O Guia poderá comprar roteiro de outro Guia, mas não poderá comprar o próprio roteiro nem receber comissão por sua própria compra.
+
+10.3. Relações familiares ou residência comum não caracterizam automaticamente fraude, mas poderão ser analisadas.
+
+11. NÃO ACÚMULO
+
+11.1. Durante o Beta, salvo regra expressa, não haverá acúmulo automático de comissão pela indicação do Guia e do Cliente na mesma reserva.
+
+11.2. Na ausência de configuração diversa, prevalecerá a regra indicada pelo Admin, inicialmente a indicação do Guia.
+
+12. CÁLCULO
+
+12.1. A comissão poderá corresponder a:
+
+a) percentual sobre o valor bruto elegível;
+
+b) percentual sobre a taxa da Plataforma;
+
+c) valor fixo;
+
+d) bonificação;
+
+e) modelo híbrido.
+
+12.2. O percentual, a base, a vigência e a versão comercial serão congelados na respectiva operação.
+
+12.3. Alterações futuras não reduzem retroativamente comissão já constituída.
+
+12.4. A comissão não poderá ultrapassar a margem autorizada, salvo campanha expressamente subsidiada.
+
+12.5. Exemplo Beta: em reserva de R$ 500,00, taxa PrussikTrails de 5% e comissão de 1%, o Guia recebe R$ 475,00, o Afiliado R$ 5,00 e a Plataforma R$ 20,00.
+
+13. STATUS
+
+13.1. Pendente: pagamento confirmado, ainda sujeito à realização e conciliação.
+
+13.2. Disponível: validada para uso ou saque.
+
+13.3. Em saque: reservada para solicitação.
+
+13.4. Paga: transferida ao Afiliado.
+
+13.5. Utilizada: empregada em roteiro.
+
+13.6. Convertida: transformada em Saldo de Jornada.
+
+13.7. Estornada: cancelada por reembolso, fraude, duplicidade, erro ou chargeback.
+
+13.8. Bloqueada: temporariamente indisponível durante análise.
+
+14. EXTRATO E CONTESTAÇÃO
+
+14.1. A Dashboard poderá exibir saldos, indicações, vendas, percentuais, comissões, usos, estornos e saques.
+
+14.2. Informações anteriores à conciliação poderão ser estimativas.
+
+14.3. Divergências deverão ser comunicadas com identificação da operação, data, valor e elementos disponíveis.
+
+14.4. Ajustes administrativos deverão registrar responsável, motivo, valor anterior, valor novo, data e hora.
+
+15. NATUREZA DO SALDO
+
+15.1. O Saldo de Comissões é registro interno decorrente do Programa.
+
+15.2. Não constitui conta bancária, conta de pagamento de uso geral, investimento, depósito remunerado, moeda digital ou serviço de transferência livre.
+
+15.3. O saldo não rende juros, não recebe aportes externos, não pode ser vendido e não pode ser transferido para outro Usuário.
+
+16. USO EM ROTEIROS
+
+16.1. O saldo disponível poderá ser utilizado integral ou parcialmente em roteiro publicado por outro Guia.
+
+16.2. O sistema registrará separadamente PIX, Saldo de Comissões, Saldo de Jornada e valor total.
+
+16.3. O uso de créditos internos não gera automaticamente nova comissão.
+
+16.4. O Guia não poderá comprar o próprio roteiro.
+
+17. CONVERSÃO EM SALDO DE JORNADA
+
+17.1. A conversão será voluntária, informada e irreversível depois de concluída.
+
+17.2. O Saldo de Jornada não poderá ser sacado ou transferido e seguirá a política aplicável às reservas.
+
+18. SAQUES
+
+18.1. Somente comissões disponíveis poderão ser solicitadas.
+
+18.2. O valor mínimo e o prazo serão exibidos no Quadro de Comissionamento.
+
+18.3. Durante o Beta, o valor mínimo padrão poderá ser de R$ 50,00.
+
+18.4. Será permitida apenas uma solicitação pendente por vez.
+
+18.5. O pagamento será realizado por PIX para chave válida e preferencialmente vinculada ao CPF ou CNPJ do Afiliado.
+
+18.6. Poderão ser solicitados documentos de identidade, titularidade, dados fiscais e autenticação adicional.
+
+18.7. A alteração recente da chave PIX poderá gerar bloqueio preventivo e nova confirmação.
+
+19. CANCELAMENTOS E ESTORNOS
+
+19.1. Cancelamento, reembolso, chargeback, fraude, duplicidade ou erro poderão cancelar ou estornar a comissão.
+
+19.2. Reembolso parcial poderá produzir recálculo proporcional.
+
+19.3. Se a comissão já tiver sido utilizada ou paga, a PrussikTrails poderá compensar valores futuros, registrar saldo devedor ou solicitar restituição.
+
+19.4. O motivo será indicado no extrato ou registro correspondente.
+
+20. OBRIGAÇÕES FISCAIS
+
+20.1. O Afiliado é responsável por suas obrigações fiscais, tributárias, contábeis, previdenciárias e cadastrais.
+
+20.2. A PrussikTrails poderá solicitar nota fiscal, recibo, CPF, CNPJ ou documento equivalente e efetuar retenções exigidas por lei.
+
+21. PUBLICIDADE E TRANSPARÊNCIA
+
+21.1. Toda divulgação deverá ser verdadeira, clara e identificável.
+
+21.2. O Afiliado deverá informar de forma visível que poderá receber comissão.
+
+21.3. Podem ser usadas expressões como “link de afiliado”, “publicidade”, “parceria remunerada” ou “posso receber comissão por reservas qualificadas”.
+
+21.4. É proibido prometer segurança absoluta, renda garantida, aprovação automática, vaga inexistente, desconto não autorizado ou vantagem falsa.
+
+22. PRÁTICAS PROIBIDAS
+
+22.1. São proibidos:
+
+a) spam e listas compradas;
+
+b) bots, cliques automáticos e cookie stuffing;
+
+c) manipulação de rastreamento;
+
+d) reservas fictícias;
+
+e) perfis ou domínios que imitem canal oficial;
+
+f) uso indevido da marca;
+
+g) publicidade paga com a marca sem autorização;
+
+h) cashback, divisão de comissão ou desconto próprio não autorizado;
+
+i) pagamento por fora da Plataforma;
+
+j) manipulação de avaliações;
+
+k) conteúdo ilegal, discriminatório, abusivo ou que incentive prática outdoor irresponsável.
+
+23. MARCA E PROPRIEDADE INTELECTUAL
+
+23.1. O Afiliado recebe licença limitada, pessoal, não exclusiva, revogável, intransferível e sem sublicenciamento.
+
+23.2. Deve utilizar preferencialmente materiais oficiais.
+
+23.3. Não poderá registrar domínio, marca, perfil ou identidade que gere confusão com a PrussikTrails.
+
+23.4. Encerrada a participação, deverá cessar o uso da marca.
+
+24. DADOS PESSOAIS E LGPD
+
+24.1. A Dashboard exibirá somente dados necessários e preferencialmente abreviados.
+
+24.2. O Afiliado não terá acesso a CPF completo, endereço, dados bancários, dados de saúde, documentos, mensagens privadas ou dados completos de pagamento do indicado.
+
+24.3. É proibido extrair, vender, compartilhar ou reutilizar dados para finalidade incompatível.
+
+24.4. Incidentes de segurança deverão ser comunicados imediatamente, preferencialmente em até 24 horas da ciência.
+
+25. CONFIDENCIALIDADE
+
+25.1. O Afiliado manterá confidenciais informações não públicas, relatórios, regras antifraude, credenciais, dados técnicos, investigações e informações estratégicas.
+
+25.2. O dever permanecerá após o encerramento enquanto a informação conservar natureza confidencial.
+
+26. ANTIFRAUDE E AUDITORIA
+
+26.1. A PrussikTrails poderá utilizar análises manuais e automatizadas para detectar contas duplicadas, autoindicação, reservas simuladas, chargebacks, manipulação de links, documentos inconsistentes e spam.
+
+26.2. Valores poderão ser bloqueados durante análise, sem que isso represente conclusão automática de fraude.
+
+26.3. O Afiliado poderá apresentar esclarecimentos.
+
+26.4. Em regra, a análise não deverá ultrapassar 180 dias, salvo investigação oficial, processo, obrigação legal ou impedimento relevante.
+
+27. SUSPENSÃO E ENCERRAMENTO
+
+27.1. A participação poderá ser suspensa por dados desatualizados, documentos pendentes, suspeita de fraude, publicidade irregular, reclamações relevantes, alteração de chave PIX ou obrigação legal.
+
+27.2. O Afiliado poderá solicitar desligamento.
+
+27.3. A PrussikTrails poderá encerrar ordinariamente a participação mediante comunicação prévia.
+
+27.4. Fraude, spam grave, publicidade enganosa, violação de dados, uso indevido de marca, desvio de vendas, subafiliados ou marketing multinível poderão gerar encerramento imediato.
+
+27.5. O encerramento sem infração não elimina automaticamente comissões legítimas já constituídas.
+
+28. ALTERAÇÕES DO PROGRAMA
+
+28.1. Percentuais, prazos, bases, limites, modalidades e funcionalidades poderão ser alterados.
+
+28.2. Mudanças materiais serão comunicadas quando possível com antecedência.
+
+28.3. Novas condições serão aplicadas às vendas futuras.
+
+28.4. Comissões já constituídas preservarão a regra registrada na operação.
+
+29. FUNCIONAMENTO DA PLATAFORMA
+
+29.1. O Programa poderá passar por manutenção, testes, indisponibilidade e evolução própria da fase Beta.
+
+29.2. Não há garantia de funcionamento ininterrupto, número de acessos, conversão ou permanência de campanha.
+
+30. RESPONSABILIDADES
+
+30.1. O Afiliado responde pelo conteúdo que divulga, pela veracidade das afirmações, pelas campanhas próprias, proteção de credenciais e tributos que lhe competem.
+
+30.2. O Afiliado não pode confirmar reserva, alterar preço, prometer reembolso, aprovar Guia ou responder oficialmente pela PrussikTrails.
+
+31. COMUNICAÇÕES
+
+31.1. As comunicações poderão ocorrer pela Dashboard, notificação interna, e-mail cadastrado ou outro canal oficial.
+
+31.2. O Afiliado manterá seus dados atualizados.
+
+32. ACEITE ELETRÔNICO
+
+32.1. O aceite poderá ocorrer por checkbox, botão de confirmação, assinatura eletrônica ou outro meio válido.
+
+32.2. Poderão ser registrados nome, ID, CPF/CNPJ, e-mail, data, hora, versão, hash, IP, user agent, origem e contexto.
+
+32.3. O registro poderá ser utilizado para auditoria, suporte, cobrança, investigação e defesa de direitos.
+
+33. LEGISLAÇÃO E FORO
+
+33.1. Aplica-se a legislação brasileira.
+
+33.2. As partes buscarão solução administrativa pelos canais oficiais, sem impedir acesso ao Poder Judiciário.
+
+33.3. Fica eleito o Foro de Ribeirão Pires/SP, ressalvadas competências e direitos legais inderrogáveis.
+
+34. DECLARAÇÃO FINAL
+
+Ao aceitar, o Afiliado declara que:
+
+a) tem 18 anos ou mais;
+
+b) leu e compreendeu este Termo;
+
+c) não possui garantia de renda;
+
+d) identificará publicidade remunerada;
+
+e) não fará spam, fraude, subafiliados ou marketing multinível;
+
+f) não realizará autoindicação;
+
+g) respeitará a marca e os dados pessoais;
+
+h) aceita as regras de comissão, saque, uso e estorno;
+
+i) cumprirá os demais documentos da Plataforma.
+
+35. CHECKBOX SUGERIDO
+
+[ ] Declaro que tenho 18 anos ou mais, li, compreendi e aceito o Termo do Programa de Afiliados da PrussikTrails, incluindo as regras de indicação, atribuição, comissionamento, estorno, saque, uso do saldo, publicidade, proteção de dados, prevenção de fraudes e encerramento.
+
+ANEXO A — QUADRO INICIAL DE COMISSIONAMENTO BETA
+
+Indicação de Guia: 1% sobre o valor bruto elegível, suportado pela taxa da PrussikTrails.
+
+Vigência padrão: 12 meses.
+
+Indicação de Cliente: quando habilitada, primeira Venda Qualificada, com prazo de compra de até 90 dias.
+
+Janela de atribuição: 30 dias.
+
+Saque mínimo: R$ 50,00.
+
+Níveis: apenas um.
+
+Acúmulo de comissão: desativado no Beta, salvo configuração expressa.
+
+Uso do saldo em roteiros: permitido.
+
+Conversão em Saldo de Jornada: permitida e irreversível.
+
+Documento operacional complementar aos Termos de Uso e à Política de Privacidade da PrussikTrails.
+
+Versão V1 — Programa de Afiliados Beta — 22/07/2026.`;
