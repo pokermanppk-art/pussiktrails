@@ -7,6 +7,7 @@ import { LEGAL_LINKS, type LegalFooterLink } from '@/lib/legalDocuments'
 type LegalSettingsPanelProps = {
   userId?: string | null
   tipoUsuario?: 'cliente' | 'guia' | 'admin' | string
+  isAfiliado?: boolean
 }
 
 type AceiteLegal = {
@@ -54,7 +55,9 @@ function tituloContexto(contexto?: string | null): string {
 
   if (valor === 'cadastro') return 'Cadastro'
   if (valor === 'reserva') return 'Reserva / Termo de Riscos'
-  if (valor === 'publicacao_roteiro') return 'Publicação de roteiro'
+  if (valor === 'publicacao_roteiro' || valor === 'guia_envio_roteiro') return 'Publicação de roteiro'
+  if (valor === 'reserva_pagamento' || valor === 'reserva_pix') return 'Reserva / pagamento'
+  if (valor === 'ativacao_afiliado') return 'Ativação do Programa de Afiliados'
   if (valor === 'perfil') return 'Perfil'
   if (valor === 'atualizacao_termos') return 'Atualização de termos'
 
@@ -76,24 +79,29 @@ function tituloDocumento(aceite: AceiteLegal): string {
 export default function LegalSettingsPanel({
   userId,
   tipoUsuario = 'cliente',
+  isAfiliado = false,
 }: LegalSettingsPanelProps) {
   const [aceites, setAceites] = useState<AceiteLegal[]>([])
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState('')
 
   const linksVisiveis = useMemo(() => {
-    if (tipoUsuario === 'cliente') {
-      return LEGAL_LINKS.filter(
-        (link: LegalFooterLink) => link.codigo !== 'termo_guia'
-      )
-    }
+    return LEGAL_LINKS.filter((link: LegalFooterLink) => {
+      if (tipoUsuario === 'cliente' && link.codigo === 'termo_guia') {
+        return false
+      }
 
-    if (tipoUsuario === 'guia') {
-      return LEGAL_LINKS
-    }
+      if (
+        link.codigo === 'termo_afiliado' &&
+        tipoUsuario !== 'admin' &&
+        !isAfiliado
+      ) {
+        return false
+      }
 
-    return LEGAL_LINKS
-  }, [tipoUsuario])
+      return true
+    })
+  }, [tipoUsuario, isAfiliado])
 
   useEffect(() => {
     const idSeguro = texto(userId)

@@ -1,6 +1,6 @@
 'use client'
 
-import { DOCUMENTOS_LEGAIS, type DocumentoLegalCodigo } from '../lib/legalDocuments'
+import { DOCUMENTOS_LEGAIS, type DocumentoLegalCodigo } from '@/lib/legalDocuments'
 
 type LegalDocumentModalProps = {
   documento: DocumentoLegalCodigo | null

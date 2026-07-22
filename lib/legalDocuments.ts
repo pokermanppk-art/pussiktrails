@@ -1,3 +1,5 @@
+import { POLITICA_CANCELAMENTO_TEXTO, TERMO_AFILIADO_TEXTO } from './legalDocumentAdditions'
+
 export type DocumentoLegalCodigo =
   | 'termos_uso'
   | 'politica_privacidade'
@@ -5,6 +7,8 @@ export type DocumentoLegalCodigo =
   | 'fornecedores'
   | 'termo_guia'
   | 'termo_riscos'
+  | 'politica_cancelamento'
+  | 'termo_afiliado'
 
 export type DocumentoLegalInfo = {
   codigo: DocumentoLegalCodigo
@@ -13,6 +17,7 @@ export type DocumentoLegalInfo = {
   descricao: string
   obrigatorio: boolean
   versao: string
+  atualizadoEm?: string
   texto: string
 }
 
@@ -81,6 +86,28 @@ export const DOCUMENTOS_LEGAIS: Record<DocumentoLegalCodigo, DocumentoLegalInfo>
     obrigatorio: true,
     versao: 'V8_FINAL_BETA_MVP_EI_2026_06_17',
     texto: "ANEXO V\n\nTERMO DE CIÊNCIA DE RISCOSE DECLARAÇÃO DE PARTICIPAÇÃO\n\n1. IDENTIFICAÇÃO DA RESERVA\n\nCampo | Informação\nNúmero da Reserva | _____________________________\nRoteiro / Experiência | _____________________________\nData e Horário da Atividade | _____________________________\nGuia Responsável | _____________________________\nNível de Dificuldade Informado | ( ) Iniciante   ( ) Moderado   ( ) Avançado   ( ) Técnico\nCliente Titular da Reserva | _____________________________  CPF: __________________\nQuantidade de Participantes | ______ adultos e ______ menores, se houver\n\n2. DECLARAÇÃO DE CIÊNCIA DOS RISCOS\n\nEu, ________________________________________________, portador(a) do documento ______________________, na qualidade de Cliente titular da reserva e, quando aplicável, como responsável legal pelos participantes menores vinculados à reserva, DECLARO, de forma livre, consciente e sob minha responsabilidade, que:\n\n2.1. Natureza da atividade\n\nEstou ciente de que a atividade contratada, como trilha, rapel, montanhismo, cicloturismo, expedição ou outra experiência outdoor, pode envolver esforço físico, exposição a ambiente natural, deslocamentos, riscos climáticos, riscos de queda, contato com água, altura, animais, pedras, lama, vegetação, isolamento de sinal e outras variáveis naturais imprevisíveis.\n\n2.2. Riscos específicos\n\nReconheço que a atividade pode envolver, entre outros riscos:\n\n• quedas, escorregões, lesões, fraturas, torções, hipotermia, insolação, desidratação e fadiga intensa;\n\n• contato com vegetação, pedras, lama, água, insetos, animais silvestres ou peçonhentos;\n\n• variações climáticas repentinas, como chuva, vento, neblina, raios ou temperaturas extremas;\n\n• isolamento de sinal de telefonia e internet, dificuldade de acesso para resgate ou atendimento de emergência;\n\n• exigências de aptidão física, coordenação motora, equilíbrio e capacidade de seguir instruções sob condições adversas.\n\n2.3. Avaliação pessoal\n\nDeclaro ter avaliado minha condição física, limitações, experiência prévia e aptidão para participar da atividade, sendo responsável pela decisão de participar, considerando as informações do Anúncio, o nível de dificuldade informado e as orientações do Guia.\n\n3. DECLARAÇÃO DE SAÚDE E LIMITAÇÕES\n\n3.1. Informações relevantes\n\nDeclaro que informei ao Guia e/ou à Plataforma, antes da confirmação da reserva ou antes do início da atividade, toda limitação física, condição de saúde, restrição médica, uso de medicamento, fobia, alergia ou impedimento que possa afetar minha participação ou a de qualquer participante vinculado à reserva.\n\nAssinale a opção aplicável:\n\n• ( ) Declaro não possuir condição de saúde, limitação física, alergia, fobia, uso de medicamento ou restrição médica relevante para a atividade.\n\n• ( ) Declaro possuir condição relevante e comprometo-me a informar o Guia e/ou a Plataforma pelos canais indicados, para avaliação de segurança e planejamento da atividade.\n\n3.2. Tratamento de dados sensíveis\n\nEstou ciente de que as informações de saúde eventualmente fornecidas serão tratadas como dados pessoais sensíveis, com acesso restrito ao Guia responsável e à Plataforma, exclusivamente para fins de segurança, planejamento, execução da atividade, prevenção de acidentes, atendimento de emergência e defesa de direitos, conforme a Política de Privacidade da PrussikTrails.\n\n4. RESPONSABILIDADE E CIÊNCIA DE PARTICIPANTES NÃO CADASTRADOS\n\n4.1. Acompanhantes adultos\n\nDeclaro que todos os acompanhantes adultos vinculados à minha reserva, ainda que não cadastrados individualmente na Plataforma, foram previamente informados por mim sobre os riscos da atividade, as regras do roteiro e as orientações do Guia, tendo manifestado concordância em participar. Estou ciente de que a Plataforma poderá exigir identificação, cadastro simplificado ou aceite individual do acompanhante antes da realização da atividade.\n\n4.2. Participantes menores de idade\n\nQuando houver criança ou adolescente vinculado à reserva, declaro que:\n\n• sou pai, mãe ou responsável legal do menor informado, ou possuo autorização expressa do responsável legal para incluí-lo na atividade;\n\n• avaliei previamente a adequação da atividade à idade, condição física e maturidade do menor;\n\n• acompanharei ou autorizarei adequadamente a participação do menor, fornecendo todas as informações necessárias à segurança;\n\n• estou ciente de que a Plataforma não permite cadastro, perfil, grupo, mensagem ou interação digital direta por menores, comprometendo-me a impedir qualquer contato direto do menor dentro da Plataforma.\n\n5. EQUIPAMENTOS E ORIENTAÇÕES\n\nDeclaro que li atentamente o Anúncio do roteiro, incluindo lista de equipamentos obrigatórios, itens pessoais, vestimenta recomendada, ponto de encontro, horários, política de atraso e cancelamento, comprometendo-me a:\n\n• comparecer com os equipamentos e itens exigidos;\n\n• cumprir pontualmente os horários e orientações do Guia;\n\n• seguir todas as instruções de segurança durante a atividade.\n\n6. RESPONSABILIDADE E LIMITAÇÃO\n\nReconheço que:\n\n• a execução material e a condução técnica da atividade são de responsabilidade do Guia responsável pelo roteiro;\n\n• a PrussikTrails atua como intermediadora tecnológica e não conduz diretamente a atividade;\n\n• a PrussikTrails não se responsabiliza por atos, omissões, acidentes ou danos decorrentes da conduta exclusiva do Guia, do Cliente, de acompanhantes ou de terceiros, ressalvada sua responsabilidade por falha própria na intermediação tecnológica;\n\n• a ciência dos riscos registrada neste Termo não exclui direitos legais do consumidor, nem eventual responsabilidade do Guia ou da Plataforma por falhas comprovadas, mas constitui prova da ciência prévia dos riscos próprios e inerentes à atividade.\n\n7. ACEITE E REGISTRO DE EVIDÊNCIAS\n\n7.1. Manifestação de vontade\n\nDeclaro que li, compreendi e concordo com os termos deste documento, e que minha manifestação de vontade é livre, consciente e informada.\n\n7.2. Registro técnico\n\nEstou ciente de que este aceite poderá ser registrado eletronicamente pela Plataforma, com as seguintes evidências técnicas:\n\n• data e hora do aceite;\n\n• IP do dispositivo utilizado;\n\n• user agent, incluindo informações do navegador e sistema operacional;\n\n• identificação do roteiro e da reserva;\n\n• nome, CPF e ID interno do Cliente titular, quando aplicável;\n\n• versão do Termo aceita no momento da reserva.\n\n8. DADOS DO PARTICIPANTE\n\nPreenchimento pelo Cliente titular da reserva ou coleta equivalente no fluxo digital:\n\nCampo | Informação\nNome Completo | ________________________________________\nCPF | ________________________________________\nE-mail | ________________________________________\nTelefone | ________________________________________\nData de Nascimento | ________________________________________\n\n8.1. Participantes menores, se houver\n\nNome completo do menor | Data de nascimento | Responsável legal indicado?\n_________________________ | ____/____/______ | ( ) Sim   ( ) Não\n_________________________ | ____/____/______ | ( ) Sim   ( ) Não\n\n8.2. Acompanhantes adultos não cadastrados, se houver\n\nNome completo | CPF, quando solicitado | Ciência de riscos obtida?\n_________________________ | ________________ | ( ) Sim   ( ) Não\n_________________________ | ________________ | ( ) Sim   ( ) Não\n\n9. DECLARAÇÃO FINAL E ASSINATURA\n\nDeclaro, sob as penas da lei, que todas as informações prestadas neste Termo são verdadeiras, completas e atualizadas, e que estou ciente de que a omissão, falsidade ou inexatidão das informações pode comprometer a segurança da atividade e gerar minha responsabilização civil e/ou criminal, conforme o caso.\n\nLocal | ____________________________________________\nData | ____/____/______\nHora | ____:____\n\nAceite eletrônico, checkbox ou assinatura digital:\n\n[ ] Li, compreendi e concordo com todos os termos deste documento e com os Termos de Uso, Política de Privacidade, Política de Cookies e Lista de Fornecedores Tecnológicos da PrussikTrails.\n\n10. IDENTIFICAÇÃO DA PLATAFORMA\n\nPrussikTrails - Empresário Individual\n\nCNPJ: 62.394.914/0001-31\n\nSite/App: www.prussiktrails.com.br\n\nContato: contato@prussiktrails.com.br\n\nDPO: dpo@prussiktrails.com.br\n\nDocumento integrante do fluxo de reserva da PrussikTrails, nos termos da cláusula 6.2.10 dos Termos de Uso. Versão Beta 1.0 - 17/06/2026.",
+  },
+
+  politica_cancelamento: {
+    codigo: 'politica_cancelamento',
+    titulo: 'Política de Cancelamento',
+    rota: '/politica-de-cancelamento',
+    descricao: 'Cancelamentos, remarcações, reembolsos, estornos, Saldo de Jornada e reflexos sobre comissões.',
+    obrigatorio: true,
+    versao: 'V1_CANCELAMENTO_2026_07_22',
+    atualizadoEm: '22/07/2026',
+    texto: POLITICA_CANCELAMENTO_TEXTO,
+  },
+
+  termo_afiliado: {
+    codigo: 'termo_afiliado',
+    titulo: 'Termo do Programa de Afiliados',
+    rota: '/termo-do-afiliado',
+    descricao: 'Indicações, atribuição, comissionamento, estornos, saques, uso do saldo, publicidade, LGPD e antifraude.',
+    obrigatorio: true,
+    versao: 'V1_AFILIADOS_BETA_2026_07_22',
+    atualizadoEm: '22/07/2026',
+    texto: TERMO_AFILIADO_TEXTO,
   }
 }
 
@@ -114,6 +141,16 @@ export const LEGAL_LINKS: LegalFooterLink[] = [
     codigo: 'termo_riscos',
     label: 'Termo de Riscos',
     href: '/termo-de-riscos',
+  },
+  {
+    codigo: 'politica_cancelamento',
+    label: 'Cancelamento',
+    href: '/politica-de-cancelamento',
+  },
+  {
+    codigo: 'termo_afiliado',
+    label: 'Programa de Afiliados',
+    href: '/termo-do-afiliado',
   },
 ]
 

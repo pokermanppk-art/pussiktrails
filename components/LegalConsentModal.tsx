@@ -15,8 +15,6 @@ type LegalConsentModalProps = {
   contexto?: string
 }
 
-const VERSAO_DOCUMENTOS = 'V8_FINAL_BETA_MVP_EI_2026_06_17'
-
 function texto(valor: unknown): string {
   return String(valor || '').trim()
 }
@@ -27,6 +25,7 @@ function tituloContexto(contexto?: string) {
   if (valor === 'cadastro') return 'Aceite necessário para criar sua conta'
   if (valor === 'reserva') return 'Aceite necessário antes da reserva ou pagamento'
   if (valor === 'publicacao_roteiro') return 'Aceite necessário para enviar o roteiro'
+  if (valor === 'ativacao_afiliado') return 'Aceite necessário para ativar o Programa de Afiliados'
   if (valor === 'perfil') return 'Documento legal da sua conta'
 
   return 'Documento legal PrussikTrails'
@@ -99,7 +98,7 @@ export default function LegalConsentModal({
         <header className="legalHeader">
           <p>{tituloContexto(contexto)}</p>
           <h2>{doc.titulo}</h2>
-          <span>Versão {VERSAO_DOCUMENTOS}</span>
+          <span>Versão {doc.versao}</span>
         </header>
 
         <section className="legalSummary">
@@ -150,6 +149,17 @@ export default function LegalConsentModal({
               <p>
                 O cadastro e a interação na PrussikTrails são permitidos apenas para maiores de 18
                 anos. Menores podem participar presencialmente apenas vinculados a responsável legal.
+              </p>
+            </div>
+          ) : null}
+
+          {documento === 'termo_afiliado' ? (
+            <div className="legalImportant">
+              <h3>Programa de Afiliados</h3>
+              <p>
+                O Programa envolve indicação rastreada, comissão somente sobre vendas qualificadas,
+                regras de estorno, uso de saldo, saque, publicidade identificada e prevenção de
+                fraude. A participação não garante renda e não cria vínculo empregatício.
               </p>
             </div>
           ) : null}

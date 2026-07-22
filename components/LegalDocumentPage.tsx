@@ -42,6 +42,16 @@ const LEGAL_NAV: LegalNavItem[] = [
     label: 'Termo de Riscos',
     href: '/termo-de-riscos',
   },
+  {
+    codigo: 'politica_cancelamento',
+    label: 'Cancelamento',
+    href: '/politica-de-cancelamento',
+  },
+  {
+    codigo: 'termo_afiliado',
+    label: 'Afiliados',
+    href: '/termo-do-afiliado',
+  },
 ]
 
 const RESUMOS: Record<DocumentoLegalCodigo, string> = {
@@ -57,6 +67,10 @@ const RESUMOS: Record<DocumentoLegalCodigo, string> = {
     'Responsabilidade, confidencialidade, tratamento de dados, segurança operacional, atuação independente e regras aplicáveis aos Guias.',
   termo_riscos:
     'Ciência de riscos outdoor, declaração de participação, informações de saúde, menores, acompanhantes e aceite antes da reserva.',
+  politica_cancelamento:
+    'Cancelamentos, remarcações, reembolsos, estornos, Saldo de Jornada e reflexos financeiros sobre reservas e comissões.',
+  termo_afiliado:
+    'Regras do Programa de Afiliados, indicações, comissões, saques, uso do saldo, publicidade, proteção de dados e prevenção de fraudes.',
 }
 
 const MARCADOR_INICIAL: Record<DocumentoLegalCodigo, string> = {
@@ -66,6 +80,8 @@ const MARCADOR_INICIAL: Record<DocumentoLegalCodigo, string> = {
   fornecedores: 'ANEXO III',
   termo_guia: 'ANEXO IV',
   termo_riscos: 'ANEXO V',
+  politica_cancelamento: 'POLÍTICA DE CANCELAMENTO',
+  termo_afiliado: 'ANEXO VI',
 }
 
 function texto(valor: unknown): string {
@@ -186,7 +202,7 @@ export default function LegalDocumentPage({ documento }: DocumentoLegalPageProps
           <h1>{doc.titulo}</h1>
 
           <p className="legal-version">
-            Versão {doc.versao} • Atualizado em 17/06/2026
+            Versão {doc.versao} • Atualizado em {doc.atualizadoEm || '17/06/2026'}
           </p>
         </div>
       </section>
